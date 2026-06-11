@@ -1,0 +1,273 @@
+import React, { useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, TextInput,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import PosterTrustCard from '../components/PosterTrustCard';
+import SlotPicker from '../components/SlotPicker';
+import RatingStars from '../components/RatingStars';
+import { useJobs } from '../context/JobsContext';
+import { useUser } from '../context/UserContext';
+import { useHaptic } from '../hooks/useHaptic';
+import { colors, shadows } from '../theme';
+import { CATEGORY_COLORS } from '../data/mockData';
+
+export default function JobDetailScreen({ route, navigation }) {
+  const { jobId } = route.params;
+  const { jobs, bookJob, isBooked } = useJobs();
+  const { addXP, recordApply, updateChallenge, showToast } = useUser();
+  const haptic = useHaptic();
+
+  const job = jobs.find(j => j.id === jobId);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [counterPrice, setCounterPrice] = useState('');
+  const alreadyBooked = isBooked(jobId);
+
+  if (!job) return null;
+
+  const catColor = CATEGORY_COLORS[job.category] || colors.primary;
+  const estPay = job.payType === 'hourly'
+    ? `$${job.pay}/hr · ~$${job.pay * job.estimatedHours} estimated`
+    : `$${job.pay} flat rate`;
+
+  const handleBook = () => {
+    const hasAvailableSlot = job.slots?.some(s => !s.taken);
+    if (!selectedSlot && hasAvailableSlot) {
+      haptic.error();
+      return;
+    }
+    haptic.success();
+    const slot = job.slots?.find(s => s.id === selectedSlot);
+    const counter = counterPrice ? parseFloat(counterPrice) : null;
+    bookJob(jobId, selectedSlot, slot?.label, counter);
+    addXP(25);
+    recordApply(job.payType === 'flat' ? job.pay : job.pay * job.estimatedHours);
+    updateChallenge('c1', 1);
+    if (job.category === 'Tech Help') updateChallenge('c3', 1);
+
+    const counterMsg = counter
+      ? ` · Counter-offer $${counter}${job.payType === 'hourly' ? '/hr' : ''} sent!`
+      : '';
+    showToast({
+      icon: '🎉',
+      title: 'Gig Booked! +25 XP',
+      message: `"${job.title}" booked${counterMsg}`,
+    });
+    navigation.navigate('EarnTab');
+  };
+
+  return (
+    <View style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {job.urgent && (
+          <View style={styles.urgentBanner}>
+            <Text style={styles.urgentText}>⚡ URGENT — Needed ASAP</Text>
+          </View>
+        )}
+
+        <View style={[styles.catBadge, { backgroundColor: catColor + '22' }]}>
+          <Text style={[styles.catText, { color: catColor }]}>{job.category}</Text>
+        </View>
+
+        <Text style={styles.title}>{job.title}</Text>
+
+        <View style={styles.pillRow}>
+          <LinearGradient colors={['#ECFDF5', '#D1FAE5']} style={styles.payPill}>
+            <Text style={styles.payText}>💰 {estPay}</Text>
+          </LinearGradient>
+          <View style={styles.locPill}>
+            <Text style={styles.locText}>📍 {job.location}</Text>
+          </View>
+        </View>
+
+        <Section title="About this gig">
+          <Text style={styles.description}>{job.description}</Text>
+        </Section>
+
+        {job.requirements?.length > 0 && (
+          <Section title="Requirements">
+            {job.requirements.map((r, i) => (
+              <View key={i} style={styles.reqRow}>
+                <Text style={styles.reqDot}>•</Text>
+                <Text style={styles.reqText}>{r}</Text>
+              </View>
+            ))}
+          </Section>
+        )}
+
+        <Section title="About the Poster">
+          <PosterTrustCard poster={job.poster} />
+        </Section>
+
+        {job.slots?.length > 0 && !alreadyBooked && (
+          <Section title="Available Times">
+            <SlotPicker slots={job.slots} selected={selectedSlot} onSelect={setSelectedSlot} />
+            {!selectedSlot && job.slots.some(s => !s.taken) && (
+              <Text style={styles.slotHint}>Tap a time slot to select it</Text>
+            )}
+          </Section>
+        )}
+
+        {!alreadyBooked && (
+          <Section title="Counter-offer (Optional)">
+            <View style={styles.counterCard}>
+              <Text style={styles.counterInfo}>
+                Listed rate: <Text style={styles.counterBold}>{estPay}</Text>
+              </Text>
+              <Text style={styles.counterHint}>Propose a different rate to negotiate before booking</Text>
+              <View style={styles.counterInputRow}>
+                <Text style={styles.counterDollar}>$</Text>
+                <TextInput
+                  style={styles.counterInput}
+                  placeholder={String(job.pay)}
+                  placeholderTextColor={colors.textMuted}
+                  value={counterPrice}
+                  onChangeText={setCounterPrice}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.counterUnit}>
+                  {job.payType === 'hourly' ? '/ hr' : 'flat'}
+                </Text>
+              </View>
+              {counterPrice !== '' && (
+                <View style={styles.counterPreviewRow}>
+                  <Text style={styles.counterPreview}>
+                    Your offer: <Text style={styles.counterOfferValue}>${counterPrice}{job.payType === 'hourly' ? '/hr' : ''}</Text>
+                    {'  '}vs listed ${job.pay}{job.payType === 'hourly' ? '/hr' : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Section>
+        )}
+
+        {job.reviews?.length > 0 && (
+          <Section title={`Reviews (${job.reviews.length})`}>
+            {job.reviews.map(r => (
+              <View key={r.id} style={styles.reviewCard}>
+                <View style={styles.reviewHeader}>
+                  <Text style={styles.reviewAuthor}>{r.author}</Text>
+                  <RatingStars rating={r.rating} size={12} />
+                  <Text style={styles.reviewDate}>{r.date}</Text>
+                </View>
+                <Text style={styles.reviewText}>{r.text}</Text>
+              </View>
+            ))}
+          </Section>
+        )}
+        <View style={{ height: 110 }} />
+      </ScrollView>
+
+      <View style={styles.footer}>
+        {alreadyBooked ? (
+          <View style={styles.bookedBtn}>
+            <Text style={styles.bookedText}>✓ Booked! Check your Earn tab</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            onPress={handleBook}
+            activeOpacity={0.85}
+          >
+            <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.bookBtn}>
+              <Text style={styles.bookBtnText}>
+                {selectedSlot
+                  ? (counterPrice ? `Book · Counter $${counterPrice} 🚀` : 'Book This Gig 🚀')
+                  : job.slots?.some(s => !s.taken)
+                    ? 'Select a Time Slot First'
+                    : 'Book This Gig 🚀'
+                }
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  scroll: { padding: 20 },
+  urgentBanner: {
+    backgroundColor: colors.urgentLight, borderRadius: 10,
+    padding: 10, marginBottom: 16, alignItems: 'center',
+  },
+  urgentText: { color: colors.urgent, fontWeight: '800', fontSize: 13 },
+  catBadge: {
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
+    alignSelf: 'flex-start', marginBottom: 12,
+  },
+  catText: { fontSize: 12, fontWeight: '700' },
+  title: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, lineHeight: 30, marginBottom: 16 },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  payPill: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginRight: 10, marginBottom: 10 },
+  payText: { fontSize: 13, fontWeight: '700', color: colors.success },
+  locPill: {
+    backgroundColor: colors.background, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10,
+  },
+  locText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  section: { marginBottom: 24 },
+  sectionTitle: {
+    fontSize: 12, fontWeight: '800', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12,
+  },
+  description: { fontSize: 15, color: colors.textPrimary, lineHeight: 24 },
+  reqRow: { flexDirection: 'row', marginBottom: 6 },
+  reqDot: { fontSize: 14, color: colors.primary, marginRight: 8, marginTop: 1 },
+  reqText: { fontSize: 14, color: colors.textPrimary, flex: 1, lineHeight: 21 },
+  slotHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, textAlign: 'center', fontStyle: 'italic' },
+  counterCard: {
+    backgroundColor: colors.background, borderRadius: 16,
+    padding: 16, borderWidth: 1.5, borderColor: colors.border,
+  },
+  counterInfo: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
+  counterBold: { fontWeight: '700', color: colors.textPrimary },
+  counterHint: { fontSize: 12, color: colors.textMuted, marginBottom: 14, lineHeight: 18 },
+  counterInputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surface, borderRadius: 12,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, height: 48,
+  },
+  counterDollar: { fontSize: 18, fontWeight: '700', color: colors.primary, marginRight: 6 },
+  counterInput: { flex: 1, fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  counterUnit: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  counterPreviewRow: {
+    marginTop: 10, backgroundColor: colors.primaryLight,
+    borderRadius: 10, padding: 10,
+  },
+  counterPreview: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
+  counterOfferValue: { fontWeight: '800', color: colors.primary },
+  reviewCard: {
+    backgroundColor: colors.background, borderRadius: 14,
+    padding: 14, marginBottom: 10,
+  },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  reviewAuthor: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginRight: 8 },
+  reviewDate: { fontSize: 11, color: colors.textMuted, marginLeft: 8 },
+  reviewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+  footer: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', padding: 20, paddingBottom: 36,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    ...shadows.md,
+  },
+  bookBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
+  bookBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  bookedBtn: {
+    backgroundColor: colors.accentLight, borderRadius: 16,
+    paddingVertical: 17, alignItems: 'center',
+  },
+  bookedText: { color: colors.success, fontSize: 16, fontWeight: '800' },
+});
