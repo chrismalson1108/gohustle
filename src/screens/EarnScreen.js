@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
 } from 'react-native';
@@ -7,17 +7,22 @@ import GradientHeader from '../components/GradientHeader';
 import ChallengeCard from '../components/ChallengeCard';
 import JobCard from '../components/JobCard';
 import XPBar from '../components/XPBar';
+import BookingStatusBadge from '../components/BookingStatusBadge';
+import MessageSheet from '../components/MessageSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
+import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients, shadows } from '../theme';
 
 export default function EarnScreen({ navigation }) {
   const {
     earningsToday, earningsWeek, earningsTotal,
     streakDays, levelInfo, xp, challenges,
-    weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone,
+    weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
   } = useUser();
-  const { bookedJobs, bookings } = useJobs();
+  const { bookedJobs, bookings, markJobComplete } = useJobs();
+  const haptic = useHaptic();
+  const [msgTarget, setMsgTarget] = useState(null);
 
   const earningPct = Math.min(1, earningsWeek / weeklyEarningGoal);
   const jobsPct    = Math.min(1, weeklyJobsDone / weeklyJobsGoal);
@@ -65,34 +70,87 @@ export default function EarnScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Your Booked Gigs</Text>
           {bookedJobs.map(j => {
             const booking = bookings.find(b => b.jobId === j.id);
+            const status  = booking?.status || 'pending';
             return (
-              <View key={j.id}>
+              <View key={j.id} style={styles.bookedItem}>
                 <JobCard job={j} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} />
-                {booking && (booking.slotLabel || booking.counterOffer) && (
-                  <View style={styles.bookingMeta}>
-                    {booking.slotLabel && (
-                      <View style={styles.bookingRow}>
-                        <Text style={styles.bookingIcon}>📅</Text>
-                        <Text style={styles.bookingText}>{booking.slotLabel}</Text>
-                      </View>
-                    )}
-                    {booking.counterOffer && (
-                      <View style={styles.bookingRow}>
-                        <Text style={styles.bookingIcon}>💬</Text>
-                        <Text style={styles.bookingText}>
-                          Counter-offer: <Text style={styles.bookingBold}>
-                            ${booking.counterOffer}{j.payType === 'hourly' ? '/hr' : ' flat'}
-                          </Text> (listed ${j.pay}{j.payType === 'hourly' ? '/hr' : ''})
+
+                <View style={styles.bookingMeta}>
+                  {/* Status badge */}
+                  <BookingStatusBadge status={status} />
+
+                  {/* Slot + counter-offer info */}
+                  {booking?.slotLabel && (
+                    <View style={styles.bookingRow}>
+                      <Text style={styles.bookingIcon}>📅</Text>
+                      <Text style={styles.bookingText}>{booking.slotLabel}</Text>
+                    </View>
+                  )}
+                  {booking?.counterOffer && (
+                    <View style={styles.bookingRow}>
+                      <Text style={styles.bookingIcon}>💬</Text>
+                      <Text style={styles.bookingText}>
+                        Counter-offer: <Text style={styles.bookingBold}>
+                          ${booking.counterOffer}{j.payType === 'hourly' ? '/hr' : ' flat'}
                         </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Verified result */}
+                  {status === 'verified' && booking?.earnerRating && (
+                    <View style={styles.verifiedRow}>
+                      <Text style={styles.verifiedText}>
+                        {'⭐'.repeat(Math.round(booking.earnerRating))} {Number(booking.earnerRating).toFixed(1)} stars
+                        {booking.paymentMethod ? ` · Paid via ${booking.paymentMethod}` : ''}
+                      </Text>
+                      {booking.reviewText ? (
+                        <Text style={styles.reviewQuote}>"{booking.reviewText}"</Text>
+                      ) : null}
+                    </View>
+                  )}
+
+                  {/* Mark Complete button (only when confirmed) */}
+                  {status === 'confirmed' && (
+                    <TouchableOpacity
+                      style={styles.completeBtn}
+                      onPress={() => {
+                        haptic.success();
+                        markJobComplete(booking.id);
+                        showToast({ icon: '🔄', title: 'Marked Complete!', message: 'Waiting for the poster to verify and rate you.' });
+                      }}
+                    >
+                      <Text style={styles.completeBtnText}>✓ I Completed This Job</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Message Poster button */}
+                  {(status === 'pending' || status === 'confirmed') && (
+                    <TouchableOpacity
+                      style={styles.msgBtn}
+                      onPress={() => setMsgTarget({
+                        bookingId: booking.id,
+                        jobTitle: j.title,
+                        otherPerson: { name: j.poster?.name || 'Poster', avatarInitial: j.poster?.avatarInitial || 'P' },
+                      })}
+                    >
+                      <Text style={styles.msgBtnText}>💬 Message Poster</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             );
           })}
         </View>
       )}
+
+      <MessageSheet
+        visible={!!msgTarget}
+        bookingId={msgTarget?.bookingId}
+        jobTitle={msgTarget?.jobTitle}
+        otherPerson={msgTarget?.otherPerson}
+        onClose={() => setMsgTarget(null)}
+      />
 
       {bookedJobs.length === 0 && (
         <View style={styles.emptyGigs}>
@@ -164,15 +222,35 @@ const styles = StyleSheet.create({
   goalValue: { fontSize: 13, fontWeight: '700' },
   goalTrack: { height: 10, borderRadius: 5, backgroundColor: colors.divider, overflow: 'hidden' },
   goalFill: { height: 10, borderRadius: 5 },
+  bookedItem: { marginBottom: 4 },
   bookingMeta: {
-    backgroundColor: colors.accentLight, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 10,
-    marginTop: -6, marginBottom: 10,
+    backgroundColor: colors.surface, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    marginTop: -4, marginBottom: 12,
+    borderWidth: 1, borderColor: colors.border,
+    borderTopLeftRadius: 0, borderTopRightRadius: 0,
   },
-  bookingRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
-  bookingIcon: { fontSize: 13, marginRight: 8, marginTop: 1 },
-  bookingText: { fontSize: 13, color: colors.success, flex: 1, lineHeight: 19 },
-  bookingBold: { fontWeight: '800' },
+  bookingRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 8 },
+  bookingIcon: { fontSize: 12, marginRight: 6, marginTop: 1 },
+  bookingText: { fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 },
+  bookingBold: { fontWeight: '800', color: colors.primary },
+  verifiedRow: {
+    backgroundColor: colors.accentLight, borderRadius: 10,
+    padding: 10, marginTop: 8,
+  },
+  verifiedText: { fontSize: 13, fontWeight: '700', color: colors.success },
+  reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
+  completeBtn: {
+    backgroundColor: colors.primaryLight, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center', marginTop: 12,
+    borderWidth: 1.5, borderColor: colors.primary,
+  },
+  completeBtnText: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  msgBtn: {
+    borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginTop: 8,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   emptyGigs: { alignItems: 'center', padding: 40 },
   emptyIcon: { fontSize: 44, marginBottom: 12 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },

@@ -9,6 +9,7 @@ import SlotPicker from '../components/SlotPicker';
 import RatingStars from '../components/RatingStars';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
+import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
@@ -17,12 +18,14 @@ export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
   const { jobs, bookJob, isBooked } = useJobs();
   const { addXP, recordApply, updateChallenge, showToast } = useUser();
+  const { user } = useAuth();
   const haptic = useHaptic();
 
   const job = jobs.find(j => j.id === jobId);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
   const alreadyBooked = isBooked(jobId);
+  const isOwnJob = job?.posterId && user?.id && job.posterId === user.id;
 
   if (!job) return null;
 
@@ -100,7 +103,7 @@ export default function JobDetailScreen({ route, navigation }) {
           <PosterTrustCard poster={job.poster} />
         </Section>
 
-        {job.slots?.length > 0 && !alreadyBooked && (
+        {job.slots?.length > 0 && !alreadyBooked && !isOwnJob && (
           <Section title="Available Times">
             <SlotPicker slots={job.slots} selected={selectedSlot} onSelect={setSelectedSlot} />
             {!selectedSlot && job.slots.some(s => !s.taken) && (
@@ -109,7 +112,7 @@ export default function JobDetailScreen({ route, navigation }) {
           </Section>
         )}
 
-        {!alreadyBooked && (
+        {!alreadyBooked && !isOwnJob && (
           <Section title="Counter-offer (Optional)">
             <View style={styles.counterCard}>
               <Text style={styles.counterInfo}>
@@ -160,7 +163,11 @@ export default function JobDetailScreen({ route, navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        {alreadyBooked ? (
+        {isOwnJob ? (
+          <View style={styles.ownJobBanner}>
+            <Text style={styles.ownJobText}>📋 This is your gig — you can't book your own posting</Text>
+          </View>
+        ) : alreadyBooked ? (
           <View style={styles.bookedBtn}>
             <Text style={styles.bookedText}>✓ Booked! Check your Earn tab</Text>
           </View>
@@ -270,4 +277,10 @@ const styles = StyleSheet.create({
     paddingVertical: 17, alignItems: 'center',
   },
   bookedText: { color: colors.success, fontSize: 16, fontWeight: '800' },
+  ownJobBanner: {
+    backgroundColor: colors.primaryLight, borderRadius: 16,
+    paddingVertical: 17, alignItems: 'center',
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+  },
+  ownJobText: { color: colors.primary, fontSize: 14, fontWeight: '700', textAlign: 'center' },
 });

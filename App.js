@@ -3,18 +3,24 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { View } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
-import { JobsProvider } from './src/context/JobsContext';
+import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
 
-import HomeScreen      from './src/screens/HomeScreen';
-import EarnScreen      from './src/screens/EarnScreen';
-import PostJobScreen   from './src/screens/PostJobScreen';
-import ProfileScreen   from './src/screens/ProfileScreen';
-import JobDetailScreen from './src/screens/JobDetailScreen';
+import HomeScreen           from './src/screens/HomeScreen';
+import EarnScreen           from './src/screens/EarnScreen';
+import PostJobScreen        from './src/screens/PostJobScreen';
+import ProfileScreen        from './src/screens/ProfileScreen';
+import JobDetailScreen      from './src/screens/JobDetailScreen';
+import ManageBookingsScreen from './src/screens/ManageBookingsScreen';
+import EditJobScreen        from './src/screens/EditJobScreen';
+import SettingsScreen       from './src/screens/SettingsScreen';
+import AuthScreen           from './src/screens/auth/AuthScreen';
+import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 
 import { colors } from './src/theme';
 
@@ -22,18 +28,19 @@ const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 const DETAIL_OPTS = {
-  headerShown: true,
-  title: '',
-  headerTransparent: false,
-  headerTintColor: colors.primary,
-  headerShadowVisible: false,
-  headerStyle: { backgroundColor: '#fff' },
+  headerShown: true, title: '',
+  headerTransparent: false, headerTintColor: colors.primary,
+  headerShadowVisible: false, headerStyle: { backgroundColor: '#fff' },
+};
+
+const MANAGE_OPTS = {
+  headerShown: false,
 };
 
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} />
+      <Stack.Screen name="HomeMain"  component={HomeScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
@@ -42,54 +49,101 @@ function HomeStack() {
 function EarnStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="EarnMain" component={EarnScreen} />
+      <Stack.Screen name="EarnMain"  component={EarnScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
 
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain"    component={ProfileScreen} />
+      <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
+      <Stack.Screen name="EditJob"        component={EditJobScreen} />
+      <Stack.Screen name="Settings"       component={SettingsScreen} />
+    </Stack.Navigator>
+  );
+}
+
 const TAB_ICONS = {
-  HomeTab:    ['home',         'home-outline'],
-  EarnTab:    ['flash',        'flash-outline'],
-  PostTab:    ['add-circle',   'add-circle-outline'],
-  ProfileTab: ['person-circle','person-circle-outline'],
+  HomeTab:    ['home',          'home-outline'],
+  EarnTab:    ['flash',         'flash-outline'],
+  PostTab:    ['add-circle',    'add-circle-outline'],
+  ProfileTab: ['person-circle', 'person-circle-outline'],
 };
 
-export default function App() {
+// Rendered inside providers so it can read badge counts from context
+function AppNavigator() {
+  const { earnBadgeCount, profileBadgeCount } = useJobs();
+
   return (
-    <SafeAreaProvider>
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarIcon: ({ focused, color, size }) => {
+            const [on, off] = TAB_ICONS[route.name] || ['ellipse', 'ellipse-outline'];
+            return <Ionicons name={focused ? on : off} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: {
+            backgroundColor: '#fff',
+            borderTopColor: colors.border,
+            paddingBottom: 6,
+            height: 64,
+          },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+          tabBarBadge:
+            route.name === 'EarnTab'    && earnBadgeCount    > 0 ? earnBadgeCount    :
+            route.name === 'ProfileTab' && profileBadgeCount > 0 ? profileBadgeCount :
+            undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.urgent, fontSize: 10, fontWeight: '800' },
+        })}
+      >
+        <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
+        <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'Earn' }} />
+        <Tab.Screen name="PostTab"    component={PostJobScreen} options={{ title: 'Post' }} />
+        <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+      </Tab.Navigator>
+    </NavigationContainer>
+  );
+}
+
+function MainApp() {
+  return (
     <UserProvider>
       <JobsProvider>
         <View style={{ flex: 1, position: 'relative' }}>
-          <NavigationContainer>
-            <Tab.Navigator
-              screenOptions={({ route }) => ({
-                headerShown: false,
-                tabBarIcon: ({ focused, color, size }) => {
-                  const [on, off] = TAB_ICONS[route.name] || ['ellipse', 'ellipse-outline'];
-                  return <Ionicons name={focused ? on : off} size={size} color={color} />;
-                },
-                tabBarActiveTintColor: colors.primary,
-                tabBarInactiveTintColor: colors.textMuted,
-                tabBarStyle: {
-                  backgroundColor: '#fff',
-                  borderTopColor: colors.border,
-                  paddingBottom: 6,
-                  height: 64,
-                },
-                tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
-              })}
-            >
-              <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
-              <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'Earn' }} />
-              <Tab.Screen name="PostTab"    component={PostJobScreen} options={{ title: 'Post' }} />
-              <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />
-            </Tab.Navigator>
-          </NavigationContainer>
+          <AppNavigator />
           <AchievementToast />
         </View>
       </JobsProvider>
     </UserProvider>
+  );
+}
+
+function RootNavigator() {
+  const { session, loading, onboardingDone, markOnboardingDone } = useAuth();
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+  if (!session) return <AuthScreen />;
+  if (!onboardingDone) return <OnboardingScreen onComplete={markOnboardingDone} />;
+  return <MainApp />;
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

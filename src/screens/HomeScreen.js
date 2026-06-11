@@ -6,11 +6,47 @@ import {
 import GradientHeader from '../components/GradientHeader';
 import JobCard from '../components/JobCard';
 import XPBar from '../components/XPBar';
+import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients } from '../theme';
 import { CATEGORIES } from '../data/mockData';
+
+// Extract state abbreviation from location string like "Austin, TX"
+function getState(location) {
+  if (!location) return null;
+  if (location.toLowerCase().includes('remote')) return 'remote';
+  const parts = location.split(',');
+  const last = parts[parts.length - 1]?.trim();
+  return last?.length === 2 ? last : null;
+}
+
+// Extract day abbreviation from slot label like "Mon Dec 16, 2:00 PM"
+function getSlotDays(slots) {
+  const days = new Set();
+  (slots || []).forEach(s => {
+    if (!s.taken && s.label) {
+      const prefix = s.label.split(' ')[0];
+      if (['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].includes(prefix)) {
+        days.add(prefix);
+      }
+    }
+  });
+  return days;
+}
+
+function matchesPay(job, payRange) {
+  if (payRange === 'any') return true;
+  const effective = job.payType === 'hourly'
+    ? job.pay * (job.estimatedHours || 1)
+    : job.pay;
+  if (payRange === 'under25')  return effective < 25;
+  if (payRange === '25-50')    return effective >= 25  && effective < 50;
+  if (payRange === '50-100')   return effective >= 50  && effective < 100;
+  if (payRange === '100+')     return effective >= 100;
+  return true;
+}
 
 export default function HomeScreen({ navigation }) {
   const { name, streakDays, levelInfo, xp } = useUser();
@@ -18,13 +54,75 @@ export default function HomeScreen({ navigation }) {
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [showFilter, setShowFilter] = useState(false);
 
-  const filtered = useMemo(() => jobs.filter(j => {
-    const catMatch = selectedCat === 'all' || j.category === selectedCat;
-    const q = search.toLowerCase();
-    const searchMatch = !q || j.title.toLowerCase().includes(q) || j.description.toLowerCase().includes(q);
-    return catMatch && searchMatch;
-  }), [jobs, selectedCat, search]);
+  // Build state list from available jobs for the location filter
+  const availableStates = useMemo(() => {
+    const states = new Set();
+    jobs.forEach(j => {
+      const st = getState(j.location);
+      if (st && st !== 'remote') states.add(st);
+    });
+    return Array.from(states).sort();
+  }, [jobs]);
+
+  const filtered = useMemo(() => {
+    let list = jobs.filter(j => {
+      // Category chip
+      if (selectedCat !== 'all' && j.category !== selectedCat) return false;
+
+      // Search text
+      const q = search.toLowerCase();
+      if (q && !j.title.toLowerCase().includes(q) && !j.description.toLowerCase().includes(q)) return false;
+
+      // Pay range
+      if (!matchesPay(j, filters.payRange)) return false;
+
+      // Pay type
+      if (filters.payType !== 'any' && j.payType !== filters.payType) return false;
+
+      // Urgent only
+      if (filters.urgentOnly && !j.urgent) return false;
+
+      // Location
+      if (filters.location !== 'any') {
+        if (filters.location === 'remote') {
+          if (!j.location?.toLowerCase().includes('remote')) return false;
+        } else {
+          if (getState(j.location) !== filters.location) return false;
+        }
+      }
+
+      // Days availability
+      if (filters.days.length > 0) {
+        const slotDays = getSlotDays(j.slots);
+        const hasMatch = filters.days.some(d => slotDays.has(d));
+        if (!hasMatch) return false;
+      }
+
+      return true;
+    });
+
+    // Sort
+    if (filters.sortBy === 'pay_high') {
+      list = [...list].sort((a, b) => {
+        const pa = a.payType === 'hourly' ? a.pay * (a.estimatedHours || 1) : a.pay;
+        const pb = b.payType === 'hourly' ? b.pay * (b.estimatedHours || 1) : b.pay;
+        return pb - pa;
+      });
+    } else if (filters.sortBy === 'pay_low') {
+      list = [...list].sort((a, b) => {
+        const pa = a.payType === 'hourly' ? a.pay * (a.estimatedHours || 1) : a.pay;
+        const pb = b.payType === 'hourly' ? b.pay * (b.estimatedHours || 1) : b.pay;
+        return pa - pb;
+      });
+    }
+
+    return list;
+  }, [jobs, selectedCat, search, filters]);
+
+  const activeFilterCount = countActiveFilters(filters);
 
   const header = (
     <>
@@ -43,15 +141,33 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.xpWrap}>
           <XPBar levelInfo={levelInfo} xp={xp} dark />
         </View>
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search gigs..."
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-          />
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search gigs..."
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Text style={styles.searchClear}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
+            onPress={() => { haptic.light(); setShowFilter(true); }}
+          >
+            <Text style={styles.filterIcon}>⚙️</Text>
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </GradientHeader>
 
@@ -76,9 +192,16 @@ export default function HomeScreen({ navigation }) {
         })}
       </ScrollView>
 
-      <Text style={styles.sectionTitle}>
-        {filtered.length} gig{filtered.length !== 1 ? 's' : ''} available
-      </Text>
+      <View style={styles.resultsRow}>
+        <Text style={styles.sectionTitle}>
+          {filtered.length} gig{filtered.length !== 1 ? 's' : ''} available
+        </Text>
+        {activeFilterCount > 0 && (
+          <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)}>
+            <Text style={styles.clearFilters}>Clear filters</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </>
   );
 
@@ -99,9 +222,22 @@ export default function HomeScreen({ navigation }) {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>🔎</Text>
-            <Text style={styles.emptyText}>No gigs match your search</Text>
+            <Text style={styles.emptyText}>No gigs match your filters</Text>
+            {activeFilterCount > 0 && (
+              <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)} style={styles.emptyReset}>
+                <Text style={styles.emptyResetText}>Reset all filters</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
+      />
+
+      <FilterSheet
+        visible={showFilter}
+        filters={filters}
+        availableStates={availableStates}
+        onApply={(f) => { setFilters(f); setShowFilter(false); }}
+        onClose={() => setShowFilter(false)}
       />
     </View>
   );
@@ -112,18 +248,38 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
   greeting: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 2 },
   sub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  streakBox: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8 },
+  streakBox: {
+    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8,
+  },
   streakFire: { fontSize: 22 },
   streakNum: { fontSize: 22, fontWeight: '900', color: '#fff', lineHeight: 26 },
   streakLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
   xpWrap: { marginBottom: 16 },
+  searchRow: { flexDirection: 'row', alignItems: 'center' },
   searchBox: {
-    flexDirection: 'row', alignItems: 'center',
+    flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 14,
     paddingHorizontal: 14, height: 46,
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary },
+  searchClear: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
+  filterBtn: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 10,
+  },
+  filterBtnActive: { backgroundColor: '#fff' },
+  filterIcon: { fontSize: 20 },
+  filterBadge: {
+    position: 'absolute', top: -4, right: -4,
+    backgroundColor: colors.urgent, borderRadius: 8,
+    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   catRow: { paddingHorizontal: 16, paddingVertical: 14 },
   catChip: {
     flexDirection: 'row', alignItems: 'center',
@@ -136,9 +292,19 @@ const styles = StyleSheet.create({
   catIcon: { fontSize: 15, marginRight: 6 },
   catLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   catLabelActive: { color: '#fff' },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.textMuted, paddingHorizontal: 20, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  resultsRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, marginBottom: 4,
+  },
+  sectionTitle: {
+    fontSize: 13, fontWeight: '700', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  clearFilters: { fontSize: 13, fontWeight: '700', color: colors.primary },
   list: { paddingBottom: 24 },
-  empty: { alignItems: 'center', paddingTop: 48 },
+  empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { fontSize: 16, color: colors.textSecondary },
+  emptyText: { fontSize: 16, color: colors.textSecondary, textAlign: 'center' },
+  emptyReset: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primaryLight },
+  emptyResetText: { fontSize: 14, fontWeight: '700', color: colors.primary },
 });

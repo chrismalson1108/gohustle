@@ -9,6 +9,7 @@ import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
+import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients, shadows } from '../theme';
 
@@ -18,13 +19,14 @@ const REVIEWS = [
   { id: 'pr3', author: 'Tom W.', rating: 4, text: 'Good work, took a little longer than expected but quality was great.', date: '2 weeks ago' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const {
     name, avatarInitial, role, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
     weeklyJobsDone, setRole, weeklyEarningGoal, weeklyJobsGoal, setGoals,
   } = useUser();
-  const { postedJobs, bookedJobs } = useJobs();
+  const { postedJobs, bookedJobs, posterBookings, profileBadgeCount } = useJobs();
+  const { signOut } = useAuth();
   const haptic = useHaptic();
   const [editGoals, setEditGoals] = useState(false);
   const [earGoal, setEarGoal] = useState(String(weeklyEarningGoal));
@@ -104,6 +106,70 @@ export default function ProfileScreen() {
         ))}
       </View>
 
+      {/* My Posted Gigs */}
+      {postedJobs.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>My Posted Gigs</Text>
+          {postedJobs.map(job => (
+            <View key={job.id} style={styles.postedJobCard}>
+              <View style={styles.postedJobInfo}>
+                <Text style={styles.postedJobTitle} numberOfLines={1}>{job.title}</Text>
+                <Text style={styles.postedJobMeta}>
+                  {job.payType === 'hourly' ? `$${job.pay}/hr` : `$${job.pay} flat`}
+                  {'  ·  '}{job.location}
+                </Text>
+              </View>
+              <View style={styles.postedJobActions}>
+                <TouchableOpacity
+                  style={styles.editBtn}
+                  onPress={() => navigation.navigate('EditJob', { jobId: job.id })}
+                >
+                  <Text style={styles.editBtnText}>✏️ Edit</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Manage Bookings — always show if there are any poster bookings */}
+      {(postedJobs.length > 0 || posterBookings?.length > 0) && (
+        <TouchableOpacity
+          style={styles.manageBtn}
+          onPress={() => navigation.navigate('ManageBookings')}
+        >
+          <View style={styles.manageBtnLeft}>
+            <Text style={styles.manageBtnIcon}>📬</Text>
+            <View>
+              <Text style={styles.manageBtnTitle}>Manage Booking Requests</Text>
+              <Text style={styles.manageBtnSub}>
+                {profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'View all incoming bookings'}
+              </Text>
+            </View>
+          </View>
+          {profileBadgeCount > 0 && (
+            <View style={styles.manageBadge}>
+              <Text style={styles.manageBadgeText}>{profileBadgeCount}</Text>
+            </View>
+          )}
+          <Text style={styles.manageBtnArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={styles.settingsBtn}
+        onPress={() => navigation.navigate('Settings')}
+      >
+        <Text style={styles.settingsBtnText}>⚙️ Edit Profile & Settings</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.signOutBtn}
+        onPress={() => { haptic.medium(); signOut(); }}
+      >
+        <Text style={styles.signOutText}>Sign Out</Text>
+      </TouchableOpacity>
+
       <View style={{ height: 40 }} />
     </ScrollView>
   );
@@ -119,6 +185,34 @@ function Stat({ label, value }) {
 }
 
 const styles = StyleSheet.create({
+  manageBtn: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 16,
+    backgroundColor: colors.surface, padding: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1.5, borderColor: colors.primary + '40', ...shadows.sm,
+  },
+  manageBtnLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  manageBtnIcon: { fontSize: 22, marginRight: 12 },
+  manageBtnTitle: { fontSize: 15, fontWeight: '800', color: colors.primary },
+  manageBtnSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  manageBadge: {
+    backgroundColor: colors.urgent, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
+  },
+  manageBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  manageBtnArrow: { fontSize: 22, color: colors.primary, fontWeight: '700' },
+  settingsBtn: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center',
+    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+  },
+  settingsBtnText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  signOutBtn: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center',
+    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: '#FCA5A5',
+  },
+  signOutText: { fontSize: 15, fontWeight: '700', color: colors.urgent },
   container: { flex: 1, backgroundColor: colors.background },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   avatar: {
@@ -155,6 +249,21 @@ const styles = StyleSheet.create({
     fontSize: 13, fontWeight: '800', color: colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
   },
+  postedJobCard: {
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    flexDirection: 'row', alignItems: 'center',
+  },
+  postedJobInfo: { flex: 1, marginRight: 10 },
+  postedJobTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
+  postedJobMeta: { fontSize: 12, color: colors.textMuted },
+  postedJobActions: { flexDirection: 'row' },
+  editBtn: {
+    backgroundColor: colors.primaryLight, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: colors.primary + '40',
+  },
+  editBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   reviewCard: {
     backgroundColor: colors.surface, borderRadius: 14,
     padding: 14, marginBottom: 10,

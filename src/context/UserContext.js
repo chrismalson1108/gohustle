@@ -1,101 +1,133 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+import { cacheGet, cacheSet } from '../lib/cache';
+import { useAuth } from './AuthContext';
 import { BADGE_DEFS, LEVELS } from '../data/mockData';
 
-// TODO: persist with AsyncStorage
+const UserContext = createContext(null);
 
-const INITIAL = {
-  name: 'Alex',
-  avatarInitial: 'A',
-  role: 'earner', // 'earner' | 'poster'
-  rating: 4.8,
-  reviewCount: 9,
-  memberSince: 'May 2026',
+const PROFILE_CACHE_KEY = 'profile_v1';
+const SYNC_DEBOUNCE_MS  = 2000;
 
-  xp: 340,
-  streakDays: 5,
+function getLevelInfo(xp) {
+  let current = LEVELS[0];
+  let next = LEVELS[1];
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (xp >= LEVELS[i].minXP) {
+      current = LEVELS[i];
+      next = LEVELS[i + 1] || null;
+      break;
+    }
+  }
+  const progress = next
+    ? (xp - current.minXP) / (next.minXP - current.minXP)
+    : 1;
+  return { current, next, progress };
+}
 
-  earningsToday: 45,
-  earningsWeek: 210,
-  earningsTotal: 1340,
-
+const DEFAULT_STATE = {
+  name: 'Hustler',
+  avatarInitial: 'H',
+  role: 'earner',
+  rating: 5.0,
+  reviewCount: 0,
+  memberSince: '',
+  xp: 0,
+  streakDays: 0,
+  earningsToday: 0,
+  earningsWeek: 0,
+  earningsTotal: 0,
   weeklyEarningGoal: 300,
   weeklyJobsGoal: 5,
-  weeklyJobsDone: 3,
-
+  weeklyJobsDone: 0,
   badges: {
-    firstHustle: { unlocked: true },
-    onFire:      { unlocked: true },
+    firstHustle: { unlocked: false },
+    onFire:      { unlocked: false },
     bigEarner:   { unlocked: false },
     topRated:    { unlocked: false },
     speedDemon:  { unlocked: false },
   },
-
   challenges: [
-    {
-      id: 'c1', icon: '🎯', title: 'Apply to 3 Gigs',
-      description: 'Apply to 3 gigs today', type: 'daily',
-      progress: 1, target: 3, xpReward: 50, expiresLabel: 'Ends tonight',
-    },
-    {
-      id: 'c2', icon: '💵', title: 'Earn $100 This Week',
-      description: 'Complete gigs totaling $100', type: 'weekly',
-      progress: 45, target: 100, xpReward: 150, expiresLabel: '3 days left',
-    },
-    {
-      id: 'c3', icon: '💻', title: 'Tech Whiz',
-      description: 'Complete a Tech Help gig', type: 'weekly',
-      progress: 0, target: 1, xpReward: 75, expiresLabel: '5 days left',
-    },
+    { id: 'c1', icon: '🎯', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50,  expiresLabel: 'Ends tonight' },
+    { id: 'c2', icon: '💵', title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150, expiresLabel: '3 days left' },
+    { id: 'c3', icon: '💻', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75,  expiresLabel: '5 days left' },
   ],
-
   pendingToast: null,
 };
 
-function getLevelInfo(xp) {
-  let current = LEVELS[0];
-  for (const l of LEVELS) {
-    if (xp >= l.minXP) current = l;
-  }
-  const nextIdx = LEVELS.findIndex(l => l.level === current.level) + 1;
-  const next = LEVELS[nextIdx] || current;
-  const progress = current === next
-    ? 1
-    : (xp - current.minXP) / (next.minXP - current.minXP);
-  return { current, next, progress };
+function dbToState(profile, badges = [], challenges = []) {
+  const badgeMap = { ...DEFAULT_STATE.badges };
+  badges.forEach(b => {
+    if (badgeMap[b.badge_key] !== undefined) badgeMap[b.badge_key] = { unlocked: b.unlocked };
+  });
+
+  const challengeMap = {};
+  challenges.forEach(c => { challengeMap[c.challenge_id] = c; });
+
+  const mergedChallenges = DEFAULT_STATE.challenges.map(c => ({
+    ...c,
+    progress: challengeMap[c.id]?.progress ?? c.progress,
+  }));
+
+  return {
+    name: profile.name || 'Hustler',
+    avatarInitial: profile.avatar_initial || profile.name?.charAt(0).toUpperCase() || 'H',
+    role: profile.role || 'earner',
+    rating: Number(profile.rating) || 5.0,
+    reviewCount: profile.review_count || 0,
+    memberSince: profile.member_since || '',
+    xp: profile.xp || 0,
+    streakDays: profile.streak_days || 0,
+    earningsToday: Number(profile.earnings_today) || 0,
+    earningsWeek: Number(profile.earnings_week) || 0,
+    earningsTotal: Number(profile.earnings_total) || 0,
+    weeklyEarningGoal: Number(profile.weekly_earning_goal) || 300,
+    weeklyJobsGoal: profile.weekly_jobs_goal || 5,
+    weeklyJobsDone: profile.weekly_jobs_done || 0,
+    badges: badgeMap,
+    challenges: mergedChallenges,
+    pendingToast: null,
+  };
 }
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'LOAD_PROFILE':
+      return { ...state, ...action.profile };
+
     case 'SET_ROLE':
       return { ...state, role: action.role };
 
-    case 'ADD_XP':
-      return { ...state, xp: state.xp + action.amount };
+    case 'ADD_XP': {
+      const xp = state.xp + action.amount;
+      return { ...state, xp };
+    }
 
     case 'UPDATE_CHALLENGE': {
-      const challenges = state.challenges.map(c =>
-        c.id === action.id
-          ? { ...c, progress: Math.min(c.target, c.progress + action.delta) }
-          : c
-      );
+      const challenges = state.challenges.map(c => {
+        if (c.id !== action.id) return c;
+        const progress = Math.min(c.target, c.progress + action.delta);
+        return { ...c, progress };
+      });
       return { ...state, challenges };
     }
 
-    case 'SET_GOALS':
+    case 'UNLOCK_BADGE':
       return {
         ...state,
-        weeklyEarningGoal: action.earningGoal,
-        weeklyJobsGoal: action.jobsGoal,
+        badges: { ...state.badges, [action.key]: { unlocked: true } },
       };
 
-    case 'RECORD_APPLY':
-      return {
-        ...state,
-        weeklyJobsDone: state.weeklyJobsDone + 1,
-        earningsToday: state.earningsToday + (action.amount || 0),
-        earningsWeek: state.earningsWeek + (action.amount || 0),
-        earningsTotal: state.earningsTotal + (action.amount || 0),
-      };
+    case 'RECORD_APPLY': {
+      const earningsToday = state.earningsToday + action.amount;
+      const earningsWeek  = state.earningsWeek  + action.amount;
+      const earningsTotal = state.earningsTotal + action.amount;
+      const weeklyJobsDone = state.weeklyJobsDone + 1;
+      return { ...state, earningsToday, earningsWeek, earningsTotal, weeklyJobsDone };
+    }
+
+    case 'SET_GOALS':
+      return { ...state, weeklyEarningGoal: action.earningGoal, weeklyJobsGoal: action.jobsGoal };
 
     case 'SHOW_TOAST':
       return { ...state, pendingToast: action.toast };
@@ -103,41 +135,125 @@ function reducer(state, action) {
     case 'DISMISS_TOAST':
       return { ...state, pendingToast: null };
 
-    case 'UNLOCK_BADGE':
-      if (state.badges[action.key]?.unlocked) return state;
-      return {
-        ...state,
-        badges: { ...state.badges, [action.key]: { unlocked: true } },
-        pendingToast: {
-          icon: BADGE_DEFS[action.key]?.icon || '🏆',
-          title: 'Badge Unlocked!',
-          message: BADGE_DEFS[action.key]?.label || 'Achievement',
-        },
-      };
-
     default:
       return state;
   }
 }
 
-const UserContext = createContext(null);
-
 export function UserProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, INITIAL);
+  const { user } = useAuth();
+  const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
+  const syncTimer = useRef(null);
+
+  useEffect(() => {
+    if (!user) return;
+    loadProfile();
+  }, [user]);
+
+  const loadProfile = async () => {
+    const cacheKey = `profile_${user.id}`;
+
+    // 1. Show cached profile instantly
+    const cached = await cacheGet(cacheKey);
+    if (cached) dispatch({ type: 'LOAD_PROFILE', profile: cached });
+
+    // 2. Fetch fresh from Supabase
+    const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('badges').select('*').eq('user_id', user.id),
+      supabase.from('user_challenges').select('*').eq('user_id', user.id),
+    ]);
+
+    if (!profile) return;
+    const profileState = dbToState(profile, badges || [], challenges || []);
+    dispatch({ type: 'LOAD_PROFILE', profile: profileState });
+    cacheSet(cacheKey, profileState);
+  };
+
+  // Debounced sync to Supabase so rapid XP taps don't flood the DB
+  const scheduleSyncProfile = (patch) => {
+    if (!user) return;
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      supabase.from('profiles').update(patch).eq('id', user.id)
+        .then(({ error }) => { if (error) console.warn('Profile sync error:', error.message); });
+    }, SYNC_DEBOUNCE_MS);
+  };
+
+  const addXP = (amount) => {
+    dispatch({ type: 'ADD_XP', amount });
+    scheduleSyncProfile({ xp: state.xp + amount });
+  };
+
+  const updateChallenge = (id, delta) => {
+    dispatch({ type: 'UPDATE_CHALLENGE', id, delta });
+    if (!user) return;
+    supabase.from('user_challenges')
+      .upsert({ user_id: user.id, challenge_id: id, progress: (state.challenges.find(c => c.id === id)?.progress || 0) + delta, target: state.challenges.find(c => c.id === id)?.target || 1 }, { onConflict: 'user_id,challenge_id' })
+      .then(({ error }) => { if (error) console.warn('Challenge sync error:', error.message); });
+  };
+
+  const unlockBadge = (key) => {
+    if (state.badges[key]?.unlocked) return;
+    dispatch({ type: 'UNLOCK_BADGE', key });
+    if (!user) return;
+    supabase.from('badges')
+      .upsert({ user_id: user.id, badge_key: key, unlocked: true, unlocked_at: new Date().toISOString() }, { onConflict: 'user_id,badge_key' })
+      .then(({ error }) => { if (error) console.warn('Badge sync error:', error.message); });
+  };
+
+  const recordApply = (amount) => {
+    dispatch({ type: 'RECORD_APPLY', amount });
+    scheduleSyncProfile({
+      earnings_today: state.earningsToday + amount,
+      earnings_week:  state.earningsWeek  + amount,
+      earnings_total: state.earningsTotal + amount,
+      weekly_jobs_done: state.weeklyJobsDone + 1,
+    });
+  };
+
+  const setRole = (role) => {
+    dispatch({ type: 'SET_ROLE', role });
+    scheduleSyncProfile({ role });
+  };
+
+  const setGoals = (earningGoal, jobsGoal) => {
+    dispatch({ type: 'SET_GOALS', earningGoal, jobsGoal });
+    scheduleSyncProfile({ weekly_earning_goal: earningGoal, weekly_jobs_goal: jobsGoal });
+  };
+
+  const refreshProfile = async () => {
+    if (!user) return;
+    const cacheKey = `profile_${user.id}`;
+    const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('badges').select('*').eq('user_id', user.id),
+      supabase.from('user_challenges').select('*').eq('user_id', user.id),
+    ]);
+    if (!profile) return;
+    const profileState = dbToState(profile, badges || [], challenges || []);
+    dispatch({ type: 'LOAD_PROFILE', profile: profileState });
+    cacheSet(cacheKey, profileState);
+  };
+
+  const showToast  = (toast) => dispatch({ type: 'SHOW_TOAST',   toast });
+  const dismissToast = ()    => dispatch({ type: 'DISMISS_TOAST' });
+
   const levelInfo = getLevelInfo(state.xp);
 
   return (
     <UserContext.Provider value={{
       ...state,
       levelInfo,
-      setRole:          (role)                  => dispatch({ type: 'SET_ROLE', role }),
-      addXP:            (amount)                => dispatch({ type: 'ADD_XP', amount }),
-      updateChallenge:  (id, delta)             => dispatch({ type: 'UPDATE_CHALLENGE', id, delta }),
-      setGoals:         (earningGoal, jobsGoal) => dispatch({ type: 'SET_GOALS', earningGoal, jobsGoal }),
-      recordApply:      (amount)                => dispatch({ type: 'RECORD_APPLY', amount }),
-      showToast:        (toast)                 => dispatch({ type: 'SHOW_TOAST', toast }),
-      dismissToast:     ()                      => dispatch({ type: 'DISMISS_TOAST' }),
-      unlockBadge:      (key)                   => dispatch({ type: 'UNLOCK_BADGE', key }),
+      addXP,
+      updateChallenge,
+      unlockBadge,
+      recordApply,
+      setRole,
+      setGoals,
+      showToast,
+      dismissToast,
+      refreshProfile,
     }}>
       {children}
     </UserContext.Provider>

@@ -1,12 +1,104 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+import { cacheGet, cacheSet } from '../lib/cache';
+import { useAuth } from './AuthContext';
+import { useUser } from './UserContext';
 import { MOCK_JOBS } from '../data/mockData';
-
-// TODO: persist with AsyncStorage
 
 const JobsContext = createContext(null);
 
+const JOBS_CACHE     = 'jobs_v1';
+const BOOKINGS_CACHE = 'bookings_v1';
+
+// ─── Transformers ────────────────────────────────────────────────────────────
+
+function transformJob(dbJob) {
+  return {
+    id: dbJob.id,
+    posterId: dbJob.poster_id,
+    title: dbJob.title,
+    category: dbJob.category,
+    pay: Number(dbJob.pay),
+    payType: dbJob.pay_type,
+    location: dbJob.location,
+    description: dbJob.description,
+    urgent: dbJob.urgent,
+    estimatedHours: Number(dbJob.estimated_hours),
+    status: dbJob.status,
+    postedAt: dbJob.created_at
+      ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : 'Recently',
+    poster: {
+      name: dbJob.profiles?.name || 'Anonymous',
+      avatarInitial: dbJob.profiles?.avatar_initial || 'A',
+      rating: Number(dbJob.profiles?.rating) || 5.0,
+      reviewCount: dbJob.profiles?.review_count || 0,
+      verified: dbJob.profiles?.verified || false,
+    },
+    slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken })),
+    requirements: (dbJob.job_requirements || [])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(r => r.requirement),
+    reviews: (dbJob.reviews || []).map(r => ({
+      id: r.id, author: r.author, rating: Number(r.rating), text: r.text, date: r.date,
+    })),
+  };
+}
+
+function transformBooking(b) {
+  return {
+    id: b.id,
+    jobId: b.job_id,
+    slotId: b.slot_id,
+    slotLabel: b.slot_label,
+    counterOffer: b.counter_offer ? Number(b.counter_offer) : null,
+    status: b.status || 'pending',
+    paymentMethod: b.payment_method,
+    earnerRating: b.earner_rating ? Number(b.earner_rating) : null,
+    reviewText: b.review_text,
+    completedAt: b.completed_at,
+    earner: b.earner ? {
+      id: b.earner.id,
+      name: b.earner.name,
+      avatarInitial: b.earner.avatar_initial,
+      rating: Number(b.earner.rating),
+      reviewCount: b.earner.review_count,
+    } : null,
+    job: b.job ? {
+      id: b.job.id,
+      title: b.job.title,
+      pay: Number(b.job.pay),
+      payType: b.job.pay_type,
+    } : null,
+  };
+}
+
+// ─── Reducer ─────────────────────────────────────────────────────────────────
+
 function reducer(state, action) {
   switch (action.type) {
+    case 'SET_JOBS':
+      return { ...state, jobs: action.jobs };
+
+    case 'SET_BOOKINGS':
+      return { ...state, bookings: action.bookings };
+
+    case 'SET_POSTER_BOOKINGS':
+      return { ...state, posterBookings: action.bookings };
+
+    case 'SET_POSTED_IDS':
+      return { ...state, myPostedIds: action.ids };
+
+    case 'UPDATE_BOOKING_STATUS': {
+      const updateList = list =>
+        list.map(b => b.id === action.id ? { ...b, ...action.patch } : b);
+      return {
+        ...state,
+        bookings:       updateList(state.bookings),
+        posterBookings: updateList(state.posterBookings),
+      };
+    }
+
     case 'BOOK_JOB':
       return {
         ...state,
@@ -14,74 +106,416 @@ function reducer(state, action) {
           if (j.id !== action.jobId) return j;
           return {
             ...j,
-            slots: j.slots.map(s =>
-              s.id === action.slotId ? { ...s, taken: true } : s
-            ),
+            slots: j.slots.map(s => s.id === action.slotId ? { ...s, taken: true } : s),
           };
         }),
         bookings: [...state.bookings, {
+          id: action.tempId,
           jobId: action.jobId,
           slotId: action.slotId,
           slotLabel: action.slotLabel || null,
           counterOffer: action.counterOffer || null,
+          status: 'pending',
         }],
       };
 
-    case 'ADD_JOB': {
-      const newJob = {
-        ...action.job,
-        id: String(Date.now()),
-        postedAt: 'Just now',
-        status: 'open',
-        reviews: [],
-        poster: {
-          name: 'You',
-          avatarInitial: 'Y',
-          rating: 4.8,
-          reviewCount: 9,
-          verified: true,
-        },
-      };
+    case 'ADD_JOB':
       return {
         ...state,
-        jobs: [newJob, ...state.jobs],
-        myPostedIds: [...state.myPostedIds, newJob.id],
+        jobs: [{ ...action.job, poster: action.poster }, ...state.jobs],
+        myPostedIds: [...state.myPostedIds, action.job.id],
       };
-    }
+
+    case 'UPDATE_JOB':
+      return {
+        ...state,
+        jobs: state.jobs.map(j => j.id === action.jobId ? { ...j, ...action.patch } : j),
+      };
+
+    case 'DELETE_JOB':
+      return {
+        ...state,
+        jobs: state.jobs.filter(j => j.id !== action.jobId),
+        myPostedIds: state.myPostedIds.filter(id => id !== action.jobId),
+      };
 
     default:
       return state;
   }
 }
 
+// ─── Provider ────────────────────────────────────────────────────────────────
+
 export function JobsProvider({ children }) {
+  const { user } = useAuth();
+  const { showToast } = useUser();
+
   const [state, dispatch] = useReducer(reducer, {
     jobs: MOCK_JOBS,
     bookings: [],
+    posterBookings: [],
     myPostedIds: [],
   });
 
-  const bookJob = (jobId, slotId, slotLabel, counterOffer) =>
-    dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer });
+  const myPostedIdsRef = useRef([]);
+  myPostedIdsRef.current = state.myPostedIds;
 
-  const addJob = (jobData) =>
-    dispatch({ type: 'ADD_JOB', job: jobData });
+  // ── Initial data load ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    loadFromCacheThenFetch();
+    loadBookings();
+    loadPosterBookings();
+    const cleanup = setupRealtime();
+    return cleanup;
+  }, [user?.id]);
 
-  const isBooked = (jobId) =>
-    state.bookings.some(b => b.jobId === jobId);
+  const loadFromCacheThenFetch = async () => {
+    const cached = await cacheGet(JOBS_CACHE);
+    if (cached?.length) dispatch({ type: 'SET_JOBS', jobs: cached });
+    fetchJobs();
+  };
 
-  const bookedJobIds = state.bookings.map(b => b.jobId);
-  const bookedJobs   = state.jobs.filter(j => bookedJobIds.includes(j.id));
-  const postedJobs   = state.jobs.filter(j => state.myPostedIds.includes(j.id));
+  const fetchJobs = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select(`
+        *,
+        profiles!jobs_poster_id_fkey(name, avatar_initial, rating, review_count, verified),
+        job_slots(*),
+        job_requirements(*),
+        reviews(*)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return;
+    const transformed = data.map(transformJob);
+    const realIds = new Set(transformed.map(j => j.id));
+    const merged = [...transformed, ...MOCK_JOBS.filter(j => !realIds.has(j.id))];
+    dispatch({ type: 'SET_JOBS', jobs: merged });
+
+    // Populate myPostedIds from DB
+    if (user) {
+      const myIds = data.filter(j => j.poster_id === user.id && j.status !== 'cancelled').map(j => j.id);
+      dispatch({ type: 'SET_POSTED_IDS', ids: myIds });
+    }
+
+    cacheSet(JOBS_CACHE, merged);
+  }, [user?.id]);
+
+  const loadBookings = async () => {
+    if (!user) return;
+    const cached = await cacheGet(BOOKINGS_CACHE);
+    if (cached?.length) dispatch({ type: 'SET_BOOKINGS', bookings: cached });
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('earner_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return;
+    const bookings = data.map(transformBooking);
+    dispatch({ type: 'SET_BOOKINGS', bookings });
+    cacheSet(BOOKINGS_CACHE, bookings);
+  };
+
+  const loadPosterBookings = useCallback(async () => {
+    if (!user) return;
+    // Get IDs of jobs posted by this user
+    const { data: myJobs } = await supabase
+      .from('jobs')
+      .select('id')
+      .eq('poster_id', user.id);
+
+    if (!myJobs?.length) return;
+    const jobIds = myJobs.map(j => j.id);
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, rating, review_count),
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
+      `)
+      .in('job_id', jobIds)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return;
+    dispatch({ type: 'SET_POSTER_BOOKINGS', bookings: data.map(transformBooking) });
+  }, [user?.id]);
+
+  // ── Realtime subscriptions ─────────────────────────────────────────────────
+  const setupRealtime = () => {
+    if (!user) return () => {};
+
+    const channel = supabase.channel(`bookings-user-${user.id}`)
+      // Earner: watch for status changes on my bookings
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'bookings',
+        filter: `earner_id=eq.${user.id}`,
+      }, (payload) => {
+        const b = payload.new;
+        dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: transformBooking(b) });
+        if (b.status === 'confirmed') {
+          showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
+        }
+        if (b.status === 'verified') {
+          const stars = '⭐'.repeat(Math.round(b.earner_rating || 5));
+          showToast({ icon: '💚', title: 'Job Verified!', message: `You earned ${stars} — paid via ${b.payment_method || 'cash'}!` });
+        }
+        if (b.status === 'declined') {
+          showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
+        }
+      })
+      .subscribe();
+
+    // Poster: watch for updates to bookings on my jobs (new bookings + earner completions)
+    const posterChannel = supabase.channel(`poster-bookings-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'bookings',
+      }, (payload) => {
+        // Refresh poster bookings on any change — simple and reliable
+        loadPosterBookings();
+        if (payload.eventType === 'INSERT') {
+          showToast({ icon: '🔔', title: 'New Booking Request!', message: 'Someone wants to book your gig!' });
+        }
+        if (payload.new?.status === 'completed') {
+          showToast({ icon: '⚡', title: 'Job Marked Complete!', message: 'An earner says the job is done — verify and rate them!' });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(posterChannel);
+    };
+  };
+
+  // ── Earner actions ─────────────────────────────────────────────────────────
+
+  const bookJob = async (jobId, slotId, slotLabel, counterOffer) => {
+    const tempId = `temp-${Date.now()}`;
+    dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, tempId });
+    if (!user) return;
+
+    const { data, error } = await supabase.from('bookings').insert({
+      job_id: jobId,
+      earner_id: user.id,
+      slot_id: slotId || null,
+      slot_label: slotLabel || null,
+      counter_offer: counterOffer || null,
+      status: 'pending',
+    }).select().single();
+
+    if (error) { console.warn('Booking sync error:', error.message); return; }
+
+    if (slotId) {
+      supabase.from('job_slots').update({ taken: true }).eq('id', slotId);
+    }
+
+    // Replace temp booking with real one
+    await loadBookings();
+  };
+
+  const markJobComplete = async (bookingId) => {
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'completed' } });
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', bookingId);
+    if (error) console.warn('Mark complete error:', error.message);
+  };
+
+  // ── Poster actions ─────────────────────────────────────────────────────────
+
+  const acceptBooking = async (bookingId) => {
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'confirmed' } });
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'confirmed' })
+      .eq('id', bookingId);
+    if (error) console.warn('Accept error:', error.message);
+  };
+
+  const declineBooking = async (bookingId) => {
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'declined' } });
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'declined' })
+      .eq('id', bookingId);
+    if (error) console.warn('Decline error:', error.message);
+  };
+
+  const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod }) => {
+    const booking = state.posterBookings.find(b => b.id === bookingId);
+    const patch = {
+      status: 'verified',
+      earner_rating: rating,
+      review_text: reviewText || null,
+      payment_method: paymentMethod,
+    };
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { ...patch, earnerRating: rating, paymentMethod } });
+
+    const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
+    if (error) { console.warn('Verify error:', error.message); return; }
+
+    // Insert review
+    if (reviewText && booking?.earner?.id) {
+      await supabase.from('reviews').insert({
+        job_id: booking.jobId,
+        reviewer_id: user.id,
+        author: 'Poster',
+        rating,
+        text: reviewText,
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      });
+    }
+
+    // Update earner's rolling rating
+    if (booking?.earner?.id) {
+      const { data: earnerProfile } = await supabase
+        .from('profiles')
+        .select('rating, review_count')
+        .eq('id', booking.earner.id)
+        .single();
+
+      if (earnerProfile) {
+        const newCount  = (earnerProfile.review_count || 0) + 1;
+        const newRating = (((earnerProfile.rating || 5) * (earnerProfile.review_count || 0)) + rating) / newCount;
+        await supabase.from('profiles').update({
+          rating: parseFloat(newRating.toFixed(1)),
+          review_count: newCount,
+        }).eq('id', booking.earner.id);
+      }
+    }
+  };
+
+  const updateJob = async (jobId, jobData) => {
+    dispatch({ type: 'UPDATE_JOB', jobId, patch: jobData });
+    const dbPatch = {
+      title: jobData.title, category: jobData.category,
+      pay: jobData.pay, pay_type: jobData.payType,
+      location: jobData.location, description: jobData.description,
+      urgent: jobData.urgent,
+    };
+    const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
+    if (error) { console.warn('Update job error:', error.message); return; }
+
+    if (jobData.slots) {
+      await supabase.from('job_slots').delete().eq('job_id', jobId);
+      if (jobData.slots.length) {
+        await supabase.from('job_slots').insert(
+          jobData.slots.map(s => ({ job_id: jobId, label: s.label, taken: s.taken || false }))
+        );
+      }
+    }
+    if (jobData.requirements) {
+      await supabase.from('job_requirements').delete().eq('job_id', jobId);
+      if (jobData.requirements.length) {
+        await supabase.from('job_requirements').insert(
+          jobData.requirements.map((r, i) => ({ job_id: jobId, requirement: r, sort_order: i }))
+        );
+      }
+    }
+    cacheSet(JOBS_CACHE, null);
+  };
+
+  const deleteJob = async (jobId) => {
+    dispatch({ type: 'DELETE_JOB', jobId });
+    await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', jobId);
+    cacheSet(JOBS_CACHE, null);
+  };
+
+  const addJob = async (jobData) => {
+    if (!user) return;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, avatar_initial, rating, review_count, verified')
+      .eq('id', user.id)
+      .single();
+
+    const poster = {
+      name: profile?.name || 'You',
+      avatarInitial: profile?.avatar_initial || 'Y',
+      rating: Number(profile?.rating) || 5.0,
+      reviewCount: profile?.review_count || 0,
+      verified: profile?.verified || false,
+    };
+
+    const { data: newJob, error } = await supabase
+      .from('jobs')
+      .insert({
+        title: jobData.title, category: jobData.category,
+        pay: jobData.pay, pay_type: jobData.payType,
+        location: jobData.location, description: jobData.description,
+        urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
+        poster_id: user.id,
+      })
+      .select().single();
+
+    if (error || !newJob) { console.warn('Job insert error:', error?.message); return; }
+
+    if (jobData.slots?.length) {
+      await supabase.from('job_slots').insert(
+        jobData.slots.map(s => ({ job_id: newJob.id, label: s.label, taken: false }))
+      );
+    }
+    if (jobData.requirements?.length) {
+      await supabase.from('job_requirements').insert(
+        jobData.requirements.map((r, i) => ({ job_id: newJob.id, requirement: r, sort_order: i }))
+      );
+    }
+
+    dispatch({
+      type: 'ADD_JOB',
+      job: {
+        ...jobData,
+        id: newJob.id,
+        postedAt: 'Just now',
+        status: 'open',
+        reviews: [],
+        slots: jobData.slots?.length
+          ? jobData.slots
+          : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }],
+      },
+      poster,
+    });
+    cacheSet(JOBS_CACHE, null);
+  };
+
+  // ── Derived state ──────────────────────────────────────────────────────────
+  const isBooked       = (jobId) => state.bookings.some(b => b.jobId === jobId);
+  const bookedJobIds   = state.bookings.map(b => b.jobId);
+  const bookedJobs     = state.jobs.filter(j => bookedJobIds.includes(j.id));
+  const postedJobs     = state.jobs.filter(j => state.myPostedIds.includes(j.id));
+
+  // Badge counts for tab bar
+  const earnBadgeCount    = state.bookings.filter(b => b.status === 'confirmed' || b.status === 'verified').length;
+  const profileBadgeCount = state.posterBookings.filter(b => b.status === 'pending' || b.status === 'completed').length;
 
   return (
     <JobsContext.Provider value={{
       ...state,
       bookJob,
       addJob,
+      updateJob,
+      deleteJob,
       isBooked,
       bookedJobs,
       postedJobs,
+      acceptBooking,
+      declineBooking,
+      markJobComplete,
+      verifyAndRate,
+      refreshJobs: fetchJobs,
+      refreshPosterBookings: loadPosterBookings,
+      earnBadgeCount,
+      profileBadgeCount,
     }}>
       {children}
     </JobsContext.Provider>
