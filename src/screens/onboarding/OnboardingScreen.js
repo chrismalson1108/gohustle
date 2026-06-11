@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients } from '../../theme';
+import LocationPicker from '../../components/LocationPicker';
 
 const { width } = Dimensions.get('window');
 
@@ -26,18 +27,6 @@ const SKILL_OPTIONS = [
 
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
-const US_CITIES = [
-  'Remote / Online', 'New York, NY', 'Los Angeles, CA', 'Chicago, IL',
-  'Houston, TX', 'Phoenix, AZ', 'Philadelphia, PA', 'San Antonio, TX',
-  'San Diego, CA', 'Dallas, TX', 'San Jose, CA', 'Austin, TX',
-  'Jacksonville, FL', 'Fort Worth, TX', 'Columbus, OH', 'Charlotte, NC',
-  'Indianapolis, IN', 'San Francisco, CA', 'Seattle, WA', 'Denver, CO',
-  'Nashville, TN', 'Oklahoma City, OK', 'Portland, OR', 'Las Vegas, NV',
-  'Memphis, TN', 'Louisville, KY', 'Baltimore, MD', 'Milwaukee, WI',
-  'Tucson, AZ', 'Fresno, CA', 'Sacramento, CA', 'Atlanta, GA',
-  'Miami, FL', 'Boston, MA', 'Minneapolis, MN', 'Pittsburgh, PA',
-  'Raleigh, NC', 'St. Louis, MO', 'Tampa, FL', 'Orlando, FL',
-];
 
 export default function OnboardingScreen({ onComplete }) {
   const { user } = useAuth();
@@ -52,18 +41,12 @@ export default function OnboardingScreen({ onComplete }) {
     radiusMiles: 25,
     bio: '',
   });
-  const [citySearch, setCitySearch] = useState('');
-  const [showCities, setShowCities] = useState(false);
   const [usernameError, setUsernameError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
-  const filteredCities = citySearch.length > 0
-    ? US_CITIES.filter(c => c.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 6)
-    : [];
 
   const toggleSkill = (skill) => {
     set('skills', form.skills.includes(skill)
@@ -197,36 +180,12 @@ export default function OnboardingScreen({ onComplete }) {
       <Text style={styles.emoji}>📍</Text>
       <Text style={styles.stepTitle}>Where are you based?</Text>
       <Text style={styles.stepSub}>Used to surface nearby gigs for you.</Text>
-      <View style={{ position: 'relative', zIndex: 20 }}>
-        <TextInput
-          style={styles.input}
-          placeholder="Search your city..."
-          placeholderTextColor={colors.textMuted}
-          value={citySearch || form.city}
-          onChangeText={v => {
-            setCitySearch(v);
-            set('city', v);
-            setShowCities(true);
-          }}
-          onFocus={() => setShowCities(true)}
+      <View style={{ width: '100%', zIndex: 20 }}>
+        <LocationPicker
+          value={form.city}
+          onChange={v => set('city', v)}
+          placeholder="Search any city, or tap 🎯"
         />
-        {showCities && filteredCities.length > 0 && (
-          <View style={styles.dropdown}>
-            {filteredCities.map(c => (
-              <TouchableOpacity
-                key={c}
-                style={styles.dropdownItem}
-                onPress={() => {
-                  set('city', c);
-                  setCitySearch(c);
-                  setShowCities(false);
-                }}
-              >
-                <Text style={styles.dropdownText}>{c}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
       </View>
       <TouchableOpacity
         style={[styles.nextBtn, !form.city && styles.nextBtnDisabled]}
@@ -418,14 +377,6 @@ const styles = StyleSheet.create({
   radiusBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   radiusBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
   radiusBtnTextActive: { color: '#fff' },
-  dropdown: {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-    backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8,
-    elevation: 8,
-  },
-  dropdownItem: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-  dropdownText: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
   finishBtn: { borderRadius: 18, paddingVertical: 20, paddingHorizontal: 48, alignItems: 'center', marginTop: 12 },
   finishBtnText: { color: '#fff', fontSize: 18, fontWeight: '900' },
 });

@@ -13,6 +13,7 @@ import AchievementToast from './src/components/AchievementToast';
 
 import HomeScreen           from './src/screens/HomeScreen';
 import EarnScreen           from './src/screens/EarnScreen';
+import GigsScreen           from './src/screens/GigsScreen';
 import PostJobScreen        from './src/screens/PostJobScreen';
 import ProfileScreen        from './src/screens/ProfileScreen';
 import JobDetailScreen      from './src/screens/JobDetailScreen';
@@ -31,6 +32,7 @@ const DETAIL_OPTS = {
   headerShown: true, title: '',
   headerTransparent: false, headerTintColor: colors.primary,
   headerShadowVisible: false, headerStyle: { backgroundColor: '#fff' },
+  headerBackTitleVisible: false,
 };
 
 const MANAGE_OPTS = {
@@ -55,6 +57,17 @@ function EarnStack() {
   );
 }
 
+function GigsStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="GigsMain"  component={GigsScreen} />
+      <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
+    </Stack.Navigator>
+  );
+}
+
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -69,7 +82,7 @@ function ProfileStack() {
 const TAB_ICONS = {
   HomeTab:    ['home',          'home-outline'],
   EarnTab:    ['flash',         'flash-outline'],
-  PostTab:    ['add-circle',    'add-circle-outline'],
+  GigsTab:    ['briefcase',     'briefcase-outline'],
   ProfileTab: ['person-circle', 'person-circle-outline'],
 };
 
@@ -96,15 +109,15 @@ function AppNavigator() {
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
           tabBarBadge:
-            route.name === 'EarnTab'    && earnBadgeCount    > 0 ? earnBadgeCount    :
-            route.name === 'ProfileTab' && profileBadgeCount > 0 ? profileBadgeCount :
+            route.name === 'EarnTab'  && earnBadgeCount    > 0 ? earnBadgeCount    :
+            route.name === 'GigsTab'  && profileBadgeCount > 0 ? profileBadgeCount :
             undefined,
           tabBarBadgeStyle: { backgroundColor: colors.urgent, fontSize: 10, fontWeight: '800' },
         })}
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
         <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'Earn' }} />
-        <Tab.Screen name="PostTab"    component={PostJobScreen} options={{ title: 'Post' }} />
+        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Gigs' }} />
         <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
       </Tab.Navigator>
     </NavigationContainer>

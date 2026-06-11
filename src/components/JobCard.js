@@ -5,7 +5,15 @@ import { CATEGORY_COLORS } from '../data/mockData';
 import { useHaptic } from '../hooks/useHaptic';
 import RatingStars from './RatingStars';
 
-export default function JobCard({ job, onPress }) {
+const BOOKING_PILL = {
+  pending:   { label: '⏳ Applied — Pending',        bg: '#FFF7ED', text: '#D97706' },
+  confirmed: { label: '✅ Confirmed — In Progress',  bg: '#ECFDF5', text: '#059669' },
+  completed: { label: '🔄 Awaiting Verification',    bg: '#EFF6FF', text: '#2563EB' },
+  verified:  { label: '💚 Completed',                bg: '#F0FDF4', text: '#16A34A' },
+  declined:  { label: '❌ Declined',                 bg: '#FEF2F2', text: '#DC2626' },
+};
+
+export default function JobCard({ job, onPress, bookingStatus }) {
   const haptic = useHaptic();
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
@@ -20,6 +28,13 @@ export default function JobCard({ job, onPress }) {
     >
       <View style={[styles.accent, { backgroundColor: catColor }]} />
       <View style={styles.body}>
+        {bookingStatus && BOOKING_PILL[bookingStatus] && (
+          <View style={[styles.bookingPill, { backgroundColor: BOOKING_PILL[bookingStatus].bg }]}>
+            <Text style={[styles.bookingPillText, { color: BOOKING_PILL[bookingStatus].text }]}>
+              {BOOKING_PILL[bookingStatus].label}
+            </Text>
+          </View>
+        )}
         {job.urgent && (
           <View style={styles.urgentRow}>
             <View style={styles.urgentBadge}>
@@ -67,6 +82,11 @@ const styles = StyleSheet.create({
   },
   accent: { width: 5 },
   body: { flex: 1, padding: 16 },
+  bookingPill: {
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+    alignSelf: 'stretch', marginBottom: 10, alignItems: 'center',
+  },
+  bookingPillText: { fontSize: 12, fontWeight: '800' },
   urgentRow: { marginBottom: 8 },
   urgentBadge: {
     backgroundColor: colors.urgentLight, borderRadius: 6,

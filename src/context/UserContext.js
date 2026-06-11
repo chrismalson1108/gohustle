@@ -48,9 +48,9 @@ const DEFAULT_STATE = {
     speedDemon:  { unlocked: false },
   },
   challenges: [
-    { id: 'c1', icon: '🎯', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50,  expiresLabel: 'Ends tonight' },
-    { id: 'c2', icon: '💵', title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150, expiresLabel: '3 days left' },
-    { id: 'c3', icon: '💻', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75,  expiresLabel: '5 days left' },
+    { id: 'c1', icon: '🎯', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50  },
+    { id: 'c2', icon: '💵', title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150 },
+    { id: 'c3', icon: '💻', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75  },
   ],
   pendingToast: null,
 };

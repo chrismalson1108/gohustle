@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,8 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const listRef = useRef(null);
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
 
   useEffect(() => {
     if (!visible || !bookingId) { setMessages([]); return; }
@@ -33,7 +35,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       .order('created_at', { ascending: true });
     if (data) setMessages(data);
     setLoading(false);
-    scrollToBottom();
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
   };
 
   const setupRealtime = () => {
@@ -44,35 +46,58 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
         table: 'messages',
         filter: `booking_id=eq.${bookingId}`,
       }, async (payload) => {
+        // Skip own messages — already added optimistically
+        if (payload.new.sender_id === userIdRef.current) return;
         const { data: sender } = await supabase
           .from('profiles')
           .select('id, name, avatar_initial')
           .eq('id', payload.new.sender_id)
           .single();
         setMessages(prev => [...prev, { ...payload.new, sender }]);
-        scrollToBottom();
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
   };
 
-  const scrollToBottom = () => {
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-  };
-
   const sendMessage = async () => {
     const text = inputText.trim();
     if (!text || !bookingId || !user) return;
-    setSending(true);
-    setInputText('');
-    haptic.light();
-    const { error } = await supabase.from('messages').insert({
+
+    // Optimistic insert
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
       booking_id: bookingId,
       sender_id: user.id,
       text,
-    });
-    if (error) console.warn('Send error:', error.message);
+      created_at: new Date().toISOString(),
+      sender: { id: user.id },
+      _pending: true,
+    };
+    setMessages(prev => [...prev, optimistic]);
+    setInputText('');
+    haptic.light();
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ booking_id: bookingId, sender_id: user.id, text })
+      .select('*, sender:profiles!sender_id(id, name, avatar_initial)')
+      .single();
     setSending(false);
+
+    if (error) {
+      // Remove optimistic message and restore input
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setInputText(text);
+      const detail = error.message || error.code || 'Unknown error';
+      Alert.alert('Failed to send', `Your message could not be sent.\n\n${detail}\n\nPlease try again.`);
+    } else {
+      // Replace optimistic with confirmed message
+      setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+    }
   };
 
   const renderMessage = ({ item }) => {
@@ -87,9 +112,11 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
             </Text>
           </View>
         )}
-        <View style={[styles.msgBubble, isMine && styles.msgBubbleMine]}>
+        <View style={[styles.msgBubble, isMine && styles.msgBubbleMine, item._pending && styles.msgBubblePending]}>
           <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.text}</Text>
-          <Text style={[styles.msgTime, isMine && styles.msgTimeMine]}>{time}</Text>
+          <Text style={[styles.msgTime, isMine && styles.msgTimeMine]}>
+            {item._pending ? 'Sending…' : time}
+          </Text>
         </View>
       </View>
     );
@@ -102,17 +129,12 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={styles.sheet}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.handle} />
             <View style={styles.headerContent}>
               <View>
-                <Text style={styles.headerTitle}>
-                  {otherPerson?.name || 'Chat'}
-                </Text>
-                {jobTitle && (
-                  <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>
-                )}
+                <Text style={styles.headerTitle}>{otherPerson?.name || 'Chat'}</Text>
+                {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Text style={styles.closeBtnText}>✕</Text>
@@ -120,7 +142,6 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
             </View>
           </View>
 
-          {/* Messages */}
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={colors.primary} />
@@ -132,7 +153,6 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
               keyExtractor={m => m.id}
               renderItem={renderMessage}
               contentContainerStyle={styles.msgList}
-              onContentSizeChange={scrollToBottom}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
                   <Text style={styles.emptyChatIcon}>💬</Text>
@@ -144,7 +164,6 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
             />
           )}
 
-          {/* Input */}
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
@@ -155,6 +174,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
               multiline
               maxLength={500}
               returnKeyType="send"
+              blurOnSubmit={false}
               onSubmitEditing={sendMessage}
             />
             <TouchableOpacity
@@ -205,9 +225,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background, borderRadius: 18, borderBottomLeftRadius: 4,
     paddingHorizontal: 14, paddingVertical: 9, maxWidth: '75%',
   },
-  msgBubbleMine: {
-    backgroundColor: colors.primary, borderBottomLeftRadius: 18, borderBottomRightRadius: 4,
-  },
+  msgBubbleMine: { backgroundColor: colors.primary, borderBottomLeftRadius: 18, borderBottomRightRadius: 4 },
+  msgBubblePending: { opacity: 0.6 },
   msgText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
   msgTextMine: { color: '#fff' },
   msgTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end' },

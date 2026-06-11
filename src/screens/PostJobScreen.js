@@ -59,7 +59,7 @@ export default function PostJobScreen({ navigation }) {
     setForm(INITIAL);
     setShowCustomCat(false);
     showToast({ icon: '🚀', title: 'Gig Posted!', message: 'Your gig is live — students can now apply!' });
-    navigation.navigate('HomeTab');
+    navigation.navigate('GigsMain');
   };
 
   return (

@@ -17,14 +17,14 @@ const CATS = CATEGORIES.filter(c => c.id !== 'all');
 
 export default function EditJobScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, updateJob, deleteJob } = useJobs();
+  const { jobs, updateJob, deleteJob, posterBookings, clearAmendment } = useJobs();
   const { showToast } = useUser();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
 
   const job = jobs.find(j => j.id === jobId);
-
   const isKnownCategory = job ? CATS.some(c => c.id === job.category) : false;
+
   const [form, setForm] = useState({
     title: job?.title || '',
     category: isKnownCategory ? job.category : 'other',
@@ -42,6 +42,13 @@ export default function EditJobScreen({ route, navigation }) {
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const effectiveCategory = form.category === 'other' ? form.customCategory : form.category;
 
+  // Lock core terms once any booking is confirmed/in-progress
+  const jobBookings = posterBookings.filter(b => b.jobId === jobId);
+  const lockedBooking = jobBookings.find(b => ['confirmed','completed','verified'].includes(b.status));
+  const isLocked = !!lockedBooking;
+  const amendmentAccepted = isLocked && lockedBooking.amendmentStatus === 'accepted';
+  const canEditCore = !isLocked || amendmentAccepted;
+
   if (!job) return null;
 
   const handleSave = async () => {
@@ -58,14 +65,24 @@ export default function EditJobScreen({ route, navigation }) {
       location: form.location, description: form.description,
       urgent: form.urgent, requirements: reqs, slots: form.slots,
     });
+    if (amendmentAccepted && lockedBooking) {
+      await clearAmendment(lockedBooking.id);
+    }
     showToast({ icon: '✏️', title: 'Gig Updated!', message: 'Your changes are live.' });
     navigation.goBack();
   };
 
   const handleDelete = () => {
+    if (isLocked) {
+      Alert.alert(
+        'Cannot Delete',
+        'Someone is actively working this gig. Complete or decline the booking before deleting.',
+      );
+      return;
+    }
     Alert.alert(
-      'Delete Gig',
-      `Are you sure you want to delete "${job.title}"? This cannot be undone.`,
+      'Delete Gig?',
+      `"${job.title}" will be removed and no one can book it.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -96,6 +113,29 @@ export default function EditJobScreen({ route, navigation }) {
           <Text style={styles.headerTitle}>Edit Gig ✏️</Text>
           <Text style={styles.headerSub}>{job.title}</Text>
         </LinearGradient>
+
+        {isLocked && !amendmentAccepted && (
+          <View style={styles.lockBanner}>
+            <Text style={styles.lockIcon}>🔒</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.lockTitle}>Core Terms Locked</Text>
+              <Text style={styles.lockDesc}>
+                Pay, location, and time slots are locked — an earner has committed to this gig. Use "Request Change" in the Gigs tab to propose an update. Both parties must agree before core terms can change.
+              </Text>
+            </View>
+          </View>
+        )}
+        {amendmentAccepted && (
+          <View style={styles.amendBanner}>
+            <Text style={styles.lockIcon}>✅</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.amendTitle}>Amendment Accepted</Text>
+              <Text style={styles.lockDesc}>
+                The earner approved your proposed change. Edit the terms below and save — this unlock is used once.
+              </Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.form}>
           <Field label="Job Title *">
@@ -129,30 +169,26 @@ export default function EditJobScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
             {showCustomCat && (
-              <TextInput
-                style={[styles.input, { marginTop: 10 }]}
-                placeholder="Type your category name..."
-                placeholderTextColor={colors.textMuted}
-                value={form.customCategory}
-                onChangeText={v => set('customCategory', v)}
-              />
+              <TextInput style={[styles.input, { marginTop: 10 }]} placeholder="Type your category name..."
+                placeholderTextColor={colors.textMuted} value={form.customCategory}
+                onChangeText={v => set('customCategory', v)} />
             )}
           </Field>
 
-          <Field label="Pay *">
-            <View style={styles.payRow}>
+          <Field label={`Pay *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+            <View style={[styles.payRow, !canEditCore && styles.lockedRow]}>
               <View style={styles.payInputWrap}>
                 <Text style={styles.dollar}>$</Text>
                 <TextInput
                   style={styles.payInput} placeholder="0" value={form.pay}
                   onChangeText={v => set('pay', v)} keyboardType="numeric"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={colors.textMuted} editable={canEditCore}
                 />
               </View>
               {['flat', 'hourly'].map(t => (
                 <TouchableOpacity key={t}
-                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive]}
-                  onPress={() => { haptic.selection(); set('payType', t); }}
+                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive, !canEditCore && styles.payTypeBtnLocked]}
+                  onPress={() => { if (!canEditCore) return; haptic.selection(); set('payType', t); }}
                 >
                   <Text style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}>
                     {t === 'flat' ? 'Flat' : '/hr'}
@@ -162,30 +198,40 @@ export default function EditJobScreen({ route, navigation }) {
             </View>
           </Field>
 
-          <Field label="Location *">
-            <LocationPicker value={form.location} onChange={v => set('location', v)} />
+          <Field label={`Location *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+            {canEditCore
+              ? <LocationPicker value={form.location} onChange={v => set('location', v)} />
+              : <View style={[styles.input, styles.lockedInput]}><Text style={styles.lockedValue}>{form.location}</Text></View>
+            }
           </Field>
 
           <Field label="Description *">
-            <TextInput
-              style={[styles.input, styles.textArea]} multiline numberOfLines={4}
+            <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={4}
               textAlignVertical="top" placeholder="Describe the job..."
               placeholderTextColor={colors.textMuted} value={form.description}
-              onChangeText={v => set('description', v)}
-            />
+              onChangeText={v => set('description', v)} />
           </Field>
 
           <Field label="Requirements (one per line)">
-            <TextInput
-              style={[styles.input, styles.textArea]} multiline numberOfLines={3}
+            <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={3}
               textAlignVertical="top" placeholder={'e.g. Must have a car\nExperience required'}
               placeholderTextColor={colors.textMuted} value={form.requirements}
-              onChangeText={v => set('requirements', v)}
-            />
+              onChangeText={v => set('requirements', v)} />
           </Field>
 
-          <Field label="Available Times">
-            <DateTimePicker slots={form.slots} onChange={slots => set('slots', slots)} />
+          <Field label={`Available Times${isLocked && !canEditCore ? '  🔒' : ''}`}>
+            {canEditCore
+              ? <DateTimePicker slots={form.slots} onChange={slots => set('slots', slots)} />
+              : (
+                <View style={styles.lockedSlots}>
+                  {form.slots.map(s => (
+                    <View key={s.id} style={styles.lockedSlotTag}>
+                      <Text style={styles.lockedSlotText}>📅 {s.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              )
+            }
           </Field>
 
           <TouchableOpacity
@@ -227,11 +273,37 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: '#FCA5A5', fontSize: 14, fontWeight: '800' },
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
+  lockBanner: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#FFF7ED', margin: 16, marginBottom: 0,
+    borderRadius: 14, padding: 14,
+    borderWidth: 1.5, borderColor: '#FED7AA',
+  },
+  amendBanner: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#ECFDF5', margin: 16, marginBottom: 0,
+    borderRadius: 14, padding: 14,
+    borderWidth: 1.5, borderColor: '#6EE7B7',
+  },
+  lockIcon: { fontSize: 20, marginRight: 12, marginTop: 1 },
+  lockTitle: { fontSize: 13, fontWeight: '800', color: '#D97706', marginBottom: 3 },
+  amendTitle: { fontSize: 13, fontWeight: '800', color: '#059669', marginBottom: 3 },
+  lockDesc: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
   form: { padding: 20 },
   field: { marginBottom: 22 },
   fieldLabel: { fontSize: 12, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
   input: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border },
   textArea: { minHeight: 96, lineHeight: 22 },
+  lockedInput: { opacity: 0.6 },
+  lockedValue: { fontSize: 15, color: colors.textSecondary },
+  lockedRow: { opacity: 0.6 },
+  lockedSlots: { marginTop: 4 },
+  lockedSlotTag: {
+    backgroundColor: colors.surface, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
+    borderWidth: 1.5, borderColor: colors.border, opacity: 0.7,
+  },
+  lockedSlotText: { fontSize: 13, color: colors.textSecondary },
   catGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   catChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, marginRight: 8, marginBottom: 8 },
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
@@ -244,6 +316,7 @@ const styles = StyleSheet.create({
   payInput: { flex: 1, fontSize: 16, color: colors.textPrimary },
   payTypeBtn: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, marginLeft: 6 },
   payTypeBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  payTypeBtnLocked: { opacity: 0.5 },
   payTypeBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   payTypeBtnTextActive: { color: '#fff' },
   urgentToggle: { borderWidth: 1.5, borderColor: '#FCA5A5', borderRadius: 14, padding: 14, alignItems: 'center', marginBottom: 16, backgroundColor: colors.surface },

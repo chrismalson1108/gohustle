@@ -20,7 +20,8 @@ npx expo install <package>      # Use instead of npm install for Expo packages (
 - **Expo SDK 54**, React Native 0.81.5, React 19.1.0. Expo Go on device must be the SDK 54 build.
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Migrations live in `supabase/` and must be run manually in the Supabase SQL Editor in order: `schema.sql` → `migration_booking_lifecycle.sql` → `migration_messaging.sql` → `migration_onboarding.sql`.
+- Migrations live in `supabase/` and must be run manually in the Supabase SQL Editor in order: `schema.sql` → `migration_booking_lifecycle.sql` → `migration_messaging.sql` → `migration_onboarding.sql` → `migration_role_both.sql` → `migration_mutual_completion.sql` → `migration_fix_lifecycle.sql`.
+- **`migration_fix_lifecycle.sql` is idempotent** — safe to re-run at any time. It consolidates all RLS fixes for the full job lifecycle (messaging, booking accept/decline, mutual completion, poster rating). Run it if messaging fails or any booking action returns a permission error.
 
 ## App Flow
 

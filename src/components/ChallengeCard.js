@@ -16,7 +16,7 @@ export default function ChallengeCard({ challenge }) {
         </View>
         <View style={[styles.tag, done && styles.tagDone]}>
           <Text style={[styles.tagText, done && styles.tagTextDone]}>
-            {done ? '✓ Done' : challenge.expiresLabel}
+            {done ? '✓ Done' : challenge.type === 'daily' ? 'Daily' : 'Weekly'}
           </Text>
         </View>
       </View>

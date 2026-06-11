@@ -13,10 +13,29 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
+import MessageSheet from '../components/MessageSheet';
+
+const STATUS_CONTENT = {
+  pending:   { icon: '⏳', title: 'Application Pending',
+               desc: "The poster hasn't reviewed your booking yet. Hang tight!",
+               bg: '#FFF7ED', color: '#D97706' },
+  confirmed: { icon: '✅', title: "Confirmed — You're In!",
+               desc: 'Accepted! Head to the Earn tab to mark done when finished.',
+               bg: '#ECFDF5', color: '#059669' },
+  completed: { icon: '🔄', title: 'Awaiting Verification',
+               desc: 'You marked done. The poster needs to verify your work.',
+               bg: '#EFF6FF', color: '#2563EB' },
+  verified:  { icon: '💚', title: 'Completed & Verified',
+               desc: 'All done! Go to the Earn tab to rate the poster.',
+               bg: '#F0FDF4', color: '#16A34A' },
+  declined:  { icon: '❌', title: 'Application Declined',
+               desc: "The poster didn't accept your booking.",
+               bg: '#FEF2F2', color: '#DC2626' },
+};
 
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, bookJob, isBooked } = useJobs();
+  const { jobs, bookings, posterBookings, bookJob, isBooked } = useJobs();
   const { addXP, recordApply, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
@@ -24,10 +43,16 @@ export default function JobDetailScreen({ route, navigation }) {
   const job = jobs.find(j => j.id === jobId);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
+  const [msgVisible, setMsgVisible] = useState(false);
   const alreadyBooked = isBooked(jobId);
   const isOwnJob = job?.posterId && user?.id && job.posterId === user.id;
+  const currentBooking = bookings.find(b => b.jobId === jobId);
+  const jobPosterBookings = posterBookings.filter(b => b.jobId === jobId);
 
   if (!job) return null;
+
+  const statusContent = STATUS_CONTENT[currentBooking?.status] || STATUS_CONTENT.pending;
+  const canMessage = !!currentBooking && ['pending','confirmed','completed'].includes(currentBooking.status);
 
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
@@ -159,23 +184,76 @@ export default function JobDetailScreen({ route, navigation }) {
             ))}
           </Section>
         )}
-        <View style={{ height: 110 }} />
+        <View style={{ height: (alreadyBooked || isOwnJob) ? 230 : 130 }} />
       </ScrollView>
 
       <View style={styles.footer}>
-        {isOwnJob ? (
+        {job.status === 'cancelled' ? (
           <View style={styles.ownJobBanner}>
-            <Text style={styles.ownJobText}>📋 This is your gig — you can't book your own posting</Text>
+            <Text style={styles.ownJobText}>🚫 This listing has been removed</Text>
           </View>
+        ) : isOwnJob ? (
+          jobPosterBookings.length > 0 ? (
+            <View>
+              <View style={styles.ownJobStats}>
+                <Text style={styles.ownJobStatTitle}>
+                  {jobPosterBookings.length} application{jobPosterBookings.length !== 1 ? 's' : ''} received
+                </Text>
+                <View style={styles.ownJobChips}>
+                  {jobPosterBookings.filter(b => b.status === 'pending').length > 0 && (
+                    <View style={styles.statChip}>
+                      <Text style={styles.statChipText}>
+                        ⏳ {jobPosterBookings.filter(b => b.status === 'pending').length} pending
+                      </Text>
+                    </View>
+                  )}
+                  {jobPosterBookings.filter(b => b.status === 'confirmed').length > 0 && (
+                    <View style={[styles.statChip, styles.statChipGreen]}>
+                      <Text style={[styles.statChipText, { color: '#059669' }]}>
+                        ✅ {jobPosterBookings.filter(b => b.status === 'confirmed').length} confirmed
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity style={styles.manageGigsBtn} onPress={() => navigation.navigate('GigsTab')}>
+                <Text style={styles.manageGigsBtnText}>Manage Applications in Gigs →</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.ownJobBanner}>
+              <Text style={styles.ownJobText}>📋 Your gig — awaiting applications</Text>
+            </View>
+          )
         ) : alreadyBooked ? (
-          <View style={styles.bookedBtn}>
-            <Text style={styles.bookedText}>✓ Booked! Check your Earn tab</Text>
+          <View>
+            <View style={[styles.statusBanner, { backgroundColor: statusContent.bg }]}>
+              <Text style={styles.statusBannerIcon}>{statusContent.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.statusBannerTitle, { color: statusContent.color }]}>
+                  {statusContent.title}
+                </Text>
+                <Text style={styles.statusBannerDesc}>{statusContent.desc}</Text>
+              </View>
+            </View>
+            {(canMessage || currentBooking?.status === 'verified') && (
+              <View style={styles.statusActions}>
+                {canMessage && (
+                  <TouchableOpacity style={styles.msgActionBtn} onPress={() => setMsgVisible(true)}>
+                    <Text style={styles.msgActionBtnText}>💬 Message Poster</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.earnActionBtn, canMessage && styles.earnActionBtnSmall]}
+                  onPress={() => navigation.navigate('EarnTab')}
+                >
+                  <Text style={styles.earnActionBtnText}>Earn Tab →</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
-          <TouchableOpacity
-            onPress={handleBook}
-            activeOpacity={0.85}
-          >
+          <TouchableOpacity onPress={handleBook} activeOpacity={0.85}>
             <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.bookBtn}>
               <Text style={styles.bookBtnText}>
                 {selectedSlot
@@ -189,6 +267,13 @@ export default function JobDetailScreen({ route, navigation }) {
           </TouchableOpacity>
         )}
       </View>
+      <MessageSheet
+        visible={msgVisible}
+        bookingId={currentBooking?.id}
+        jobTitle={job.title}
+        otherPerson={{ name: job.poster?.name, avatarInitial: job.poster?.avatarInitial }}
+        onClose={() => setMsgVisible(false)}
+      />
     </View>
   );
 }
@@ -283,4 +368,44 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.primary + '40',
   },
   ownJobText: { color: colors.primary, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  // Status-aware footer for earner
+  statusBanner: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    borderRadius: 14, padding: 14, marginBottom: 10,
+  },
+  statusBannerIcon: { fontSize: 22, marginRight: 12, marginTop: 1 },
+  statusBannerTitle: { fontSize: 14, fontWeight: '800', marginBottom: 3 },
+  statusBannerDesc: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
+  statusActions: { flexDirection: 'row', gap: 10 },
+  msgActionBtn: {
+    flex: 1, backgroundColor: colors.primaryLight, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+  },
+  msgActionBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  earnActionBtn: {
+    flex: 1, backgroundColor: colors.primary,
+    borderRadius: 12, paddingVertical: 12, alignItems: 'center',
+  },
+  earnActionBtnSmall: { flex: 0.55 },
+  earnActionBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  // Poster own-job footer
+  ownJobStats: {
+    backgroundColor: colors.primaryLight, borderRadius: 14,
+    padding: 14, marginBottom: 10,
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+  },
+  ownJobStatTitle: { fontSize: 14, fontWeight: '800', color: colors.primary, marginBottom: 8 },
+  ownJobChips: { flexDirection: 'row', gap: 8 },
+  statChip: {
+    backgroundColor: '#FFF7ED', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  statChipGreen: { backgroundColor: '#ECFDF5' },
+  statChipText: { fontSize: 12, fontWeight: '700', color: '#D97706' },
+  manageGigsBtn: {
+    backgroundColor: colors.primary, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  manageGigsBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

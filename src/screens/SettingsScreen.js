@@ -10,18 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients } from '../theme';
-
-const US_CITIES = [
-  'Remote / Online', 'New York, NY', 'Los Angeles, CA', 'Chicago, IL',
-  'Houston, TX', 'Phoenix, AZ', 'Philadelphia, PA', 'San Antonio, TX',
-  'San Diego, CA', 'Dallas, TX', 'San Jose, CA', 'Austin, TX',
-  'Jacksonville, FL', 'Fort Worth, TX', 'Columbus, OH', 'Charlotte, NC',
-  'Indianapolis, IN', 'San Francisco, CA', 'Seattle, WA', 'Denver, CO',
-  'Nashville, TN', 'Oklahoma City, OK', 'Portland, OR', 'Las Vegas, NV',
-  'Memphis, TN', 'Louisville, KY', 'Baltimore, MD', 'Milwaukee, WI',
-  'Atlanta, GA', 'Miami, FL', 'Boston, MA', 'Minneapolis, MN',
-  'Pittsburgh, PA', 'Raleigh, NC', 'St. Louis, MO', 'Tampa, FL', 'Orlando, FL',
-];
+import LocationPicker from '../components/LocationPicker';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -40,8 +29,6 @@ export default function SettingsScreen({ navigation }) {
 
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
-  const [citySearch, setCitySearch] = useState('');
-  const [showCities, setShowCities] = useState(false);
   const [usernameError, setUsernameError] = useState('');
 
   const [form, setForm] = useState({
@@ -69,7 +56,6 @@ export default function SettingsScreen({ navigation }) {
         skills: data.skills || [],
         radiusMiles: data.radius_miles || 25,
       });
-      setCitySearch(data.city || '');
     }
     setLoading(false);
   };
@@ -81,10 +67,6 @@ export default function SettingsScreen({ navigation }) {
       ? form.skills.filter(x => x !== s)
       : [...form.skills, s]);
   };
-
-  const filteredCities = citySearch.length > 0
-    ? US_CITIES.filter(c => c.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 6)
-    : [];
 
   const checkUsername = async () => {
     const u = form.username.trim().toLowerCase();
@@ -122,12 +104,14 @@ export default function SettingsScreen({ navigation }) {
       radius_miles: form.radiusMiles,
     }).eq('id', user.id);
     setSaving(false);
-    if (!error) {
-      setRole(form.role);
-      await refreshProfile();
-      showToast({ icon: '✅', title: 'Profile Updated!', message: 'Your settings have been saved.' });
-      navigation.goBack();
+    if (error) {
+      showToast({ icon: '❌', title: 'Save Failed', message: error.message || 'Could not save your profile. Please try again.' });
+      return;
     }
+    setRole(form.role);
+    await refreshProfile();
+    showToast({ icon: '✅', title: 'Profile Updated!', message: 'Your settings have been saved.' });
+    navigation.goBack();
   };
 
   if (loading) {
@@ -200,26 +184,11 @@ export default function SettingsScreen({ navigation }) {
           </Field>
 
           <Field label="Location">
-            <View style={{ position: 'relative', zIndex: 20 }}>
-              <TextInput
-                style={styles.input} placeholder="Search your city..."
-                placeholderTextColor={colors.textMuted}
-                value={citySearch} onFocus={() => setShowCities(true)}
-                onChangeText={v => { setCitySearch(v); set('city', v); setShowCities(true); }}
-              />
-              {showCities && filteredCities.length > 0 && (
-                <View style={styles.dropdown}>
-                  {filteredCities.map(c => (
-                    <TouchableOpacity
-                      key={c} style={styles.dropdownItem}
-                      onPress={() => { set('city', c); setCitySearch(c); setShowCities(false); }}
-                    >
-                      <Text style={styles.dropdownText}>{c}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
+            <LocationPicker
+              value={form.city}
+              onChange={v => set('city', v)}
+              placeholder="Your city or 'Remote'"
+            />
           </Field>
 
           {(form.role === 'earner' || form.role === 'both') && (
@@ -328,14 +297,6 @@ const styles = StyleSheet.create({
   skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   skillChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   skillChipTextActive: { color: '#fff' },
-  dropdown: {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-    backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8,
-    elevation: 8,
-  },
-  dropdownItem: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-  dropdownText: { fontSize: 14, color: colors.textPrimary },
   saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });

@@ -1,19 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
-const DAY_ABBR  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MON_ABBR  = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const TIMES     = [
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const TIMES = [
   '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
   '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM',
   '6:00 PM', '7:00 PM', '8:00 PM',
 ];
 
-function getNext14Days() {
+const FLEXIBLE_LABEL = 'Flexible — Contact to Schedule';
+
+function buildDays() {
   const now = new Date();
   return Array.from({ length: 14 }, (_, i) => {
     const d = new Date(now);
@@ -28,21 +30,27 @@ function getNext14Days() {
   });
 }
 
-const DAYS = getNext14Days();
-
 export default function DateTimePicker({ slots = [], onChange }) {
   const haptic = useHaptic();
   const [selectedDay, setSelectedDay] = useState(null);
-  const [selectedTime, setSelectedTime] = useState(null);
+  // Recompute dates on each mount so they're never stale
+  const days = useMemo(() => buildDays(), []);
 
-  const addSlot = () => {
-    if (!selectedDay || !selectedTime) return;
-    const label = `${selectedDay.label}, ${selectedTime}`;
-    const already = slots.some(s => s.label === label);
-    if (already) return;
+  const hasFlexible = slots.some(s => s.label === FLEXIBLE_LABEL);
+
+  const addFlexible = () => {
+    if (hasFlexible) return;
+    haptic.medium();
+    onChange([...slots, { id: `s${Date.now()}`, label: FLEXIBLE_LABEL, taken: false }]);
+  };
+
+  // Auto-add on time tap — no separate "Add" button needed
+  const handleTimeSelect = (time) => {
+    if (!selectedDay) return;
+    const label = `${selectedDay.label}, ${time}`;
+    if (slots.some(s => s.label === label)) return; // already added
     haptic.medium();
     onChange([...slots, { id: `s${Date.now()}`, label, taken: false }]);
-    setSelectedTime(null);
   };
 
   const removeSlot = (id) => {
@@ -50,18 +58,41 @@ export default function DateTimePicker({ slots = [], onChange }) {
     onChange(slots.filter(s => s.id !== id));
   };
 
+  // Which times are already added for the currently selected day
+  const addedTimes = useMemo(() => {
+    if (!selectedDay) return new Set();
+    return new Set(
+      slots
+        .filter(s => s.label.startsWith(selectedDay.label + ','))
+        .map(s => s.label.slice(selectedDay.label.length + 2))
+    );
+  }, [slots, selectedDay]);
+
   return (
     <View>
+      {/* Flexible button */}
+      <TouchableOpacity
+        style={[styles.flexBtn, hasFlexible && styles.flexBtnActive]}
+        onPress={addFlexible}
+        activeOpacity={hasFlexible ? 1 : 0.75}
+      >
+        <Text style={[styles.flexBtnText, hasFlexible && styles.flexBtnTextActive]}>
+          {hasFlexible ? '✓ Flexible — Contact to Schedule' : '📅 Flexible — Contact to Schedule'}
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={styles.orDivider}>— or pick specific times below —</Text>
+
       {/* Day picker */}
       <Text style={styles.subLabel}>Select a date</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
-        {DAYS.map(d => {
+        {days.map(d => {
           const active = selectedDay?.key === d.key;
           return (
             <TouchableOpacity
               key={d.key}
               style={[styles.dayChip, active && styles.dayChipActive]}
-              onPress={() => { haptic.selection(); setSelectedDay(d); setSelectedTime(null); }}
+              onPress={() => { haptic.selection(); setSelectedDay(d); }}
             >
               <Text style={[styles.dayName, active && styles.dayNameActive]}>{d.dayName}</Text>
               <Text style={[styles.dayNum, active && styles.dayNumActive]}>{d.dayNum}</Text>
@@ -71,20 +102,25 @@ export default function DateTimePicker({ slots = [], onChange }) {
         })}
       </ScrollView>
 
-      {/* Time picker */}
+      {/* Time grid — tap to instantly add */}
       {selectedDay && (
         <>
-          <Text style={[styles.subLabel, { marginTop: 14 }]}>Select a time</Text>
+          <Text style={[styles.subLabel, { marginTop: 14 }]}>
+            Tap a time to add it
+          </Text>
           <View style={styles.timeGrid}>
             {TIMES.map(t => {
-              const active = selectedTime === t;
+              const added = addedTimes.has(t);
               return (
                 <TouchableOpacity
                   key={t}
-                  style={[styles.timeChip, active && styles.timeChipActive]}
-                  onPress={() => { haptic.selection(); setSelectedTime(t); }}
+                  style={[styles.timeChip, added && styles.timeChipAdded]}
+                  onPress={() => handleTimeSelect(t)}
+                  activeOpacity={added ? 1 : 0.7}
                 >
-                  <Text style={[styles.timeText, active && styles.timeTextActive]}>{t}</Text>
+                  <Text style={[styles.timeText, added && styles.timeTextAdded]}>
+                    {added ? '✓ ' : ''}{t}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -92,16 +128,10 @@ export default function DateTimePicker({ slots = [], onChange }) {
         </>
       )}
 
-      {/* Add button */}
-      {selectedDay && selectedTime && (
-        <TouchableOpacity style={styles.addBtn} onPress={addSlot}>
-          <Text style={styles.addBtnText}>+ Add {selectedDay.label}, {selectedTime}</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Added slots */}
+      {/* Added slots list */}
       {slots.length > 0 && (
         <View style={styles.slotList}>
+          <Text style={styles.addedLabel}>Added slots:</Text>
           {slots.map(s => (
             <View key={s.id} style={styles.slotTag}>
               <Text style={styles.slotTagText}>📅 {s.label}</Text>
@@ -114,13 +144,27 @@ export default function DateTimePicker({ slots = [], onChange }) {
       )}
 
       {slots.length === 0 && !selectedDay && (
-        <Text style={styles.hint}>Tap a date above to start adding time slots</Text>
+        <Text style={styles.hint}>
+          Tap "Flexible" above, or select a date to add specific times
+        </Text>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flexBtn: {
+    backgroundColor: colors.surface, borderRadius: 12,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  flexBtnActive: { backgroundColor: colors.accentLight, borderColor: colors.success },
+  flexBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  flexBtnTextActive: { color: colors.success },
+  orDivider: {
+    fontSize: 11, color: colors.textMuted, textAlign: 'center',
+    marginBottom: 14, fontStyle: 'italic',
+  },
   subLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 8 },
   dayRow: { paddingBottom: 4 },
   dayChip: {
@@ -141,15 +185,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
     marginRight: 8, marginBottom: 8,
   },
-  timeChipActive: { backgroundColor: colors.secondary, borderColor: colors.secondary },
+  timeChipAdded: { backgroundColor: colors.accentLight, borderColor: colors.success },
   timeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  timeTextActive: { color: '#fff' },
-  addBtn: {
-    backgroundColor: colors.primaryLight, borderRadius: 12,
-    padding: 12, alignItems: 'center', marginTop: 4,
-  },
-  addBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  timeTextAdded: { color: colors.success, fontWeight: '700' },
   slotList: { marginTop: 12 },
+  addedLabel: {
+    fontSize: 11, fontWeight: '700', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
+  },
   slotTag: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.accentLight, borderRadius: 10,

@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
-import { MOCK_JOBS } from '../data/mockData';
 
 const JobsContext = createContext(null);
 
@@ -57,6 +56,12 @@ function transformBooking(b) {
     earnerRating: b.earner_rating ? Number(b.earner_rating) : null,
     reviewText: b.review_text,
     completedAt: b.completed_at,
+    earnerDone: b.earner_done || false,
+    posterDone: b.poster_done || false,
+    posterRating: b.poster_rating ? Number(b.poster_rating) : null,
+    posterReview: b.poster_review || null,
+    amendmentNote: b.amendment_note || null,
+    amendmentStatus: b.amendment_status || 'none',
     earner: b.earner ? {
       id: b.earner.id,
       name: b.earner.name,
@@ -151,7 +156,7 @@ export function JobsProvider({ children }) {
   const { showToast } = useUser();
 
   const [state, dispatch] = useReducer(reducer, {
-    jobs: MOCK_JOBS,
+    jobs: [],
     bookings: [],
     posterBookings: [],
     myPostedIds: [],
@@ -186,13 +191,12 @@ export function JobsProvider({ children }) {
         job_requirements(*),
         reviews(*)
       `)
+      .neq('status', 'cancelled')
       .order('created_at', { ascending: false });
 
     if (error || !data) return;
     const transformed = data.map(transformJob);
-    const realIds = new Set(transformed.map(j => j.id));
-    const merged = [...transformed, ...MOCK_JOBS.filter(j => !realIds.has(j.id))];
-    dispatch({ type: 'SET_JOBS', jobs: merged });
+    dispatch({ type: 'SET_JOBS', jobs: transformed });
 
     // Populate myPostedIds from DB
     if (user) {
@@ -200,7 +204,7 @@ export function JobsProvider({ children }) {
       dispatch({ type: 'SET_POSTED_IDS', ids: myIds });
     }
 
-    cacheSet(JOBS_CACHE, merged);
+    cacheSet(JOBS_CACHE, transformed);
   }, [user?.id]);
 
   const loadBookings = async () => {
@@ -210,7 +214,10 @@ export function JobsProvider({ children }) {
 
     const { data, error } = await supabase
       .from('bookings')
-      .select('*')
+      .select(`
+        *,
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
+      `)
       .eq('earner_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -299,9 +306,12 @@ export function JobsProvider({ children }) {
   // ── Earner actions ─────────────────────────────────────────────────────────
 
   const bookJob = async (jobId, slotId, slotLabel, counterOffer) => {
+    if (!user) return;
+    const job = state.jobs.find(j => j.id === jobId);
+    if (job?.posterId === user.id) return; // can't book own gig
+
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, tempId });
-    if (!user) return;
 
     const { data, error } = await supabase.from('bookings').insert({
       job_id: jobId,
@@ -322,13 +332,63 @@ export function JobsProvider({ children }) {
     await loadBookings();
   };
 
-  const markJobComplete = async (bookingId) => {
-    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'completed' } });
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: 'completed', completed_at: new Date().toISOString() })
-      .eq('id', bookingId);
-    if (error) console.warn('Mark complete error:', error.message);
+  // Earner marks their side done; if poster already done → complete
+  const markEarnerDone = async (bookingId) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    const bothDone = booking?.posterDone;
+    const patch = bothDone
+      ? { earner_done: true, status: 'completed', completed_at: new Date().toISOString() }
+      : { earner_done: true };
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { earnerDone: true, ...(bothDone && { status: 'completed' }) } });
+    const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
+    if (error) console.warn('Earner done error:', error.message);
+  };
+
+  // Poster marks their side done; if earner already done → complete
+  const markPosterDone = async (bookingId) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    const bothDone = booking?.earnerDone;
+    const patch = bothDone
+      ? { poster_done: true, status: 'completed', completed_at: new Date().toISOString() }
+      : { poster_done: true };
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterDone: true, ...(bothDone && { status: 'completed' }) } });
+    const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
+    if (error) console.warn('Poster done error:', error.message);
+  };
+
+  // Keep old name as alias for earner side
+  const markJobComplete = markEarnerDone;
+
+  // Earner rates the poster after job is verified
+  const ratePoster = async (bookingId, { rating, reviewText }) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterRating: rating, posterReview: reviewText } });
+    const { error } = await supabase.from('bookings').update({
+      poster_rating: rating,
+      poster_review: reviewText || null,
+    }).eq('id', bookingId);
+    if (error) { console.warn('Rate poster error:', error.message); return; }
+
+    // Update poster's rolling rating on their profile
+    if (booking?.jobId) {
+      const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
+      if (jobRow?.poster_id) {
+        const { data: posterProfile } = await supabase
+          .from('profiles')
+          .select('poster_rating, poster_review_count')
+          .eq('id', jobRow.poster_id)
+          .single();
+        if (posterProfile) {
+          const oldCount  = posterProfile.poster_review_count || 0;
+          const newCount  = oldCount + 1;
+          const newRating = (((posterProfile.poster_rating || 5) * oldCount) + rating) / newCount;
+          await supabase.from('profiles').update({
+            poster_rating: parseFloat(newRating.toFixed(1)),
+            poster_review_count: newCount,
+          }).eq('id', jobRow.poster_id);
+        }
+      }
+    }
   };
 
   // ── Poster actions ─────────────────────────────────────────────────────────
@@ -364,16 +424,24 @@ export function JobsProvider({ children }) {
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
     if (error) { console.warn('Verify error:', error.message); return; }
 
-    // Insert review
-    if (reviewText && booking?.earner?.id) {
-      await supabase.from('reviews').insert({
+    // Mark the job itself as completed so it leaves the Browse screen
+    if (booking?.jobId) {
+      dispatch({ type: 'UPDATE_JOB', jobId: booking.jobId, patch: { status: 'completed' } });
+      supabase.from('jobs').update({ status: 'completed' }).eq('id', booking.jobId);
+    }
+
+    // Insert review — always insert (even without text) so review_count stays accurate
+    if (booking?.earner?.id) {
+      const { error: revErr } = await supabase.from('reviews').insert({
         job_id: booking.jobId,
         reviewer_id: user.id,
-        author: 'Poster',
+        reviewed_user_id: booking.earner.id,
+        author: booking.earner.name || 'Poster',
         rating,
-        text: reviewText,
+        text: reviewText || '',
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       });
+      if (revErr) console.warn('Review insert error:', revErr.message);
     }
 
     // Update earner's rolling rating
@@ -476,6 +544,7 @@ export function JobsProvider({ children }) {
       job: {
         ...jobData,
         id: newJob.id,
+        posterId: user.id,
         postedAt: 'Just now',
         status: 'open',
         reviews: [],
@@ -485,18 +554,36 @@ export function JobsProvider({ children }) {
       },
       poster,
     });
-    cacheSet(JOBS_CACHE, null);
+    // Re-fetch in background to replace optimistic slots with real DB IDs
+    fetchJobs();
   };
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const isBooked       = (jobId) => state.bookings.some(b => b.jobId === jobId);
   const bookedJobIds   = state.bookings.map(b => b.jobId);
   const bookedJobs     = state.jobs.filter(j => bookedJobIds.includes(j.id));
-  const postedJobs     = state.jobs.filter(j => state.myPostedIds.includes(j.id));
+  // Derive directly from posterId so it works immediately on cache warm-up and after addJob
+  const postedJobs     = user ? state.jobs.filter(j => j.posterId === user.id) : [];
 
   // Badge counts for tab bar
   const earnBadgeCount    = state.bookings.filter(b => b.status === 'confirmed' || b.status === 'verified').length;
   const profileBadgeCount = state.posterBookings.filter(b => b.status === 'pending' || b.status === 'completed').length;
+
+  const proposeAmendment = async (bookingId, note) => {
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
+    await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
+  };
+
+  const respondToAmendment = async (bookingId, accepted) => {
+    const newStatus = accepted ? 'accepted' : 'declined';
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: newStatus } });
+    await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
+  };
+
+  const clearAmendment = async (bookingId) => {
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: 'none', amendmentNote: null } });
+    await supabase.from('bookings').update({ amendment_status: 'none', amendment_note: null }).eq('id', bookingId);
+  };
 
   return (
     <JobsContext.Provider value={{
@@ -511,11 +598,18 @@ export function JobsProvider({ children }) {
       acceptBooking,
       declineBooking,
       markJobComplete,
+      markEarnerDone,
+      markPosterDone,
+      ratePoster,
       verifyAndRate,
       refreshJobs: fetchJobs,
+      refreshBookings: loadBookings,
       refreshPosterBookings: loadPosterBookings,
       earnBadgeCount,
       profileBadgeCount,
+      proposeAmendment,
+      respondToAmendment,
+      clearAmendment,
     }}>
       {children}
     </JobsContext.Provider>

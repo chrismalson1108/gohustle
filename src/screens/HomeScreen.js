@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  ScrollView, TextInput, StyleSheet,
+  ScrollView, TextInput, StyleSheet, RefreshControl,
 } from 'react-native';
 import GradientHeader from '../components/GradientHeader';
 import JobCard from '../components/JobCard';
@@ -50,12 +50,19 @@ function matchesPay(job, payRange) {
 
 export default function HomeScreen({ navigation }) {
   const { name, streakDays, levelInfo, xp } = useUser();
-  const { jobs } = useJobs();
+  const { jobs, bookings, refreshJobs, refreshBookings } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [showFilter, setShowFilter] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([refreshJobs(), refreshBookings()]);
+    setRefreshing(false);
+  };
 
   // Build state list from available jobs for the location filter
   const availableStates = useMemo(() => {
@@ -69,6 +76,9 @@ export default function HomeScreen({ navigation }) {
 
   const filtered = useMemo(() => {
     let list = jobs.filter(j => {
+      // Only show open listings in Browse
+      if (j.status !== 'open') return false;
+
       // Category chip
       if (selectedCat !== 'all' && j.category !== selectedCat) return false;
 
@@ -215,10 +225,14 @@ export default function HomeScreen({ navigation }) {
           <JobCard
             job={item}
             onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
+            bookingStatus={bookings.find(b => b.jobId === item.id)?.status}
           />
         )}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>🔎</Text>

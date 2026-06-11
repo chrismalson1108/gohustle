@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, Alert,
+  View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, Alert, RefreshControl,
 } from 'react-native';
+import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
 import BadgeGrid from '../components/BadgeGrid';
@@ -10,27 +11,53 @@ import RatingStars from '../components/RatingStars';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients, shadows } from '../theme';
 
-const REVIEWS = [
-  { id: 'pr1', author: 'Karen O.', rating: 5, text: 'Alex was fast, polite, and did exactly what I asked. Will hire again!', date: '3 days ago' },
-  { id: 'pr2', author: 'Linda H.', rating: 5, text: 'Showed up on time every week. Highly dependable.', date: '1 week ago' },
-  { id: 'pr3', author: 'Tom W.', rating: 4, text: 'Good work, took a little longer than expected but quality was great.', date: '2 weeks ago' },
-];
 
 export default function ProfileScreen({ navigation }) {
   const {
     name, avatarInitial, role, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
-    weeklyJobsDone, setRole, weeklyEarningGoal, weeklyJobsGoal, setGoals,
+    weeklyJobsDone, setRole, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile,
   } = useUser();
   const { postedJobs, bookedJobs, posterBookings, profileBadgeCount } = useJobs();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const haptic = useHaptic();
   const [editGoals, setEditGoals] = useState(false);
   const [earGoal, setEarGoal] = useState(String(weeklyEarningGoal));
   const [jobGoal, setJobGoal] = useState(String(weeklyJobsGoal));
+  const [myReviews, setMyReviews] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadReviews = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('reviews')
+      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial)')
+      .eq('reviewed_user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (data) setMyReviews(data);
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadReviews();
+    }, [loadReviews])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([refreshProfile(), loadReviews()]);
+    setRefreshing(false);
+  };
+
+  // Derive rating + count from actual loaded reviews (source of truth)
+  const actualReviewCount = myReviews.length;
+  const actualRating = actualReviewCount > 0
+    ? myReviews.reduce((sum, r) => sum + (r.rating || 0), 0) / actualReviewCount
+    : null;
 
   const toggleRole = () => {
     haptic.medium();
@@ -47,7 +74,11 @@ export default function ProfileScreen({ navigation }) {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+    >
       <GradientHeader colors={gradients.profile}>
         <View style={styles.profileRow}>
           <View style={styles.avatar}>
@@ -55,8 +86,12 @@ export default function ProfileScreen({ navigation }) {
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{name}</Text>
-            <RatingStars rating={rating} size={14} />
-            <Text style={styles.profileSub}>{reviewCount} reviews · Member since {memberSince}</Text>
+            {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
+            <Text style={styles.profileSub}>
+              {actualReviewCount > 0
+                ? `${actualReviewCount} review${actualReviewCount !== 1 ? 's' : ''}`
+                : 'No reviews yet'} · Member since {memberSince}
+            </Text>
           </View>
         </View>
         <XPBar levelInfo={levelInfo} xp={xp} dark />
@@ -82,7 +117,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.statDiv} />
         <Stat label="Total Earned" value={`$${earningsTotal.toLocaleString()}`} />
         <View style={styles.statDiv} />
-        <Stat label="Avg Rating" value={rating.toFixed(1) + ' ★'} />
+        <Stat label="Avg Rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
       </View>
 
       <View style={styles.section}>
@@ -91,19 +126,39 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Reviews I've Received</Text>
-        </View>
-        {REVIEWS.map(r => (
-          <View key={r.id} style={styles.reviewCard}>
-            <View style={styles.reviewTop}>
-              <Text style={styles.reviewAuthor}>{r.author}</Text>
-              <RatingStars rating={r.rating} size={12} />
-              <Text style={styles.reviewDate}>{r.date}</Text>
-            </View>
-            <Text style={styles.reviewText}>{r.text}</Text>
+        <Text style={styles.sectionTitle}>Reviews I've Received</Text>
+        {myReviews.length === 0 ? (
+          <View style={styles.noReviewsCard}>
+            <Text style={styles.noReviewsIcon}>⭐</Text>
+            <Text style={styles.noReviewsTitle}>No reviews yet</Text>
+            <Text style={styles.noReviewsText}>Complete gigs to start earning reviews from posters.</Text>
           </View>
-        ))}
+        ) : (
+          myReviews.map(r => (
+            <View key={r.id} style={styles.reviewCard}>
+              <View style={styles.reviewHeader}>
+                <View style={styles.reviewerAvatar}>
+                  <Text style={styles.reviewerAvatarText}>
+                    {r.reviewer?.avatar_initial || r.author?.[0]?.toUpperCase() || '?'}
+                  </Text>
+                </View>
+                <View style={styles.reviewerInfo}>
+                  <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
+                  <View style={styles.reviewStarsRow}>
+                    {[1,2,3,4,5].map(s => (
+                      <Text key={s} style={[styles.reviewStar, s <= Math.round(r.rating) && styles.reviewStarFilled]}>
+                        {s <= Math.round(r.rating) ? '⭐' : '☆'}
+                      </Text>
+                    ))}
+                    <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
+                  </View>
+                </View>
+                {r.date && <Text style={styles.reviewDate}>{r.date}</Text>}
+              </View>
+              {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
+            </View>
+          ))
+        )}
       </View>
 
       {/* My Posted Gigs */}
@@ -264,13 +319,31 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.primary + '40',
   },
   editBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  emptyText: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+  noReviewsCard: {
+    backgroundColor: colors.surface, borderRadius: 14, padding: 20,
+    alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+  },
+  noReviewsIcon: { fontSize: 30, marginBottom: 8 },
+  noReviewsTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 },
+  noReviewsText: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
   reviewCard: {
     backgroundColor: colors.surface, borderRadius: 14,
     padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
-  reviewTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  reviewAuthor: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginRight: 8 },
-  reviewDate: { fontSize: 11, color: colors.textMuted, marginLeft: 'auto' },
+  reviewHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+  reviewerAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10,
+  },
+  reviewerAvatarText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  reviewerInfo: { flex: 1 },
+  reviewerName: { fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
+  reviewStarsRow: { flexDirection: 'row', alignItems: 'center' },
+  reviewStar: { fontSize: 12, color: colors.border, marginRight: 1 },
+  reviewStarFilled: { color: '#F59E0B' },
+  reviewRatingNum: { fontSize: 11, color: colors.textMuted, marginLeft: 4, fontWeight: '700' },
+  reviewDate: { fontSize: 11, color: colors.textMuted },
   reviewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
 });
