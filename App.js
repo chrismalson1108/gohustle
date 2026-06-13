@@ -30,6 +30,7 @@ import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
+import ConsentScreen        from './src/screens/ConsentScreen';
 
 import { colors } from './src/theme';
 
@@ -168,7 +169,7 @@ function MainApp() {
 }
 
 function RootNavigator() {
-  const { session, loading, onboardingDone, markOnboardingDone } = useAuth();
+  const { session, loading, onboardingDone, needsTermsAcceptance, markOnboardingDone } = useAuth();
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
@@ -178,6 +179,7 @@ function RootNavigator() {
   }
   if (!session) return <AuthScreen />;
   if (!onboardingDone) return <OnboardingScreen onComplete={markOnboardingDone} />;
+  if (needsTermsAcceptance) return <ConsentScreen />;
   return <MainApp />;
 }
 

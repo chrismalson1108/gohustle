@@ -13,6 +13,7 @@ import Avatar from './Avatar';
 import { notify } from '../lib/push';
 import { pickImage, uploadImage } from '../lib/uploadImage';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
+import { findProhibited } from '../lib/contentFilter';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
@@ -108,6 +109,10 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   const sendMessage = async () => {
     const text = inputText.trim();
     if (!text || !bookingId || !user) return;
+    if (findProhibited(text)) {
+      Alert.alert('Message blocked', "That message contains content that isn't allowed.");
+      return;
+    }
 
     // Optimistic insert
     const tempId = `temp-${Date.now()}`;

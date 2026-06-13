@@ -10,7 +10,7 @@ import GradientHeader from '../components/GradientHeader';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { pickImage, uploadImage } from '../lib/uploadImage';
+import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import {
   EXPENSE_CATEGORIES, categoryMeta, fetchExpenses, addExpense, deleteExpense,
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
@@ -28,6 +28,7 @@ export default function ExpensesScreen() {
   const [tab, setTab] = useState('expenses'); // 'expenses' | 'income'
   const [expenses, setExpenses] = useState([]);
   const [income, setIncome] = useState([]);
+  const [receiptUrls, setReceiptUrls] = useState({}); // expenseId -> signed URL
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -45,6 +46,13 @@ export default function ExpensesScreen() {
     try {
       const [ex, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
       setExpenses(ex); setIncome(inc);
+      // Sign private receipt paths for display
+      const map = {};
+      await Promise.all(
+        ex.filter(e => e.receipt_url && !e.receipt_url.startsWith('http'))
+          .map(async e => { const u = await getSignedUrl('receipts', e.receipt_url); if (u) map[e.id] = u; })
+      );
+      setReceiptUrls(map);
     } catch (_) {}
     setLoading(false);
   }, [user?.id]);
@@ -79,10 +87,14 @@ export default function ExpensesScreen() {
     setSaving(true);
     try {
       if (tab === 'expenses') {
-        let receiptUrl = null;
-        if (receiptUri) receiptUrl = await uploadImage({ uri: receiptUri, bucket: 'receipts', userId: user.id });
-        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl });
+        let receiptPath = null;
+        if (receiptUri) receiptPath = await uploadPrivateImage({ uri: receiptUri, bucket: 'receipts', userId: user.id });
+        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl: receiptPath });
         setExpenses(prev => [row, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1)));
+        if (receiptPath) {
+          const u = await getSignedUrl('receipts', receiptPath);
+          if (u) setReceiptUrls(prev => ({ ...prev, [row.id]: u }));
+        }
       } else {
         const row = await addIncome(user.id, { amount: amt, source, description, date });
         setIncome(prev => [row, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1)));
@@ -197,7 +209,10 @@ export default function ExpensesScreen() {
                     {exp.description ? <Text style={styles.rowDesc} numberOfLines={1}>{exp.description}</Text> : null}
                     <Text style={styles.rowDate}>{exp.date}</Text>
                   </View>
-                  {exp.receipt_url ? <Image source={{ uri: exp.receipt_url }} style={styles.rowReceipt} /> : null}
+                  {(() => {
+                    const thumb = receiptUrls[exp.id] || (exp.receipt_url?.startsWith('http') ? exp.receipt_url : null);
+                    return thumb ? <Image source={{ uri: thumb }} style={styles.rowReceipt} /> : null;
+                  })()}
                   <Text style={styles.rowAmount}>{fmt(exp.amount)}</Text>
                   <TouchableOpacity onPress={() => handleDeleteExpense(exp)} style={styles.rowDelete}>
                     <Ionicons name="trash-outline" size={16} color={colors.urgent} />

@@ -85,6 +85,33 @@ export async function uploadImage({ uri, bucket, userId, maxWidth = 1024, compre
   return data.publicUrl;
 }
 
+// Upload to a PRIVATE bucket and return the storage path (not a public URL).
+// Display these via getSignedUrl(). Used for sensitive files like receipts.
+export async function uploadPrivateImage({ uri, bucket, userId, maxWidth = 1280, compress = 0.6 }) {
+  const manipulated = await manipulateAsync(
+    uri,
+    [{ resize: { width: maxWidth } }],
+    { compress, format: SaveFormat.JPEG }
+  );
+  const arraybuffer = await fetch(manipulated.uri).then(r => r.arrayBuffer());
+  const path = `${userId}/${Date.now()}-${Math.round(arraybuffer.byteLength % 100000)}.jpg`;
+  const { error } = await supabase.storage.from(bucket).upload(path, arraybuffer, {
+    contentType: 'image/jpeg',
+    upsert: true,
+  });
+  if (error) throw error;
+  return path;
+}
+
+// Create a temporary signed URL for a private object path.
+export async function getSignedUrl(bucket, path, expiresIn = 3600) {
+  if (!path) return null;
+  try {
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+    return data?.signedUrl || null;
+  } catch (_) { return null; }
+}
+
 // Upload many local URIs sequentially; returns array of public URLs.
 export async function uploadImages({ uris, bucket, userId, maxWidth = 1280, compress = 0.6 }) {
   const urls = [];

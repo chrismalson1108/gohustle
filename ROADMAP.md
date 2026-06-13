@@ -44,14 +44,16 @@ validate the core loop.
 
 1. ✅ **Legal & policy screens** — Terms, Privacy, Independent Contractor Agreement (`src/data/legal.js`,
    `LegalScreen`), accept-on-signup checkbox (versioned via `TERMS_VERSION`, recorded as
-   `profiles.terms_accepted_at`), Legal & Support section + support mailto in Profile.
+   `profiles.terms_accepted_at`), **returning-user re-consent gate** (`ConsentScreen` when
+   `terms_version` is stale), Legal & Support section + support mailto in Profile.
 2. ✅ **Cancellation handling** — `cancelBooking` releases the escrow hold, frees the slot, notifies the
    other party; earner can withdraw/cancel from My Jobs, poster can cancel a confirmed booking from Hiring;
    cancelled bookings move to the Completed/Past tabs. *(No-show is handled as cancel + report; a richer
    dispute flow is still P1.)*
-3. ✅ **Account safety (report/block)** — `reports` + `blocks` tables; report a gig (JobDetail) or a user
-   (chat menu); block hides that user's gigs from Browse and ends chat. *Still to do:* automated content
-   moderation + rate-limiting sign-ups; wire the "verified" badge to real signals.
+3. ✅ **Account safety (report/block + filter)** — `reports` + `blocks` tables; report a gig (JobDetail) or a
+   user (chat menu); block hides that user's gigs from Browse and ends chat; a client-side content filter
+   (`src/lib/contentFilter.js`) blocks prohibited text in gig posts/edits and chat. *Still to do:*
+   server-side moderation + rate-limiting sign-ups; wire the "verified" badge to real signals.
 4. 🟡 **Crash/error monitoring + analytics** — foundation in place: a root `ErrorBoundary`
    (recoverable fallback instead of a white screen) and a pluggable `src/lib/analytics.js`
    (`track`/`captureError`/`identify`) wired through the core funnel (sign-in/up, gig posted,
@@ -86,9 +88,10 @@ validate the core loop.
 ---
 
 ## Engineering hygiene to address alongside features
-- **Storage privacy**: `avatars`, `job-photos`, `chat-photos`, `completion-photos`, `receipts` are all
-  public-read for simplicity. Receipts (and arguably chat/completion photos) are sensitive — move to
-  private buckets with signed URLs before a real launch.
+- **Storage privacy**: ✅ `receipts` is now a **private** bucket (owner-read RLS, signed URLs in the Tax
+  Center). `avatars`/`job-photos` are intentionally public (profile/listing). `chat-photos` and
+  `completion-photos` remain public-read (unguessable paths, shared between the two booking parties) —
+  move them to private + signed URLs before a real launch if stricter privacy is required.
 - **Secrets**: the Supabase anon/publishable keys and Stripe publishable key are in the client (fine), but
   confirm no secret keys ever ship in the bundle.
 - **Realtime/notif consistency**: notifications are client-driven (the actor calls `send-push`). For events
