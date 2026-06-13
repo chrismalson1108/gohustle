@@ -24,6 +24,7 @@ import ManageBookingsScreen from './src/screens/ManageBookingsScreen';
 import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
+import ExpensesScreen       from './src/screens/ExpensesScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 
@@ -97,6 +98,7 @@ function ProfileStack() {
       <Stack.Screen name="EditJob"        component={EditJobScreen} />
       <Stack.Screen name="Settings"       component={SettingsScreen} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }

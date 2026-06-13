@@ -64,6 +64,30 @@ export default function GigsScreen({ navigation }) {
   // Past = completed/declined booking history (read-only)
   const pastBookings = posterBookings.filter(b => PAST_STATUSES.has(b.status));
 
+  // Active list = open listings + any gig that still has active bookings, including
+  // gigs the poster deleted but that have unresolved bookings. Without this, those
+  // bookings are invisible yet still counted in the tab badge ("ghost" count).
+  const postedById = {};
+  postedJobs.forEach(j => { postedById[j.id] = j; });
+  const orphanIds = [...new Set(
+    posterBookings
+      .filter(b => ACTIVE_STATUSES.has(b.status) && !postedById[b.jobId])
+      .map(b => b.jobId)
+  )];
+  const phantomJobs = orphanIds.map(id => {
+    const b = posterBookings.find(x => x.jobId === id);
+    return {
+      id,
+      title: b?.job?.title || 'Removed gig',
+      pay: b?.job?.pay,
+      payType: b?.job?.payType,
+      location: 'Gig removed',
+      status: 'cancelled',
+      removed: true,
+    };
+  });
+  const activeJobs = [...postedJobs, ...phantomJobs];
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([refreshJobs(), refreshPosterBookings()]);
@@ -75,11 +99,11 @@ export default function GigsScreen({ navigation }) {
 
   const handleDelete = (job) => {
     const bookings = bookingsByJob[job.id] || [];
-    const activeBookings = bookings.filter(b => b.status === 'pending' || b.status === 'confirmed');
+    const activeBookings = bookings.filter(b => ['pending', 'confirmed', 'completed'].includes(b.status));
     if (activeBookings.length > 0) {
       Alert.alert(
         'Cannot Delete',
-        'This gig has active bookings. Decline all pending/confirmed bookings before deleting.',
+        'This gig has active or unverified bookings. Decline pending requests and verify any completed work before deleting.',
       );
       return;
     }
@@ -228,7 +252,7 @@ export default function GigsScreen({ navigation }) {
         )}
 
         {/* ===== ACTIVE: posted listings + current bookings ===== */}
-        {tab === 'active' && postedJobs.length === 0 && (
+        {tab === 'active' && activeJobs.length === 0 && (
           <View style={styles.empty}>
             <Ionicons name="briefcase-outline" size={52} color={colors.textMuted} style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No gigs posted yet</Text>
@@ -236,7 +260,7 @@ export default function GigsScreen({ navigation }) {
           </View>
         )}
 
-        {tab === 'active' && postedJobs.map(job => {
+        {tab === 'active' && activeJobs.map(job => {
           const allBookings = bookingsByJob[job.id] || [];
           const jobBookings = allBookings.filter(b => ACTIVE_STATUSES.has(b.status));
           const isOpen      = job.status === 'open';
@@ -280,23 +304,30 @@ export default function GigsScreen({ navigation }) {
                   )}
                 </View>
 
-                {/* Job actions */}
-                <View style={styles.jobActions}>
-                  <TouchableOpacity
-                    style={styles.editBtn}
-                    onPress={() => navigation.navigate('EditJob', { jobId: job.id })}
-                  >
-                    <Ionicons name="create-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
-                    <Text style={styles.editBtnText}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDelete(job)}
-                  >
-                    <Ionicons name="trash-outline" size={15} color={colors.urgent} style={{ marginRight: 5 }} />
-                    <Text style={styles.deleteBtnText}>Delete</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Job actions — hidden for removed gigs */}
+                {job.removed ? (
+                  <View style={styles.removedNote}>
+                    <Ionicons name="alert-circle-outline" size={14} color="#D97706" style={{ marginRight: 5 }} />
+                    <Text style={styles.removedNoteText}>This gig was removed — resolve the bookings below.</Text>
+                  </View>
+                ) : (
+                  <View style={styles.jobActions}>
+                    <TouchableOpacity
+                      style={styles.editBtn}
+                      onPress={() => navigation.navigate('EditJob', { jobId: job.id })}
+                    >
+                      <Ionicons name="create-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
+                      <Text style={styles.editBtnText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() => handleDelete(job)}
+                    >
+                      <Ionicons name="trash-outline" size={15} color={colors.urgent} style={{ marginRight: 5 }} />
+                      <Text style={styles.deleteBtnText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </TouchableOpacity>
 
               {/* Expanded bookings */}
@@ -663,6 +694,8 @@ const styles = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, marginBottom: 4 },
   chipText: { fontSize: 11, fontWeight: '700' },
   jobActions: { flexDirection: 'row' },
+  removedNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderRadius: 10, padding: 9 },
+  removedNoteText: { fontSize: 12, fontWeight: '600', color: '#D97706', flex: 1 },
   editBtn: {
     flex: 1, flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.primaryLight, borderRadius: 10,

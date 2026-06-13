@@ -263,6 +263,20 @@ export default function ProfileScreen({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('Expenses'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="receipt-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Tax Center</Text>
+            <Text style={styles.manageBtnSub}>Track business expenses & export for taxes</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.settingsBtn}
         onPress={() => navigation.navigate('Settings')}
       >
