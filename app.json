@@ -8,7 +8,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gohustlr.app"
+      "bundleIdentifier": "com.gohustlr.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "GoHustlr needs access to your photos so you can set a profile picture and add photos to gigs, chats, and completed jobs.",
+        "NSCameraUsageDescription": "GoHustlr needs camera access so you can take photos for your profile, gigs, chats, and completed jobs.",
+        "NSMicrophoneUsageDescription": "GoHustlr needs microphone access when you record video."
+      }
     },
     "android": {
       "package": "com.gohustlr.app",
@@ -34,7 +39,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "GoHustlr needs access to your photos so you can set a profile picture and add job completion photos."
+          "photosPermission": "GoHustlr needs access to your photos so you can set a profile picture and add photos to gigs, chats, and completed jobs.",
+          "cameraPermission": "GoHustlr needs camera access so you can take photos for your profile, gigs, chats, and completed jobs."
         }
       ],
       [

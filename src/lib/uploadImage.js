@@ -1,27 +1,63 @@
-// Image picking + upload to Supabase Storage. Used for profile avatars and
-// job-completion photos. Web is guarded (image-manipulator/picker are native).
-import { Platform } from 'react-native';
+// Image picking + upload to Supabase Storage. Used for profile avatars, job
+// photos, completion photos, and chat images. Web is guarded.
+//
+// Library picking uses PHPicker (launchImageLibraryAsync) which needs NO photo
+// permission/usage string on iOS — so we must NOT call
+// requestMediaLibraryPermissionsAsync (doing so crashes when the usage string
+// is absent). Camera capture DOES need NSCameraUsageDescription + permission.
+import { Platform, ActionSheetIOS, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
-// Launch the library and return picked local URIs.
-// Returns { canceled, denied, uris }.
-export async function pickImages({ multiple = false, allowsEditing = false, aspect } = {}) {
-  if (Platform.OS === 'web') return { canceled: true };
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return { canceled: true, denied: true };
-
+async function runLibrary({ multiple }) {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
-    allowsEditing: multiple ? false : allowsEditing, // editing not allowed w/ multi-select
-    aspect,
+    allowsEditing: !multiple,
     quality: 1,
     allowsMultipleSelection: multiple,
     selectionLimit: multiple ? 6 : 1,
   });
   if (result.canceled || !result.assets?.length) return { canceled: true };
   return { canceled: false, uris: result.assets.map(a => a.uri) };
+}
+
+async function runCamera() {
+  const perm = await ImagePicker.requestCameraPermissionsAsync();
+  if (!perm.granted) return { canceled: true, denied: true };
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    quality: 1,
+  });
+  if (result.canceled || !result.assets?.length) return { canceled: true };
+  return { canceled: false, uris: result.assets.map(a => a.uri) };
+}
+
+// Ask the user: take a photo or choose from library. Resolves 'camera' | 'library' | null.
+function chooseSource() {
+  return new Promise(resolve => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Take Photo', 'Choose from Library', 'Cancel'], cancelButtonIndex: 2 },
+        idx => resolve(idx === 0 ? 'camera' : idx === 1 ? 'library' : null)
+      );
+    } else {
+      Alert.alert('Add Photo', undefined, [
+        { text: 'Take Photo', onPress: () => resolve('camera') },
+        { text: 'Choose from Library', onPress: () => resolve('library') },
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+      ]);
+    }
+  });
+}
+
+// Pick one or more images (offers camera + library). Returns { canceled, denied, uris }.
+export async function pickImages({ multiple = false } = {}) {
+  if (Platform.OS === 'web') return { canceled: true };
+  const source = await chooseSource();
+  if (!source) return { canceled: true };
+  return source === 'camera' ? runCamera() : runLibrary({ multiple });
 }
 
 // Convenience for a single pick.
