@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity,
+  Modal, View, Text, TextInput, TouchableOpacity, Image,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -105,6 +105,18 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               </View>
             </View>
 
+            {/* Completion photos submitted by the earner */}
+            {booking.completionPhotos?.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Completion Photos</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {booking.completionPhotos.map((u, i) => (
+                    <Image key={i} source={{ uri: u }} style={styles.completionPhoto} />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
             {/* Star rating */}
             <Text style={styles.sectionLabel}>Rate {earnerName}</Text>
             <StarPicker value={rating} onChange={setRating} />
@@ -205,6 +217,7 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: '800', color: colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10,
   },
+  completionPhoto: { width: 84, height: 84, borderRadius: 12, marginRight: 8, backgroundColor: colors.border },
   starRow: { flexDirection: 'row', marginBottom: 6 },
   starBtn: { marginRight: 6 },
   star: { fontSize: 34, color: colors.border },

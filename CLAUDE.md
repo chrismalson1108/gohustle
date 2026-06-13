@@ -139,7 +139,7 @@ pending → confirmed → completed → verified
 ```
 - Earner books → `pending`
 - Poster accepts → `confirmed`; poster declines → `declined`
-- Earner marks done → sets `earner_done = true`; if poster already done → status advances to `completed`
+- Earner marks done → opens the Finish sheet (optional **completion photos** uploaded to the `completion-photos` bucket → `bookings.completion_photos text[]`), then sets `earner_done = true`; if poster already done → status advances to `completed`. Photos are shown to the poster in `CompletionModal` and in both sides' history.
 - Poster marks done → sets `poster_done = true`; if earner already done → status advances to `completed`
 - Poster verifies + rates → `verified` (inserts review, updates earner rolling rating)
 - Earner rates poster → updates `poster_rating` / `poster_review_count` on the poster's profile

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image,
   ActivityIndicator, RefreshControl, Alert, Modal, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -415,6 +415,20 @@ function SegmentBtn({ label, count, active, onPress }) {
   );
 }
 
+function CompletionStrip({ photos }) {
+  if (!photos?.length) return null;
+  return (
+    <View style={styles.photoStrip}>
+      <Text style={styles.photoStripLabel}>Completion photos</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {photos.map((u, i) => (
+          <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function Chip({ ion, color, bg, label }) {
   return (
     <View style={[styles.chip, { backgroundColor: bg }]}>
@@ -463,6 +477,7 @@ function PastBookingCard({ booking }) {
           ) : null}
         </View>
       )}
+      <CompletionStrip photos={booking.completionPhotos} />
     </View>
   );
 }
@@ -525,6 +540,8 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           )}
         </View>
       )}
+
+      <CompletionStrip photos={booking.completionPhotos} />
 
       {/* Actions */}
       {loading ? (
@@ -698,6 +715,9 @@ const styles = StyleSheet.create({
   pastRatingRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 10 },
   pastStars: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
   pastRatingText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  photoStrip: { marginTop: 8, marginBottom: 4 },
+  photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
+  photoThumb: { width: 60, height: 60, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },
   actions: { marginTop: 4 },
   acceptBtn: {
     flexDirection: 'row', justifyContent: 'center',

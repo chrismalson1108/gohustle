@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
   Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -15,7 +15,9 @@ import BookingStatusBadge from '../components/BookingStatusBadge';
 import MessageSheet from '../components/MessageSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
+import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { pickImages, uploadImages } from '../lib/uploadImage';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
@@ -30,9 +32,13 @@ export default function EarnScreen({ navigation }) {
     weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
   } = useUser();
   const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
+  const { user } = useAuth();
   const haptic = useHaptic();
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
   const [msgTarget, setMsgTarget]       = useState(null);
+  const [finishTarget, setFinishTarget] = useState(null); // booking being marked done
+  const [finishPhotos, setFinishPhotos] = useState([]);   // local URIs to upload
+  const [finishing, setFinishing]       = useState(false);
   const [rateTarget, setRateTarget]     = useState(null);
   const [posterRating, setPosterRating] = useState(5);
   const [posterReview, setPosterReview] = useState('');
@@ -70,14 +76,42 @@ export default function EarnScreen({ navigation }) {
   const completedPairs = pairs.filter(p => COMPLETED_STATUSES.has(p.booking.status));
   const shownPairs     = tab === 'active' ? activePairs : tab === 'awaiting' ? awaitingPairs : completedPairs;
 
+  // Open the finish sheet (lets the earner optionally attach proof photos)
   const handleMarkDone = (booking) => {
-    haptic.success();
-    markEarnerDone(booking.id);
-    if (booking.posterDone) {
-      showToast({ icon: '🎉', title: 'Job Complete!', message: 'Both parties confirmed. Waiting for the poster to verify and rate you.' });
-    } else {
-      showToast({ icon: '✅', title: 'Marked Done!', message: "We've notified the poster. Waiting for them to confirm." });
+    setFinishPhotos([]);
+    setFinishTarget(booking);
+  };
+
+  const handleAddFinishPhotos = async () => {
+    const res = await pickImages({ multiple: true });
+    if (res.canceled) {
+      if (res.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to attach photos.' });
+      return;
     }
+    setFinishPhotos(prev => [...prev, ...res.uris].slice(0, 6));
+  };
+
+  const handleConfirmFinish = async () => {
+    if (!finishTarget) return;
+    setFinishing(true);
+    try {
+      let urls = null;
+      if (finishPhotos.length) {
+        urls = await uploadImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
+      }
+      await markEarnerDone(finishTarget.id, urls);
+      haptic.success();
+      if (finishTarget.posterDone) {
+        showToast({ icon: '🎉', title: 'Job Complete!', message: 'Both parties confirmed. Waiting for the poster to verify and rate you.' });
+      } else {
+        showToast({ icon: '✅', title: 'Marked Done!', message: "We've notified the poster. Waiting for them to confirm." });
+      }
+      setFinishTarget(null);
+      setFinishPhotos([]);
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Could not finish', message: e.message || 'Please try again.' });
+    }
+    setFinishing(false);
   };
 
   const handleRatePoster = async () => {
@@ -189,6 +223,18 @@ export default function EarnScreen({ navigation }) {
                         ${booking.counterOffer}{j.payType === 'hourly' ? '/hr' : ' flat'}
                       </Text>
                     </Text>
+                  </View>
+                )}
+
+                {/* Completion photos you submitted */}
+                {booking.completionPhotos?.length > 0 && (
+                  <View style={styles.photoStrip}>
+                    <Text style={styles.photoStripLabel}>Your completion photos</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {booking.completionPhotos.map((u, i) => (
+                        <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
 
@@ -385,6 +431,52 @@ export default function EarnScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Finish Job Modal — optional proof photos */}
+      <Modal visible={!!finishTarget} animationType="slide" transparent onRequestClose={() => !finishing && setFinishTarget(null)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => !finishing && setFinishTarget(null)} />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Finish this job</Text>
+            <Text style={styles.modalSub}>
+              Add photos as proof of your work (optional). The poster sees these when verifying.
+            </Text>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+              {finishPhotos.map((u, i) => (
+                <View key={i} style={styles.finishThumbWrap}>
+                  <Image source={{ uri: u }} style={styles.finishThumb} />
+                  <TouchableOpacity
+                    style={styles.finishThumbRemove}
+                    onPress={() => setFinishPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                  >
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {finishPhotos.length < 6 && (
+                <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddFinishPhotos}>
+                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  <Text style={styles.addPhotoText}>Add</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity onPress={handleConfirmFinish} disabled={finishing} activeOpacity={0.85}>
+              <LinearGradient colors={gradients.earn} style={styles.submitBtn}>
+                {finishing
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.submitBtnText}>{finishPhotos.length ? 'Submit & Mark Complete' : 'Mark Complete'}</Text>
+                }
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => !finishing && setFinishTarget(null)} style={styles.cancelBtn}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -540,6 +632,21 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
   },
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  photoStrip: { marginTop: 10 },
+  photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
+  photoThumb: { width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },
+  finishThumbWrap: { marginRight: 10 },
+  finishThumb: { width: 80, height: 80, borderRadius: 12, backgroundColor: colors.border },
+  finishThumbRemove: {
+    position: 'absolute', top: -6, right: -6,
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+  },
+  addPhotoTile: {
+    width: 80, height: 80, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryLight,
+  },
+  addPhotoText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
   noGigsCard: {
     backgroundColor: colors.surface, borderRadius: 14, padding: 24,
     alignItems: 'center', borderWidth: 1, borderColor: colors.border,

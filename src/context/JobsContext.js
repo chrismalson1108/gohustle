@@ -64,6 +64,7 @@ function transformBooking(b) {
     posterReview: b.poster_review || null,
     amendmentNote: b.amendment_note || null,
     amendmentStatus: b.amendment_status || 'none',
+    completionPhotos: b.completion_photos || [],
     earner: b.earner ? {
       id: b.earner.id,
       name: b.earner.name,
@@ -335,14 +336,20 @@ export function JobsProvider({ children }) {
     await loadBookings();
   };
 
-  // Earner marks their side done; if poster already done → complete
-  const markEarnerDone = async (bookingId) => {
+  // Earner marks their side done; if poster already done → complete.
+  // Optional completionPhotos (array of public URLs) are saved as proof of work.
+  const markEarnerDone = async (bookingId, completionPhotos = null) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     const bothDone = booking?.posterDone;
     const patch = bothDone
       ? { earner_done: true, status: 'completed', completed_at: new Date().toISOString() }
       : { earner_done: true };
-    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { earnerDone: true, ...(bothDone && { status: 'completed' }) } });
+    if (completionPhotos?.length) patch.completion_photos = completionPhotos;
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: {
+      earnerDone: true,
+      ...(completionPhotos?.length && { completionPhotos }),
+      ...(bothDone && { status: 'completed' }),
+    } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
     if (error) console.warn('Earner done error:', error.message);
   };
