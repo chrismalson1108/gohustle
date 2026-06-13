@@ -1,13 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, Alert, RefreshControl,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
 import BadgeGrid from '../components/BadgeGrid';
 import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
+import Avatar from '../components/Avatar';
+import { pickImage, uploadImage } from '../lib/uploadImage';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
@@ -18,24 +21,46 @@ import { colors, gradients, shadows } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
   const {
-    name, avatarInitial, role, rating, reviewCount,
+    name, avatarInitial, avatarUrl, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
-    weeklyJobsDone, setRole, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile,
+    weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
   } = useUser();
-  const { postedJobs, bookedJobs, posterBookings, profileBadgeCount } = useJobs();
+  const { postedJobs, bookedJobs, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
   const haptic = useHaptic();
+  const [payReady, setPayReady] = useState(null); // { payoutReady, paymentMethodReady }
   const [editGoals, setEditGoals] = useState(false);
   const [earGoal, setEarGoal] = useState(String(weeklyEarningGoal));
   const [jobGoal, setJobGoal] = useState(String(weeklyJobsGoal));
   const [myReviews, setMyReviews] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handlePickAvatar = async () => {
+    const picked = await pickImage({ allowsEditing: true, aspect: [1, 1] });
+    if (picked.canceled) {
+      if (picked.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to set a profile picture.' });
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const url = await uploadImage({ uri: picked.uri, bucket: 'avatars', userId: user.id });
+      const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id);
+      if (error) throw error;
+      await refreshProfile();
+      haptic.success();
+      showToast({ icon: '✅', title: 'Photo updated!', message: 'Your new profile picture is live.' });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Upload failed', message: e.message || 'Please try again.' });
+    }
+    setUploadingAvatar(false);
+  };
 
   const loadReviews = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from('reviews')
-      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial)')
+      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)')
       .eq('reviewed_user_id', user.id)
       .order('created_at', { ascending: false });
     if (data) setMyReviews(data);
@@ -44,8 +69,31 @@ export default function ProfileScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadReviews();
+      getPaymentReadiness().then(setPayReady).catch(() => {});
     }, [loadReviews])
   );
+
+  // Everyone can both earn and hire, so prompt for both payment sides.
+  const showEarn = true;
+  const showPay  = true;
+  const needsPayout = showEarn && payReady && !payReady.payoutReady;
+  const needsCard   = showPay && payReady && !payReady.paymentMethodReady;
+  const paymentAlert = (needsPayout && needsCard)
+    ? { title: 'Finish setting up payments', sub: 'Connect a bank and add a card →' }
+    : needsPayout
+      ? { title: 'Set up payouts to get paid', sub: 'Connect your bank to receive earnings →' }
+      : needsCard
+        ? { title: 'Add a payment method to hire', sub: 'Save a card so you can book gigs →' }
+        : null;
+
+  // Subtitle for the always-visible Payments row
+  const paymentsSub = !payReady
+    ? 'Manage your payment info'
+    : (showPay && !showEarn)
+      ? (payReady.paymentMethodReady ? 'Card on file · tap to change' : 'Add a payment method')
+      : (showEarn && !showPay)
+        ? (payReady.payoutReady ? 'Payouts active · tap to manage' : 'Set up payouts to get paid')
+        : 'Manage payout & payment methods';
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -59,18 +107,13 @@ export default function ProfileScreen({ navigation }) {
     ? myReviews.reduce((sum, r) => sum + (r.rating || 0), 0) / actualReviewCount
     : null;
 
-  const toggleRole = () => {
-    haptic.medium();
-    setRole(role === 'earner' ? 'poster' : 'earner');
-  };
-
   const saveGoals = () => {
     const eg = parseInt(earGoal) || weeklyEarningGoal;
     const jg = parseInt(jobGoal) || weeklyJobsGoal;
     setGoals(eg, jg);
     setEditGoals(false);
     haptic.success();
-    Alert.alert('Goals Updated! 🎯', 'Your weekly goals have been saved.');
+    Alert.alert('Goals Updated!', 'Your weekly goals have been saved.');
   };
 
   return (
@@ -81,9 +124,22 @@ export default function ProfileScreen({ navigation }) {
     >
       <GradientHeader colors={gradients.profile}>
         <View style={styles.profileRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{avatarInitial}</Text>
-          </View>
+          <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8} style={styles.avatarWrap}>
+            <Avatar
+              url={avatarUrl}
+              initial={avatarInitial}
+              size={64}
+              fontSize={26}
+              bg="rgba(255,255,255,0.25)"
+              borderColor="rgba(255,255,255,0.6)"
+              borderWidth={3}
+            />
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={14} color="#fff" />}
+            </View>
+          </TouchableOpacity>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{name}</Text>
             {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
@@ -97,20 +153,21 @@ export default function ProfileScreen({ navigation }) {
         <XPBar levelInfo={levelInfo} xp={xp} dark />
       </GradientHeader>
 
-      <View style={styles.roleToggle}>
-        <Text style={styles.roleLabel}>
-          {role === 'earner' ? '🎓 Earner Mode' : '📋 Poster Mode'}
-        </Text>
-        <View style={styles.roleRight}>
-          <Text style={styles.roleHint}>{role === 'earner' ? 'Find gigs' : 'Post gigs'}</Text>
-          <Switch
-            value={role === 'poster'}
-            onValueChange={toggleRole}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
-      </View>
+      {paymentAlert && (
+        <TouchableOpacity
+          style={styles.payAlert}
+          onPress={() => { haptic.medium(); navigation.navigate('PayoutSetup'); }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.payAlertIcon}>
+            <Ionicons name="card" size={18} color="#fff" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.payAlertTitle}>{paymentAlert.title}</Text>
+            <Text style={styles.payAlertSub}>{paymentAlert.sub}</Text>
+          </View>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.statsRow}>
         <Stat label="Jobs Done" value={weeklyJobsDone} />
@@ -129,7 +186,7 @@ export default function ProfileScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Reviews I've Received</Text>
         {myReviews.length === 0 ? (
           <View style={styles.noReviewsCard}>
-            <Text style={styles.noReviewsIcon}>⭐</Text>
+            <Ionicons name="star-outline" size={30} color={colors.gold} style={styles.noReviewsIcon} />
             <Text style={styles.noReviewsTitle}>No reviews yet</Text>
             <Text style={styles.noReviewsText}>Complete gigs to start earning reviews from posters.</Text>
           </View>
@@ -137,18 +194,24 @@ export default function ProfileScreen({ navigation }) {
           myReviews.map(r => (
             <View key={r.id} style={styles.reviewCard}>
               <View style={styles.reviewHeader}>
-                <View style={styles.reviewerAvatar}>
-                  <Text style={styles.reviewerAvatarText}>
-                    {r.reviewer?.avatar_initial || r.author?.[0]?.toUpperCase() || '?'}
-                  </Text>
-                </View>
+                <Avatar
+                  url={r.reviewer?.avatar_url}
+                  initial={r.reviewer?.avatar_initial || r.author?.[0]}
+                  size={36}
+                  fontSize={14}
+                  style={{ marginRight: 10 }}
+                />
                 <View style={styles.reviewerInfo}>
                   <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
                   <View style={styles.reviewStarsRow}>
                     {[1,2,3,4,5].map(s => (
-                      <Text key={s} style={[styles.reviewStar, s <= Math.round(r.rating) && styles.reviewStarFilled]}>
-                        {s <= Math.round(r.rating) ? '⭐' : '☆'}
-                      </Text>
+                      <Ionicons
+                        key={s}
+                        name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
+                        size={12}
+                        color={s <= Math.round(r.rating) ? colors.gold : colors.border}
+                        style={styles.reviewStar}
+                      />
                     ))}
                     <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
                   </View>
@@ -161,44 +224,18 @@ export default function ProfileScreen({ navigation }) {
         )}
       </View>
 
-      {/* My Posted Gigs */}
-      {postedJobs.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Posted Gigs</Text>
-          {postedJobs.map(job => (
-            <View key={job.id} style={styles.postedJobCard}>
-              <View style={styles.postedJobInfo}>
-                <Text style={styles.postedJobTitle} numberOfLines={1}>{job.title}</Text>
-                <Text style={styles.postedJobMeta}>
-                  {job.payType === 'hourly' ? `$${job.pay}/hr` : `$${job.pay} flat`}
-                  {'  ·  '}{job.location}
-                </Text>
-              </View>
-              <View style={styles.postedJobActions}>
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => navigation.navigate('EditJob', { jobId: job.id })}
-                >
-                  <Text style={styles.editBtnText}>✏️ Edit</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Manage Bookings — always show if there are any poster bookings */}
+      {/* Manage your gigs — lives in the Gigs tab now */}
       {(postedJobs.length > 0 || posterBookings?.length > 0) && (
         <TouchableOpacity
           style={styles.manageBtn}
-          onPress={() => navigation.navigate('ManageBookings')}
+          onPress={() => { haptic.medium(); navigation.navigate('GigsTab'); }}
         >
           <View style={styles.manageBtnLeft}>
-            <Text style={styles.manageBtnIcon}>📬</Text>
+            <Ionicons name="briefcase" size={22} color={colors.primary} style={styles.manageBtnIcon} />
             <View>
-              <Text style={styles.manageBtnTitle}>Manage Booking Requests</Text>
+              <Text style={styles.manageBtnTitle}>Manage My Gigs</Text>
               <Text style={styles.manageBtnSub}>
-                {profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'View all incoming bookings'}
+                {profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'Posted gigs & booking requests'}
               </Text>
             </View>
           </View>
@@ -212,10 +249,27 @@ export default function ProfileScreen({ navigation }) {
       )}
 
       <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('PayoutSetup'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="card" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Payments</Text>
+            <Text style={styles.manageBtnSub}>{paymentsSub}</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.settingsBtn}
         onPress={() => navigation.navigate('Settings')}
       >
-        <Text style={styles.settingsBtnText}>⚙️ Edit Profile & Settings</Text>
+        <View style={styles.settingsBtnRow}>
+          <Ionicons name="settings-outline" size={18} color={colors.textPrimary} style={{ marginRight: 8 }} />
+          <Text style={styles.settingsBtnText}>Edit Profile & Settings</Text>
+        </View>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -261,6 +315,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
   },
+  settingsBtnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   settingsBtnText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   signOutBtn: {
     marginHorizontal: 16, marginTop: 12, borderRadius: 14,
@@ -270,6 +325,13 @@ const styles = StyleSheet.create({
   signOutText: { fontSize: 15, fontWeight: '700', color: colors.urgent },
   container: { flex: 1, backgroundColor: colors.background },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  avatarWrap: { marginRight: 16 },
+  avatarBadge: {
+    position: 'absolute', right: -2, bottom: -2,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.primary, borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
   avatar: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -289,6 +351,20 @@ const styles = StyleSheet.create({
   roleLabel: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   roleRight: { flexDirection: 'row', alignItems: 'center' },
   roleHint: { fontSize: 12, color: colors.textMuted, marginRight: 10 },
+  payAlert: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    marginHorizontal: 16, marginTop: 14,
+    borderRadius: 14, padding: 14,
+    ...shadows.sm,
+  },
+  payAlertIcon: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  payAlertTitle: { color: '#fff', fontSize: 13.5, fontWeight: '800' },
+  payAlertSub: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 1 },
   statsRow: {
     backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 14,
     borderRadius: 16, flexDirection: 'row', alignItems: 'center',

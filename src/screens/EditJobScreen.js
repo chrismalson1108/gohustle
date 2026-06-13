@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, Alert, Keyboard,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Image,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
+import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
+import { pickImages, uploadImages } from '../lib/uploadImage';
 import { colors, gradients } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 
@@ -19,6 +22,7 @@ export default function EditJobScreen({ route, navigation }) {
   const { jobId } = route.params;
   const { jobs, updateJob, deleteJob, posterBookings, clearAmendment } = useJobs();
   const { showToast } = useUser();
+  const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
 
@@ -38,8 +42,19 @@ export default function EditJobScreen({ route, navigation }) {
     slots: job?.slots ? job.slots.map(s => ({ ...s })) : [],
   });
   const [showCustomCat, setShowCustomCat] = useState(!isKnownCategory && !!job?.category);
+  const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
+  const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const addPhotos = async () => {
+    const res = await pickImages({ multiple: true });
+    if (res.canceled) {
+      if (res.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to add photos.' });
+      return;
+    }
+    setPhotos(prev => [...prev, ...res.uris].slice(0, 6));
+  };
   const effectiveCategory = form.category === 'other' ? form.customCategory : form.category;
 
   // Lock core terms once any booking is confirmed/in-progress
@@ -57,6 +72,21 @@ export default function EditJobScreen({ route, navigation }) {
       haptic.error();
       return;
     }
+    setSaving(true);
+    // Upload any newly added local photos; keep already-hosted URLs in order.
+    let finalPhotos = photos;
+    try {
+      const toUpload = photos.filter(u => !u.startsWith('http'));
+      if (toUpload.length) {
+        const uploaded = await uploadImages({ uris: toUpload, bucket: 'job-photos', userId: user.id });
+        let idx = 0;
+        finalPhotos = photos.map(u => (u.startsWith('http') ? u : uploaded[idx++]));
+      }
+    } catch (e) {
+      setSaving(false);
+      showToast({ icon: '⚠️', title: 'Photo upload failed', message: e.message || 'Please try again.' });
+      return;
+    }
     haptic.success();
     const reqs = form.requirements ? form.requirements.split('\n').filter(Boolean) : [];
     await updateJob(jobId, {
@@ -64,10 +94,12 @@ export default function EditJobScreen({ route, navigation }) {
       pay: parseFloat(form.pay), payType: form.payType,
       location: form.location, description: form.description,
       urgent: form.urgent, requirements: reqs, slots: form.slots,
+      photos: finalPhotos,
     });
     if (amendmentAccepted && lockedBooking) {
       await clearAmendment(lockedBooking.id);
     }
+    setSaving(false);
     showToast({ icon: '✏️', title: 'Gig Updated!', message: 'Your changes are live.' });
     navigation.goBack();
   };
@@ -110,13 +142,13 @@ export default function EditJobScreen({ route, navigation }) {
               <Text style={styles.deleteBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Edit Gig ✏️</Text>
+          <Text style={styles.headerTitle}>Edit Gig</Text>
           <Text style={styles.headerSub}>{job.title}</Text>
         </LinearGradient>
 
         {isLocked && !amendmentAccepted && (
           <View style={styles.lockBanner}>
-            <Text style={styles.lockIcon}>🔒</Text>
+            <Ionicons name="lock-closed" size={20} color="#D97706" style={styles.lockIcon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.lockTitle}>Core Terms Locked</Text>
               <Text style={styles.lockDesc}>
@@ -127,7 +159,7 @@ export default function EditJobScreen({ route, navigation }) {
         )}
         {amendmentAccepted && (
           <View style={styles.amendBanner}>
-            <Text style={styles.lockIcon}>✅</Text>
+            <Ionicons name="checkmark-circle" size={20} color={colors.success} style={styles.lockIcon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.amendTitle}>Amendment Accepted</Text>
               <Text style={styles.lockDesc}>
@@ -155,7 +187,7 @@ export default function EditJobScreen({ route, navigation }) {
                     style={[styles.catChip, active && styles.catChipActive]}
                     onPress={() => { haptic.selection(); set('category', cat.id); setShowCustomCat(false); }}
                   >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
                     <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
@@ -164,7 +196,7 @@ export default function EditJobScreen({ route, navigation }) {
                 style={[styles.catChip, form.category === 'other' && styles.catChipActive]}
                 onPress={() => { haptic.selection(); set('category', 'other'); setShowCustomCat(true); }}
               >
-                <Text style={styles.catChipIcon}>✏️</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
                 <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
               </TouchableOpacity>
             </View>
@@ -175,7 +207,7 @@ export default function EditJobScreen({ route, navigation }) {
             )}
           </Field>
 
-          <Field label={`Pay *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Pay *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             <View style={[styles.payRow, !canEditCore && styles.lockedRow]}>
               <View style={styles.payInputWrap}>
                 <Text style={styles.dollar}>$</Text>
@@ -198,7 +230,7 @@ export default function EditJobScreen({ route, navigation }) {
             </View>
           </Field>
 
-          <Field label={`Location *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Location *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
               ? <LocationPicker value={form.location} onChange={v => set('location', v)} />
               : <View style={[styles.input, styles.lockedInput]}><Text style={styles.lockedValue}>{form.location}</Text></View>
@@ -212,6 +244,25 @@ export default function EditJobScreen({ route, navigation }) {
               onChangeText={v => set('description', v)} />
           </Field>
 
+          <Field label="Photos (optional)">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {photos.map((u, i) => (
+                <View key={i} style={styles.thumbWrap}>
+                  <Image source={{ uri: u }} style={styles.thumb} />
+                  <TouchableOpacity style={styles.thumbRemove} onPress={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))}>
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {photos.length < 6 && (
+                <TouchableOpacity style={styles.addTile} onPress={addPhotos}>
+                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  <Text style={styles.addTileText}>Add</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </Field>
+
           <Field label="Requirements (one per line)">
             <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={3}
               textAlignVertical="top" placeholder={'e.g. Must have a car\nExperience required'}
@@ -219,14 +270,14 @@ export default function EditJobScreen({ route, navigation }) {
               onChangeText={v => set('requirements', v)} />
           </Field>
 
-          <Field label={`Available Times${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Available Times${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
               ? <DateTimePicker slots={form.slots} onChange={slots => set('slots', slots)} />
               : (
                 <View style={styles.lockedSlots}>
                   {form.slots.map(s => (
                     <View key={s.id} style={styles.lockedSlotTag}>
-                      <Text style={styles.lockedSlotText}>📅 {s.label}</Text>
+                      <Text style={styles.lockedSlotText}>{s.label}</Text>
                     </View>
                   ))}
                 </View>
@@ -239,13 +290,15 @@ export default function EditJobScreen({ route, navigation }) {
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
             <Text style={styles.urgentToggleText}>
-              {form.urgent ? '⚡ Marked as Urgent — Needed ASAP' : '⚡ Mark as Urgent (optional)'}
+              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleSave} activeOpacity={0.85}>
+          <TouchableOpacity onPress={handleSave} activeOpacity={0.85} disabled={saving}>
             <LinearGradient colors={gradients.profile} style={styles.submitBtn}>
-              <Text style={styles.submitText}>Save Changes ✓</Text>
+              {saving
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>Save Changes ✓</Text>}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -294,6 +347,18 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 12, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
   input: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border },
   textArea: { minHeight: 96, lineHeight: 22 },
+  thumbWrap: { marginRight: 10 },
+  thumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: colors.border },
+  thumbRemove: {
+    position: 'absolute', top: -6, right: -6,
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+  },
+  addTile: {
+    width: 84, height: 84, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+  },
+  addTileText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
   lockedInput: { opacity: 0.6 },
   lockedValue: { fontSize: 15, color: colors.textSecondary },
   lockedRow: { opacity: 0.6 },

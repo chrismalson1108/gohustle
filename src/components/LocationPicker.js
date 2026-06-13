@@ -4,6 +4,7 @@ import {
   ScrollView, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 
 const REMOTE_OPTIONS = ['Remote', 'Zoom / Remote', 'Work from Home'];
@@ -113,7 +114,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
   return (
     <View style={styles.wrap}>
       <View style={styles.inputRow}>
-        <Text style={styles.pin}>📍</Text>
+        <Ionicons name="location" size={16} color={colors.textMuted} style={styles.pin} />
         <TextInput
           style={styles.input}
           value={query}
@@ -129,7 +130,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} />
           : (
             <TouchableOpacity onPress={useDeviceLocation} style={styles.gpsBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.gpsIcon}>🎯</Text>
+              <Ionicons name="locate" size={16} color={colors.primary} style={styles.gpsIcon} />
             </TouchableOpacity>
           )
         }
@@ -150,7 +151,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           <ScrollView keyboardShouldPersistTaps="always" style={{ maxHeight: 240 }}>
             {remoteFiltered.map(loc => (
               <TouchableOpacity key={loc} style={styles.suggestion} onPress={() => select(loc)}>
-                <Text style={styles.suggestIcon}>🌐</Text>
+                <Ionicons name="globe-outline" size={15} color={colors.textSecondary} style={styles.suggestIcon} />
                 <Text style={styles.suggestText}>{loc}</Text>
               </TouchableOpacity>
             ))}
@@ -162,7 +163,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
             )}
             {results.map(loc => (
               <TouchableOpacity key={loc} style={styles.suggestion} onPress={() => select(loc)}>
-                <Text style={styles.suggestIcon}>📍</Text>
+                <Ionicons name="location" size={15} color={colors.textSecondary} style={styles.suggestIcon} />
                 <Text style={styles.suggestText}>{loc}</Text>
               </TouchableOpacity>
             ))}

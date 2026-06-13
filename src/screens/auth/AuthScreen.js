@@ -4,13 +4,14 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients, shadows } from '../../theme';
 
 // tab: 'signin' | 'signup' | 'forgot'
 export default function AuthScreen() {
-  const { signIn, signUp, resetPassword, authError, clearError } = useAuth();
+  const { signIn, signUp, resetPassword, resendConfirmation, clearPending, pendingEmail, authError, clearError } = useAuth();
   const insets = useSafeAreaInsets();
   const [tab, setTab]           = useState('signin');
   const [name, setName]         = useState('');
@@ -20,6 +21,10 @@ export default function AuthScreen() {
   const [loading, setLoading]   = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [localError, setLocalError] = useState('');
+  const [resendMsg, setResendMsg]   = useState('');
+  const [resending, setResending]   = useState(false);
+
+  const showVerify = !!pendingEmail;
 
   const switchTab = (t) => {
     setTab(t);
@@ -59,13 +64,18 @@ export default function AuthScreen() {
     if (tab === 'signin') {
       await signIn(email.trim(), password);
     } else {
-      const ok = await signUp(email.trim(), password, name.trim());
-      if (ok) {
-        setSuccessMsg('Account created! Check your email to confirm, then sign in.');
-        switchTab('signin');
-      }
+      // On success, AuthContext sets pendingEmail → the verify panel takes over.
+      await signUp(email.trim(), password, name.trim());
     }
     setLoading(false);
+  };
+
+  const handleResend = async () => {
+    setResendMsg('');
+    setResending(true);
+    const ok = await resendConfirmation(pendingEmail);
+    setResending(false);
+    if (ok) setResendMsg('Confirmation email sent! Check your inbox (and spam).');
   };
 
   const isReady = tab === 'forgot'
@@ -79,12 +89,49 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         <LinearGradient colors={gradients.primary} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
-          <Text style={styles.heroEmoji}>⚡</Text>
+          <Ionicons name="flash" size={48} color="#fff" style={styles.heroEmoji} />
           <Text style={styles.heroTitle}>GoHustlr</Text>
           <Text style={styles.heroSub}>Get paid to hustle. Post gigs. Earn money.</Text>
         </LinearGradient>
 
         <View style={styles.card}>
+
+          {showVerify ? (
+            <View style={styles.verifyWrap}>
+              <View style={styles.verifyIcon}>
+                <Ionicons name="mail-unread" size={38} color={colors.primary} />
+              </View>
+              <Text style={styles.verifyTitle}>Verify your email</Text>
+              <Text style={styles.verifySub}>
+                We sent a confirmation link to{'\n'}
+                <Text style={styles.verifyEmail}>{pendingEmail}</Text>.{'\n'}
+                Tap it, then come back and sign in.
+              </Text>
+
+              {!!resendMsg && (
+                <View style={styles.successBox}><Text style={styles.successText}>✓ {resendMsg}</Text></View>
+              )}
+              {!!authError && (
+                <View style={styles.errorBox}><Text style={styles.errorText}>⚠ {authError}</Text></View>
+              )}
+
+              <TouchableOpacity onPress={() => { clearPending(); setResendMsg(''); switchTab('signin'); }} activeOpacity={0.85}>
+                <LinearGradient colors={gradients.primary} style={styles.submitBtn}>
+                  <Text style={styles.submitText}>I've confirmed — Sign in</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={handleResend} disabled={resending} style={styles.forgotLink}>
+                {resending
+                  ? <ActivityIndicator color={colors.primary} />
+                  : <Text style={styles.forgotLinkText}>Resend confirmation email</Text>}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => { clearPending(); setResendMsg(''); switchTab('signup'); }} style={styles.forgotLink}>
+                <Text style={styles.switchHint}>Use a different email</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (<>
 
           {tab !== 'forgot' && (
             <View style={styles.tabs}>
@@ -104,7 +151,7 @@ export default function AuthScreen() {
 
           {tab === 'forgot' && (
             <View style={styles.forgotHeader}>
-              <Text style={styles.forgotTitle}>🔑 Reset Password</Text>
+              <Text style={styles.forgotTitle}>Reset Password</Text>
               <Text style={styles.forgotSub}>Enter your email and we'll send a reset link.</Text>
             </View>
           )}
@@ -223,6 +270,8 @@ export default function AuthScreen() {
             </TouchableOpacity>
           )}
 
+          </>)}
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -249,6 +298,14 @@ const styles = StyleSheet.create({
   tabBtnActive: { backgroundColor: colors.surface, ...shadows.sm },
   tabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
   tabTextActive: { color: colors.primary, fontWeight: '800' },
+  verifyWrap: { alignItems: 'center', paddingVertical: 4 },
+  verifyIcon: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  verifyTitle: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, marginBottom: 8 },
+  verifySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
+  verifyEmail: { fontWeight: '800', color: colors.textPrimary },
   forgotHeader: { alignItems: 'center', marginBottom: 20 },
   forgotTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
   forgotSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },

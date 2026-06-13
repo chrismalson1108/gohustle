@@ -39,14 +39,15 @@ SafeAreaProvider → AuthProvider → RootNavigator
         ├── UserProvider
         └── JobsProvider
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
-                    └── Tab.Navigator (4 tabs)
-                          ├── HomeTab   → HomeStack:    HomeScreen → JobDetail
-                          ├── EarnTab   → EarnStack:    EarnScreen → JobDetail
-                          ├── GigsTab   → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
-                          └── ProfileTab → ProfileStack: ProfileScreen → ManageBookings
+                    └── Tab.Navigator (4 tabs — display labels in parens, route names unchanged)
+                          ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail
+                          ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail
+                          ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
+                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → ManageBookings
                                                                        → Settings
 ```
 
+- **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`ProfileTab`) are intentionally kept even though display labels are Browse/My Jobs/Hiring/Profile** — many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.
 - `AppNavigator` is a component rendered *inside* providers so it can call `useJobs()` for tab badge counts — this is why `NavigationContainer` is not at the root.
 - `AchievementToast` renders outside `NavigationContainer` but inside `SafeAreaProvider`.
@@ -55,7 +56,9 @@ SafeAreaProvider → AuthProvider → RootNavigator
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `authError`, `onboardingDone`. Functions: `signIn`, `signUp`, `resetPassword`, `signOut`, `markOnboardingDone`. The `onboardingDone` flag is only set to `false` on a fresh `signUp()` call — not on login — so returning users skip onboarding.
+`session`, `user`, `loading`, `authError`, `onboardingDone`, `pendingEmail`. Functions: `signIn`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `signOut`, `markOnboardingDone`.
+
+**Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
 ### UserContext (`src/context/UserContext.js`)
 XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync for XP/earnings to avoid flooding DB. Key exports: `addXP`, `recordApply`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync.
@@ -75,18 +78,21 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 
 Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earner channel) and `poster-bookings-${user.id}` (poster channel, broad subscription that calls `loadPosterBookings()` on any change).
 
+### Push notifications (`src/lib/push.js`)
+Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab. **Requires a dev-client rebuild** — `expo-notifications` is native and isn't in the current binary; plain Expo Go on SDK 54 can't receive Android remote push.
+
 ## Key Screens
 
 | Screen | Purpose |
 |---|---|
 | `HomeScreen` | Browse jobs with category chips, search, and full filter sheet (pay, days, location/state, pay type, urgency, sort). Pull-to-refresh. |
 | `JobDetailScreen` | Job info, slot picker, counter-offer input, book button. Shows "This is your gig" banner if `job.posterId === user.id`. |
-| `EarnScreen` | Booked gigs list with status, mark-complete button, message-poster button, earnings dashboard, amendment proposal UI. Pull-to-refresh. |
-| `GigsScreen` | Poster's hub — all posted jobs with expandable booking sections; accept/decline/verify/delete actions; amendment response UI; navigate to PostJob. Pull-to-refresh. |
+| `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
+| `GigsScreen` (tab "Hiring") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only completed/declined booking history. Pull-to-refresh. |
 | `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip. Nested in GigsStack. |
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
-| `ProfileScreen` | Stats, badges, posted gigs list with Edit buttons, Settings button, role toggle, sign out. Pull-to-refresh. |
+| `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
@@ -105,6 +111,14 @@ Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earn
 - **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.
 - **`RatingStars`** — reusable star rating display/input component.
 - **`JobCard`** — job listing card used in HomeScreen and search results.
+- **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
+
+### Images (Supabase Storage buckets — all public read, owner-scoped writes)
+- `avatars` → `profiles.avatar_url` (profile photos)
+- `completion-photos` → `bookings.completion_photos text[]` (earner proof-of-work, shown in CompletionModal + history)
+- `job-photos` → `jobs.photos text[]` (gallery on JobDetail, cover on JobCard; set in PostJob/EditJob)
+- `chat-photos` → `messages.image_url` (image messages in MessageSheet)
+All four use `src/lib/uploadImage.js`. Migrations: `supabase/migration_profile_photos.sql`, `migration_completion_photos.sql`, `migration_job_chat_photos.sql` (applied to the remote DB via the Management API).
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
@@ -135,7 +149,7 @@ pending → confirmed → completed → verified
 ```
 - Earner books → `pending`
 - Poster accepts → `confirmed`; poster declines → `declined`
-- Earner marks done → sets `earner_done = true`; if poster already done → status advances to `completed`
+- Earner marks done → opens the Finish sheet (optional **completion photos** uploaded to the `completion-photos` bucket → `bookings.completion_photos text[]`), then sets `earner_done = true`; if poster already done → status advances to `completed`. Photos are shown to the poster in `CompletionModal` and in both sides' history.
 - Poster marks done → sets `poster_done = true`; if earner already done → status advances to `completed`
 - Poster verifies + rates → `verified` (inserts review, updates earner rolling rating)
 - Earner rates poster → updates `poster_rating` / `poster_review_count` on the poster's profile

@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect } from 'react';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
 import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
+import { registerPushToken, addNotificationResponseListener } from './src/lib/push';
 
 import HomeScreen           from './src/screens/HomeScreen';
 import EarnScreen           from './src/screens/EarnScreen';
@@ -30,6 +31,23 @@ import { colors } from './src/theme';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
+
+// Registers this device for push on login and routes notification taps to a tab.
+function PushManager() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user?.id) registerPushToken(user.id);
+  }, [user?.id]);
+  useEffect(() => {
+    const unsub = addNotificationResponseListener((data) => {
+      const tab = data?.tab;
+      if (tab && navigationRef.isReady()) navigationRef.navigate(tab);
+    });
+    return unsub;
+  }, []);
+  return null;
+}
 
 const DETAIL_OPTS = {
   headerShown: true, title: '',
@@ -84,9 +102,9 @@ function ProfileStack() {
 }
 
 const TAB_ICONS = {
-  HomeTab:    ['home',          'home-outline'],
-  EarnTab:    ['flash',         'flash-outline'],
-  GigsTab:    ['briefcase',     'briefcase-outline'],
+  HomeTab:    ['search',        'search-outline'],
+  EarnTab:    ['briefcase',     'briefcase-outline'],
+  GigsTab:    ['megaphone',     'megaphone-outline'],
   ProfileTab: ['person-circle', 'person-circle-outline'],
 };
 
@@ -95,7 +113,7 @@ function AppNavigator() {
   const { earnBadgeCount, profileBadgeCount } = useJobs();
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
@@ -120,8 +138,8 @@ function AppNavigator() {
         })}
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
-        <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'Earn' }} />
-        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Gigs' }} />
+        <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'My Jobs' }} />
+        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Hiring' }} />
         <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
       </Tab.Navigator>
     </NavigationContainer>
@@ -135,6 +153,7 @@ function MainApp() {
         <View style={{ flex: 1, position: 'relative' }}>
           <AppNavigator />
           <AchievementToast />
+          <PushManager />
         </View>
       </JobsProvider>
     </UserProvider>

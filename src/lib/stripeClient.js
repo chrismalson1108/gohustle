@@ -38,4 +38,16 @@ export const stripeEdge = {
 
   getPayoutOnboardingUrl: () =>
     callEdgeFunction('stripe-connect-onboard'),
+
+  createSetupIntent: () =>
+    callEdgeFunction('stripe-create-setup-intent'),
+
+  getPaymentMethodStatus: () =>
+    callEdgeFunction('stripe-payment-method-status'),
+
+  getPayoutLoginLink: () =>
+    callEdgeFunction('stripe-payout-login-link'),
+
+  detachPaymentMethod: () =>
+    callEdgeFunction('stripe-detach-payment-method'),
 };

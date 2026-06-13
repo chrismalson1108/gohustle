@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
@@ -76,8 +77,14 @@ export default function DateTimePicker({ slots = [], onChange }) {
         onPress={addFlexible}
         activeOpacity={hasFlexible ? 1 : 0.75}
       >
+        <Ionicons
+          name={hasFlexible ? 'checkmark' : 'calendar'}
+          size={15}
+          color={hasFlexible ? colors.success : colors.textSecondary}
+          style={{ marginRight: 6 }}
+        />
         <Text style={[styles.flexBtnText, hasFlexible && styles.flexBtnTextActive]}>
-          {hasFlexible ? '✓ Flexible — Contact to Schedule' : '📅 Flexible — Contact to Schedule'}
+          Flexible — Contact to Schedule
         </Text>
       </TouchableOpacity>
 
@@ -118,8 +125,11 @@ export default function DateTimePicker({ slots = [], onChange }) {
                   onPress={() => handleTimeSelect(t)}
                   activeOpacity={added ? 1 : 0.7}
                 >
+                  {added && (
+                    <Ionicons name="checkmark" size={12} color={colors.success} style={{ marginRight: 4 }} />
+                  )}
                   <Text style={[styles.timeText, added && styles.timeTextAdded]}>
-                    {added ? '✓ ' : ''}{t}
+                    {t}
                   </Text>
                 </TouchableOpacity>
               );
@@ -134,9 +144,12 @@ export default function DateTimePicker({ slots = [], onChange }) {
           <Text style={styles.addedLabel}>Added slots:</Text>
           {slots.map(s => (
             <View key={s.id} style={styles.slotTag}>
-              <Text style={styles.slotTagText}>📅 {s.label}</Text>
+              <View style={styles.slotTagLabel}>
+                <Ionicons name="calendar" size={13} color={colors.success} style={{ marginRight: 6 }} />
+                <Text style={styles.slotTagText}>{s.label}</Text>
+              </View>
               <TouchableOpacity onPress={() => removeSlot(s.id)} style={styles.slotRemove}>
-                <Text style={styles.slotRemoveText}>✕</Text>
+                <Ionicons name="close" size={14} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
           ))}
@@ -157,6 +170,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: 12,
     padding: 14, alignItems: 'center', marginBottom: 8,
     borderWidth: 1.5, borderColor: colors.border,
+    flexDirection: 'row', justifyContent: 'center',
   },
   flexBtnActive: { backgroundColor: colors.accentLight, borderColor: colors.success },
   flexBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
@@ -184,6 +198,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
     marginRight: 8, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center',
   },
   timeChipAdded: { backgroundColor: colors.accentLight, borderColor: colors.success },
   timeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
@@ -198,8 +213,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
   },
+  slotTagLabel: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   slotTagText: { fontSize: 13, fontWeight: '600', color: colors.success },
   slotRemove: { padding: 4 },
-  slotRemoveText: { fontSize: 14, color: colors.textMuted, fontWeight: '700' },
   hint: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: 8, fontStyle: 'italic' },
 });

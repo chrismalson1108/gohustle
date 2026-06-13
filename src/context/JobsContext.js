@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
+import { notify } from '../lib/push';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -25,12 +26,14 @@ function transformJob(dbJob) {
     urgent: dbJob.urgent,
     estimatedHours: Number(dbJob.estimated_hours),
     status: dbJob.status,
+    photos: dbJob.photos || [],
     postedAt: dbJob.created_at
       ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : 'Recently',
     poster: {
       name: dbJob.profiles?.name || 'Anonymous',
       avatarInitial: dbJob.profiles?.avatar_initial || 'A',
+      avatarUrl: dbJob.profiles?.avatar_url || null,
       rating: Number(dbJob.profiles?.rating) || 5.0,
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
@@ -63,10 +66,12 @@ function transformBooking(b) {
     posterReview: b.poster_review || null,
     amendmentNote: b.amendment_note || null,
     amendmentStatus: b.amendment_status || 'none',
+    completionPhotos: b.completion_photos || [],
     earner: b.earner ? {
       id: b.earner.id,
       name: b.earner.name,
       avatarInitial: b.earner.avatar_initial,
+      avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
     } : null,
@@ -187,7 +192,7 @@ export function JobsProvider({ children }) {
       .from('jobs')
       .select(`
         *,
-        profiles!jobs_poster_id_fkey(name, avatar_initial, rating, review_count, verified),
+        profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified),
         job_slots(*),
         job_requirements(*),
         reviews(*)
@@ -243,7 +248,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, rating, review_count),
+        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count),
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
       `)
       .in('job_id', jobIds)
@@ -271,8 +276,8 @@ export function JobsProvider({ children }) {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
         }
         if (b.status === 'verified') {
-          const stars = '⭐'.repeat(Math.round(b.earner_rating || 5));
-          showToast({ icon: '💚', title: 'Job Verified!', message: `You earned ${stars} — paid via ${b.payment_method || 'cash'}!` });
+          const stars = `${Math.round(b.earner_rating || 5)}★`;
+          showToast({ icon: '💚', title: 'Job Verified!', message: `${stars} rating — paid via ${b.payment_method || 'cash'}!` });
         }
         if (b.status === 'declined') {
           showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
@@ -331,18 +336,33 @@ export function JobsProvider({ children }) {
 
     // Replace temp booking with real one
     await loadBookings();
+
+    // Notify the poster of the new request
+    if (job?.posterId) {
+      notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
+    }
   };
 
-  // Earner marks their side done; if poster already done → complete
-  const markEarnerDone = async (bookingId) => {
+  // Earner marks their side done; if poster already done → complete.
+  // Optional completionPhotos (array of public URLs) are saved as proof of work.
+  const markEarnerDone = async (bookingId, completionPhotos = null) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     const bothDone = booking?.posterDone;
     const patch = bothDone
       ? { earner_done: true, status: 'completed', completed_at: new Date().toISOString() }
       : { earner_done: true };
-    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { earnerDone: true, ...(bothDone && { status: 'completed' }) } });
+    if (completionPhotos?.length) patch.completion_photos = completionPhotos;
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: {
+      earnerDone: true,
+      ...(completionPhotos?.length && { completionPhotos }),
+      ...(bothDone && { status: 'completed' }),
+    } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-    if (error) console.warn('Earner done error:', error.message);
+    if (error) { console.warn('Earner done error:', error.message); return; }
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (posterId) {
+      notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab' });
+    }
   };
 
   // Poster marks their side done; if earner already done → complete
@@ -354,7 +374,10 @@ export function JobsProvider({ children }) {
       : { poster_done: true };
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterDone: true, ...(bothDone && { status: 'completed' }) } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-    if (error) console.warn('Poster done error:', error.message);
+    if (error) { console.warn('Poster done error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Poster confirmed completion', 'The poster marked the job done on their side.', { tab: 'EarnTab' });
+    }
   };
 
   // Keep old name as alias for earner side
@@ -374,6 +397,7 @@ export function JobsProvider({ children }) {
     if (booking?.jobId) {
       const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
       if (jobRow?.poster_id) {
+        notify(jobRow.poster_id, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab' });
         const { data: posterProfile } = await supabase
           .from('profiles')
           .select('poster_rating, poster_review_count')
@@ -395,12 +419,16 @@ export function JobsProvider({ children }) {
   // ── Poster actions ─────────────────────────────────────────────────────────
 
   const acceptBooking = async (bookingId) => {
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'confirmed' } });
     const { error } = await supabase
       .from('bookings')
       .update({ status: 'confirmed' })
       .eq('id', bookingId);
-    if (error) console.warn('Accept error:', error.message);
+    if (error) { console.warn('Accept error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Booking accepted!', `Your booking for "${booking.job?.title || 'a gig'}" was accepted. Get ready!`, { tab: 'EarnTab' });
+    }
   };
 
   const declineBooking = async (bookingId) => {
@@ -410,12 +438,16 @@ export function JobsProvider({ children }) {
     } catch (_) {
       // No payment or already cancelled — safe to ignore
     }
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'declined' } });
     const { error } = await supabase
       .from('bookings')
       .update({ status: 'declined' })
       .eq('id', bookingId);
-    if (error) console.warn('Decline error:', error.message);
+    if (error) { console.warn('Decline error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Booking declined', `Your booking for "${booking.job?.title || 'a gig'}" wasn't accepted this time.`, { tab: 'EarnTab' });
+    }
   };
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod }) => {
@@ -440,6 +472,10 @@ export function JobsProvider({ children }) {
 
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
     if (error) { console.warn('Verify error:', error.message); return; }
+
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
+    }
 
     // Mark the job itself as completed so it leaves the Browse screen
     if (booking?.jobId) {
@@ -478,6 +514,31 @@ export function JobsProvider({ children }) {
         }).eq('id', booking.earner.id);
       }
     }
+
+    // Credit the earner's earnings with their captured payout (amount after the 10% fee)
+    if (booking?.earner?.id) {
+      const { data: payment } = await supabase
+        .from('payments')
+        .select('earner_amount_cents')
+        .eq('booking_id', bookingId)
+        .single();
+
+      if (payment?.earner_amount_cents) {
+        const dollars = payment.earner_amount_cents / 100;
+        const { data: ep } = await supabase
+          .from('profiles')
+          .select('earnings_today, earnings_week, earnings_total')
+          .eq('id', booking.earner.id)
+          .single();
+        if (ep) {
+          await supabase.from('profiles').update({
+            earnings_today: Number(ep.earnings_today || 0) + dollars,
+            earnings_week:  Number(ep.earnings_week  || 0) + dollars,
+            earnings_total: Number(ep.earnings_total || 0) + dollars,
+          }).eq('id', booking.earner.id);
+        }
+      }
+    }
   };
 
   const updateJob = async (jobId, jobData) => {
@@ -488,6 +549,7 @@ export function JobsProvider({ children }) {
       location: jobData.location, description: jobData.description,
       urgent: jobData.urgent,
     };
+    if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
 
@@ -520,13 +582,14 @@ export function JobsProvider({ children }) {
     if (!user) return;
     const { data: profile } = await supabase
       .from('profiles')
-      .select('name, avatar_initial, rating, review_count, verified')
+      .select('name, avatar_initial, avatar_url, rating, review_count, verified')
       .eq('id', user.id)
       .single();
 
     const poster = {
       name: profile?.name || 'You',
       avatarInitial: profile?.avatar_initial || 'Y',
+      avatarUrl: profile?.avatar_url || null,
       rating: Number(profile?.rating) || 5.0,
       reviewCount: profile?.review_count || 0,
       verified: profile?.verified || false,
@@ -539,6 +602,7 @@ export function JobsProvider({ children }) {
         pay: jobData.pay, pay_type: jobData.payType,
         location: jobData.location, description: jobData.description,
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
+        photos: jobData.photos || [],
         poster_id: user.id,
       })
       .select().single();
@@ -602,17 +666,56 @@ export function JobsProvider({ children }) {
     return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
   };
 
+  // Poster side: do they have a saved card on file?
+  const createSetupIntent = () => stripeEdge.createSetupIntent();
+
+  // Earner side: manage payout/bank details in the Stripe Express dashboard
+  const getPayoutLoginLink = () => stripeEdge.getPayoutLoginLink();
+
+  // Poster side: remove all saved cards
+  const detachPaymentMethod = () => stripeEdge.detachPaymentMethod();
+
+  const getPaymentMethodStatus = async () => {
+    if (!user) return { hasPaymentMethod: false };
+    try {
+      return await stripeEdge.getPaymentMethodStatus();
+    } catch (_) {
+      return { hasPaymentMethod: false };
+    }
+  };
+
+  // Unified readiness for both roles — drives the payment-setup alerts.
+  const getPaymentReadiness = async () => {
+    const [payout, pm] = await Promise.all([
+      getPayoutStatus(),
+      getPaymentMethodStatus(),
+    ]);
+    return {
+      payoutReady: payout.onboarded,
+      paymentMethodReady: pm.hasPaymentMethod,
+    };
+  };
+
   // ── Amendments ─────────────────────────────────────────────────────────────
 
   const proposeAmendment = async (bookingId, note) => {
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
     await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Change proposed', 'The poster proposed a change to your gig — review it.', { tab: 'EarnTab' });
+    }
   };
 
   const respondToAmendment = async (bookingId, accepted) => {
     const newStatus = accepted ? 'accepted' : 'declined';
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: newStatus } });
     await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (posterId) {
+      notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab' });
+    }
   };
 
   const clearAmendment = async (bookingId) => {
@@ -648,6 +751,11 @@ export function JobsProvider({ children }) {
       createPaymentIntent,
       getPayoutOnboardingUrl,
       getPayoutStatus,
+      createSetupIntent,
+      getPaymentMethodStatus,
+      getPaymentReadiness,
+      getPayoutLoginLink,
+      detachPaymentMethod,
     }}>
       {children}
     </JobsContext.Provider>

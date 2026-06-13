@@ -28,6 +28,7 @@ function getLevelInfo(xp) {
 const DEFAULT_STATE = {
   name: 'Hustler',
   avatarInitial: 'H',
+  avatarUrl: null,
   role: 'earner',
   rating: 5.0,
   reviewCount: 0,
@@ -48,9 +49,9 @@ const DEFAULT_STATE = {
     speedDemon:  { unlocked: false },
   },
   challenges: [
-    { id: 'c1', icon: '🎯', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50  },
-    { id: 'c2', icon: '💵', title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150 },
-    { id: 'c3', icon: '💻', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75  },
+    { id: 'c1', icon: '🎯', ion: 'locate', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50  },
+    { id: 'c2', icon: '💵', ion: 'cash',   title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150 },
+    { id: 'c3', icon: '💻', ion: 'laptop', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75  },
   ],
   pendingToast: null,
 };
@@ -72,6 +73,7 @@ function dbToState(profile, badges = [], challenges = []) {
   return {
     name: profile.name || 'Hustler',
     avatarInitial: profile.avatar_initial || profile.name?.charAt(0).toUpperCase() || 'H',
+    avatarUrl: profile.avatar_url || null,
     role: profile.role || 'earner',
     rating: Number(profile.rating) || 5.0,
     reviewCount: profile.review_count || 0,

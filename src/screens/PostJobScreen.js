@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, Keyboard,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Image,
+  StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
+import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
+import { pickImages, uploadImages } from '../lib/uploadImage';
 import { colors, gradients } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
@@ -22,19 +25,42 @@ const INITIAL = {
 export default function PostJobScreen({ navigation }) {
   const { addJob } = useJobs();
   const { showToast } = useUser();
+  const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
   const [form, setForm] = useState(INITIAL);
   const [showCustomCat, setShowCustomCat] = useState(false);
+  const [photos, setPhotos] = useState([]); // local URIs
+  const [posting, setPosting] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
+  const addPhotos = async () => {
+    const res = await pickImages({ multiple: true });
+    if (res.canceled) {
+      if (res.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to add photos.' });
+      return;
+    }
+    setPhotos(prev => [...prev, ...res.uris].slice(0, 6));
+  };
+
   const effectiveCategory = form.category === 'other' ? form.customCategory : form.category;
 
-  const handlePost = () => {
+  const handlePost = async () => {
     Keyboard.dismiss();
     if (!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) {
       haptic.error();
+      return;
+    }
+    setPosting(true);
+    let photoUrls = [];
+    try {
+      if (photos.length) {
+        photoUrls = await uploadImages({ uris: photos, bucket: 'job-photos', userId: user.id });
+      }
+    } catch (e) {
+      setPosting(false);
+      showToast({ icon: '⚠️', title: 'Photo upload failed', message: e.message || 'Please try again.' });
       return;
     }
     haptic.success();
@@ -55,9 +81,12 @@ export default function PostJobScreen({ navigation }) {
       estimatedHours: 2,
       requirements: reqs,
       slots,
+      photos: photoUrls,
     });
     setForm(INITIAL);
+    setPhotos([]);
     setShowCustomCat(false);
+    setPosting(false);
     showToast({ icon: '🚀', title: 'Gig Posted!', message: 'Your gig is live — students can now apply!' });
     navigation.navigate('GigsMain');
   };
@@ -70,7 +99,7 @@ export default function PostJobScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>Post a Gig 📝</Text>
+          <Text style={styles.headerTitle}>Post a Gig</Text>
           <Text style={styles.headerSub}>Hire a motivated college student</Text>
         </LinearGradient>
 
@@ -99,7 +128,7 @@ export default function PostJobScreen({ navigation }) {
                       setShowCustomCat(false);
                     }}
                   >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
                     <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
@@ -112,7 +141,7 @@ export default function PostJobScreen({ navigation }) {
                   setShowCustomCat(true);
                 }}
               >
-                <Text style={styles.catChipIcon}>✏️</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
                 <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
               </TouchableOpacity>
             </View>
@@ -174,6 +203,25 @@ export default function PostJobScreen({ navigation }) {
             />
           </Field>
 
+          <Field label="Photos (optional)">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {photos.map((u, i) => (
+                <View key={i} style={styles.thumbWrap}>
+                  <Image source={{ uri: u }} style={styles.thumb} />
+                  <TouchableOpacity style={styles.thumbRemove} onPress={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))}>
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {photos.length < 6 && (
+                <TouchableOpacity style={styles.addTile} onPress={addPhotos}>
+                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  <Text style={styles.addTileText}>Add</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </Field>
+
           <Field label="Requirements (one per line)">
             <TextInput
               style={[styles.input, styles.textArea]}
@@ -199,7 +247,7 @@ export default function PostJobScreen({ navigation }) {
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
             <Text style={styles.urgentToggleText}>
-              {form.urgent ? '⚡ Marked as Urgent — Needed ASAP' : '⚡ Mark as Urgent (optional)'}
+              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
             </Text>
           </TouchableOpacity>
 
@@ -207,14 +255,16 @@ export default function PostJobScreen({ navigation }) {
             <Text style={styles.validationNote}>* Fill in all required fields to post</Text>
           )}
 
-          <TouchableOpacity onPress={handlePost} activeOpacity={0.85}>
+          <TouchableOpacity onPress={handlePost} activeOpacity={0.85} disabled={posting}>
             <LinearGradient
               colors={(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description)
                 ? ['#C4B5FD', '#A5B4FC']
                 : gradients.primary}
               style={styles.submitBtn}
             >
-              <Text style={styles.submitText}>Post Gig 🚀</Text>
+              {posting
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>Post Gig</Text>}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -249,6 +299,18 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border,
   },
   textArea: { minHeight: 96, lineHeight: 22 },
+  thumbWrap: { marginRight: 10 },
+  thumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: colors.border },
+  thumbRemove: {
+    position: 'absolute', top: -6, right: -6,
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+  },
+  addTile: {
+    width: 84, height: 84, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+  },
+  addTileText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
   catGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   catChip: {
     flexDirection: 'row', alignItems: 'center',

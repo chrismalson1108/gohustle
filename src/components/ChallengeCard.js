@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 
 export default function ChallengeCard({ challenge }) {
@@ -9,15 +10,18 @@ export default function ChallengeCard({ challenge }) {
   return (
     <View style={[styles.card, done && styles.done]}>
       <View style={styles.top}>
-        <Text style={styles.icon}>{challenge.icon}</Text>
+        <Ionicons name={challenge.ion || 'flag'} size={26} color={colors.primary} style={styles.icon} />
         <View style={styles.info}>
           <Text style={styles.title}>{challenge.title}</Text>
           <Text style={styles.desc}>{challenge.description}</Text>
         </View>
         <View style={[styles.tag, done && styles.tagDone]}>
-          <Text style={[styles.tagText, done && styles.tagTextDone]}>
-            {done ? '✓ Done' : challenge.type === 'daily' ? 'Daily' : 'Weekly'}
-          </Text>
+          <View style={styles.tagInner}>
+            {done && <Ionicons name="checkmark" size={11} color={colors.success} style={{ marginRight: 3 }} />}
+            <Text style={[styles.tagText, done && styles.tagTextDone]}>
+              {done ? 'Done' : challenge.type === 'daily' ? 'Daily' : 'Weekly'}
+            </Text>
+          </View>
         </View>
       </View>
       <View style={styles.progressRow}>
@@ -27,7 +31,10 @@ export default function ChallengeCard({ challenge }) {
         <Text style={[styles.pct, done && { color: colors.accent }]}>{pct}%</Text>
       </View>
       <View style={styles.bottom}>
-        <Text style={styles.reward}>🏆 +{challenge.xpReward} XP</Text>
+        <View style={styles.rewardRow}>
+          <Ionicons name="trophy" size={12} color={colors.gold} style={{ marginRight: 4 }} />
+          <Text style={styles.reward}>+{challenge.xpReward} XP</Text>
+        </View>
         <Text style={[styles.count, done && { color: colors.accent, fontWeight: '700' }]}>
           {done ? 'Complete!' : `${challenge.progress} / ${challenge.target}`}
         </Text>
@@ -59,6 +66,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     marginLeft: 8,
   },
+  tagInner: { flexDirection: 'row', alignItems: 'center' },
   tagDone: { backgroundColor: '#DCFCE7' },
   tagText: { fontSize: 10, fontWeight: '700', color: colors.primary },
   tagTextDone: { color: colors.success },
@@ -70,7 +78,8 @@ const styles = StyleSheet.create({
   fill: { height: 8, borderRadius: 4, backgroundColor: colors.primary },
   fillDone: { backgroundColor: colors.accent },
   pct: { fontSize: 12, fontWeight: '700', color: colors.primary, width: 34, textAlign: 'right' },
-  bottom: { flexDirection: 'row', justifyContent: 'space-between' },
+  bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rewardRow: { flexDirection: 'row', alignItems: 'center' },
   reward: { fontSize: 12, color: colors.gold, fontWeight: '600' },
   count: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
 });

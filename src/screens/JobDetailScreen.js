@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput,
+  StyleSheet, TextInput, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import PosterTrustCard from '../components/PosterTrustCard';
 import SlotPicker from '../components/SlotPicker';
 import RatingStars from '../components/RatingStars';
@@ -16,19 +17,19 @@ import { CATEGORY_COLORS } from '../data/mockData';
 import MessageSheet from '../components/MessageSheet';
 
 const STATUS_CONTENT = {
-  pending:   { icon: '⏳', title: 'Application Pending',
+  pending:   { ion: 'time', title: 'Application Pending',
                desc: "The poster hasn't reviewed your booking yet. Hang tight!",
                bg: '#FFF7ED', color: '#D97706' },
-  confirmed: { icon: '✅', title: "Confirmed — You're In!",
+  confirmed: { ion: 'checkmark-circle', title: "Confirmed — You're In!",
                desc: 'Accepted! Head to the Earn tab to mark done when finished.',
                bg: '#ECFDF5', color: '#059669' },
-  completed: { icon: '🔄', title: 'Awaiting Verification',
+  completed: { ion: 'sync', title: 'Awaiting Verification',
                desc: 'You marked done. The poster needs to verify your work.',
                bg: '#EFF6FF', color: '#2563EB' },
-  verified:  { icon: '💚', title: 'Completed & Verified',
+  verified:  { ion: 'shield-checkmark', title: 'Completed & Verified',
                desc: 'All done! Go to the Earn tab to rate the poster.',
                bg: '#F0FDF4', color: '#16A34A' },
-  declined:  { icon: '❌', title: 'Application Declined',
+  declined:  { ion: 'close-circle', title: 'Application Declined',
                desc: "The poster didn't accept your booking.",
                bg: '#FEF2F2', color: '#DC2626' },
 };
@@ -89,8 +90,9 @@ export default function JobDetailScreen({ route, navigation }) {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {job.urgent && (
-          <View style={styles.urgentBanner}>
-            <Text style={styles.urgentText}>⚡ URGENT — Needed ASAP</Text>
+          <View style={[styles.urgentBanner, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
+            <Ionicons name="flash" size={14} color={colors.urgent} style={{ marginRight: 6 }} />
+            <Text style={styles.urgentText}>URGENT — Needed ASAP</Text>
           </View>
         )}
 
@@ -101,13 +103,28 @@ export default function JobDetailScreen({ route, navigation }) {
         <Text style={styles.title}>{job.title}</Text>
 
         <View style={styles.pillRow}>
-          <LinearGradient colors={['#ECFDF5', '#D1FAE5']} style={styles.payPill}>
-            <Text style={styles.payText}>💰 {estPay}</Text>
+          <LinearGradient colors={['#ECFDF5', '#D1FAE5']} style={[styles.payPill, { flexDirection: 'row', alignItems: 'center' }]}>
+            <Ionicons name="cash" size={14} color={colors.success} style={{ marginRight: 5 }} />
+            <Text style={styles.payText}>{estPay}</Text>
           </LinearGradient>
-          <View style={styles.locPill}>
-            <Text style={styles.locText}>📍 {job.location}</Text>
+          <View style={[styles.locPill, { flexDirection: 'row', alignItems: 'center' }]}>
+            <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
+            <Text style={styles.locText}>{job.location}</Text>
           </View>
         </View>
+
+        {job.photos?.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.gallery}
+            contentContainerStyle={{ paddingRight: 8 }}
+          >
+            {job.photos.map((u, i) => (
+              <Image key={i} source={{ uri: u }} style={styles.galleryImg} />
+            ))}
+          </ScrollView>
+        )}
 
         <Section title="About this gig">
           <Text style={styles.description}>{job.description}</Text>
@@ -190,7 +207,7 @@ export default function JobDetailScreen({ route, navigation }) {
       <View style={styles.footer}>
         {job.status === 'cancelled' ? (
           <View style={styles.ownJobBanner}>
-            <Text style={styles.ownJobText}>🚫 This listing has been removed</Text>
+            <Text style={styles.ownJobText}>This listing has been removed</Text>
           </View>
         ) : isOwnJob ? (
           jobPosterBookings.length > 0 ? (
@@ -203,14 +220,14 @@ export default function JobDetailScreen({ route, navigation }) {
                   {jobPosterBookings.filter(b => b.status === 'pending').length > 0 && (
                     <View style={styles.statChip}>
                       <Text style={styles.statChipText}>
-                        ⏳ {jobPosterBookings.filter(b => b.status === 'pending').length} pending
+                        {jobPosterBookings.filter(b => b.status === 'pending').length} pending
                       </Text>
                     </View>
                   )}
                   {jobPosterBookings.filter(b => b.status === 'confirmed').length > 0 && (
                     <View style={[styles.statChip, styles.statChipGreen]}>
                       <Text style={[styles.statChipText, { color: '#059669' }]}>
-                        ✅ {jobPosterBookings.filter(b => b.status === 'confirmed').length} confirmed
+                        {jobPosterBookings.filter(b => b.status === 'confirmed').length} confirmed
                       </Text>
                     </View>
                   )}
@@ -222,13 +239,13 @@ export default function JobDetailScreen({ route, navigation }) {
             </View>
           ) : (
             <View style={styles.ownJobBanner}>
-              <Text style={styles.ownJobText}>📋 Your gig — awaiting applications</Text>
+              <Text style={styles.ownJobText}>Your gig — awaiting applications</Text>
             </View>
           )
         ) : alreadyBooked ? (
           <View>
             <View style={[styles.statusBanner, { backgroundColor: statusContent.bg }]}>
-              <Text style={styles.statusBannerIcon}>{statusContent.icon}</Text>
+              <Ionicons name={statusContent.ion} size={22} color={statusContent.color} style={{ marginRight: 10 }} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.statusBannerTitle, { color: statusContent.color }]}>
                   {statusContent.title}
@@ -240,7 +257,7 @@ export default function JobDetailScreen({ route, navigation }) {
               <View style={styles.statusActions}>
                 {canMessage && (
                   <TouchableOpacity style={styles.msgActionBtn} onPress={() => setMsgVisible(true)}>
-                    <Text style={styles.msgActionBtnText}>💬 Message Poster</Text>
+                    <Text style={styles.msgActionBtnText}>Message Poster</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -257,10 +274,10 @@ export default function JobDetailScreen({ route, navigation }) {
             <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.bookBtn}>
               <Text style={styles.bookBtnText}>
                 {selectedSlot
-                  ? (counterPrice ? `Book · Counter $${counterPrice} 🚀` : 'Book This Gig 🚀')
+                  ? (counterPrice ? `Book · Counter $${counterPrice}` : 'Book This Gig')
                   : job.slots?.some(s => !s.taken)
                     ? 'Select a Time Slot First'
-                    : 'Book This Gig 🚀'
+                    : 'Book This Gig'
                 }
               </Text>
             </LinearGradient>
@@ -271,7 +288,7 @@ export default function JobDetailScreen({ route, navigation }) {
         visible={msgVisible}
         bookingId={currentBooking?.id}
         jobTitle={job.title}
-        otherPerson={{ name: job.poster?.name, avatarInitial: job.poster?.avatarInitial }}
+        otherPerson={{ id: job.posterId, name: job.poster?.name, avatarInitial: job.poster?.avatarInitial, avatarUrl: job.poster?.avatarUrl }}
         onClose={() => setMsgVisible(false)}
       />
     </View>
@@ -301,6 +318,8 @@ const styles = StyleSheet.create({
   },
   catText: { fontSize: 12, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, lineHeight: 30, marginBottom: 16 },
+  gallery: { marginBottom: 20 },
+  galleryImg: { width: 260, height: 180, borderRadius: 16, marginRight: 10, backgroundColor: colors.border },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   payPill: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginRight: 10, marginBottom: 10 },
   payText: { fontSize: 13, fontWeight: '700', color: colors.success },

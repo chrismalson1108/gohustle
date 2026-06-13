@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, FlatList,
+  Modal, View, Text, TextInput, TouchableOpacity, FlatList, Image,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
+import Avatar from './Avatar';
+import { notify } from '../lib/push';
+import { pickImage, uploadImage } from '../lib/uploadImage';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
@@ -15,6 +19,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
   const listRef = useRef(null);
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
@@ -30,7 +35,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     setLoading(true);
     const { data } = await supabase
       .from('messages')
-      .select('*, sender:profiles!sender_id(id, name, avatar_initial)')
+      .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: true });
     if (data) setMessages(data);
@@ -50,7 +55,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
         if (payload.new.sender_id === userIdRef.current) return;
         const { data: sender } = await supabase
           .from('profiles')
-          .select('id, name, avatar_initial')
+          .select('id, name, avatar_initial, avatar_url')
           .eq('id', payload.new.sender_id)
           .single();
         setMessages(prev => [...prev, { ...payload.new, sender }]);
@@ -84,7 +89,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     const { data, error } = await supabase
       .from('messages')
       .insert({ booking_id: bookingId, sender_id: user.id, text })
-      .select('*, sender:profiles!sender_id(id, name, avatar_initial)')
+      .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
       .single();
     setSending(false);
 
@@ -97,7 +102,37 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     } else {
       // Replace optimistic with confirmed message
       setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+      // Notify the other party of the new message
+      if (otherPerson?.id) {
+        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, {});
+      }
     }
+  };
+
+  const sendImage = async () => {
+    if (!bookingId || !user) return;
+    const picked = await pickImage({});
+    if (picked.canceled) {
+      if (picked.denied) Alert.alert('Photos access needed', 'Allow photo access in Settings to send images.');
+      return;
+    }
+    setUploadingImg(true);
+    haptic.light();
+    try {
+      const url = await uploadImage({ uri: picked.uri, bucket: 'chat-photos', userId: user.id });
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({ booking_id: bookingId, sender_id: user.id, text: '', image_url: url })
+        .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
+        .single();
+      if (error) throw error;
+      setMessages(prev => [...prev, data]);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', {});
+    } catch (e) {
+      Alert.alert('Failed to send photo', e.message || 'Please try again.');
+    }
+    setUploadingImg(false);
   };
 
   const renderMessage = ({ item }) => {
@@ -106,14 +141,21 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     return (
       <View style={[styles.msgRow, isMine && styles.msgRowMine]}>
         {!isMine && (
-          <View style={styles.msgAvatar}>
-            <Text style={styles.msgAvatarText}>
-              {item.sender?.avatar_initial || otherPerson?.avatarInitial || '?'}
-            </Text>
-          </View>
+          <Avatar
+            url={item.sender?.avatar_url || otherPerson?.avatarUrl}
+            initial={item.sender?.avatar_initial || otherPerson?.avatarInitial}
+            size={28}
+            fontSize={11}
+            style={{ marginRight: 8, marginBottom: 2 }}
+          />
         )}
         <View style={[styles.msgBubble, isMine && styles.msgBubbleMine, item._pending && styles.msgBubblePending]}>
-          <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.text}</Text>
+          {item.image_url ? (
+            <Image source={{ uri: item.image_url }} style={styles.msgImage} resizeMode="cover" />
+          ) : null}
+          {item.text ? (
+            <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.text}</Text>
+          ) : null}
           <Text style={[styles.msgTime, isMine && styles.msgTimeMine]}>
             {item._pending ? 'Sending…' : time}
           </Text>
@@ -137,7 +179,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
                 {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
           </View>
@@ -155,7 +197,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
               contentContainerStyle={styles.msgList}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
-                  <Text style={styles.emptyChatIcon}>💬</Text>
+                  <Ionicons name="chatbubble-ellipses" size={48} color={colors.textMuted} style={styles.emptyChatIcon} />
                   <Text style={styles.emptyChatText}>
                     No messages yet.{'\n'}Say hi to {otherPerson?.name || 'them'}!
                   </Text>
@@ -165,6 +207,15 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
           )}
 
           <View style={styles.inputRow}>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={sendImage}
+              disabled={uploadingImg}
+            >
+              {uploadingImg
+                ? <ActivityIndicator color={colors.primary} size="small" />
+                : <Ionicons name="image-outline" size={22} color={colors.primary} />}
+            </TouchableOpacity>
             <TextInput
               style={styles.input}
               placeholder="Type a message..."
@@ -229,6 +280,7 @@ const styles = StyleSheet.create({
   msgBubblePending: { opacity: 0.6 },
   msgText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
   msgTextMine: { color: '#fff' },
+  msgImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 4, backgroundColor: colors.border },
   msgTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end' },
   msgTimeMine: { color: 'rgba(255,255,255,0.6)' },
   emptyChat: { flex: 1, alignItems: 'center', paddingTop: 40 },
@@ -239,6 +291,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 12,
     borderTopWidth: 1, borderTopColor: colors.border,
     paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+  },
+  attachBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center', marginRight: 6,
   },
   input: {
     flex: 1, backgroundColor: colors.background, borderRadius: 22,
