@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
+import Avatar from './Avatar';
 
 const PAYMENT_METHODS = [
   { id: 'cash',   label: 'Cash',    icon: '💵',  ion: 'cash' },
@@ -87,11 +88,13 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Earner avatar */}
             <View style={styles.earnerRow}>
-              <View style={styles.earnerAvatar}>
-                <Text style={styles.earnerInitial}>
-                  {booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?'}
-                </Text>
-              </View>
+              <Avatar
+                url={booking.earner?.avatarUrl}
+                initial={booking.earner?.avatarInitial || earnerName[0]}
+                size={48}
+                fontSize={20}
+                style={{ marginRight: 14 }}
+              />
               <View>
                 <Text style={styles.earnerName}>{earnerName}</Text>
                 {pay && (

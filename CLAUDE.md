@@ -108,6 +108,7 @@ Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earn
 - **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.
 - **`RatingStars`** — reusable star rating display/input component.
 - **`JobCard`** — job listing card used in HomeScreen and search results.
+- **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 

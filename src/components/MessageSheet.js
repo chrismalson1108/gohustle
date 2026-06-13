@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
+import Avatar from './Avatar';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
@@ -31,7 +32,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     setLoading(true);
     const { data } = await supabase
       .from('messages')
-      .select('*, sender:profiles!sender_id(id, name, avatar_initial)')
+      .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: true });
     if (data) setMessages(data);
@@ -51,7 +52,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
         if (payload.new.sender_id === userIdRef.current) return;
         const { data: sender } = await supabase
           .from('profiles')
-          .select('id, name, avatar_initial')
+          .select('id, name, avatar_initial, avatar_url')
           .eq('id', payload.new.sender_id)
           .single();
         setMessages(prev => [...prev, { ...payload.new, sender }]);
@@ -85,7 +86,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     const { data, error } = await supabase
       .from('messages')
       .insert({ booking_id: bookingId, sender_id: user.id, text })
-      .select('*, sender:profiles!sender_id(id, name, avatar_initial)')
+      .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
       .single();
     setSending(false);
 
@@ -107,11 +108,13 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     return (
       <View style={[styles.msgRow, isMine && styles.msgRowMine]}>
         {!isMine && (
-          <View style={styles.msgAvatar}>
-            <Text style={styles.msgAvatarText}>
-              {item.sender?.avatar_initial || otherPerson?.avatarInitial || '?'}
-            </Text>
-          </View>
+          <Avatar
+            url={item.sender?.avatar_url || otherPerson?.avatarUrl}
+            initial={item.sender?.avatar_initial || otherPerson?.avatarInitial}
+            size={28}
+            fontSize={11}
+            style={{ marginRight: 8, marginBottom: 2 }}
+          />
         )}
         <View style={[styles.msgBubble, isMine && styles.msgBubbleMine, item._pending && styles.msgBubblePending]}>
           <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.text}</Text>

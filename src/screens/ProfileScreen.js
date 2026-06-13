@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,8 @@ import GradientHeader from '../components/GradientHeader';
 import BadgeGrid from '../components/BadgeGrid';
 import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
+import Avatar from '../components/Avatar';
+import { pickImage, uploadImage } from '../lib/uploadImage';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,9 +21,9 @@ import { colors, gradients, shadows } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
   const {
-    name, avatarInitial, rating, reviewCount,
+    name, avatarInitial, avatarUrl, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
-    weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile,
+    weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
   } = useUser();
   const { postedJobs, bookedJobs, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
@@ -32,12 +34,33 @@ export default function ProfileScreen({ navigation }) {
   const [jobGoal, setJobGoal] = useState(String(weeklyJobsGoal));
   const [myReviews, setMyReviews] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handlePickAvatar = async () => {
+    const picked = await pickImage({ allowsEditing: true, aspect: [1, 1] });
+    if (picked.canceled) {
+      if (picked.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to set a profile picture.' });
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const url = await uploadImage({ uri: picked.uri, bucket: 'avatars', userId: user.id });
+      const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id);
+      if (error) throw error;
+      await refreshProfile();
+      haptic.success();
+      showToast({ icon: '✅', title: 'Photo updated!', message: 'Your new profile picture is live.' });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Upload failed', message: e.message || 'Please try again.' });
+    }
+    setUploadingAvatar(false);
+  };
 
   const loadReviews = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from('reviews')
-      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial)')
+      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)')
       .eq('reviewed_user_id', user.id)
       .order('created_at', { ascending: false });
     if (data) setMyReviews(data);
@@ -101,9 +124,22 @@ export default function ProfileScreen({ navigation }) {
     >
       <GradientHeader colors={gradients.profile}>
         <View style={styles.profileRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{avatarInitial}</Text>
-          </View>
+          <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8} style={styles.avatarWrap}>
+            <Avatar
+              url={avatarUrl}
+              initial={avatarInitial}
+              size={64}
+              fontSize={26}
+              bg="rgba(255,255,255,0.25)"
+              borderColor="rgba(255,255,255,0.6)"
+              borderWidth={3}
+            />
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={14} color="#fff" />}
+            </View>
+          </TouchableOpacity>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{name}</Text>
             {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
@@ -158,11 +194,13 @@ export default function ProfileScreen({ navigation }) {
           myReviews.map(r => (
             <View key={r.id} style={styles.reviewCard}>
               <View style={styles.reviewHeader}>
-                <View style={styles.reviewerAvatar}>
-                  <Text style={styles.reviewerAvatarText}>
-                    {r.reviewer?.avatar_initial || r.author?.[0]?.toUpperCase() || '?'}
-                  </Text>
-                </View>
+                <Avatar
+                  url={r.reviewer?.avatar_url}
+                  initial={r.reviewer?.avatar_initial || r.author?.[0]}
+                  size={36}
+                  fontSize={14}
+                  style={{ marginRight: 10 }}
+                />
                 <View style={styles.reviewerInfo}>
                   <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
                   <View style={styles.reviewStarsRow}>
@@ -287,6 +325,13 @@ const styles = StyleSheet.create({
   signOutText: { fontSize: 15, fontWeight: '700', color: colors.urgent },
   container: { flex: 1, backgroundColor: colors.background },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  avatarWrap: { marginRight: 16 },
+  avatarBadge: {
+    position: 'absolute', right: -2, bottom: -2,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.primary, borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
   avatar: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: 'rgba(255,255,255,0.25)',

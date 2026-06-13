@@ -5,6 +5,7 @@ import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import { useHaptic } from '../hooks/useHaptic';
 import RatingStars from './RatingStars';
+import Avatar from './Avatar';
 
 const BOOKING_PILL = {
   pending:   { label: 'Applied — Pending',        ion: 'time',              bg: '#FFF7ED', text: '#D97706' },
@@ -61,9 +62,7 @@ export default function JobCard({ job, onPress, bookingStatus }) {
           <Text style={styles.loc} numberOfLines={1}>{job.location}</Text>
         </View>
         <View style={styles.posterRow}>
-          <View style={styles.posterAvatar}>
-            <Text style={styles.posterAvatarText}>{job.poster.avatarInitial}</Text>
-          </View>
+          <Avatar url={job.poster.avatarUrl} initial={job.poster.avatarInitial} size={20} fontSize={9} style={{ marginRight: 6 }} />
           <Text style={styles.posterName}>{job.poster.name}</Text>
           {job.poster.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} style={styles.verified} />}
           <View style={styles.spacer} />

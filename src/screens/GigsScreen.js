@@ -15,6 +15,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
 import MessageSheet from '../components/MessageSheet';
+import Avatar from '../components/Avatar';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
@@ -322,6 +323,7 @@ export default function GigsScreen({ navigation }) {
                           otherPerson: {
                             name: booking.earner?.name || 'Earner',
                             avatarInitial: booking.earner?.avatarInitial || 'E',
+                            avatarUrl: booking.earner?.avatarUrl,
                           },
                         })}
                         onRequestChange={booking.status === 'confirmed'
@@ -430,9 +432,14 @@ function PastBookingCard({ booking }) {
   return (
     <View style={styles.pastCard}>
       <View style={styles.earnerRow}>
-        <View style={[styles.avatar, declined && { backgroundColor: colors.textMuted }]}>
-          <Text style={styles.avatarText}>{initial}</Text>
-        </View>
+        <Avatar
+          url={booking.earner?.avatarUrl}
+          initial={initial}
+          size={38}
+          fontSize={15}
+          bg={declined ? colors.textMuted : colors.primary}
+          style={{ marginRight: 10 }}
+        />
         <View style={styles.earnerInfo}>
           <Text style={styles.jobTitle} numberOfLines={1}>{booking.job?.title || 'Gig'}</Text>
           <Text style={styles.earnerName}>{earnerName}</Text>
@@ -469,9 +476,7 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
     <View style={styles.bookingRow}>
       {/* Earner info */}
       <View style={styles.earnerRow}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
-        </View>
+        <Avatar url={booking.earner?.avatarUrl} initial={initial} size={38} fontSize={15} style={{ marginRight: 10 }} />
         <View style={styles.earnerInfo}>
           <Text style={styles.earnerName}>{earnerName}</Text>
           {booking.earner?.rating ? (

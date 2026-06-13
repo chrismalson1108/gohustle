@@ -28,6 +28,7 @@ function getLevelInfo(xp) {
 const DEFAULT_STATE = {
   name: 'Hustler',
   avatarInitial: 'H',
+  avatarUrl: null,
   role: 'earner',
   rating: 5.0,
   reviewCount: 0,
@@ -72,6 +73,7 @@ function dbToState(profile, badges = [], challenges = []) {
   return {
     name: profile.name || 'Hustler',
     avatarInitial: profile.avatar_initial || profile.name?.charAt(0).toUpperCase() || 'H',
+    avatarUrl: profile.avatar_url || null,
     role: profile.role || 'earner',
     rating: Number(profile.rating) || 5.0,
     reviewCount: profile.review_count || 0,

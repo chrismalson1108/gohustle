@@ -31,6 +31,7 @@ function transformJob(dbJob) {
     poster: {
       name: dbJob.profiles?.name || 'Anonymous',
       avatarInitial: dbJob.profiles?.avatar_initial || 'A',
+      avatarUrl: dbJob.profiles?.avatar_url || null,
       rating: Number(dbJob.profiles?.rating) || 5.0,
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
@@ -67,6 +68,7 @@ function transformBooking(b) {
       id: b.earner.id,
       name: b.earner.name,
       avatarInitial: b.earner.avatar_initial,
+      avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
     } : null,
@@ -187,7 +189,7 @@ export function JobsProvider({ children }) {
       .from('jobs')
       .select(`
         *,
-        profiles!jobs_poster_id_fkey(name, avatar_initial, rating, review_count, verified),
+        profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified),
         job_slots(*),
         job_requirements(*),
         reviews(*)
@@ -243,7 +245,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, rating, review_count),
+        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count),
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
       `)
       .in('job_id', jobIds)
@@ -545,13 +547,14 @@ export function JobsProvider({ children }) {
     if (!user) return;
     const { data: profile } = await supabase
       .from('profiles')
-      .select('name, avatar_initial, rating, review_count, verified')
+      .select('name, avatar_initial, avatar_url, rating, review_count, verified')
       .eq('id', user.id)
       .single();
 
     const poster = {
       name: profile?.name || 'You',
       avatarInitial: profile?.avatar_initial || 'Y',
+      avatarUrl: profile?.avatar_url || null,
       rating: Number(profile?.rating) || 5.0,
       reviewCount: profile?.review_count || 0,
       verified: profile?.verified || false,

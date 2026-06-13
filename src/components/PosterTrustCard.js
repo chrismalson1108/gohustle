@@ -2,14 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import RatingStars from './RatingStars';
+import Avatar from './Avatar';
 import { colors, shadows } from '../theme';
 
 export default function PosterTrustCard({ poster }) {
   return (
     <View style={styles.card}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{poster.avatarInitial}</Text>
-      </View>
+      <Avatar url={poster.avatarUrl} initial={poster.avatarInitial} size={52} fontSize={20} style={{ marginRight: 14 }} />
       <View style={styles.info}>
         <View style={styles.nameRow}>
           <Text style={styles.name}>{poster.name}</Text>

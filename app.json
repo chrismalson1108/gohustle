@@ -30,7 +30,13 @@
           "enableGooglePay": false
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GoHustlr needs access to your photos so you can set a profile picture and add job completion photos."
+        }
+      ]
     ],
     "extra": {
       "eas": {
