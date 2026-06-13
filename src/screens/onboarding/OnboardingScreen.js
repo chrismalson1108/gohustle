@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients } from '../../theme';
+import { TERMS_VERSION } from '../../data/legal';
 import LocationPicker from '../../components/LocationPicker';
 
 const { width } = Dimensions.get('window');
@@ -97,6 +98,8 @@ export default function OnboardingScreen({ onComplete }) {
       radius_miles: form.radiusMiles,
       bio: form.bio || null,
       onboarding_done: true,
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: TERMS_VERSION,
     }).eq('id', user.id);
     setSaving(false);
     onComplete();

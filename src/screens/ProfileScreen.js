@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SUPPORT_EMAIL } from '../data/legal';
 import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
@@ -286,6 +287,26 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </TouchableOpacity>
 
+      <View style={styles.legalSection}>
+        <Text style={styles.legalHeader}>Legal & Support</Text>
+        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'terms' })}>
+          <Text style={styles.legalRowText}>Terms of Service</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'privacy' })}>
+          <Text style={styles.legalRowText}>Privacy Policy</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'contractor' })}>
+          <Text style={styles.legalRowText}>Independent Contractor Agreement</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.legalRow, { borderBottomWidth: 0 }]} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`)}>
+          <Text style={styles.legalRowText}>Contact Support</Text>
+          <Ionicons name="mail-outline" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={styles.signOutBtn}
         onPress={() => { haptic.medium(); signOut(); }}
@@ -331,6 +352,20 @@ const styles = StyleSheet.create({
   },
   settingsBtnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   settingsBtnText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  legalSection: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 16, paddingTop: 10,
+  },
+  legalHeader: {
+    fontSize: 11, fontWeight: '800', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4,
+  },
+  legalRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  legalRowText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
   signOutBtn: {
     marginHorizontal: 16, marginTop: 12, borderRadius: 14,
     paddingVertical: 14, alignItems: 'center',

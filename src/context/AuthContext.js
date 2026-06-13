@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { unregisterPushToken } from '../lib/push';
+import { track } from '../lib/analytics';
+import { TERMS_VERSION } from '../data/legal';
 
 const AuthContext = createContext(null);
 
@@ -9,6 +11,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [authError, setAuthError]     = useState(null);
   const [onboardingDone, setOnbDone]  = useState(true);
+  const [termsVersion, setTermsVersion] = useState(TERMS_VERSION); // assume current until loaded
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
 
   useEffect(() => {
@@ -21,7 +24,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session?.user) await loadOnboarding(session.user.id);
-      else setOnbDone(true); // signed out → reset gate
+      else { setOnbDone(true); setTermsVersion(TERMS_VERSION); } // signed out → reset gates
     });
 
     return () => subscription.unsubscribe();
@@ -33,15 +36,19 @@ export function AuthProvider({ children }) {
   const loadOnboarding = async (userId) => {
     const { data } = await supabase
       .from('profiles')
-      .select('onboarding_done')
+      .select('onboarding_done, terms_version')
       .eq('id', userId)
       .single();
     setOnbDone(data?.onboarding_done ?? false);
+    setTermsVersion(data?.terms_version ?? null);
   };
 
   const markOnboardingDone = () => {
     setOnbDone(true);
+    setTermsVersion(TERMS_VERSION); // onboarding records current terms
   };
+
+  const markTermsAccepted = () => setTermsVersion(TERMS_VERSION);
 
   const signIn = async (email, password) => {
     setAuthError(null);
@@ -57,6 +64,7 @@ export function AuthProvider({ children }) {
       return false;
     }
     setPendingEmail(null);
+    track('sign_in');
     return true;
   };
 
@@ -72,6 +80,7 @@ export function AuthProvider({ children }) {
     // With email confirmation on, signUp returns no session — the user must
     // confirm via the emailed link, then sign in. Surface that state.
     setPendingEmail(email);
+    track('sign_up');
     return true;
   };
 
@@ -110,6 +119,8 @@ export function AuthProvider({ children }) {
       authError,
       onboardingDone,
       pendingEmail,
+      needsTermsAcceptance: !!session && onboardingDone && termsVersion !== TERMS_VERSION,
+      markTermsAccepted,
       signIn,
       signUp,
       resetPassword,

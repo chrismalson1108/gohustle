@@ -11,8 +11,10 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
 import { registerPushToken, addNotificationResponseListener } from './src/lib/push';
+import { identify, track } from './src/lib/analytics';
 
 import HomeScreen           from './src/screens/HomeScreen';
 import EarnScreen           from './src/screens/EarnScreen';
@@ -25,8 +27,10 @@ import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
+import LegalScreen          from './src/screens/LegalScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
+import ConsentScreen        from './src/screens/ConsentScreen';
 
 import { colors } from './src/theme';
 
@@ -38,6 +42,7 @@ const navigationRef = createNavigationContainerRef();
 function PushManager() {
   const { user } = useAuth();
   useEffect(() => {
+    identify(user?.id || null);
     if (user?.id) registerPushToken(user.id);
   }, [user?.id]);
   useEffect(() => {
@@ -99,6 +104,7 @@ function ProfileStack() {
       <Stack.Screen name="Settings"       component={SettingsScreen} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
     </Stack.Navigator>
   );
 }
@@ -163,7 +169,7 @@ function MainApp() {
 }
 
 function RootNavigator() {
-  const { session, loading, onboardingDone, markOnboardingDone } = useAuth();
+  const { session, loading, onboardingDone, needsTermsAcceptance, markOnboardingDone } = useAuth();
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
@@ -173,6 +179,7 @@ function RootNavigator() {
   }
   if (!session) return <AuthScreen />;
   if (!onboardingDone) return <OnboardingScreen onComplete={markOnboardingDone} />;
+  if (needsTermsAcceptance) return <ConsentScreen />;
   return <MainApp />;
 }
 
@@ -180,9 +187,11 @@ export default function App() {
   return (
     <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.gohustlr">
       <SafeAreaProvider>
-        <AuthProvider>
-          <RootNavigator />
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <RootNavigator />
+          </AuthProvider>
+        </ErrorBoundary>
       </SafeAreaProvider>
     </StripeProvider>
   );

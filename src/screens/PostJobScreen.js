@@ -12,6 +12,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import { pickImages, uploadImages } from '../lib/uploadImage';
+import { findProhibited } from '../lib/contentFilter';
 import { colors, gradients } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
@@ -50,6 +51,11 @@ export default function PostJobScreen({ navigation }) {
     Keyboard.dismiss();
     if (!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) {
       haptic.error();
+      return;
+    }
+    if (findProhibited(`${form.title} ${form.description}`)) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Check your wording', message: "Your gig contains content that isn't allowed. Please edit it." });
       return;
     }
     setPosting(true);

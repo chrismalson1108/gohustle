@@ -48,6 +48,42 @@ export async function deleteExpense(id) {
   if (error) throw error;
 }
 
+// ── Income (off-platform / cash, logged manually) ──────────────────────────
+export const INCOME_SOURCES = [
+  { id: 'cash',  label: 'Cash',  ion: 'cash-outline' },
+  { id: 'tip',   label: 'Tip',   ion: 'gift-outline' },
+  { id: 'other', label: 'Other', ion: 'ellipsis-horizontal' },
+];
+
+export function sourceMeta(id) {
+  return INCOME_SOURCES.find(s => s.id === id) || INCOME_SOURCES[INCOME_SOURCES.length - 1];
+}
+
+export async function fetchIncome(userId) {
+  const { data, error } = await supabase
+    .from('income_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addIncome(userId, { amount, source, description, date }) {
+  const { data, error } = await supabase
+    .from('income_entries')
+    .insert({ user_id: userId, amount, source, description: description || null, date })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteIncome(id) {
+  const { error } = await supabase.from('income_entries').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // Build a spreadsheet-ready CSV for the given expenses.
 export function buildCSV(expenses) {
   const header = 'Date,Category,Description,Amount,Receipt';
@@ -57,4 +93,33 @@ export function buildCSV(expenses) {
     return `${e.date},"${cat}","${desc}",${Number(e.amount).toFixed(2)},${e.receipt_url || ''}`;
   });
   return [header, ...rows].join('\n');
+}
+
+// Combined year-end tax summary CSV: income (Stripe + logged) then expenses then totals.
+export function buildTaxSummaryCSV({ year, stripeIncome, income, expenses }) {
+  const cashTotal = income.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const expTotal = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const grossIncome = Number(stripeIncome || 0) + cashTotal;
+  const lines = [];
+  lines.push(`GoHustlr Tax Summary,${year}`);
+  lines.push('');
+  lines.push('INCOME');
+  lines.push('Date,Source,Description,Amount');
+  lines.push(`,Platform (card via Stripe),,${Number(stripeIncome || 0).toFixed(2)}`);
+  income.forEach(e => {
+    const desc = (e.description || '').replace(/"/g, '""');
+    lines.push(`${e.date},"${sourceMeta(e.source).label}","${desc}",${Number(e.amount).toFixed(2)}`);
+  });
+  lines.push(`,,Gross income,${grossIncome.toFixed(2)}`);
+  lines.push('');
+  lines.push('EXPENSES');
+  lines.push('Date,Category,Description,Amount,Receipt');
+  expenses.forEach(e => {
+    const desc = (e.description || '').replace(/"/g, '""');
+    lines.push(`${e.date},"${categoryMeta(e.category).label}","${desc}",${Number(e.amount).toFixed(2)},${e.receipt_url || ''}`);
+  });
+  lines.push(`,,Total expenses,${expTotal.toFixed(2)}`);
+  lines.push('');
+  lines.push(`,,NET PROFIT,${(grossIncome - expTotal).toFixed(2)}`);
+  return lines.join('\n');
 }

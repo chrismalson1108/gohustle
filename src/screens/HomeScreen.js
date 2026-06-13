@@ -51,7 +51,7 @@ function matchesPay(job, payRange) {
 
 export default function HomeScreen({ navigation }) {
   const { name, streakDays, levelInfo, xp } = useUser();
-  const { jobs, bookings, refreshJobs, refreshBookings } = useJobs();
+  const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
   const [search, setSearch] = useState('');
@@ -79,6 +79,9 @@ export default function HomeScreen({ navigation }) {
     let list = jobs.filter(j => {
       // Only show open listings in Browse
       if (j.status !== 'open') return false;
+
+      // Hide gigs from users you've blocked
+      if (blockedIds?.has(j.posterId)) return false;
 
       // Category chip
       if (selectedCat !== 'all' && j.category !== selectedCat) return false;
@@ -131,7 +134,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters]);
+  }, [jobs, selectedCat, search, filters, blockedIds]);
 
   const activeFilterCount = countActiveFilters(filters);
 

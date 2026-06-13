@@ -69,7 +69,8 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 - `addJob(jobData)` — poster creates a listing
 - `updateJob(jobId, patch)` — poster edits a listing; re-inserts slots/requirements
 - `deleteJob(jobId)` — soft-delete (sets `status: 'cancelled'`)
-- `acceptBooking / declineBooking / markJobComplete / verifyAndRate` — booking lifecycle
+- `acceptBooking / declineBooking / cancelBooking / markJobComplete / verifyAndRate` — booking lifecycle (`cancelBooking` releases the escrow hold + notifies)
+- `blockUser(id)` / `blockedIds` (Set) — block a user; blocked posters' gigs are filtered out of Browse. Reports/blocks via `src/lib/moderation.js`
 - `proposeAmendment(bookingId, note)` / `respondToAmendment(bookingId, accept)` / `clearAmendment(bookingId)` — amendment flow
 - `ratePoster(bookingId, rating, reviewText)` — earner rates a poster after completion
 - `isBooked(jobId)`, `bookedJobs`, `postedJobs`, `earnBadgeCount`, `profileBadgeCount`
@@ -93,6 +94,8 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
 | `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
+| `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
+| `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement from `src/data/legal.js` (route param `doc`). Accepted at signup (checkbox) and recorded as `profiles.terms_accepted_at`/`terms_version`. |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
@@ -121,6 +124,10 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 All four use `src/lib/uploadImage.js`. Migrations: `supabase/migration_profile_photos.sql`, `migration_completion_photos.sql`, `migration_job_chat_photos.sql` (applied to the remote DB via the Management API).
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
+
+## Monitoring & analytics
+
+`src/lib/analytics.js` — pluggable `track(event, props)`, `captureError(error, ctx)`, `identify(userId)`. Currently logs in dev + keeps a ring buffer; set `SENTRY_DSN` / `ANALYTICS_KEY` and forward in the marked spots to enable real Sentry/PostHog (native SDKs need a dev-client rebuild). A root `ErrorBoundary` (`src/components/ErrorBoundary.js`, wrapping the app in `App.js`) catches render crashes and reports via `captureError`. Funnel events fire from AuthContext (`sign_in`/`sign_up`) and JobsContext (`gig_posted`, `booking_created`, `booking_accepted`, `job_verified`); `identify` runs on login in `PushManager`.
 
 ## Caching
 

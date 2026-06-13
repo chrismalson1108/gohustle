@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard,
+  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
+import { LEGAL_DOCS } from '../../data/legal';
 import { colors, gradients, shadows } from '../../theme';
 
 // tab: 'signin' | 'signup' | 'forgot'
@@ -23,6 +24,8 @@ export default function AuthScreen() {
   const [localError, setLocalError] = useState('');
   const [resendMsg, setResendMsg]   = useState('');
   const [resending, setResending]   = useState(false);
+  const [accepted, setAccepted]     = useState(false);
+  const [legalDoc, setLegalDoc]     = useState(null); // 'terms'|'privacy'|'contractor'
 
   const showVerify = !!pendingEmail;
 
@@ -35,6 +38,7 @@ export default function AuthScreen() {
     setEmail('');
     setPassword('');
     setConfirmPw('');
+    setAccepted(false);
   };
 
   const handleSubmit = async () => {
@@ -57,6 +61,7 @@ export default function AuthScreen() {
     if (tab === 'signup') {
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
+      if (!accepted) { setLocalError('Please accept the Terms, Privacy Policy, and Contractor Agreement'); return; }
     }
 
     setLoading(true);
@@ -80,7 +85,7 @@ export default function AuthScreen() {
 
   const isReady = tab === 'forgot'
     ? !!email
-    : email && password && (tab === 'signin' || (name && confirmPw));
+    : email && password && (tab === 'signin' || (name && confirmPw && accepted));
 
   const errorMsg = localError || authError;
 
@@ -231,6 +236,24 @@ export default function AuthScreen() {
             </View>
           )}
 
+          {tab === 'signup' && (
+            <View style={styles.acceptRow}>
+              <TouchableOpacity
+                onPress={() => setAccepted(a => !a)}
+                style={[styles.checkbox, accepted && styles.checkboxOn]}
+                activeOpacity={0.7}
+              >
+                {accepted && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </TouchableOpacity>
+              <Text style={styles.acceptText}>
+                I agree to the{' '}
+                <Text style={styles.acceptLink} onPress={() => setLegalDoc('terms')}>Terms</Text>,{' '}
+                <Text style={styles.acceptLink} onPress={() => setLegalDoc('privacy')}>Privacy Policy</Text>, and{' '}
+                <Text style={styles.acceptLink} onPress={() => setLegalDoc('contractor')}>Independent Contractor Agreement</Text>.
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity onPress={handleSubmit} disabled={!isReady || loading} activeOpacity={0.85}>
             <LinearGradient
               colors={isReady && !loading ? gradients.primary : ['#C4B5FD', '#A5B4FC']}
@@ -274,6 +297,21 @@ export default function AuthScreen() {
 
         </View>
       </ScrollView>
+
+      <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
+        <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.docHeader}>
+            <Text style={styles.docTitle}>{legalDoc ? LEGAL_DOCS[legalDoc].title : ''}</Text>
+            <TouchableOpacity onPress={() => setLegalDoc(null)} style={{ padding: 4 }}>
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+            <Text style={styles.docBody}>{legalDoc ? LEGAL_DOCS[legalDoc].body : ''}</Text>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -324,6 +362,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 13,
     fontSize: 15, color: colors.textPrimary,
   },
+  acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4, marginBottom: 4 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginRight: 10, marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  acceptText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
+  acceptLink: { color: colors.primary, fontWeight: '700' },
+  docModal: { flex: 1, backgroundColor: colors.background },
+  docHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  docTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, flex: 1 },
+  docBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
   submitBtn: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   forgotLink: { alignItems: 'center', marginTop: 16 },
