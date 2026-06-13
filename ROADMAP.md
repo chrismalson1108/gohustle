@@ -42,17 +42,19 @@ validate the core loop.
 
 ## P0 — Required before any external trial
 
-1. **Legal & policy screens** — Terms of Service, Privacy Policy, Independent Contractor Agreement, and a
-   community/safety policy. Accept-on-signup checkbox (versioned). Add a Help/Support contact.
-2. **Cancellation & no‑show handling** — let either party cancel a confirmed booking with a clear policy;
-   release the escrow hold on cancel; record who cancelled. Today a confirmed booking can't be cleanly
-   cancelled by the earner, and deleting a gig is blocked once work exists (good) but there's no graceful
-   "cancel booking" path. *(builds on the booking lifecycle in JobsContext)*
-3. **Account safety** — report/block a user; basic content moderation on job text + chat; rate‑limit
-   sign‑ups. A trust score / "verified" badge already exists on profiles — wire it to real signals.
-4. **Crash/error monitoring + analytics** — add Sentry (or similar) and lightweight product analytics so we
-   can see failures and funnels during the trial. Right now errors only `console.warn`.
-5. **Push delivery on a real build** — ship a dev/TestFlight build with `expo-notifications`; verify on a
+1. ✅ **Legal & policy screens** — Terms, Privacy, Independent Contractor Agreement (`src/data/legal.js`,
+   `LegalScreen`), accept-on-signup checkbox (versioned via `TERMS_VERSION`, recorded as
+   `profiles.terms_accepted_at`), Legal & Support section + support mailto in Profile.
+2. ✅ **Cancellation handling** — `cancelBooking` releases the escrow hold, frees the slot, notifies the
+   other party; earner can withdraw/cancel from My Jobs, poster can cancel a confirmed booking from Hiring;
+   cancelled bookings move to the Completed/Past tabs. *(No-show is handled as cancel + report; a richer
+   dispute flow is still P1.)*
+3. ✅ **Account safety (report/block)** — `reports` + `blocks` tables; report a gig (JobDetail) or a user
+   (chat menu); block hides that user's gigs from Browse and ends chat. *Still to do:* automated content
+   moderation + rate-limiting sign-ups; wire the "verified" badge to real signals.
+4. ⏳ **Crash/error monitoring + analytics** — add Sentry (`@sentry/react-native`, needs a DSN + dev-client
+   rebuild) and product analytics. Not yet done — errors currently only `console.warn`.
+5. ⏳ **Push delivery on a real build** — ship a dev/TestFlight build with `expo-notifications`; verify on a
    physical device (the simulator can't receive remote push).
 
 ## P1 — Strongly wanted for a good trial

@@ -8,13 +8,53 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
+import { useJobs } from '../context/JobsContext';
 import Avatar from './Avatar';
 import { notify } from '../lib/push';
 import { pickImage, uploadImage } from '../lib/uploadImage';
+import { submitReport, REPORT_REASONS } from '../lib/moderation';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
+  const { blockUser } = useJobs();
   const haptic = useHaptic();
+
+  const otherName = otherPerson?.name || 'this user';
+
+  const handleReport = () => {
+    const buttons = REPORT_REASONS.map(reason => ({
+      text: reason,
+      onPress: async () => {
+        try {
+          await submitReport({ reporterId: user.id, reportedUserId: otherPerson?.id, bookingId, reason });
+          Alert.alert('Report submitted', 'Thanks — our team will review this.');
+        } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
+      },
+    }));
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Report ' + otherName, 'Why are you reporting this user?', buttons);
+  };
+
+  const handleBlock = () => {
+    Alert.alert(`Block ${otherName}?`, "You won't see their gigs and they can't reach you here.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block', style: 'destructive',
+        onPress: async () => {
+          try { await blockUser(otherPerson?.id); Alert.alert('Blocked', `${otherName} has been blocked.`); onClose?.(); }
+          catch (e) { Alert.alert('Could not block', e.message || 'Please try again.'); }
+        },
+      },
+    ]);
+  };
+
+  const handleMenu = () => {
+    Alert.alert(otherName, undefined, [
+      { text: 'Report', onPress: handleReport },
+      { text: 'Block', style: 'destructive', onPress: handleBlock },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -178,9 +218,16 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
                 <Text style={styles.headerTitle}>{otherPerson?.name || 'Chat'}</Text>
                 {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {otherPerson?.id && (
+                  <TouchableOpacity onPress={handleMenu} style={styles.closeBtn}>
+                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                  <Ionicons name="close" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 

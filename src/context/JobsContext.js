@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify } from '../lib/push';
+import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -170,6 +171,19 @@ export function JobsProvider({ children }) {
 
   const myPostedIdsRef = useRef([]);
   myPostedIdsRef.current = state.myPostedIds;
+
+  const [blockedIds, setBlockedIds] = useState(new Set());
+
+  useEffect(() => {
+    if (user) fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
+    else setBlockedIds(new Set());
+  }, [user?.id]);
+
+  const blockUser = async (blockedId) => {
+    if (!user || !blockedId) return;
+    await blockUserDb(user.id, blockedId);
+    setBlockedIds(prev => new Set([...prev, blockedId]));
+  };
 
   // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -447,6 +461,26 @@ export function JobsProvider({ children }) {
     if (error) { console.warn('Decline error:', error.message); return; }
     if (booking?.earner?.id) {
       notify(booking.earner.id, 'Booking declined', `Your booking for "${booking.job?.title || 'a gig'}" wasn't accepted this time.`, { tab: 'EarnTab' });
+    }
+  };
+
+  // Either party cancels a pending/confirmed booking. Releases the escrow hold,
+  // frees the slot, and notifies the other side.
+  const cancelBooking = async (bookingId) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    try { await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment */ }
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'cancelled' } });
+    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
+    if (error) { console.warn('Cancel error:', error.message); return; }
+    if (booking?.slotId) supabase.from('job_slots').update({ taken: false }).eq('id', booking.slotId);
+
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const title = booking?.job?.title || 'a gig';
+    const isPoster = posterId && user?.id === posterId;
+    if (isPoster && booking?.earner?.id) {
+      notify(booking.earner.id, 'Booking cancelled', `The poster cancelled "${title}".`, { tab: 'EarnTab' });
+    } else if (posterId) {
+      notify(posterId, 'Booking cancelled', `The earner cancelled "${title}".`, { tab: 'GigsTab' });
     }
   };
 
@@ -735,6 +769,9 @@ export function JobsProvider({ children }) {
       postedJobs,
       acceptBooking,
       declineBooking,
+      cancelBooking,
+      blockedIds,
+      blockUser,
       markJobComplete,
       markEarnerDone,
       markPosterDone,

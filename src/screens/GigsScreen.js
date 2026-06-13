@@ -19,12 +19,12 @@ import Avatar from '../components/Avatar';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
-const PAST_STATUSES    = new Set(['verified', 'declined']);
+const PAST_STATUSES    = new Set(['verified', 'declined', 'cancelled']);
 
 export default function GigsScreen({ navigation }) {
   const {
     postedJobs, posterBookings,
-    acceptBooking, declineBooking,
+    acceptBooking, declineBooking, cancelBooking,
     markPosterDone, verifyAndRate, deleteJob,
     refreshJobs, refreshPosterBookings,
     proposeAmendment, createPaymentIntent, getPaymentMethodStatus,
@@ -173,6 +173,26 @@ export default function GigsScreen({ navigation }) {
     setLoadingId(bookingId);
     await declineBooking(bookingId);
     setLoadingId(null);
+  };
+
+  const handleCancel = (booking) => {
+    Alert.alert(
+      'Cancel this booking?',
+      'This cancels the confirmed gig and releases the payment hold. The earner will be notified.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel gig', style: 'destructive',
+          onPress: async () => {
+            haptic.medium();
+            setLoadingId(booking.id);
+            await cancelBooking(booking.id);
+            setLoadingId(null);
+            showToast({ icon: '❌', title: 'Booking cancelled', message: 'The payment hold was released.' });
+          },
+        },
+      ]
+    );
   };
 
   const handleMarkDone = async (booking) => {
@@ -347,6 +367,7 @@ export default function GigsScreen({ navigation }) {
                         onAccept={() => handleAccept(booking.id)}
                         onDecline={() => handleDecline(booking.id)}
                         onMarkDone={() => handleMarkDone(booking)}
+                        onCancel={() => handleCancel(booking)}
                         onVerify={() => setVerifyTarget(booking)}
                         onMessage={() => setMsgTarget({
                           bookingId: booking.id,
@@ -514,7 +535,7 @@ function PastBookingCard({ booking }) {
   );
 }
 
-function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onVerify, onMessage, onRequestChange }) {
+function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const status     = booking.status;
@@ -638,6 +659,11 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
             <View style={styles.amendDeclinedBanner}>
               <Text style={styles.amendDeclinedText}>Change declined — original terms remain</Text>
             </View>
+          )}
+          {status === 'confirmed' && onCancel && (
+            <TouchableOpacity style={styles.cancelLink} onPress={onCancel}>
+              <Text style={styles.cancelLinkText}>Cancel booking</Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -792,6 +818,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.primary + '60', backgroundColor: colors.primaryLight,
   },
   changeBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  cancelLink: { paddingVertical: 9, alignItems: 'center', marginTop: 6 },
+  cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
   amendPendingBanner: { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 9, marginTop: 6 },
   amendPendingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
   amendAcceptedBanner: { backgroundColor: '#ECFDF5', borderRadius: 8, padding: 9, marginTop: 6 },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Image,
+  StyleSheet, TextInput, Image, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import MessageSheet from '../components/MessageSheet';
+import { submitReport, REPORT_REASONS } from '../lib/moderation';
 
 const STATUS_CONTENT = {
   pending:   { ion: 'time', title: 'Application Pending',
@@ -59,6 +60,20 @@ export default function JobDetailScreen({ route, navigation }) {
   const estPay = job.payType === 'hourly'
     ? `$${job.pay}/hr · ~$${job.pay * job.estimatedHours} estimated`
     : `$${job.pay} flat rate`;
+
+  const handleReportGig = () => {
+    const buttons = REPORT_REASONS.map(reason => ({
+      text: reason,
+      onPress: async () => {
+        try {
+          await submitReport({ reporterId: user.id, reportedUserId: job.posterId, jobId: job.id, reason });
+          Alert.alert('Report submitted', 'Thanks — our team will review this gig.');
+        } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
+      },
+    }));
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Report this gig', 'Why are you reporting it?', buttons);
+  };
 
   const handleBook = () => {
     const hasAvailableSlot = job.slots?.some(s => !s.taken);
@@ -143,6 +158,12 @@ export default function JobDetailScreen({ route, navigation }) {
 
         <Section title="About the Poster">
           <PosterTrustCard poster={job.poster} />
+          {!isOwnJob && (
+            <TouchableOpacity style={styles.reportLink} onPress={handleReportGig}>
+              <Ionicons name="flag-outline" size={13} color={colors.textMuted} style={{ marginRight: 5 }} />
+              <Text style={styles.reportLinkText}>Report this gig</Text>
+            </TouchableOpacity>
+          )}
         </Section>
 
         {job.slots?.length > 0 && !alreadyBooked && !isOwnJob && (
@@ -334,6 +355,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12,
   },
   description: { fontSize: 15, color: colors.textPrimary, lineHeight: 24 },
+  reportLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, marginTop: 4 },
+  reportLinkText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
   reqRow: { flexDirection: 'row', marginBottom: 6 },
   reqDot: { fontSize: 14, color: colors.primary, marginRight: 8, marginTop: 1 },
   reqText: { fontSize: 14, color: colors.textPrimary, flex: 1, lineHeight: 21 },

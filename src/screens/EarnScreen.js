@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
   Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  RefreshControl,
+  RefreshControl, Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,7 +22,7 @@ import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
 const AWAITING_STATUSES  = new Set(['pending']);                // waiting on poster
-const COMPLETED_STATUSES = new Set(['verified', 'declined']);   // finished / closed
+const COMPLETED_STATUSES = new Set(['verified', 'declined', 'cancelled']); // finished / closed
 const ONGOING_STATUSES   = new Set(['pending', 'confirmed', 'completed']); // can still message
 
 export default function EarnScreen({ navigation }) {
@@ -31,7 +31,7 @@ export default function EarnScreen({ navigation }) {
     streakDays, levelInfo, xp, challenges,
     weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
   } = useUser();
-  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
+  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
   const haptic = useHaptic();
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
@@ -112,6 +112,27 @@ export default function EarnScreen({ navigation }) {
       showToast({ icon: '⚠️', title: 'Could not finish', message: e.message || 'Please try again.' });
     }
     setFinishing(false);
+  };
+
+  const handleCancel = (booking) => {
+    const isPending = booking.status === 'pending';
+    Alert.alert(
+      isPending ? 'Withdraw application?' : 'Cancel booking?',
+      isPending
+        ? 'This removes your request for this gig.'
+        : 'This cancels the confirmed gig and releases any payment hold.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: isPending ? 'Withdraw' : 'Cancel gig', style: 'destructive',
+          onPress: () => {
+            haptic.medium();
+            cancelBooking(booking.id);
+            showToast({ icon: '❌', title: isPending ? 'Withdrawn' : 'Booking cancelled', message: isPending ? 'Your request was removed.' : 'The gig was cancelled.' });
+          },
+        },
+      ]
+    );
   };
 
   const handleRatePoster = async () => {
@@ -350,6 +371,13 @@ export default function EarnScreen({ navigation }) {
                   >
                     <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
                     <Text style={styles.msgBtnText}>Message Poster</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Cancel / withdraw */}
+                {(status === 'pending' || status === 'confirmed') && (
+                  <TouchableOpacity style={styles.cancelLink} onPress={() => handleCancel(booking)}>
+                    <Text style={styles.cancelLinkText}>{status === 'pending' ? 'Withdraw application' : 'Cancel booking'}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -632,6 +660,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
   },
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  cancelLink: { paddingVertical: 10, alignItems: 'center', marginTop: 4 },
+  cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
   photoStrip: { marginTop: 10 },
   photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
   photoThumb: { width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },
