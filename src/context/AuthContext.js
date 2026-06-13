@@ -8,29 +8,28 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [authError, setAuthError]     = useState(null);
   const [onboardingDone, setOnbDone]  = useState(true);
-  const [justSignedUp, setJustSignedUp] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
+      if (session?.user) await loadOnboarding(session.user.id);
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      if (session?.user) await loadOnboarding(session.user.id);
+      else setOnbDone(true); // signed out → reset gate
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Only check onboarding when a fresh signup just occurred
-  useEffect(() => {
-    if (justSignedUp && session?.user) {
-      checkOnboarding(session.user.id);
-    }
-  }, [justSignedUp, session?.user?.id]);
-
-  const checkOnboarding = async (userId) => {
+  // Derive onboarding state from the profile whenever a session is established.
+  // Returning users have onboarding_done=true (skip); a freshly-confirmed user's
+  // first sign-in reads false and is routed into onboarding.
+  const loadOnboarding = async (userId) => {
     const { data } = await supabase
       .from('profiles')
       .select('onboarding_done')
@@ -41,28 +40,50 @@ export function AuthProvider({ children }) {
 
   const markOnboardingDone = () => {
     setOnbDone(true);
-    setJustSignedUp(false);
   };
 
   const signIn = async (email, password) => {
     setAuthError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { setAuthError(error.message); return false; }
+    if (error) {
+      // Email confirmation required but not yet done
+      if (error.code === 'email_not_confirmed' || /email not confirmed/i.test(error.message)) {
+        setPendingEmail(email);
+        setAuthError('Please confirm your email first — check your inbox for the link.');
+        return false;
+      }
+      setAuthError(error.message);
+      return false;
+    }
+    setPendingEmail(null);
     return true;
   };
 
   const signUp = async (email, password, name) => {
     setAuthError(null);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name } },
     });
     if (error) { setAuthError(error.message); return false; }
-    setJustSignedUp(true);
     setOnbDone(false);
+    // With email confirmation on, signUp returns no session — the user must
+    // confirm via the emailed link, then sign in. Surface that state.
+    setPendingEmail(email);
     return true;
   };
+
+  const resendConfirmation = async (email) => {
+    setAuthError(null);
+    const target = email || pendingEmail;
+    if (!target) { setAuthError('No email to resend to.'); return false; }
+    const { error } = await supabase.auth.resend({ type: 'signup', email: target });
+    if (error) { setAuthError(error.message); return false; }
+    return true;
+  };
+
+  const clearPending = () => setPendingEmail(null);
 
   const resetPassword = async (email) => {
     setAuthError(null);
@@ -86,9 +107,12 @@ export function AuthProvider({ children }) {
       loading,
       authError,
       onboardingDone,
+      pendingEmail,
       signIn,
       signUp,
       resetPassword,
+      resendConfirmation,
+      clearPending,
       signOut,
       clearError,
       markOnboardingDone,

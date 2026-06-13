@@ -56,7 +56,9 @@ SafeAreaProvider → AuthProvider → RootNavigator
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `authError`, `onboardingDone`. Functions: `signIn`, `signUp`, `resetPassword`, `signOut`, `markOnboardingDone`. The `onboardingDone` flag is only set to `false` on a fresh `signUp()` call — not on login — so returning users skip onboarding.
+`session`, `user`, `loading`, `authError`, `onboardingDone`, `pendingEmail`. Functions: `signIn`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `signOut`, `markOnboardingDone`.
+
+**Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
 ### UserContext (`src/context/UserContext.js`)
 XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync for XP/earnings to avoid flooding DB. Key exports: `addXP`, `recordApply`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync.
