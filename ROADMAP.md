@@ -52,8 +52,11 @@ validate the core loop.
 3. ✅ **Account safety (report/block)** — `reports` + `blocks` tables; report a gig (JobDetail) or a user
    (chat menu); block hides that user's gigs from Browse and ends chat. *Still to do:* automated content
    moderation + rate-limiting sign-ups; wire the "verified" badge to real signals.
-4. ⏳ **Crash/error monitoring + analytics** — add Sentry (`@sentry/react-native`, needs a DSN + dev-client
-   rebuild) and product analytics. Not yet done — errors currently only `console.warn`.
+4. 🟡 **Crash/error monitoring + analytics** — foundation in place: a root `ErrorBoundary`
+   (recoverable fallback instead of a white screen) and a pluggable `src/lib/analytics.js`
+   (`track`/`captureError`/`identify`) wired through the core funnel (sign-in/up, gig posted,
+   booking created/accepted, job verified) and key catch blocks. *Remaining:* paste a Sentry DSN +
+   PostHog key into `analytics.js`, install the native SDKs, and rebuild the dev client to send real data.
 5. ⏳ **Push delivery on a real build** — ship a dev/TestFlight build with `expo-notifications`; verify on a
    physical device (the simulator can't receive remote push).
 

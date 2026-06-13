@@ -11,8 +11,10 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
 import { registerPushToken, addNotificationResponseListener } from './src/lib/push';
+import { identify, track } from './src/lib/analytics';
 
 import HomeScreen           from './src/screens/HomeScreen';
 import EarnScreen           from './src/screens/EarnScreen';
@@ -39,6 +41,7 @@ const navigationRef = createNavigationContainerRef();
 function PushManager() {
   const { user } = useAuth();
   useEffect(() => {
+    identify(user?.id || null);
     if (user?.id) registerPushToken(user.id);
   }, [user?.id]);
   useEffect(() => {
@@ -182,9 +185,11 @@ export default function App() {
   return (
     <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.gohustlr">
       <SafeAreaProvider>
-        <AuthProvider>
-          <RootNavigator />
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <RootNavigator />
+          </AuthProvider>
+        </ErrorBoundary>
       </SafeAreaProvider>
     </StripeProvider>
   );

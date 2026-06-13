@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { unregisterPushToken } from '../lib/push';
+import { track } from '../lib/analytics';
 
 const AuthContext = createContext(null);
 
@@ -57,6 +58,7 @@ export function AuthProvider({ children }) {
       return false;
     }
     setPendingEmail(null);
+    track('sign_in');
     return true;
   };
 
@@ -72,6 +74,7 @@ export function AuthProvider({ children }) {
     // With email confirmation on, signUp returns no session — the user must
     // confirm via the emailed link, then sign in. Surface that state.
     setPendingEmail(email);
+    track('sign_up');
     return true;
   };
 

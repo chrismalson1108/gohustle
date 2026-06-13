@@ -125,6 +125,10 @@ All four use `src/lib/uploadImage.js`. Migrations: `supabase/migration_profile_p
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
+## Monitoring & analytics
+
+`src/lib/analytics.js` — pluggable `track(event, props)`, `captureError(error, ctx)`, `identify(userId)`. Currently logs in dev + keeps a ring buffer; set `SENTRY_DSN` / `ANALYTICS_KEY` and forward in the marked spots to enable real Sentry/PostHog (native SDKs need a dev-client rebuild). A root `ErrorBoundary` (`src/components/ErrorBoundary.js`, wrapping the app in `App.js`) catches render crashes and reports via `captureError`. Funnel events fire from AuthContext (`sign_in`/`sign_up`) and JobsContext (`gig_posted`, `booking_created`, `booking_accepted`, `job_verified`); `identify` runs on login in `PushManager`.
+
 ## Caching
 
 `src/lib/cache.js` wraps AsyncStorage with a timestamp TTL. Pattern used everywhere:

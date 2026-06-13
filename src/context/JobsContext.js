@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify } from '../lib/push';
 import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
+import { track, captureError } from '../lib/analytics';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -355,6 +356,7 @@ export function JobsProvider({ children }) {
     if (job?.posterId) {
       notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
     }
+    track('booking_created', { jobId, counterOffer: !!counterOffer });
   };
 
   // Earner marks their side done; if poster already done → complete.
@@ -439,10 +441,11 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .update({ status: 'confirmed' })
       .eq('id', bookingId);
-    if (error) { console.warn('Accept error:', error.message); return; }
+    if (error) { console.warn('Accept error:', error.message); captureError(error, { op: 'acceptBooking', bookingId }); return; }
     if (booking?.earner?.id) {
       notify(booking.earner.id, 'Booking accepted!', `Your booking for "${booking.job?.title || 'a gig'}" was accepted. Get ready!`, { tab: 'EarnTab' });
     }
+    track('booking_accepted', { bookingId });
   };
 
   const declineBooking = async (bookingId) => {
@@ -510,6 +513,7 @@ export function JobsProvider({ children }) {
     if (booking?.earner?.id) {
       notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
     }
+    track('job_verified', { rating, paymentMethod });
 
     // Mark the job itself as completed so it leaves the Browse screen
     if (booking?.jobId) {
@@ -641,7 +645,8 @@ export function JobsProvider({ children }) {
       })
       .select().single();
 
-    if (error || !newJob) { console.warn('Job insert error:', error?.message); return; }
+    if (error || !newJob) { console.warn('Job insert error:', error?.message); captureError(error || new Error('Job insert failed'), { op: 'addJob' }); return; }
+    track('gig_posted', { category: jobData.category, payType: jobData.payType });
 
     if (jobData.slots?.length) {
       await supabase.from('job_slots').insert(
