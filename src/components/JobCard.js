@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
@@ -30,6 +30,9 @@ export default function JobCard({ job, onPress, bookingStatus }) {
     >
       <View style={[styles.accent, { backgroundColor: catColor }]} />
       <View style={styles.body}>
+        {job.photos?.length > 0 && (
+          <Image source={{ uri: job.photos[0] }} style={styles.cover} />
+        )}
         {bookingStatus && BOOKING_PILL[bookingStatus] && (
           <View style={[styles.bookingPill, { backgroundColor: BOOKING_PILL[bookingStatus].bg }]}>
             <Ionicons name={BOOKING_PILL[bookingStatus].ion} size={13} color={BOOKING_PILL[bookingStatus].text} style={{ marginRight: 5 }} />
@@ -85,6 +88,7 @@ const styles = StyleSheet.create({
   },
   accent: { width: 5 },
   body: { flex: 1, padding: 16 },
+  cover: { width: '100%', height: 140, borderRadius: 12, marginBottom: 12, backgroundColor: colors.border },
   bookingPill: {
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
     alignSelf: 'stretch', marginBottom: 10, alignItems: 'center',

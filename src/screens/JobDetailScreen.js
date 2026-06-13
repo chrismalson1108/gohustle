@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput,
+  StyleSheet, TextInput, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -112,6 +112,19 @@ export default function JobDetailScreen({ route, navigation }) {
             <Text style={styles.locText}>{job.location}</Text>
           </View>
         </View>
+
+        {job.photos?.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.gallery}
+            contentContainerStyle={{ paddingRight: 8 }}
+          >
+            {job.photos.map((u, i) => (
+              <Image key={i} source={{ uri: u }} style={styles.galleryImg} />
+            ))}
+          </ScrollView>
+        )}
 
         <Section title="About this gig">
           <Text style={styles.description}>{job.description}</Text>
@@ -275,7 +288,7 @@ export default function JobDetailScreen({ route, navigation }) {
         visible={msgVisible}
         bookingId={currentBooking?.id}
         jobTitle={job.title}
-        otherPerson={{ name: job.poster?.name, avatarInitial: job.poster?.avatarInitial }}
+        otherPerson={{ id: job.posterId, name: job.poster?.name, avatarInitial: job.poster?.avatarInitial, avatarUrl: job.poster?.avatarUrl }}
         onClose={() => setMsgVisible(false)}
       />
     </View>
@@ -305,6 +318,8 @@ const styles = StyleSheet.create({
   },
   catText: { fontSize: 12, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, lineHeight: 30, marginBottom: 16 },
+  gallery: { marginBottom: 20 },
+  galleryImg: { width: 260, height: 180, borderRadius: 16, marginRight: 10, backgroundColor: colors.border },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   payPill: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginRight: 10, marginBottom: 10 },
   payText: { fontSize: 13, fontWeight: '700', color: colors.success },

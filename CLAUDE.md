@@ -112,6 +112,13 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 - **`RatingStars`** — reusable star rating display/input component.
 - **`JobCard`** — job listing card used in HomeScreen and search results.
 - **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
+
+### Images (Supabase Storage buckets — all public read, owner-scoped writes)
+- `avatars` → `profiles.avatar_url` (profile photos)
+- `completion-photos` → `bookings.completion_photos text[]` (earner proof-of-work, shown in CompletionModal + history)
+- `job-photos` → `jobs.photos text[]` (gallery on JobDetail, cover on JobCard; set in PostJob/EditJob)
+- `chat-photos` → `messages.image_url` (image messages in MessageSheet)
+All four use `src/lib/uploadImage.js`. Migrations: `supabase/migration_profile_photos.sql`, `migration_completion_photos.sql`, `migration_job_chat_photos.sql` (applied to the remote DB via the Management API).
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 

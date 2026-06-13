@@ -26,6 +26,7 @@ function transformJob(dbJob) {
     urgent: dbJob.urgent,
     estimatedHours: Number(dbJob.estimated_hours),
     status: dbJob.status,
+    photos: dbJob.photos || [],
     postedAt: dbJob.created_at
       ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : 'Recently',
@@ -548,6 +549,7 @@ export function JobsProvider({ children }) {
       location: jobData.location, description: jobData.description,
       urgent: jobData.urgent,
     };
+    if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
 
@@ -600,6 +602,7 @@ export function JobsProvider({ children }) {
         pay: jobData.pay, pay_type: jobData.payType,
         location: jobData.location, description: jobData.description,
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
+        photos: jobData.photos || [],
         poster_id: user.id,
       })
       .select().single();
