@@ -78,6 +78,9 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 
 Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earner channel) and `poster-bookings-${user.id}` (poster channel, broad subscription that calls `loadPosterBookings()` on any change).
 
+### Push notifications (`src/lib/push.js`)
+Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab. **Requires a dev-client rebuild** — `expo-notifications` is native and isn't in the current binary; plain Expo Go on SDK 54 can't receive Android remote push.
+
 ## Key Screens
 
 | Screen | Purpose |

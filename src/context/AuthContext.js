@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { unregisterPushToken } from '../lib/push';
 
 const AuthContext = createContext(null);
 
@@ -95,6 +96,7 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    if (session?.user?.id) await unregisterPushToken(session.user.id);
     await supabase.auth.signOut();
   };
 

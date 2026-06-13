@@ -321,6 +321,7 @@ export default function GigsScreen({ navigation }) {
                           bookingId: booking.id,
                           jobTitle: job.title,
                           otherPerson: {
+                            id: booking.earner?.id,
                             name: booking.earner?.name || 'Earner',
                             avatarInitial: booking.earner?.avatarInitial || 'E',
                             avatarUrl: booking.earner?.avatarUrl,

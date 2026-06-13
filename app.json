@@ -36,6 +36,12 @@
         {
           "photosPermission": "GoHustlr needs access to your photos so you can set a profile picture and add job completion photos."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6D28D9"
+        }
       ]
     ],
     "extra": {

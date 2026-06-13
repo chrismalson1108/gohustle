@@ -345,7 +345,7 @@ export default function EarnScreen({ navigation }) {
                     onPress={() => setMsgTarget({
                       bookingId: booking.id,
                       jobTitle: j.title,
-                      otherPerson: { name: j.poster?.name || 'Poster', avatarInitial: j.poster?.avatarInitial || 'P', avatarUrl: j.poster?.avatarUrl },
+                      otherPerson: { id: j.posterId, name: j.poster?.name || 'Poster', avatarInitial: j.poster?.avatarInitial || 'P', avatarUrl: j.poster?.avatarUrl },
                     })}
                   >
                     <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />

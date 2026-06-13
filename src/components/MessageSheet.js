@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
+import { notify } from '../lib/push';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
@@ -99,6 +100,10 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     } else {
       // Replace optimistic with confirmed message
       setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+      // Notify the other party of the new message
+      if (otherPerson?.id) {
+        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, {});
+      }
     }
   };
 

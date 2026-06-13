@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
+import { notify } from '../lib/push';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -334,6 +335,11 @@ export function JobsProvider({ children }) {
 
     // Replace temp booking with real one
     await loadBookings();
+
+    // Notify the poster of the new request
+    if (job?.posterId) {
+      notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
+    }
   };
 
   // Earner marks their side done; if poster already done → complete.
@@ -351,7 +357,11 @@ export function JobsProvider({ children }) {
       ...(bothDone && { status: 'completed' }),
     } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-    if (error) console.warn('Earner done error:', error.message);
+    if (error) { console.warn('Earner done error:', error.message); return; }
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (posterId) {
+      notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab' });
+    }
   };
 
   // Poster marks their side done; if earner already done → complete
@@ -363,7 +373,10 @@ export function JobsProvider({ children }) {
       : { poster_done: true };
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterDone: true, ...(bothDone && { status: 'completed' }) } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-    if (error) console.warn('Poster done error:', error.message);
+    if (error) { console.warn('Poster done error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Poster confirmed completion', 'The poster marked the job done on their side.', { tab: 'EarnTab' });
+    }
   };
 
   // Keep old name as alias for earner side
@@ -383,6 +396,7 @@ export function JobsProvider({ children }) {
     if (booking?.jobId) {
       const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
       if (jobRow?.poster_id) {
+        notify(jobRow.poster_id, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab' });
         const { data: posterProfile } = await supabase
           .from('profiles')
           .select('poster_rating, poster_review_count')
@@ -404,12 +418,16 @@ export function JobsProvider({ children }) {
   // ── Poster actions ─────────────────────────────────────────────────────────
 
   const acceptBooking = async (bookingId) => {
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'confirmed' } });
     const { error } = await supabase
       .from('bookings')
       .update({ status: 'confirmed' })
       .eq('id', bookingId);
-    if (error) console.warn('Accept error:', error.message);
+    if (error) { console.warn('Accept error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Booking accepted!', `Your booking for "${booking.job?.title || 'a gig'}" was accepted. Get ready!`, { tab: 'EarnTab' });
+    }
   };
 
   const declineBooking = async (bookingId) => {
@@ -419,12 +437,16 @@ export function JobsProvider({ children }) {
     } catch (_) {
       // No payment or already cancelled — safe to ignore
     }
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'declined' } });
     const { error } = await supabase
       .from('bookings')
       .update({ status: 'declined' })
       .eq('id', bookingId);
-    if (error) console.warn('Decline error:', error.message);
+    if (error) { console.warn('Decline error:', error.message); return; }
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Booking declined', `Your booking for "${booking.job?.title || 'a gig'}" wasn't accepted this time.`, { tab: 'EarnTab' });
+    }
   };
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod }) => {
@@ -449,6 +471,10 @@ export function JobsProvider({ children }) {
 
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
     if (error) { console.warn('Verify error:', error.message); return; }
+
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
+    }
 
     // Mark the job itself as completed so it leaves the Browse screen
     if (booking?.jobId) {
@@ -670,14 +696,23 @@ export function JobsProvider({ children }) {
   // ── Amendments ─────────────────────────────────────────────────────────────
 
   const proposeAmendment = async (bookingId, note) => {
+    const booking = state.posterBookings.find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
     await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
+    if (booking?.earner?.id) {
+      notify(booking.earner.id, 'Change proposed', 'The poster proposed a change to your gig — review it.', { tab: 'EarnTab' });
+    }
   };
 
   const respondToAmendment = async (bookingId, accepted) => {
     const newStatus = accepted ? 'accepted' : 'declined';
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: newStatus } });
     await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (posterId) {
+      notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab' });
+    }
   };
 
   const clearAmendment = async (bookingId) => {
