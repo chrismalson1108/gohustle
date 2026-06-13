@@ -271,8 +271,8 @@ export function JobsProvider({ children }) {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
         }
         if (b.status === 'verified') {
-          const stars = '⭐'.repeat(Math.round(b.earner_rating || 5));
-          showToast({ icon: '💚', title: 'Job Verified!', message: `You earned ${stars} — paid via ${b.payment_method || 'cash'}!` });
+          const stars = `${Math.round(b.earner_rating || 5)}★`;
+          showToast({ icon: '💚', title: 'Job Verified!', message: `${stars} rating — paid via ${b.payment_method || 'cash'}!` });
         }
         if (b.status === 'declined') {
           showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
@@ -478,6 +478,31 @@ export function JobsProvider({ children }) {
         }).eq('id', booking.earner.id);
       }
     }
+
+    // Credit the earner's earnings with their captured payout (amount after the 10% fee)
+    if (booking?.earner?.id) {
+      const { data: payment } = await supabase
+        .from('payments')
+        .select('earner_amount_cents')
+        .eq('booking_id', bookingId)
+        .single();
+
+      if (payment?.earner_amount_cents) {
+        const dollars = payment.earner_amount_cents / 100;
+        const { data: ep } = await supabase
+          .from('profiles')
+          .select('earnings_today, earnings_week, earnings_total')
+          .eq('id', booking.earner.id)
+          .single();
+        if (ep) {
+          await supabase.from('profiles').update({
+            earnings_today: Number(ep.earnings_today || 0) + dollars,
+            earnings_week:  Number(ep.earnings_week  || 0) + dollars,
+            earnings_total: Number(ep.earnings_total || 0) + dollars,
+          }).eq('id', booking.earner.id);
+        }
+      }
+    }
   };
 
   const updateJob = async (jobId, jobData) => {
@@ -602,6 +627,36 @@ export function JobsProvider({ children }) {
     return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
   };
 
+  // Poster side: do they have a saved card on file?
+  const createSetupIntent = () => stripeEdge.createSetupIntent();
+
+  // Earner side: manage payout/bank details in the Stripe Express dashboard
+  const getPayoutLoginLink = () => stripeEdge.getPayoutLoginLink();
+
+  // Poster side: remove all saved cards
+  const detachPaymentMethod = () => stripeEdge.detachPaymentMethod();
+
+  const getPaymentMethodStatus = async () => {
+    if (!user) return { hasPaymentMethod: false };
+    try {
+      return await stripeEdge.getPaymentMethodStatus();
+    } catch (_) {
+      return { hasPaymentMethod: false };
+    }
+  };
+
+  // Unified readiness for both roles — drives the payment-setup alerts.
+  const getPaymentReadiness = async () => {
+    const [payout, pm] = await Promise.all([
+      getPayoutStatus(),
+      getPaymentMethodStatus(),
+    ]);
+    return {
+      payoutReady: payout.onboarded,
+      paymentMethodReady: pm.hasPaymentMethod,
+    };
+  };
+
   // ── Amendments ─────────────────────────────────────────────────────────────
 
   const proposeAmendment = async (bookingId, note) => {
@@ -648,6 +703,11 @@ export function JobsProvider({ children }) {
       createPaymentIntent,
       getPayoutOnboardingUrl,
       getPayoutStatus,
+      createSetupIntent,
+      getPaymentMethodStatus,
+      getPaymentReadiness,
+      getPayoutLoginLink,
+      detachPaymentMethod,
     }}>
       {children}
     </JobsContext.Provider>

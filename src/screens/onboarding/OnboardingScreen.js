@@ -4,6 +4,7 @@ import {
   StyleSheet, Dimensions, Animated, Platform, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -13,9 +14,9 @@ import LocationPicker from '../../components/LocationPicker';
 const { width } = Dimensions.get('window');
 
 const ROLES = [
-  { id: 'earner', label: 'Earner', icon: '🎓', desc: 'I want to find gigs and earn money' },
-  { id: 'poster', label: 'Poster', icon: '📋', desc: 'I want to post jobs and hire people' },
-  { id: 'both',   label: 'Both',  icon: '⚡', desc: 'I want to earn AND post jobs' },
+  { id: 'earner', label: 'Earner', ion: 'school',    desc: 'I want to find gigs and earn money' },
+  { id: 'poster', label: 'Poster', ion: 'clipboard', desc: 'I want to post jobs and hire people' },
+  { id: 'both',   label: 'Both',  ion: 'flash',      desc: 'I want to earn AND post jobs' },
 ];
 
 const SKILL_OPTIONS = [
@@ -104,7 +105,7 @@ export default function OnboardingScreen({ onComplete }) {
   const STEPS = [
     // Step 0 — Welcome
     <View key="welcome" style={styles.stepWrap}>
-      <Text style={styles.emoji}>👋</Text>
+      <Ionicons name="sparkles" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>Welcome to GoHustlr!</Text>
       <Text style={styles.stepSub}>
         The gig marketplace for college students.{'\n'}
@@ -119,7 +120,7 @@ export default function OnboardingScreen({ onComplete }) {
 
     // Step 1 — Username
     <View key="username" style={styles.stepWrap}>
-      <Text style={styles.emoji}>🏷️</Text>
+      <Ionicons name="pricetag" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>Pick a username</Text>
       <Text style={styles.stepSub}>This is how others will see you on GoHustlr.</Text>
       <TextInput
@@ -147,7 +148,7 @@ export default function OnboardingScreen({ onComplete }) {
 
     // Step 2 — Role
     <View key="role" style={styles.stepWrap}>
-      <Text style={styles.emoji}>🎯</Text>
+      <Ionicons name="locate" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>What are you here for?</Text>
       <Text style={styles.stepSub}>You can always change this later in your Profile.</Text>
       {ROLES.map(r => (
@@ -156,7 +157,7 @@ export default function OnboardingScreen({ onComplete }) {
           style={[styles.roleCard, form.role === r.id && styles.roleCardActive]}
           onPress={() => set('role', r.id)}
         >
-          <Text style={styles.roleIcon}>{r.icon}</Text>
+          <Ionicons name={r.ion} size={24} color={form.role === r.id ? colors.primary : colors.textSecondary} style={styles.roleIcon} />
           <View style={styles.roleInfo}>
             <Text style={[styles.roleLabel, form.role === r.id && styles.roleLabelActive]}>{r.label}</Text>
             <Text style={styles.roleDesc}>{r.desc}</Text>
@@ -177,14 +178,14 @@ export default function OnboardingScreen({ onComplete }) {
 
     // Step 3 — Location
     <View key="location" style={[styles.stepWrap, { zIndex: 10 }]}>
-      <Text style={styles.emoji}>📍</Text>
+      <Ionicons name="location" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>Where are you based?</Text>
       <Text style={styles.stepSub}>Used to surface nearby gigs for you.</Text>
       <View style={{ width: '100%', zIndex: 20 }}>
         <LocationPicker
           value={form.city}
           onChange={v => set('city', v)}
-          placeholder="Search any city, or tap 🎯"
+          placeholder="Search any city, or use current location"
         />
       </View>
       <TouchableOpacity
@@ -205,7 +206,7 @@ export default function OnboardingScreen({ onComplete }) {
     <View key="skills" style={styles.stepWrap}>
       {(form.role === 'earner' || form.role === 'both') ? (
         <>
-          <Text style={styles.emoji}>💪</Text>
+          <Ionicons name="barbell" size={56} color={colors.primary} style={styles.emoji} />
           <Text style={styles.stepTitle}>Your skills</Text>
           <Text style={styles.stepSub}>Pick what you're great at — earners with skills get hired faster.</Text>
           <View style={styles.skillGrid}>
@@ -236,7 +237,7 @@ export default function OnboardingScreen({ onComplete }) {
         </>
       ) : (
         <>
-          <Text style={styles.emoji}>✍️</Text>
+          <Ionicons name="create" size={56} color={colors.primary} style={styles.emoji} />
           <Text style={styles.stepTitle}>Add a short bio</Text>
           <Text style={styles.stepSub}>Tell earners a bit about yourself and your gigs.</Text>
           <TextInput
@@ -264,7 +265,7 @@ export default function OnboardingScreen({ onComplete }) {
 
     // Step 5 — Done
     <View key="done" style={styles.stepWrap}>
-      <Text style={styles.emoji}>🎉</Text>
+      <Ionicons name="rocket" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>You're all set!</Text>
       <Text style={styles.stepSub}>
         Welcome to GoHustlr, @{form.username || 'hustler'}.{'\n'}
@@ -272,7 +273,7 @@ export default function OnboardingScreen({ onComplete }) {
       </Text>
       <TouchableOpacity onPress={handleFinish} disabled={saving}>
         <LinearGradient colors={gradients.earn} style={styles.finishBtn}>
-          <Text style={styles.finishBtnText}>{saving ? 'Setting up...' : 'Enter GoHustlr 🚀'}</Text>
+          <Text style={styles.finishBtnText}>{saving ? 'Setting up...' : 'Enter GoHustlr'}</Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>,

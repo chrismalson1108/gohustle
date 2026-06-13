@@ -4,6 +4,7 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform, Alert, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
@@ -110,13 +111,13 @@ export default function EditJobScreen({ route, navigation }) {
               <Text style={styles.deleteBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Edit Gig ✏️</Text>
+          <Text style={styles.headerTitle}>Edit Gig</Text>
           <Text style={styles.headerSub}>{job.title}</Text>
         </LinearGradient>
 
         {isLocked && !amendmentAccepted && (
           <View style={styles.lockBanner}>
-            <Text style={styles.lockIcon}>🔒</Text>
+            <Ionicons name="lock-closed" size={20} color="#D97706" style={styles.lockIcon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.lockTitle}>Core Terms Locked</Text>
               <Text style={styles.lockDesc}>
@@ -127,7 +128,7 @@ export default function EditJobScreen({ route, navigation }) {
         )}
         {amendmentAccepted && (
           <View style={styles.amendBanner}>
-            <Text style={styles.lockIcon}>✅</Text>
+            <Ionicons name="checkmark-circle" size={20} color={colors.success} style={styles.lockIcon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.amendTitle}>Amendment Accepted</Text>
               <Text style={styles.lockDesc}>
@@ -155,7 +156,7 @@ export default function EditJobScreen({ route, navigation }) {
                     style={[styles.catChip, active && styles.catChipActive]}
                     onPress={() => { haptic.selection(); set('category', cat.id); setShowCustomCat(false); }}
                   >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
                     <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
@@ -164,7 +165,7 @@ export default function EditJobScreen({ route, navigation }) {
                 style={[styles.catChip, form.category === 'other' && styles.catChipActive]}
                 onPress={() => { haptic.selection(); set('category', 'other'); setShowCustomCat(true); }}
               >
-                <Text style={styles.catChipIcon}>✏️</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
                 <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
               </TouchableOpacity>
             </View>
@@ -175,7 +176,7 @@ export default function EditJobScreen({ route, navigation }) {
             )}
           </Field>
 
-          <Field label={`Pay *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Pay *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             <View style={[styles.payRow, !canEditCore && styles.lockedRow]}>
               <View style={styles.payInputWrap}>
                 <Text style={styles.dollar}>$</Text>
@@ -198,7 +199,7 @@ export default function EditJobScreen({ route, navigation }) {
             </View>
           </Field>
 
-          <Field label={`Location *${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Location *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
               ? <LocationPicker value={form.location} onChange={v => set('location', v)} />
               : <View style={[styles.input, styles.lockedInput]}><Text style={styles.lockedValue}>{form.location}</Text></View>
@@ -219,14 +220,14 @@ export default function EditJobScreen({ route, navigation }) {
               onChangeText={v => set('requirements', v)} />
           </Field>
 
-          <Field label={`Available Times${isLocked && !canEditCore ? '  🔒' : ''}`}>
+          <Field label={`Available Times${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
               ? <DateTimePicker slots={form.slots} onChange={slots => set('slots', slots)} />
               : (
                 <View style={styles.lockedSlots}>
                   {form.slots.map(s => (
                     <View key={s.id} style={styles.lockedSlotTag}>
-                      <Text style={styles.lockedSlotText}>📅 {s.label}</Text>
+                      <Text style={styles.lockedSlotText}>{s.label}</Text>
                     </View>
                   ))}
                 </View>
@@ -239,7 +240,7 @@ export default function EditJobScreen({ route, navigation }) {
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
             <Text style={styles.urgentToggleText}>
-              {form.urgent ? '⚡ Marked as Urgent — Needed ASAP' : '⚡ Mark as Urgent (optional)'}
+              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
             </Text>
           </TouchableOpacity>
 

@@ -3,6 +3,7 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { colors, shadows } from '../theme';
@@ -137,7 +138,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
                 {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
           </View>
@@ -155,7 +156,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
               contentContainerStyle={styles.msgList}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
-                  <Text style={styles.emptyChatIcon}>💬</Text>
+                  <Ionicons name="chatbubble-ellipses" size={48} color={colors.textMuted} style={styles.emptyChatIcon} />
                   <Text style={styles.emptyChatText}>
                     No messages yet.{'\n'}Say hi to {otherPerson?.name || 'them'}!
                   </Text>

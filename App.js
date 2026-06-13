@@ -84,9 +84,9 @@ function ProfileStack() {
 }
 
 const TAB_ICONS = {
-  HomeTab:    ['home',          'home-outline'],
-  EarnTab:    ['flash',         'flash-outline'],
-  GigsTab:    ['briefcase',     'briefcase-outline'],
+  HomeTab:    ['search',        'search-outline'],
+  EarnTab:    ['briefcase',     'briefcase-outline'],
+  GigsTab:    ['megaphone',     'megaphone-outline'],
   ProfileTab: ['person-circle', 'person-circle-outline'],
 };
 
@@ -120,8 +120,8 @@ function AppNavigator() {
         })}
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
-        <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'Earn' }} />
-        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Gigs' }} />
+        <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'My Jobs' }} />
+        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Hiring' }} />
         <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
       </Tab.Navigator>
     </NavigationContainer>

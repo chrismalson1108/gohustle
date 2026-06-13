@@ -4,6 +4,7 @@ import {
   StyleSheet, Switch,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
@@ -38,9 +39,9 @@ const PAY_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
-  { id: 'newest',   label: '🕐 Newest' },
-  { id: 'pay_high', label: '💰 Pay: High → Low' },
-  { id: 'pay_low',  label: '💸 Pay: Low → High' },
+  { id: 'newest',   ion: 'time',          label: 'Newest' },
+  { id: 'pay_high', ion: 'cash',          label: 'Pay: High → Low' },
+  { id: 'pay_low',  ion: 'trending-down', label: 'Pay: Low → High' },
 ];
 
 export default function FilterSheet({ visible, filters, availableStates, onApply, onClose }) {
@@ -100,6 +101,7 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
                   <Chip
                     key={o.id}
                     label={o.label}
+                    ion={o.ion}
                     active={local.sortBy === o.id}
                     onPress={() => { haptic.selection(); set('sortBy', o.id); }}
                   />
@@ -126,12 +128,13 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
               <View style={styles.chipRow}>
                 {[
                   { id: 'any',     label: 'Any' },
-                  { id: 'flat',    label: '💵 Flat Rate' },
-                  { id: 'hourly',  label: '⏱ Hourly' },
+                  { id: 'flat',    ion: 'cash',  label: 'Flat Rate' },
+                  { id: 'hourly',  ion: 'time',  label: 'Hourly' },
                 ].map(o => (
                   <Chip
                     key={o.id}
                     label={o.label}
+                    ion={o.ion}
                     active={local.payType === o.id}
                     onPress={() => { haptic.selection(); set('payType', o.id); }}
                   />
@@ -159,12 +162,14 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
             <Section title="Location">
               <View style={styles.chipRow}>
                 <Chip
-                  label="📍 Any Location"
+                  label="Any Location"
+                  ion="location"
                   active={local.location === 'any'}
                   onPress={() => { haptic.selection(); set('location', 'any'); }}
                 />
                 <Chip
-                  label="💻 Remote Only"
+                  label="Remote Only"
+                  ion="laptop"
                   active={local.location === 'remote'}
                   onPress={() => { haptic.selection(); set('location', 'remote'); }}
                 />
@@ -190,7 +195,10 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
             <Section title="Urgency">
               <View style={styles.toggleRow}>
                 <View>
-                  <Text style={styles.toggleLabel}>⚡ Urgent gigs only</Text>
+                  <View style={styles.toggleLabelRow}>
+                    <Ionicons name="flash" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
+                    <Text style={styles.toggleLabel}>Urgent gigs only</Text>
+                  </View>
                   <Text style={styles.toggleSub}>Needed ASAP — higher chance of quick earnings</Text>
                 </View>
                 <Switch
@@ -229,12 +237,20 @@ function Section({ title, children }) {
   );
 }
 
-function Chip({ label, active, onPress }) {
+function Chip({ label, ion, active, onPress }) {
   return (
     <TouchableOpacity
       style={[styles.chip, active && styles.chipActive]}
       onPress={onPress}
     >
+      {ion && (
+        <Ionicons
+          name={ion}
+          size={14}
+          color={active ? '#fff' : colors.textSecondary}
+          style={{ marginRight: 5 }}
+        />
+      )}
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -269,6 +285,7 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, margin: 4,
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center',
   },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
@@ -287,7 +304,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: 16,
     padding: 14, borderWidth: 1, borderColor: colors.border,
   },
-  toggleLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  toggleLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  toggleLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   toggleSub: { fontSize: 12, color: colors.textMuted, maxWidth: 240 },
   footer: {
     flexDirection: 'row', padding: 16, paddingBottom: 32,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import RatingStars from './RatingStars';
 import { colors, shadows } from '../theme';
 
@@ -14,7 +15,8 @@ export default function PosterTrustCard({ poster }) {
           <Text style={styles.name}>{poster.name}</Text>
           {poster.verified && (
             <View style={styles.verifiedBadge}>
-              <Text style={styles.verifiedText}>✓ Verified</Text>
+              <Ionicons name="checkmark-circle" size={11} color={colors.success} style={{ marginRight: 3 }} />
+              <Text style={styles.verifiedText}>Verified</Text>
             </View>
           )}
         </View>
@@ -49,6 +51,7 @@ const styles = StyleSheet.create({
   verifiedBadge: {
     backgroundColor: '#ECFDF5',
     borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center',
   },
   verifiedText: { fontSize: 11, fontWeight: '700', color: colors.success },
   sub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },

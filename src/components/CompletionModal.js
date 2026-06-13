@@ -4,16 +4,25 @@ import {
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
 const PAYMENT_METHODS = [
-  { id: 'cash',   label: 'Cash',    icon: '💵' },
-  { id: 'venmo',  label: 'Venmo',   icon: '💙' },
-  { id: 'zelle',  label: 'Zelle',   icon: '💜' },
-  { id: 'paypal', label: 'PayPal',  icon: '🅿️' },
-  { id: 'other',  label: 'Other',   icon: '💳' },
+  { id: 'cash',   label: 'Cash',    icon: '💵',  ion: 'cash' },
+  { id: 'venmo',  label: 'Venmo',   icon: '💙',  ion: 'card' },
+  { id: 'zelle',  label: 'Zelle',   icon: '💜',  ion: 'card' },
+  { id: 'paypal', label: 'PayPal',  icon: '🅿️', ion: 'logo-paypal' },
+  { id: 'other',  label: 'Other',   icon: '💳',  ion: 'wallet' },
 ];
+
+const RATING_LABELS = {
+  5: { ion: 'star',           text: 'Excellent' },
+  4: { ion: 'happy',          text: 'Great' },
+  3: { ion: 'thumbs-up',      text: 'Good' },
+  2: { ion: 'remove-circle',  text: 'Fair' },
+  1: { ion: 'sad',            text: 'Poor' },
+};
 
 function StarPicker({ value, onChange }) {
   const haptic = useHaptic();
@@ -25,9 +34,11 @@ function StarPicker({ value, onChange }) {
           onPress={() => { haptic.selection(); onChange(star); }}
           style={styles.starBtn}
         >
-          <Text style={[styles.star, star <= value && styles.starFilled]}>
-            {star <= value ? '⭐' : '☆'}
-          </Text>
+          <Ionicons
+            name={star <= value ? 'star' : 'star-outline'}
+            size={34}
+            color={star <= value ? '#F59E0B' : colors.border}
+          />
         </TouchableOpacity>
       ))}
     </View>
@@ -94,9 +105,10 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             {/* Star rating */}
             <Text style={styles.sectionLabel}>Rate {earnerName}</Text>
             <StarPicker value={rating} onChange={setRating} />
-            <Text style={styles.ratingLabel}>
-              {rating === 5 ? '⭐ Excellent' : rating === 4 ? '😊 Great' : rating === 3 ? '👍 Good' : rating === 2 ? '😐 Fair' : '😕 Poor'}
-            </Text>
+            <View style={styles.ratingLabelRow}>
+              <Ionicons name={RATING_LABELS[rating].ion} size={14} color={colors.textMuted} style={{ marginRight: 5 }} />
+              <Text style={styles.ratingLabel}>{RATING_LABELS[rating].text}</Text>
+            </View>
 
             {/* Review text */}
             <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Leave a Review</Text>
@@ -120,7 +132,12 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   style={[styles.payChip, paymentMethod === m.id && styles.payChipActive]}
                   onPress={() => { haptic.selection(); setPaymentMethod(m.id); }}
                 >
-                  <Text style={styles.payIcon}>{m.icon}</Text>
+                  <Ionicons
+                    name={m.ion}
+                    size={14}
+                    color={paymentMethod === m.id ? '#fff' : colors.textSecondary}
+                    style={styles.payIcon}
+                  />
                   <Text style={[styles.payLabel, paymentMethod === m.id && styles.payLabelActive]}>
                     {m.label}
                   </Text>
@@ -133,7 +150,12 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               <LinearGradient colors={gradients.earn} style={styles.confirmBtn}>
                 {loading
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.confirmText}>✓ Confirm Job Complete</Text>
+                  : (
+                    <View style={styles.confirmRow}>
+                      <Ionicons name="checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
+                      <Text style={styles.confirmText}>Confirm Job Complete</Text>
+                    </View>
+                  )
                 }
               </LinearGradient>
             </TouchableOpacity>
@@ -184,7 +206,8 @@ const styles = StyleSheet.create({
   starBtn: { marginRight: 6 },
   star: { fontSize: 34, color: colors.border },
   starFilled: { color: '#F59E0B' },
-  ratingLabel: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic', marginBottom: 4 },
+  ratingLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  ratingLabel: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
   reviewInput: {
     backgroundColor: colors.background, borderRadius: 14,
     borderWidth: 1.5, borderColor: colors.border,
@@ -203,6 +226,7 @@ const styles = StyleSheet.create({
   payLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   payLabelActive: { color: '#fff' },
   confirmBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
+  confirmRow: { flexDirection: 'row', alignItems: 'center' },
   confirmText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   cancelBtn: { paddingVertical: 14, alignItems: 'center' },
   cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },

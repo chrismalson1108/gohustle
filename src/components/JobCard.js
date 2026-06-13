@@ -1,16 +1,17 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import { useHaptic } from '../hooks/useHaptic';
 import RatingStars from './RatingStars';
 
 const BOOKING_PILL = {
-  pending:   { label: '⏳ Applied — Pending',        bg: '#FFF7ED', text: '#D97706' },
-  confirmed: { label: '✅ Confirmed — In Progress',  bg: '#ECFDF5', text: '#059669' },
-  completed: { label: '🔄 Awaiting Verification',    bg: '#EFF6FF', text: '#2563EB' },
-  verified:  { label: '💚 Completed',                bg: '#F0FDF4', text: '#16A34A' },
-  declined:  { label: '❌ Declined',                 bg: '#FEF2F2', text: '#DC2626' },
+  pending:   { label: 'Applied — Pending',        ion: 'time',              bg: '#FFF7ED', text: '#D97706' },
+  confirmed: { label: 'Confirmed — In Progress',  ion: 'checkmark-circle',  bg: '#ECFDF5', text: '#059669' },
+  completed: { label: 'Awaiting Verification',    ion: 'sync',              bg: '#EFF6FF', text: '#2563EB' },
+  verified:  { label: 'Completed',                ion: 'heart',             bg: '#F0FDF4', text: '#16A34A' },
+  declined:  { label: 'Declined',                 ion: 'close-circle',      bg: '#FEF2F2', text: '#DC2626' },
 };
 
 export default function JobCard({ job, onPress, bookingStatus }) {
@@ -30,6 +31,7 @@ export default function JobCard({ job, onPress, bookingStatus }) {
       <View style={styles.body}>
         {bookingStatus && BOOKING_PILL[bookingStatus] && (
           <View style={[styles.bookingPill, { backgroundColor: BOOKING_PILL[bookingStatus].bg }]}>
+            <Ionicons name={BOOKING_PILL[bookingStatus].ion} size={13} color={BOOKING_PILL[bookingStatus].text} style={{ marginRight: 5 }} />
             <Text style={[styles.bookingPillText, { color: BOOKING_PILL[bookingStatus].text }]}>
               {BOOKING_PILL[bookingStatus].label}
             </Text>
@@ -38,7 +40,8 @@ export default function JobCard({ job, onPress, bookingStatus }) {
         {job.urgent && (
           <View style={styles.urgentRow}>
             <View style={styles.urgentBadge}>
-              <Text style={styles.urgentText}>⚡ URGENT</Text>
+              <Ionicons name="flash" size={11} color={colors.urgent} style={{ marginRight: 3 }} />
+              <Text style={styles.urgentText}>URGENT</Text>
             </View>
           </View>
         )}
@@ -54,14 +57,15 @@ export default function JobCard({ job, onPress, bookingStatus }) {
           <View style={styles.payBadge}>
             <Text style={styles.payText}>{estPay}</Text>
           </View>
-          <Text style={styles.loc} numberOfLines={1}>📍 {job.location}</Text>
+          <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 3 }} />
+          <Text style={styles.loc} numberOfLines={1}>{job.location}</Text>
         </View>
         <View style={styles.posterRow}>
           <View style={styles.posterAvatar}>
             <Text style={styles.posterAvatarText}>{job.poster.avatarInitial}</Text>
           </View>
           <Text style={styles.posterName}>{job.poster.name}</Text>
-          {job.poster.verified && <Text style={styles.verified}>✓</Text>}
+          {job.poster.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} style={styles.verified} />}
           <View style={styles.spacer} />
           <RatingStars rating={job.poster.rating} size={12} />
         </View>
@@ -85,12 +89,14 @@ const styles = StyleSheet.create({
   bookingPill: {
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
     alignSelf: 'stretch', marginBottom: 10, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center',
   },
   bookingPillText: { fontSize: 12, fontWeight: '800' },
   urgentRow: { marginBottom: 8 },
   urgentBadge: {
     backgroundColor: colors.urgentLight, borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center',
   },
   urgentText: { color: colors.urgent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },

@@ -29,7 +29,8 @@
           "merchantIdentifier": "merchant.com.gohustlr",
           "enableGooglePay": false
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

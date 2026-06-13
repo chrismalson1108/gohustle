@@ -3,6 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity,
   ScrollView, TextInput, StyleSheet, RefreshControl,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../components/GradientHeader';
 import JobCard from '../components/JobCard';
 import XPBar from '../components/XPBar';
@@ -139,11 +140,12 @@ export default function HomeScreen({ navigation }) {
       <GradientHeader colors={gradients.primary}>
         <View style={styles.topRow}>
           <View>
-            <Text style={styles.greeting}>Hey {name} 👋</Text>
+            <Text style={styles.greeting}>Hey {name}</Text>
             <Text style={styles.sub}>Ready to hustle?</Text>
           </View>
           <View style={styles.streakBox}>
-            <Text style={styles.streakFire}>🔥</Text>
+            <Ionicons name="flame" size={20} color="#F59E0B" />
+            <View style={{ height: 2 }} />
             <Text style={styles.streakNum}>{streakDays}</Text>
             <Text style={styles.streakLabel}>day streak</Text>
           </View>
@@ -153,7 +155,7 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Ionicons name="search" size={16} color={colors.textMuted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search gigs..."
@@ -163,7 +165,7 @@ export default function HomeScreen({ navigation }) {
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')}>
-                <Text style={styles.searchClear}>✕</Text>
+                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
               </TouchableOpacity>
             )}
           </View>
@@ -171,7 +173,7 @@ export default function HomeScreen({ navigation }) {
             style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
             onPress={() => { haptic.light(); setShowFilter(true); }}
           >
-            <Text style={styles.filterIcon}>⚙️</Text>
+            <Ionicons name="options" size={20} color={activeFilterCount > 0 ? '#fff' : colors.primary} />
             {activeFilterCount > 0 && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
@@ -193,7 +195,7 @@ export default function HomeScreen({ navigation }) {
               style={[styles.catChip, active && styles.catChipActive]}
               onPress={() => { haptic.light(); setSelectedCat(cat.id); }}
             >
-              <Text style={styles.catIcon}>{cat.icon}</Text>
+              <Ionicons name={cat.ion} size={14} color={active ? '#fff' : colors.primary} style={styles.catIcon} />
               <Text style={[styles.catLabel, active && styles.catLabelActive]}>
                 {cat.label}
               </Text>
@@ -235,7 +237,7 @@ export default function HomeScreen({ navigation }) {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🔎</Text>
+            <Ionicons name="search" size={44} color={colors.textMuted} style={styles.emptyIcon} />
             <Text style={styles.emptyText}>No gigs match your filters</Text>
             {activeFilterCount > 0 && (
               <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)} style={styles.emptyReset}>

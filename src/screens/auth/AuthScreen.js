@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients, shadows } from '../../theme';
@@ -79,7 +80,7 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         <LinearGradient colors={gradients.primary} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
-          <Text style={styles.heroEmoji}>⚡</Text>
+          <Ionicons name="flash" size={48} color="#fff" style={styles.heroEmoji} />
           <Text style={styles.heroTitle}>GoHustlr</Text>
           <Text style={styles.heroSub}>Get paid to hustle. Post gigs. Earn money.</Text>
         </LinearGradient>
@@ -104,7 +105,7 @@ export default function AuthScreen() {
 
           {tab === 'forgot' && (
             <View style={styles.forgotHeader}>
-              <Text style={styles.forgotTitle}>🔑 Reset Password</Text>
+              <Text style={styles.forgotTitle}>Reset Password</Text>
               <Text style={styles.forgotSub}>Enter your email and we'll send a reset link.</Text>
             </View>
           )}

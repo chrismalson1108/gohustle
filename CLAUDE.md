@@ -39,14 +39,15 @@ SafeAreaProvider → AuthProvider → RootNavigator
         ├── UserProvider
         └── JobsProvider
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
-                    └── Tab.Navigator (4 tabs)
-                          ├── HomeTab   → HomeStack:    HomeScreen → JobDetail
-                          ├── EarnTab   → EarnStack:    EarnScreen → JobDetail
-                          ├── GigsTab   → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
-                          └── ProfileTab → ProfileStack: ProfileScreen → ManageBookings
+                    └── Tab.Navigator (4 tabs — display labels in parens, route names unchanged)
+                          ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail
+                          ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail
+                          ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
+                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → ManageBookings
                                                                        → Settings
 ```
 
+- **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`ProfileTab`) are intentionally kept even though display labels are Browse/My Jobs/Hiring/Profile** — many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.
 - `AppNavigator` is a component rendered *inside* providers so it can call `useJobs()` for tab badge counts — this is why `NavigationContainer` is not at the root.
 - `AchievementToast` renders outside `NavigationContainer` but inside `SafeAreaProvider`.
@@ -81,12 +82,12 @@ Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earn
 |---|---|
 | `HomeScreen` | Browse jobs with category chips, search, and full filter sheet (pay, days, location/state, pay type, urgency, sort). Pull-to-refresh. |
 | `JobDetailScreen` | Job info, slot picker, counter-offer input, book button. Shows "This is your gig" banner if `job.posterId === user.id`. |
-| `EarnScreen` | Booked gigs list with status, mark-complete button, message-poster button, earnings dashboard, amendment proposal UI. Pull-to-refresh. |
-| `GigsScreen` | Poster's hub — all posted jobs with expandable booking sections; accept/decline/verify/delete actions; amendment response UI; navigate to PostJob. Pull-to-refresh. |
+| `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
+| `GigsScreen` (tab "Hiring") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only completed/declined booking history. Pull-to-refresh. |
 | `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip. Nested in GigsStack. |
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
-| `ProfileScreen` | Stats, badges, posted gigs list with Edit buttons, Settings button, role toggle, sign out. Pull-to-refresh. |
+| `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |

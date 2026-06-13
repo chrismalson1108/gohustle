@@ -4,6 +4,7 @@ import {
   StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -131,7 +132,7 @@ export default function SettingsScreen({ navigation }) {
               <Text style={styles.backText}>‹ Back</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Profile Settings ⚙️</Text>
+          <Text style={styles.headerTitle}>Profile Settings</Text>
           <Text style={styles.headerSub}>Change your info, role, location, and skills</Text>
         </LinearGradient>
 
@@ -167,16 +168,16 @@ export default function SettingsScreen({ navigation }) {
           <Field label="I'm here to...">
             <View style={styles.roleRow}>
               {[
-                { id: 'earner', icon: '🎓', label: 'Earn' },
-                { id: 'poster', icon: '📋', label: 'Post Jobs' },
-                { id: 'both',   icon: '⚡', label: 'Both' },
+                { id: 'earner', ion: 'school',    label: 'Earn' },
+                { id: 'poster', ion: 'clipboard', label: 'Post Jobs' },
+                { id: 'both',   ion: 'flash',     label: 'Both' },
               ].map(r => (
                 <TouchableOpacity
                   key={r.id}
                   style={[styles.roleChip, form.role === r.id && styles.roleChipActive]}
                   onPress={() => { haptic.selection(); set('role', r.id); }}
                 >
-                  <Text style={styles.roleChipIcon}>{r.icon}</Text>
+                  <Ionicons name={r.ion} size={18} color={form.role === r.id ? '#fff' : colors.primary} style={styles.roleChipIcon} />
                   <Text style={[styles.roleChipText, form.role === r.id && styles.roleChipTextActive]}>{r.label}</Text>
                 </TouchableOpacity>
               ))}

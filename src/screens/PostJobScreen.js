@@ -11,6 +11,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import { colors, gradients } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
@@ -70,7 +71,7 @@ export default function PostJobScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>Post a Gig 📝</Text>
+          <Text style={styles.headerTitle}>Post a Gig</Text>
           <Text style={styles.headerSub}>Hire a motivated college student</Text>
         </LinearGradient>
 
@@ -99,7 +100,7 @@ export default function PostJobScreen({ navigation }) {
                       setShowCustomCat(false);
                     }}
                   >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
                     <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
@@ -112,7 +113,7 @@ export default function PostJobScreen({ navigation }) {
                   setShowCustomCat(true);
                 }}
               >
-                <Text style={styles.catChipIcon}>✏️</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
                 <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
               </TouchableOpacity>
             </View>
@@ -199,7 +200,7 @@ export default function PostJobScreen({ navigation }) {
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
             <Text style={styles.urgentToggleText}>
-              {form.urgent ? '⚡ Marked as Urgent — Needed ASAP' : '⚡ Mark as Urgent (optional)'}
+              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
             </Text>
           </TouchableOpacity>
 
@@ -214,7 +215,7 @@ export default function PostJobScreen({ navigation }) {
                 : gradients.primary}
               style={styles.submitBtn}
             >
-              <Text style={styles.submitText}>Post Gig 🚀</Text>
+              <Text style={styles.submitText}>Post Gig</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
