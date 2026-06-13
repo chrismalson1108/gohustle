@@ -5,11 +5,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
+import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
 
 import HomeScreen           from './src/screens/HomeScreen';
 import EarnScreen           from './src/screens/EarnScreen';
@@ -20,6 +22,7 @@ import JobDetailScreen      from './src/screens/JobDetailScreen';
 import ManageBookingsScreen from './src/screens/ManageBookingsScreen';
 import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
+import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 
@@ -75,6 +78,7 @@ function ProfileStack() {
       <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
       <Stack.Screen name="EditJob"        component={EditJobScreen} />
       <Stack.Screen name="Settings"       component={SettingsScreen} />
+      <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -153,10 +157,12 @@ function RootNavigator() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.gohustlr">
+      <SafeAreaProvider>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </StripeProvider>
   );
 }

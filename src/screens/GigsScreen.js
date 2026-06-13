@@ -7,6 +7,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
@@ -23,11 +24,12 @@ export default function GigsScreen({ navigation }) {
     acceptBooking, declineBooking,
     markPosterDone, verifyAndRate, deleteJob,
     refreshJobs, refreshPosterBookings,
-    proposeAmendment,
+    proposeAmendment, createPaymentIntent,
   } = useJobs();
   const { showToast } = useUser();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [expanded, setExpanded]         = useState({});
   const [loadingId, setLoadingId]       = useState(null);
@@ -86,11 +88,51 @@ export default function GigsScreen({ navigation }) {
   };
 
   const handleAccept = async (bookingId) => {
-    haptic.success();
+    haptic.medium();
     setLoadingId(bookingId);
-    await acceptBooking(bookingId);
+    try {
+      // 1. Create escrow PaymentIntent on the server
+      const { clientSecret, customerId, ephemeralKey, amountCents } =
+        await createPaymentIntent(bookingId);
+
+      // 2. Initialize Stripe's payment sheet with the card UI
+      const { error: initErr } = await initPaymentSheet({
+        merchantDisplayName: 'GoHustlr',
+        customerId,
+        customerEphemeralKeySecret: ephemeralKey,
+        paymentIntentClientSecret: clientSecret,
+        allowsDelayedPaymentMethods: false,
+        appearance: {
+          colors: { primary: colors.primary },
+        },
+      });
+      if (initErr) throw new Error(initErr.message);
+
+      // 3. Present sheet — user enters card details
+      const { error: payErr } = await presentPaymentSheet();
+      if (payErr) {
+        // User cancelled — not a real error
+        if (payErr.code !== 'Canceled') {
+          showToast({ icon: '❌', title: 'Payment Failed', message: payErr.message });
+        }
+        setLoadingId(null);
+        return;
+      }
+
+      // 4. Card authorized → confirm booking in DB
+      haptic.success();
+      await acceptBooking(bookingId);
+      const dollars = (amountCents / 100).toFixed(2);
+      showToast({ icon: '✅', title: 'Booking Accepted!', message: `$${dollars} held in escrow. Released to earner after verification.` });
+    } catch (err) {
+      const msg = err?.message || 'Something went wrong';
+      if (err?.code === 'EARNER_NO_PAYOUT') {
+        showToast({ icon: '⚠️', title: 'Earner Not Ready', message: "The earner hasn't set up their payout account yet. They need to connect their bank before you can accept." });
+      } else {
+        showToast({ icon: '❌', title: 'Payment Error', message: msg });
+      }
+    }
     setLoadingId(null);
-    showToast({ icon: '✅', title: 'Booking Accepted!', message: 'The earner has been notified.' });
   };
 
   const handleDecline = async (bookingId) => {

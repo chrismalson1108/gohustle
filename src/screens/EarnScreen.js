@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../components/GradientHeader';
 import ChallengeCard from '../components/ChallengeCard';
 import JobCard from '../components/JobCard';
@@ -25,14 +26,19 @@ export default function EarnScreen({ navigation }) {
     streakDays, levelInfo, xp, challenges,
     weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
   } = useUser();
-  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, refreshBookings, refreshJobs } = useJobs();
+  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const haptic = useHaptic();
   const [msgTarget, setMsgTarget]       = useState(null);
-  const [rateTarget, setRateTarget]     = useState(null); // booking to rate poster for
+  const [rateTarget, setRateTarget]     = useState(null);
   const [posterRating, setPosterRating] = useState(5);
   const [posterReview, setPosterReview] = useState('');
   const [ratingLoading, setRatingLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [payoutReady, setPayoutReady]   = useState(true); // optimistic until checked
+
+  useEffect(() => {
+    getPayoutStatus().then(s => setPayoutReady(s.onboarded));
+  }, []);
 
   // Refresh from DB every time this tab gains focus
   useFocusEffect(
@@ -100,6 +106,22 @@ export default function EarnScreen({ navigation }) {
           </View>
         </View>
       </GradientHeader>
+
+      {/* Payout setup banner — shown until earner connects bank */}
+      {!payoutReady && (
+        <TouchableOpacity
+          style={styles.payoutBanner}
+          onPress={() => navigation.navigate('ProfileTab', { screen: 'PayoutSetup' })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="wallet-outline" size={20} color="#fff" />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.payoutBannerTitle}>Set up payouts to get paid</Text>
+            <Text style={styles.payoutBannerSub}>Connect your bank account via Stripe →</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+        </TouchableOpacity>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your Gigs</Text>
@@ -345,6 +367,14 @@ function GoalBar({ label, value, max, pct, color }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  payoutBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    marginHorizontal: 16, marginTop: 12,
+    borderRadius: 14, padding: 14,
+  },
+  payoutBannerTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  payoutBannerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
   screenTitle: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 16 },
   earningsCard: { borderRadius: 18, padding: 20, marginBottom: 16 },
   earningsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

@@ -20,8 +20,8 @@ npx expo install <package>      # Use instead of npm install for Expo packages (
 - **Expo SDK 54**, React Native 0.81.5, React 19.1.0. Expo Go on device must be the SDK 54 build.
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Migrations live in `supabase/` and must be run manually in the Supabase SQL Editor in order: `schema.sql` → `migration_booking_lifecycle.sql` → `migration_messaging.sql` → `migration_onboarding.sql` → `migration_role_both.sql` → `migration_mutual_completion.sql` → `migration_fix_lifecycle.sql`.
-- **`migration_fix_lifecycle.sql` is idempotent** — safe to re-run at any time. It consolidates all RLS fixes for the full job lifecycle (messaging, booking accept/decline, mutual completion, poster rating). Run it if messaging fails or any booking action returns a permission error.
+- Migrations live in `supabase/` and must be run manually in the Supabase SQL Editor: `schema.sql` first, then `migration_fix_lifecycle.sql`.
+- **`migration_fix_lifecycle.sql` is idempotent** — safe to re-run at any time. It consolidates all RLS fixes for the full job lifecycle (messaging, booking accept/decline, mutual completion, amendment flow, poster rating). Run it if any booking action returns a permission error.
 
 ## App Flow
 
@@ -42,9 +42,8 @@ SafeAreaProvider → AuthProvider → RootNavigator
                     └── Tab.Navigator (4 tabs)
                           ├── HomeTab   → HomeStack:    HomeScreen → JobDetail
                           ├── EarnTab   → EarnStack:    EarnScreen → JobDetail
-                          ├── PostTab   → PostJobScreen (direct tab screen, no stack)
+                          ├── GigsTab   → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
                           └── ProfileTab → ProfileStack: ProfileScreen → ManageBookings
-                                                                       → EditJob
                                                                        → Settings
 ```
 
@@ -68,26 +67,29 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 - `updateJob(jobId, patch)` — poster edits a listing; re-inserts slots/requirements
 - `deleteJob(jobId)` — soft-delete (sets `status: 'cancelled'`)
 - `acceptBooking / declineBooking / markJobComplete / verifyAndRate` — booking lifecycle
+- `proposeAmendment(bookingId, note)` / `respondToAmendment(bookingId, accept)` / `clearAmendment(bookingId)` — amendment flow
+- `ratePoster(bookingId, rating, reviewText)` — earner rates a poster after completion
 - `isBooked(jobId)`, `bookedJobs`, `postedJobs`, `earnBadgeCount`, `profileBadgeCount`
 
 `transformJob(dbJob)` includes `posterId: dbJob.poster_id` — used in `JobDetailScreen` to block self-booking (`job.posterId === user.id`).
 
-Realtime: two Supabase channels per session — earner channel (filters by `earner_id`) and poster channel (broad subscription that calls `loadPosterBookings()` on any change).
+Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earner channel) and `poster-bookings-${user.id}` (poster channel, broad subscription that calls `loadPosterBookings()` on any change).
 
 ## Key Screens
 
 | Screen | Purpose |
 |---|---|
-| `HomeScreen` | Browse jobs with category chips, search, and full filter sheet (pay, days, location/state, pay type, urgency, sort) |
+| `HomeScreen` | Browse jobs with category chips, search, and full filter sheet (pay, days, location/state, pay type, urgency, sort). Pull-to-refresh. |
 | `JobDetailScreen` | Job info, slot picker, counter-offer input, book button. Shows "This is your gig" banner if `job.posterId === user.id`. |
-| `EarnScreen` | Booked gigs list with status, mark-complete button, message-poster button, earnings dashboard |
-| `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip |
-| `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params) |
-| `ManageBookingsScreen` | Poster view — grouped by status, accept/decline/verify-and-rate, message-earner button |
-| `ProfileScreen` | Stats, badges, posted gigs list with Edit buttons, Settings button, sign out |
-| `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()` |
+| `EarnScreen` | Booked gigs list with status, mark-complete button, message-poster button, earnings dashboard, amendment proposal UI. Pull-to-refresh. |
+| `GigsScreen` | Poster's hub — all posted jobs with expandable booking sections; accept/decline/verify/delete actions; amendment response UI; navigate to PostJob. Pull-to-refresh. |
+| `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip. Nested in GigsStack. |
+| `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
+| `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
+| `ProfileScreen` | Stats, badges, posted gigs list with Edit buttons, Settings button, role toggle, sign out. Pull-to-refresh. |
+| `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
-| `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs |
+| `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
 
 ## Key Components
 
@@ -100,6 +102,11 @@ Realtime: two Supabase channels per session — earner channel (filters by `earn
 - **`GradientHeader`** — screen header with `LinearGradient` + safe-area inset.
 - **`AchievementToast`** — driven by `pendingToast` in UserContext.
 - **`BookingStatusBadge`** — status pill: pending/confirmed/completed/verified/declined.
+- **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.
+- **`RatingStars`** — reusable star rating display/input component.
+- **`JobCard`** — job listing card used in HomeScreen and search results.
+- **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
+- **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
 ## Caching
 
@@ -108,13 +115,13 @@ Realtime: two Supabase channels per session — earner channel (filters by `earn
 2. Fetch fresh from Supabase in the background.
 3. Update state and re-cache on fresh data arrival.
 
-Invalidate a cache entry with `cacheSet(key, null)` after a write.
+Invalidate a cache entry with `cacheSet(key, null)` after a write. All major screens also support **pull-to-refresh** via `RefreshControl` that triggers a full reload bypassing cache.
 
 ## Theming
 
 `src/theme.js` — primary `#6D28D9`, secondary `#4F46E5`, accent `#10B981`. `gradients.primary/earn/gold/profile` for `LinearGradient`. `shadows.sm/md/card`.
 
-`CATEGORY_COLORS` (category label → hex) lives in `src/data/mockData.js` — single source of truth for job card colors.
+`CATEGORY_COLORS` (category label → hex) lives in `src/data/mockData.js` — single source of truth for job card colors. Other constants there: `CATEGORIES`, `BADGE_DEFS`, `LEVELS`.
 
 ## Haptics
 
@@ -128,11 +135,26 @@ pending → confirmed → completed → verified
 ```
 - Earner books → `pending`
 - Poster accepts → `confirmed`; poster declines → `declined`
-- Earner marks done → `completed`
+- Earner marks done → sets `earner_done = true`; if poster already done → status advances to `completed`
+- Poster marks done → sets `poster_done = true`; if earner already done → status advances to `completed`
 - Poster verifies + rates → `verified` (inserts review, updates earner rolling rating)
+- Earner rates poster → updates `poster_rating` / `poster_review_count` on the poster's profile
+
+**Mutual completion**: both `earner_done` and `poster_done` must be `true` before status becomes `completed`. Neither party alone can advance the status.
+
+## Amendment Workflow
+
+When a booking is `confirmed` or `completed` and the poster needs to change core job terms:
+
+1. **Earner proposes** an amendment via `proposeAmendment(bookingId, note)` — sets `amendment_status: 'pending'` and `amendment_note` on the booking.
+2. **Poster responds** via `respondToAmendment(bookingId, accept)` — accept sets `amendment_status: 'accepted'`; decline sets `amendment_status: 'declined'`.
+3. **If accepted**: `EditJobScreen` unlocks core fields (`canEditCore = true`) so the poster can update the job terms.
+4. **If declined** or after editing: `clearAmendment(bookingId)` resets `amendment_status` back to `'none'`.
+
+Amendment status values: `'none'` | `'pending'` | `'accepted'` | `'declined'`.
 
 ## Supabase Schema Notes
 
-Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role`, `city`, `skills` (text[]), `radius_miles`, `rating`, `review_count`, `xp`, `earnings_total`, `onboarding_done`, etc.
+Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role` (enum: `earner`/`poster`/`both`), `city`, `skills` (text[]), `radius_miles`, `rating`, `review_count`, `poster_rating`, `poster_review_count`, `xp`, `earnings_total`, `onboarding_done`, etc.
 
-Jobs have `poster_id` FK to profiles. Bookings have `earner_id` and `job_id`. RLS ensures earners see their own bookings and posters see bookings on their jobs.
+Jobs have `poster_id` FK to profiles. Bookings have `earner_id`, `job_id`, `earner_done` (bool), `poster_done` (bool), `amendment_status`, `amendment_note`, `earner_rating`, `poster_rating`, `poster_review`. RLS ensures earners see their own bookings and posters see bookings on their jobs.

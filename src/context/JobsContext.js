@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
+import { stripeEdge } from '../lib/stripeClient';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -403,6 +404,12 @@ export function JobsProvider({ children }) {
   };
 
   const declineBooking = async (bookingId) => {
+    // Cancel any held payment before declining (releases card hold, no charge)
+    try {
+      await stripeEdge.cancelPayment(bookingId);
+    } catch (_) {
+      // No payment or already cancelled — safe to ignore
+    }
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'declined' } });
     const { error } = await supabase
       .from('bookings')
@@ -412,6 +419,16 @@ export function JobsProvider({ children }) {
   };
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod }) => {
+    // Capture escrow payment first — if this fails, abort (don't mark verified)
+    try {
+      await stripeEdge.capturePayment(bookingId);
+    } catch (err) {
+      if (!err.message?.includes('Payment not found')) {
+        throw err;
+      }
+      // Booking has no payment record (pre-Stripe) — continue without capture
+    }
+
     const booking = state.posterBookings.find(b => b.id === bookingId);
     const patch = {
       status: 'verified',
@@ -569,6 +586,24 @@ export function JobsProvider({ children }) {
   const earnBadgeCount    = state.bookings.filter(b => b.status === 'confirmed' || b.status === 'verified').length;
   const profileBadgeCount = state.posterBookings.filter(b => b.status === 'pending' || b.status === 'completed').length;
 
+  // ── Payment helpers (thin wrappers so screens don't import stripeEdge directly) ──
+
+  const createPaymentIntent = (bookingId) => stripeEdge.createPaymentIntent(bookingId);
+
+  const getPayoutOnboardingUrl = () => stripeEdge.getPayoutOnboardingUrl();
+
+  const getPayoutStatus = async () => {
+    if (!user) return { hasAccount: false, onboarded: false };
+    const { data } = await supabase
+      .from('stripe_accounts')
+      .select('account_id, onboarded')
+      .eq('user_id', user.id)
+      .single();
+    return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
+  };
+
+  // ── Amendments ─────────────────────────────────────────────────────────────
+
   const proposeAmendment = async (bookingId, note) => {
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
     await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
@@ -610,6 +645,9 @@ export function JobsProvider({ children }) {
       proposeAmendment,
       respondToAmendment,
       clearAmendment,
+      createPaymentIntent,
+      getPayoutOnboardingUrl,
+      getPayoutStatus,
     }}>
       {children}
     </JobsContext.Provider>

@@ -1,0 +1,92 @@
+// Stripe webhook handler — keeps DB in sync with payment events.
+// Register this URL in Stripe Dashboard → Developers → Webhooks:
+//   https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook
+// Required events: payment_intent.succeeded, payment_intent.payment_failed, account.updated
+import Stripe from 'npm:stripe@15';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, stripe-signature',
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
+  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  const sig = req.headers.get('stripe-signature');
+  if (!sig) return new Response('Missing signature', { status: 400 });
+
+  // Must use raw body string for signature verification
+  const body = await req.text();
+  let event: Stripe.Event;
+  try {
+    event = await stripe.webhooks.constructEventAsync(body, sig, webhookSecret);
+  } catch (err: any) {
+    console.error('Webhook signature error:', err.message);
+    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+  }
+
+  try {
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        await supabase.from('payments')
+          .update({ status: 'captured', captured_at: new Date().toISOString() })
+          .eq('payment_intent_id', pi.id);
+        break;
+      }
+
+      case 'payment_intent.payment_failed': {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        await supabase.from('payments')
+          .update({ status: 'failed' })
+          .eq('payment_intent_id', pi.id);
+        // Update booking back to 'pending' so poster can retry
+        const { data: payment } = await supabase
+          .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
+        if (payment) {
+          await supabase.from('bookings')
+            .update({ status: 'pending' })
+            .eq('id', payment.booking_id);
+        }
+        break;
+      }
+
+      case 'account.updated': {
+        // Earner completed (or updated) their Connect onboarding
+        const account = event.data.object as Stripe.Account;
+        const fullyOnboarded =
+          account.details_submitted &&
+          account.charges_enabled &&
+          account.payouts_enabled;
+
+        if (fullyOnboarded) {
+          await supabase.from('stripe_accounts')
+            .update({ onboarded: true })
+            .eq('account_id', account.id);
+        }
+        break;
+      }
+
+      default:
+        // Unhandled events — no-op
+        break;
+    }
+  } catch (err: any) {
+    console.error('Webhook handler error:', err);
+    return new Response(`Handler error: ${err.message}`, { status: 500 });
+  }
+
+  return new Response(JSON.stringify({ received: true }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+});
