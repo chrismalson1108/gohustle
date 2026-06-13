@@ -93,6 +93,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
 | `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
+| `ExpensesScreen` (Tax Center) | Business-expense tracker for taxes — yearly deductible total, income/net, add expense (amount/category/date/note/receipt photo → `receipts` bucket), list w/ delete, CSV export via native Share. Data in `expenses` table; helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
