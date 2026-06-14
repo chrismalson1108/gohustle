@@ -5,6 +5,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SUPPORT_EMAIL } from '../lib/legal';
 import { getReferralCode, fetchReferralCount } from '../lib/referrals';
+import { fetchVerificationStatus, requestVerification } from '../lib/verification';
 import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
@@ -38,6 +39,7 @@ export default function ProfileScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [refCount, setRefCount] = useState(0);
+  const [idv, setIdv] = useState({ verified: false, status: 'none' });
 
   const handleInvite = async () => {
     haptic.medium();
@@ -82,8 +84,34 @@ export default function ProfileScreen({ navigation }) {
       loadReviews();
       getPaymentReadiness().then(setPayReady).catch(() => {});
       if (user) fetchReferralCount(user.id).then(setRefCount).catch(() => {});
+      if (user) fetchVerificationStatus(user.id).then(setIdv).catch(() => {});
     }, [loadReviews])
   );
+
+  const handleVerify = async () => {
+    if (idv.verified || idv.status === 'pending') return;
+    haptic.medium();
+    Alert.alert(
+      'Verify your identity',
+      "We'll confirm your government ID to give your profile a Verified badge. This builds trust with people you work with. Continue?",
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            try {
+              await requestVerification(user.id);
+              setIdv(prev => ({ ...prev, status: 'pending' }));
+              haptic.success();
+              showToast({ icon: '🪪', title: 'Verification started', message: "We've received your request — we'll review it shortly." });
+            } catch (e) {
+              showToast({ icon: '⚠️', title: 'Could not start', message: e.message || 'Please try again.' });
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Everyone can both earn and hire, so prompt for both payment sides.
   const showEarn = true;
@@ -153,7 +181,12 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </TouchableOpacity>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{name}</Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.profileName}>{name}</Text>
+              {idv.verified && (
+                <Ionicons name="shield-checkmark" size={18} color="#fff" style={{ marginLeft: 6 }} />
+              )}
+            </View>
             {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
             <Text style={styles.profileSub}>
               {actualReviewCount > 0
@@ -283,6 +316,34 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
         <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={handleVerify}
+        disabled={idv.verified || idv.status === 'pending'}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons
+            name={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : 'shield-outline'}
+            size={22}
+            color={idv.verified ? colors.success : colors.primary}
+            style={styles.manageBtnIcon}
+          />
+          <View>
+            <Text style={styles.manageBtnTitle}>
+              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification Pending' : 'Verify Your Identity'}
+            </Text>
+            <Text style={styles.manageBtnSub}>
+              {idv.verified
+                ? 'Your profile shows a Verified badge'
+                : idv.status === 'pending'
+                  ? "We're reviewing your ID — check back soon"
+                  : 'Get a Verified badge to build trust'}
+            </Text>
+          </View>
+        </View>
+        {!idv.verified && idv.status !== 'pending' && <Text style={styles.manageBtnArrow}>›</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.manageBtn} onPress={handleInvite}>
@@ -438,7 +499,8 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: '#fff', fontWeight: '900', fontSize: 26 },
   profileInfo: { flex: 1 },
-  profileName: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  profileName: { fontSize: 22, fontWeight: '900', color: '#fff' },
   profileSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
   roleToggle: {
     backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16,

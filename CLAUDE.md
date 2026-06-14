@@ -191,6 +191,8 @@ Amendment status values: `'none'` | `'pending'` | `'accepted'` | `'declined'`.
 
 ## Supabase Schema Notes
 
-Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role` (enum: `earner`/`poster`/`both`), `city`, `skills` (text[]), `radius_miles`, `rating`, `review_count`, `poster_rating`, `poster_review_count`, `xp`, `earnings_total`, `onboarding_done`, etc.
+Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role` (enum: `earner`/`poster`/`both`), `city`, `skills` (text[]), `skill_rates` (jsonb: skill → hourly rate), `radius_miles`, `rating`, `review_count`, `poster_rating`, `poster_review_count`, `xp`, `earnings_total`, `onboarding_done`, `referral_code`, `verified` (bool — drives the Verified badge), `id_verification_status` (`none`/`pending`/`verified`/`rejected`), etc.
 
-Jobs have `poster_id` FK to profiles. Bookings have `earner_id`, `job_id`, `earner_done` (bool), `poster_done` (bool), `amendment_status`, `amendment_note`, `earner_rating`, `poster_rating`, `poster_review`. RLS ensures earners see their own bookings and posters see bookings on their jobs.
+**ID verification** (`src/lib/verification.js`): `fetchVerificationStatus(userId)` / `requestVerification(userId)`. The request flow sets `id_verification_status = 'pending'`; a real provider (Stripe Identity / Checkr) is needed to actually confirm an ID and flip `verified = true`. ProfileScreen surfaces the status row + header badge.
+
+Jobs have `poster_id` FK to profiles and a `recurrence` column (`none`/`weekly`/`biweekly`/`monthly`) — set in PostJob/EditJob, shown as a badge on JobCard/JobDetail, and duplicated via the "Duplicate" button in GigsScreen (`navigation.navigate('PostJob', { prefill: job })`). Bookings have `earner_id`, `job_id`, `earner_done` (bool), `poster_done` (bool), `amendment_status`, `amendment_note`, `earner_rating`, `poster_rating`, `poster_review`. RLS ensures earners see their own bookings and posters see bookings on their jobs.
