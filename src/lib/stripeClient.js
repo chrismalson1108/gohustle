@@ -3,6 +3,9 @@ import { supabase } from './supabase';
 export const STRIPE_PUBLISHABLE_KEY =
   'pk_test_51ThvnVCx9mChh0x46xbXhjg4ejm3Ldwa0gLNMqky8eXFVjK60ZIUZwj6ujbIijxi6NdX99zyVr4gfEPg8iazMz9X00WtG1qQY8';
 
+// Platform service fee — keep in sync with the stripe-create-payment-intent fn (10%).
+export const SERVICE_FEE_PCT = 0.10;
+
 const FUNCTIONS_URL = 'https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1';
 const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';
 

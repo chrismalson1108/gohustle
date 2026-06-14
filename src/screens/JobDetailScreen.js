@@ -16,6 +16,7 @@ import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import MessageSheet from '../components/MessageSheet';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
+import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 
 const STATUS_CONTENT = {
   pending:   { ion: 'time', title: 'Application Pending',
@@ -210,6 +211,37 @@ export default function JobDetailScreen({ route, navigation }) {
           </Section>
         )}
 
+        {!alreadyBooked && !isOwnJob && (
+          <Section title="Payment">
+            <View style={styles.feeCard}>
+              {(() => {
+                const baseRate = counterPrice ? (parseFloat(counterPrice) || job.pay) : job.pay;
+                const gross = job.payType === 'hourly' ? baseRate * (job.estimatedHours || 1) : baseRate;
+                const fee = gross * SERVICE_FEE_PCT;
+                const net = gross - fee;
+                return (
+                  <>
+                    <View style={styles.feeRow}>
+                      <Text style={styles.feeLabel}>Gig pay{job.payType === 'hourly' ? ' (est.)' : ''}</Text>
+                      <Text style={styles.feeVal}>${gross.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.feeRow}>
+                      <Text style={styles.feeLabel}>GoHustlr service fee ({Math.round(SERVICE_FEE_PCT * 100)}%)</Text>
+                      <Text style={styles.feeVal}>−${fee.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.feeDivider} />
+                    <View style={styles.feeRow}>
+                      <Text style={styles.feeTotalLabel}>You receive</Text>
+                      <Text style={styles.feeTotalVal}>${net.toFixed(2)}</Text>
+                    </View>
+                    <Text style={styles.feeNote}>Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.</Text>
+                  </>
+                );
+              })()}
+            </View>
+          </Section>
+        )}
+
         {job.reviews?.length > 0 && (
           <Section title={`Reviews (${job.reviews.length})`}>
             {job.reviews.map(r => (
@@ -357,6 +389,14 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12,
   },
   description: { fontSize: 15, color: colors.textPrimary, lineHeight: 24 },
+  feeCard: { backgroundColor: colors.background, borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: colors.border },
+  feeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
+  feeLabel: { fontSize: 14, color: colors.textSecondary },
+  feeVal: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
+  feeDivider: { height: 1, backgroundColor: colors.border, marginVertical: 8 },
+  feeTotalLabel: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  feeTotalVal: { fontSize: 16, fontWeight: '900', color: colors.success },
+  feeNote: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 10 },
   reportLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, marginTop: 4 },
   reportLinkText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
   reqRow: { flexDirection: 'row', marginBottom: 6 },
