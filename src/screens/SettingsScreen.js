@@ -34,7 +34,7 @@ export default function SettingsScreen({ navigation }) {
 
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
-    city: '', role: 'earner', skills: [], radiusMiles: 25,
+    city: '', role: 'earner', skills: [], radiusMiles: 25, skillRates: {},
   });
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function SettingsScreen({ navigation }) {
   const loadProfile = async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles')
+      .select('name, username, bio, city, role, skills, radius_miles, skill_rates')
       .eq('id', user.id)
       .single();
     if (data) {
@@ -56,6 +56,7 @@ export default function SettingsScreen({ navigation }) {
         role: data.role || 'earner',
         skills: data.skills || [],
         radiusMiles: data.radius_miles || 25,
+        skillRates: data.skill_rates || {},
       });
     }
     setLoading(false);
@@ -67,6 +68,11 @@ export default function SettingsScreen({ navigation }) {
     set('skills', form.skills.includes(s)
       ? form.skills.filter(x => x !== s)
       : [...form.skills, s]);
+  };
+
+  const setSkillRate = (s, v) => {
+    const clean = v.replace(/[^0-9]/g, '');
+    setForm(p => ({ ...p, skillRates: { ...p.skillRates, [s]: clean } }));
   };
 
   const checkUsername = async () => {
@@ -103,6 +109,11 @@ export default function SettingsScreen({ navigation }) {
       role: form.role,
       skills: form.skills,
       radius_miles: form.radiusMiles,
+      skill_rates: form.skills.reduce((acc, s) => {
+        const r = parseInt(form.skillRates?.[s], 10);
+        if (r > 0) acc[s] = r;
+        return acc;
+      }, {}),
     }).eq('id', user.id);
     setSaving(false);
     if (error) {
@@ -223,6 +234,28 @@ export default function SettingsScreen({ navigation }) {
                   ))}
                 </View>
               </Field>
+
+              {form.skills.length > 0 && (
+                <Field label="Hourly rates (optional)">
+                  {form.skills.map(s => (
+                    <View key={s} style={styles.rateRow}>
+                      <Text style={styles.rateSkill}>{s}</Text>
+                      <View style={styles.rateInputWrap}>
+                        <Text style={styles.rateDollar}>$</Text>
+                        <TextInput
+                          style={styles.rateInput}
+                          placeholder="—"
+                          placeholderTextColor={colors.textMuted}
+                          value={form.skillRates?.[s] ? String(form.skillRates[s]) : ''}
+                          onChangeText={v => setSkillRate(s, v)}
+                          keyboardType="number-pad"
+                        />
+                        <Text style={styles.rateUnit}>/hr</Text>
+                      </View>
+                    </View>
+                  ))}
+                </Field>
+              )}
             </>
           )}
 
@@ -291,6 +324,12 @@ const styles = StyleSheet.create({
   radiusBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   radiusBtnTextActive: { color: '#fff' },
   skillGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  rateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
+  rateSkill: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', flex: 1 },
+  rateInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 10, height: 38, width: 110 },
+  rateDollar: { fontSize: 14, color: colors.textSecondary, marginRight: 2 },
+  rateInput: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '700' },
+  rateUnit: { fontSize: 12, color: colors.textMuted },
   skillChip: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, margin: 4,
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,

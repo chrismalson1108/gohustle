@@ -53,7 +53,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }] = await Promise.all([
       supabase.from('profiles')
-        .select('id, name, avatar_initial, avatar_url, city, bio, skills, rating, review_count, member_since, verified, created_at')
+        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at')
         .eq('id', userId).single(),
       supabase.from('reviews')
         .select('id, rating, text, date, role, job:jobs(title), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
@@ -146,7 +146,9 @@ export default function PublicProfileScreen({ route, navigation }) {
           <Text style={styles.sectionTitle}>Skills</Text>
           <View style={styles.chipWrap}>
             {profile.skills.map(s => (
-              <View key={s} style={styles.skillChip}><Text style={styles.skillText}>{s}</Text></View>
+              <View key={s} style={styles.skillChip}>
+                <Text style={styles.skillText}>{s}{profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ''}</Text>
+              </View>
             ))}
           </View>
         </View>
