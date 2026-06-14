@@ -40,6 +40,7 @@ const PAY_OPTIONS = [
 
 const SORT_OPTIONS = [
   { id: 'newest',   ion: 'time',          label: 'Newest' },
+  { id: 'nearest',  ion: 'navigate',      label: 'Nearest' },
   { id: 'pay_high', ion: 'cash',          label: 'Pay: High → Low' },
   { id: 'pay_low',  ion: 'trending-down', label: 'Pay: Low → High' },
 ];

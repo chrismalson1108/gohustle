@@ -29,6 +29,8 @@ function transformJob(dbJob) {
     estimatedHours: Number(dbJob.estimated_hours),
     status: dbJob.status,
     photos: dbJob.photos || [],
+    lat: dbJob.lat ?? null,
+    lng: dbJob.lng ?? null,
     postedAt: dbJob.created_at
       ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : 'Recently',
@@ -40,7 +42,7 @@ function transformJob(dbJob) {
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
     },
-    slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken })),
+    slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken, startsAt: s.starts_at || null })),
     requirements: (dbJob.job_requirements || [])
       .sort((a, b) => a.sort_order - b.sort_order)
       .map(r => r.requirement),
@@ -69,6 +71,8 @@ function transformBooking(b) {
     amendmentNote: b.amendment_note || null,
     amendmentStatus: b.amendment_status || 'none',
     completionPhotos: b.completion_photos || [],
+    startsAt: b.starts_at || null,
+    tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
     earner: b.earner ? {
       id: b.earner.id,
       name: b.earner.name,
@@ -334,11 +338,13 @@ export function JobsProvider({ children }) {
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, tempId });
 
+    const chosenSlot = job?.slots?.find(s => s.id === slotId);
     const { data, error } = await supabase.from('bookings').insert({
       job_id: jobId,
       earner_id: user.id,
       slot_id: slotId || null,
       slot_label: slotLabel || null,
+      starts_at: chosenSlot?.startsAt || null,
       counter_offer: counterOffer || null,
       status: 'pending',
     }).select().single();
@@ -487,10 +493,11 @@ export function JobsProvider({ children }) {
     }
   };
 
-  const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod }) => {
-    // Capture escrow payment first — if this fails, abort (don't mark verified)
+  const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason }) => {
+    const partial = typeof pct === 'number' && pct > 0 && pct < 1;
+    // Capture escrow payment first (partial if a dispute) — if this fails, abort.
     try {
-      await stripeEdge.capturePayment(bookingId);
+      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined);
     } catch (err) {
       if (!err.message?.includes('Payment not found')) {
         throw err;
@@ -510,10 +517,36 @@ export function JobsProvider({ children }) {
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
     if (error) { console.warn('Verify error:', error.message); return; }
 
-    if (booking?.earner?.id) {
-      notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
+    // Record a dispute when the poster paid a reduced amount
+    if (partial && user?.id) {
+      await supabase.from('disputes').insert({
+        booking_id: bookingId, raised_by: user.id, reason: disputeReason || null, pct_paid: Math.round(pct * 100),
+      });
     }
-    track('job_verified', { rating, paymentMethod });
+
+    if (booking?.earner?.id) {
+      if (partial) {
+        notify(booking.earner.id, 'Job verified with an adjustment', `The poster reported an issue and paid ${Math.round(pct * 100)}%. ${rating}★ rating.`, { tab: 'EarnTab' });
+      } else {
+        notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
+      }
+    }
+    track('job_verified', { rating, paymentMethod, disputed: partial });
+
+    // Optional tip — best-effort off-session charge; never blocks verification
+    if (tipCents && tipCents >= 50) {
+      try {
+        await stripeEdge.tip(bookingId, tipCents);
+        dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { tipAmount: tipCents / 100 } });
+        if (booking?.earner?.id) {
+          notify(booking.earner.id, 'You got a tip!', `The poster added a $${(tipCents / 100).toFixed(2)} tip. 🎉`, { tab: 'EarnTab' });
+        }
+        track('tip_sent', { tipCents });
+      } catch (e) {
+        captureError(e, { op: 'tip', bookingId });
+        showToast({ icon: '⚠️', title: 'Tip not processed', message: 'The job was verified, but the tip could not be charged.' });
+      }
+    }
 
     // Mark the job itself as completed so it leaves the Browse screen
     if (booking?.jobId) {
@@ -588,6 +621,8 @@ export function JobsProvider({ children }) {
       urgent: jobData.urgent,
     };
     if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
+    if (jobData.lat !== undefined) dbPatch.lat = jobData.lat;
+    if (jobData.lng !== undefined) dbPatch.lng = jobData.lng;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
 
@@ -595,7 +630,7 @@ export function JobsProvider({ children }) {
       await supabase.from('job_slots').delete().eq('job_id', jobId);
       if (jobData.slots.length) {
         await supabase.from('job_slots').insert(
-          jobData.slots.map(s => ({ job_id: jobId, label: s.label, taken: s.taken || false }))
+          jobData.slots.map(s => ({ job_id: jobId, label: s.label, taken: s.taken || false, starts_at: s.startsAt || null }))
         );
       }
     }
@@ -641,6 +676,7 @@ export function JobsProvider({ children }) {
         location: jobData.location, description: jobData.description,
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
         photos: jobData.photos || [],
+        lat: jobData.lat ?? null, lng: jobData.lng ?? null,
         poster_id: user.id,
       })
       .select().single();
@@ -650,7 +686,7 @@ export function JobsProvider({ children }) {
 
     if (jobData.slots?.length) {
       await supabase.from('job_slots').insert(
-        jobData.slots.map(s => ({ job_id: newJob.id, label: s.label, taken: false }))
+        jobData.slots.map(s => ({ job_id: newJob.id, label: s.label, taken: false, starts_at: s.startsAt || null }))
       );
     }
     if (jobData.requirements?.length) {

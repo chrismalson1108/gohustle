@@ -11,7 +11,14 @@ npm run web                     # Launch in browser at localhost:8081
 npm run android                 # Launch on Android emulator
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
+npm test                        # Jest unit tests (pure logic: contentFilter, geo, taxFormat) in __tests__/
 ```
+
+## Location, tips & disputes
+- **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build).
+- **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`.
+- **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `stripe-capture-payment` partial capture; a `disputes` row is recorded. `verifyAndRate(..., { pct, disputeReason })`.
+- **Scheduling**: slots carry machine-readable `starts_at` (job_slots + bookings); `SlotPicker` hides past slots.
 
 **Tunnel troubleshooting** — If ngrok errors with `Cannot read properties of undefined (reading 'body')`, kill all node and ngrok processes first, then retry.
 

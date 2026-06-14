@@ -18,11 +18,14 @@ async function searchCities(query) {
       .filter(f => f.properties?.name && (f.properties?.state || f.properties?.country))
       .map(f => {
         const { name, state, country, countrycode } = f.properties;
-        if (countrycode === 'US' && state) return `${name}, ${US_STATE_ABBR[state] || state}`;
-        if (state) return `${name}, ${state}`;
-        return `${name}, ${country}`;
+        const coords = f.geometry?.coordinates; // [lng, lat]
+        let label;
+        if (countrycode === 'US' && state) label = `${name}, ${US_STATE_ABBR[state] || state}`;
+        else if (state) label = `${name}, ${state}`;
+        else label = `${name}, ${country}`;
+        return { label, lat: coords?.[1] ?? null, lng: coords?.[0] ?? null };
       })
-      .filter((v, i, a) => a.indexOf(v) === i); // dedupe
+      .filter((v, i, a) => a.findIndex(x => x.label === v.label) === i); // dedupe by label
   } catch {
     return [];
   }
@@ -53,7 +56,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
 
   const handleChange = (text) => {
     setQuery(text);
-    onChange(text);
+    onChange(text, null);
     setOpen(true);
     setResults([]);
 
@@ -68,9 +71,12 @@ export default function LocationPicker({ value, onChange, placeholder }) {
     }, 350);
   };
 
-  const select = (loc) => {
-    setQuery(loc);
-    onChange(loc);
+  const select = (item) => {
+    const label = typeof item === 'string' ? item : item.label;
+    const coords = (item && typeof item === 'object' && item.lat != null)
+      ? { lat: item.lat, lng: item.lng } : null;
+    setQuery(label);
+    onChange(label, coords);
     setOpen(false);
     setResults([]);
   };
@@ -95,7 +101,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
         const city      = place.city || place.subregion || place.district || '';
         const stateAbbr = place.regionCode || place.region || '';
         const label     = city && stateAbbr ? `${city}, ${stateAbbr}` : city || stateAbbr || 'Unknown location';
-        select(label);
+        select({ label, lat: pos.coords.latitude, lng: pos.coords.longitude });
       } else {
         setLocError('Could not determine location. Please type your city.');
       }
@@ -136,7 +142,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
         }
         {query.length > 0 && !locating && (
           <TouchableOpacity
-            onPress={() => { setQuery(''); onChange(''); setResults([]); }}
+            onPress={() => { setQuery(''); onChange('', null); setResults([]); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.clear}>✕</Text>
@@ -162,9 +168,9 @@ export default function LocationPicker({ value, onChange, placeholder }) {
               </View>
             )}
             {results.map(loc => (
-              <TouchableOpacity key={loc} style={styles.suggestion} onPress={() => select(loc)}>
+              <TouchableOpacity key={loc.label} style={styles.suggestion} onPress={() => select(loc)}>
                 <Ionicons name="location" size={15} color={colors.textSecondary} style={styles.suggestIcon} />
-                <Text style={styles.suggestText}>{loc}</Text>
+                <Text style={styles.suggestText}>{loc.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>

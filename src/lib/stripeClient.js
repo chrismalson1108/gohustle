@@ -30,8 +30,11 @@ export const stripeEdge = {
   createPaymentIntent: (bookingId) =>
     callEdgeFunction('stripe-create-payment-intent', { bookingId }),
 
-  capturePayment: (bookingId) =>
-    callEdgeFunction('stripe-capture-payment', { bookingId }),
+  capturePayment: (bookingId, pct) =>
+    callEdgeFunction('stripe-capture-payment', { bookingId, pct }),
+
+  tip: (bookingId, tipCents) =>
+    callEdgeFunction('stripe-tip', { bookingId, tipCents }),
 
   cancelPayment: (bookingId) =>
     callEdgeFunction('stripe-cancel-payment', { bookingId }),
