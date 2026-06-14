@@ -1,8 +1,21 @@
 import React from 'react';
 import { View, Text, Platform, StyleSheet } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { CATEGORY_COLORS } from '../data/mockData';
 import { colors } from '../theme';
+
+// Lazy-require react-native-maps so the native AIRMap view registers only when a
+// map is actually shown — not at app startup. Requiring it at module top-level
+// pulls it into the startup bundle and (with Fast Refresh) can double-register,
+// causing "Tried to register two views with the same name AIRMap".
+let MapView, Marker, PROVIDER_DEFAULT;
+function loadMaps() {
+  if (!MapView && Platform.OS !== 'web') {
+    const m = require('react-native-maps');
+    MapView = m.default;
+    Marker = m.Marker;
+    PROVIDER_DEFAULT = m.PROVIDER_DEFAULT;
+  }
+}
 
 // Map of nearby gigs. Centers on the user (or the first gig) and drops a pin per
 // gig that has coordinates. Tapping a pin opens that gig.
@@ -11,6 +24,15 @@ export default function JobsMap({ jobs, userCoords, onPressJob }) {
     return (
       <View style={styles.fallback}>
         <Text style={styles.fallbackText}>Map view isn't available on web.</Text>
+      </View>
+    );
+  }
+
+  loadMaps();
+  if (!MapView) {
+    return (
+      <View style={styles.fallback}>
+        <Text style={styles.fallbackText}>Map is unavailable.</Text>
       </View>
     );
   }
