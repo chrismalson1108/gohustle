@@ -383,6 +383,7 @@ export default function GigsScreen({ navigation }) {
                           ? () => { setAmendTarget({ bookingId: booking.id, earnerName: booking.earner?.name || 'Earner' }); setAmendNote(''); }
                           : null
                         }
+                        onViewEarner={booking.earner?.id ? () => navigation.navigate('UserProfile', { userId: booking.earner.id }) : null}
                       />
                     ))
                   )}
@@ -402,7 +403,11 @@ export default function GigsScreen({ navigation }) {
         )}
 
         {tab === 'past' && pastBookings.map(booking => (
-          <PastBookingCard key={booking.id} booking={booking} />
+          <PastBookingCard
+            key={booking.id}
+            booking={booking}
+            onViewEarner={booking.earner?.id ? () => navigation.navigate('UserProfile', { userId: booking.earner.id }) : null}
+          />
         ))}
       </ScrollView>
 
@@ -491,7 +496,7 @@ function Chip({ ion, color, bg, label }) {
   );
 }
 
-function PastBookingCard({ booking }) {
+function PastBookingCard({ booking, onViewEarner }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const declined   = booking.status === 'declined';
@@ -499,18 +504,20 @@ function PastBookingCard({ booking }) {
   return (
     <View style={styles.pastCard}>
       <View style={styles.earnerRow}>
-        <Avatar
-          url={booking.earner?.avatarUrl}
-          initial={initial}
-          size={38}
-          fontSize={15}
-          bg={declined ? colors.textMuted : colors.primary}
-          style={{ marginRight: 10 }}
-        />
-        <View style={styles.earnerInfo}>
-          <Text style={styles.jobTitle} numberOfLines={1}>{booking.job?.title || 'Gig'}</Text>
-          <Text style={styles.earnerName}>{earnerName}</Text>
-        </View>
+        <TouchableOpacity style={styles.earnerTap} onPress={onViewEarner} disabled={!onViewEarner} activeOpacity={0.7}>
+          <Avatar
+            url={booking.earner?.avatarUrl}
+            initial={initial}
+            size={38}
+            fontSize={15}
+            bg={declined ? colors.textMuted : colors.primary}
+            style={{ marginRight: 10 }}
+          />
+          <View style={styles.earnerInfo}>
+            <Text style={styles.jobTitle} numberOfLines={1}>{booking.job?.title || 'Gig'}</Text>
+            <Text style={styles.earnerName}>{earnerName}</Text>
+          </View>
+        </TouchableOpacity>
         <BookingStatusBadge status={booking.status} compact />
       </View>
       {!declined && (
@@ -535,7 +542,7 @@ function PastBookingCard({ booking }) {
   );
 }
 
-function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange }) {
+function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange, onViewEarner }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const status     = booking.status;
@@ -544,16 +551,18 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
     <View style={styles.bookingRow}>
       {/* Earner info */}
       <View style={styles.earnerRow}>
-        <Avatar url={booking.earner?.avatarUrl} initial={initial} size={38} fontSize={15} style={{ marginRight: 10 }} />
-        <View style={styles.earnerInfo}>
-          <Text style={styles.earnerName}>{earnerName}</Text>
-          {booking.earner?.rating ? (
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={11} color={colors.gold} style={{ marginRight: 3 }} />
-              <Text style={styles.earnerRating}>{Number(booking.earner.rating).toFixed(1)}</Text>
-            </View>
-          ) : null}
-        </View>
+        <TouchableOpacity style={styles.earnerTap} onPress={onViewEarner} disabled={!onViewEarner} activeOpacity={0.7}>
+          <Avatar url={booking.earner?.avatarUrl} initial={initial} size={38} fontSize={15} style={{ marginRight: 10 }} />
+          <View style={styles.earnerInfo}>
+            <Text style={styles.earnerName}>{earnerName}</Text>
+            {booking.earner?.rating ? (
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={11} color={colors.gold} style={{ marginRight: 3 }} />
+                <Text style={styles.earnerRating}>{Number(booking.earner.rating).toFixed(1)}</Text>
+              </View>
+            ) : null}
+          </View>
+        </TouchableOpacity>
         <BookingStatusBadge status={status} compact />
       </View>
 
@@ -753,6 +762,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   earnerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  earnerTap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   avatar: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10,

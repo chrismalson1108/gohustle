@@ -406,6 +406,22 @@ export function JobsProvider({ children }) {
   const markJobComplete = markEarnerDone;
 
   // Earner rates the poster after job is verified
+  // Recompute a user's ratings from ALL their reviews: the general (combined)
+  // rating/review_count plus the role caches (poster_* = as a client; the earner
+  // breakdown is derived from role='earner' reviews on the profile screen).
+  const recomputeRatings = async (userId) => {
+    const { data } = await supabase.from('reviews').select('rating, role').eq('reviewed_user_id', userId);
+    const rows = data || [];
+    const avg = (arr) => arr.length ? parseFloat((arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length).toFixed(2)) : 5;
+    const poster = rows.filter(r => r.role === 'poster');
+    await supabase.from('profiles').update({
+      rating: avg(rows),                 // combined / general rating
+      review_count: rows.length,
+      poster_rating: avg(poster),        // "as a client" cache
+      poster_review_count: poster.length,
+    }).eq('id', userId);
+  };
+
   const ratePoster = async (bookingId, { rating, reviewText }) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterRating: rating, posterReview: reviewText } });
@@ -415,26 +431,22 @@ export function JobsProvider({ children }) {
     }).eq('id', bookingId);
     if (error) { console.warn('Rate poster error:', error.message); return; }
 
-    // Update poster's rolling rating on their profile
-    if (booking?.jobId) {
-      const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
-      if (jobRow?.poster_id) {
-        notify(jobRow.poster_id, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab' });
-        const { data: posterProfile } = await supabase
-          .from('profiles')
-          .select('poster_rating, poster_review_count')
-          .eq('id', jobRow.poster_id)
-          .single();
-        if (posterProfile) {
-          const oldCount  = posterProfile.poster_review_count || 0;
-          const newCount  = oldCount + 1;
-          const newRating = (((posterProfile.poster_rating || 5) * oldCount) + rating) / newCount;
-          await supabase.from('profiles').update({
-            poster_rating: parseFloat(newRating.toFixed(1)),
-            poster_review_count: newCount,
-          }).eq('id', jobRow.poster_id);
-        }
-      }
+    // Record a review of the poster (as a client/employer) + recompute their rating
+    const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking?.jobId).single();
+    const posterId = jobRow?.poster_id;
+    if (posterId && user) {
+      await supabase.from('reviews').insert({
+        job_id: booking.jobId,
+        reviewer_id: user.id,
+        reviewed_user_id: posterId,
+        author: 'Earner',
+        role: 'poster',
+        rating,
+        text: reviewText || '',
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      });
+      await recomputeRatings(posterId);
+      notify(posterId, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab' });
     }
   };
 
@@ -560,30 +572,15 @@ export function JobsProvider({ children }) {
         job_id: booking.jobId,
         reviewer_id: user.id,
         reviewed_user_id: booking.earner.id,
-        author: booking.earner.name || 'Poster',
+        author: 'Poster',
+        role: 'earner',
         rating,
         text: reviewText || '',
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       });
       if (revErr) console.warn('Review insert error:', revErr.message);
-    }
-
-    // Update earner's rolling rating
-    if (booking?.earner?.id) {
-      const { data: earnerProfile } = await supabase
-        .from('profiles')
-        .select('rating, review_count')
-        .eq('id', booking.earner.id)
-        .single();
-
-      if (earnerProfile) {
-        const newCount  = (earnerProfile.review_count || 0) + 1;
-        const newRating = (((earnerProfile.rating || 5) * (earnerProfile.review_count || 0)) + rating) / newCount;
-        await supabase.from('profiles').update({
-          rating: parseFloat(newRating.toFixed(1)),
-          review_count: newCount,
-        }).eq('id', booking.earner.id);
-      }
+      // Recompute the earner's combined rating from all their reviews
+      await recomputeRatings(booking.earner.id);
     }
 
     // Credit the earner's earnings with their captured payout (amount after the 10% fee)

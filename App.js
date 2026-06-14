@@ -28,6 +28,7 @@ import SettingsScreen       from './src/screens/SettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
+import PublicProfileScreen  from './src/screens/PublicProfileScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
@@ -71,6 +72,7 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain"  component={HomeScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -80,6 +82,7 @@ function EarnStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -91,6 +94,7 @@ function GigsStack() {
       <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -105,6 +109,7 @@ function ProfileStack() {
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
+      <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }

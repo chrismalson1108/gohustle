@@ -61,7 +61,7 @@ export default function ProfileScreen({ navigation }) {
     if (!user) return;
     const { data } = await supabase
       .from('reviews')
-      .select('id, rating, text, date, author, reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)')
+      .select('id, rating, text, date, author, role, reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)')
       .eq('reviewed_user_id', user.id)
       .order('created_at', { ascending: false });
     if (data) setMyReviews(data);
@@ -185,11 +185,22 @@ export default function ProfileScreen({ navigation }) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Reviews I've Received</Text>
+        {myReviews.length > 0 && (() => {
+          const w = myReviews.filter(r => r.role === 'earner');
+          const c = myReviews.filter(r => r.role === 'poster');
+          const a = (arr) => arr.length ? (arr.reduce((s, r) => s + (r.rating || 0), 0) / arr.length).toFixed(1) : '—';
+          return (
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownItem}>As a worker: <Text style={styles.breakdownVal}>{a(w)}</Text> ({w.length})</Text>
+              <Text style={styles.breakdownItem}>As a client: <Text style={styles.breakdownVal}>{a(c)}</Text> ({c.length})</Text>
+            </View>
+          );
+        })()}
         {myReviews.length === 0 ? (
           <View style={styles.noReviewsCard}>
             <Ionicons name="star-outline" size={30} color={colors.gold} style={styles.noReviewsIcon} />
             <Text style={styles.noReviewsTitle}>No reviews yet</Text>
-            <Text style={styles.noReviewsText}>Complete gigs to start earning reviews from posters.</Text>
+            <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
           </View>
         ) : (
           myReviews.map(r => (
@@ -445,6 +456,9 @@ const styles = StyleSheet.create({
   },
   editBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   emptyText: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  breakdownItem: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  breakdownVal: { color: colors.textPrimary, fontWeight: '800' },
   noReviewsCard: {
     backgroundColor: colors.surface, borderRadius: 14, padding: 20,
     alignItems: 'center', borderWidth: 1, borderColor: colors.border,

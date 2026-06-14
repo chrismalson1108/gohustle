@@ -106,6 +106,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
+| `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
@@ -169,7 +170,9 @@ pending → confirmed → completed → verified
 - Earner marks done → opens the Finish sheet (optional **completion photos** uploaded to the `completion-photos` bucket → `bookings.completion_photos text[]`), then sets `earner_done = true`; if poster already done → status advances to `completed`. Photos are shown to the poster in `CompletionModal` and in both sides' history.
 - Poster marks done → sets `poster_done = true`; if earner already done → status advances to `completed`
 - Poster verifies + rates → `verified` (inserts review, updates earner rolling rating)
-- Earner rates poster → updates `poster_rating` / `poster_review_count` on the poster's profile
+- Earner rates poster → inserts a `reviews` row (`role='poster'`) and recomputes the poster's rating
+
+**Reviews are two-sided.** Every rating (poster→earner in `verifyAndRate`, earner→poster in `ratePoster`) inserts a `reviews` row tagged with `role` (`earner` = reviewed for work; `poster` = reviewed as a client). `recomputeRatings(userId)` sets `profiles.rating`/`review_count` to the **combined** average across all roles (the general rating shown everywhere) and `poster_rating`/`poster_review_count` as the client cache. Profiles show a worker-vs-client breakdown.
 
 **Mutual completion**: both `earner_done` and `poster_done` must be `true` before status becomes `completed`. Neither party alone can advance the status.
 

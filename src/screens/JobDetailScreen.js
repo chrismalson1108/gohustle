@@ -157,7 +157,9 @@ export default function JobDetailScreen({ route, navigation }) {
         )}
 
         <Section title="About the Poster">
-          <PosterTrustCard poster={job.poster} />
+          <TouchableOpacity activeOpacity={0.85} onPress={() => job.posterId && navigation.navigate('UserProfile', { userId: job.posterId })}>
+            <PosterTrustCard poster={job.poster} />
+          </TouchableOpacity>
           {!isOwnJob && (
             <TouchableOpacity style={styles.reportLink} onPress={handleReportGig}>
               <Ionicons name="flag-outline" size={13} color={colors.textMuted} style={{ marginRight: 5 }} />
