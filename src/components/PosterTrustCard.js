@@ -19,8 +19,17 @@ export default function PosterTrustCard({ poster }) {
             </View>
           )}
         </View>
-        <RatingStars rating={poster.rating} />
-        <Text style={styles.sub}>{poster.reviewCount} reviews as employer</Text>
+        {poster.reviewCount > 0 ? (
+          <>
+            <RatingStars rating={poster.rating} />
+            <Text style={styles.sub}>{poster.reviewCount} review{poster.reviewCount !== 1 ? 's' : ''}</Text>
+          </>
+        ) : (
+          <View style={styles.newRow}>
+            <Ionicons name="sparkles-outline" size={12} color={colors.textMuted} style={{ marginRight: 4 }} />
+            <Text style={styles.sub}>New · no reviews yet</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -54,4 +63,5 @@ const styles = StyleSheet.create({
   },
   verifiedText: { fontSize: 11, fontWeight: '700', color: colors.success },
   sub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  newRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
 });

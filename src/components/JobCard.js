@@ -71,7 +71,9 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
           <Text style={styles.posterName}>{job.poster.name}</Text>
           {job.poster.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} style={styles.verified} />}
           <View style={styles.spacer} />
-          <RatingStars rating={job.poster.rating} size={12} />
+          {job.poster.reviewCount > 0
+            ? <RatingStars rating={job.poster.rating} size={12} />
+            : <Text style={styles.newBadge}>New</Text>}
         </View>
       </View>
     </TouchableOpacity>
@@ -126,5 +128,6 @@ const styles = StyleSheet.create({
   posterAvatarText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   posterName: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginRight: 4 },
   verified: { fontSize: 11, color: colors.success },
+  newBadge: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
   spacer: { flex: 1 },
 });

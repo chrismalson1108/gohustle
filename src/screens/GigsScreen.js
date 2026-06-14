@@ -555,12 +555,12 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           <Avatar url={booking.earner?.avatarUrl} initial={initial} size={38} fontSize={15} style={{ marginRight: 10 }} />
           <View style={styles.earnerInfo}>
             <Text style={styles.earnerName}>{earnerName}</Text>
-            {booking.earner?.rating ? (
+            {booking.earner?.reviewCount > 0 ? (
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={11} color={colors.gold} style={{ marginRight: 3 }} />
                 <Text style={styles.earnerRating}>{Number(booking.earner.rating).toFixed(1)}</Text>
               </View>
-            ) : null}
+            ) : <Text style={styles.earnerRating}>New</Text>}
           </View>
         </TouchableOpacity>
         <BookingStatusBadge status={status} compact />
