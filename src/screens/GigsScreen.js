@@ -340,6 +340,13 @@ export default function GigsScreen({ navigation }) {
                       <Text style={styles.editBtnText}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      style={styles.editBtn}
+                      onPress={() => { haptic.light(); navigation.navigate('PostJob', { prefill: job }); }}
+                    >
+                      <Ionicons name="copy-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
+                      <Text style={styles.editBtnText}>Duplicate</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDelete(job)}
                     >

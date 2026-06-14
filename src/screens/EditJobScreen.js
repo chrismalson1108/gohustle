@@ -18,6 +18,12 @@ import { colors, gradients } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
+const RECURRENCE_OPTS = [
+  { id: 'none', label: 'One-time' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'biweekly', label: 'Biweekly' },
+  { id: 'monthly', label: 'Monthly' },
+];
 
 export default function EditJobScreen({ route, navigation }) {
   const { jobId } = route.params;
@@ -41,6 +47,7 @@ export default function EditJobScreen({ route, navigation }) {
     requirements: (job?.requirements || []).join('\n'),
     urgent: job?.urgent || false,
     slots: job?.slots ? job.slots.map(s => ({ ...s })) : [],
+    recurrence: job?.recurrence || 'none',
   });
   const [showCustomCat, setShowCustomCat] = useState(!isKnownCategory && !!job?.category);
   const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
@@ -102,6 +109,7 @@ export default function EditJobScreen({ route, navigation }) {
       location: form.location, description: form.description,
       urgent: form.urgent, requirements: reqs, slots: form.slots,
       photos: finalPhotos,
+      recurrence: form.recurrence,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -292,6 +300,22 @@ export default function EditJobScreen({ route, navigation }) {
                 </View>
               )
             }
+          </Field>
+
+          <Field label="Repeats">
+            <View style={styles.catGrid}>
+              {RECURRENCE_OPTS.map(opt => {
+                const active = form.recurrence === opt.id;
+                return (
+                  <TouchableOpacity key={opt.id}
+                    style={[styles.catChip, active && styles.catChipActive]}
+                    onPress={() => { haptic.selection(); set('recurrence', opt.id); }}
+                  >
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </Field>
 
           <TouchableOpacity

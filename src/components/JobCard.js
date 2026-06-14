@@ -15,6 +15,8 @@ const BOOKING_PILL = {
   declined:  { label: 'Declined',                 ion: 'close-circle',      bg: '#FEF2F2', text: '#DC2626' },
 };
 
+const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly' };
+
 export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) {
   const haptic = useHaptic();
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
@@ -50,8 +52,16 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
           </View>
         )}
         <View style={styles.headerRow}>
-          <View style={[styles.catBadge, { backgroundColor: catColor + '20' }]}>
-            <Text style={[styles.catText, { color: catColor }]}>{job.category}</Text>
+          <View style={styles.headerLeft}>
+            <View style={[styles.catBadge, { backgroundColor: catColor + '20' }]}>
+              <Text style={[styles.catText, { color: catColor }]}>{job.category}</Text>
+            </View>
+            {RECUR_LABEL[job.recurrence] && (
+              <View style={styles.recurBadge}>
+                <Ionicons name="repeat" size={11} color={colors.primary} style={{ marginRight: 3 }} />
+                <Text style={styles.recurText}>{RECUR_LABEL[job.recurrence]}</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.time}>{job.postedAt}</Text>
         </View>
@@ -107,6 +117,13 @@ const styles = StyleSheet.create({
   },
   urgentText: { color: colors.urgent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  recurBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.primary + '14', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3, marginLeft: 6,
+  },
+  recurText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   catBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   catText: { fontSize: 11, fontWeight: '700' },
   time: { fontSize: 11, color: colors.textMuted },

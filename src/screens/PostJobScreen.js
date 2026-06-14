@@ -18,21 +18,48 @@ import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
+const RECURRENCE_OPTS = [
+  { id: 'none', label: 'One-time' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'biweekly', label: 'Biweekly' },
+  { id: 'monthly', label: 'Monthly' },
+];
 const INITIAL = {
   title: '', category: '', customCategory: '', pay: '', payType: 'flat',
   location: '', description: '', requirements: '', urgent: false, slots: [],
+  recurrence: 'none',
 };
 
-export default function PostJobScreen({ navigation }) {
+// Build initial form state, optionally prefilled from a job being duplicated.
+function buildInitial(prefill) {
+  if (!prefill) return INITIAL;
+  const known = CATS.some(c => c.id === prefill.category);
+  return {
+    title: prefill.title || '',
+    category: known ? prefill.category : 'other',
+    customCategory: known ? '' : (prefill.category || ''),
+    pay: prefill.pay != null ? String(prefill.pay) : '',
+    payType: prefill.payType || 'flat',
+    location: prefill.location || '',
+    description: prefill.description || '',
+    requirements: Array.isArray(prefill.requirements) ? prefill.requirements.join('\n') : '',
+    urgent: !!prefill.urgent,
+    slots: [],
+    recurrence: prefill.recurrence || 'none',
+  };
+}
+
+export default function PostJobScreen({ navigation, route }) {
   const { addJob } = useJobs();
   const { showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
-  const [form, setForm] = useState(INITIAL);
-  const [showCustomCat, setShowCustomCat] = useState(false);
+  const prefill = route?.params?.prefill;
+  const [form, setForm] = useState(() => buildInitial(prefill));
+  const [showCustomCat, setShowCustomCat] = useState(!!prefill && !CATS.some(c => c.id === prefill.category));
   const [photos, setPhotos] = useState([]); // local URIs
-  const [coords, setCoords] = useState(null); // { lat, lng } from LocationPicker
+  const [coords, setCoords] = useState(prefill?.lat != null ? { lat: prefill.lat, lng: prefill.lng } : null); // { lat, lng } from LocationPicker
   const [posting, setPosting] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -89,6 +116,7 @@ export default function PostJobScreen({ navigation }) {
       requirements: reqs,
       slots,
       photos: photoUrls,
+      recurrence: form.recurrence,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -109,8 +137,8 @@ export default function PostJobScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>Post a Gig</Text>
-          <Text style={styles.headerSub}>Hire a motivated college student</Text>
+          <Text style={styles.headerTitle}>{prefill ? 'Duplicate Gig' : 'Post a Gig'}</Text>
+          <Text style={styles.headerSub}>{prefill ? 'Review the details, then post your copy' : 'Hire a motivated college student'}</Text>
         </LinearGradient>
 
         <View style={styles.form}>
@@ -250,6 +278,23 @@ export default function PostJobScreen({ navigation }) {
               slots={form.slots}
               onChange={slots => set('slots', slots)}
             />
+          </Field>
+
+          <Field label="Repeats">
+            <View style={styles.catGrid}>
+              {RECURRENCE_OPTS.map(opt => {
+                const active = form.recurrence === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[styles.catChip, active && styles.catChipActive]}
+                    onPress={() => { haptic.selection(); set('recurrence', opt.id); }}
+                  >
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </Field>
 
           <TouchableOpacity

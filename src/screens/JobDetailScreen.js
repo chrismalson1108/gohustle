@@ -36,6 +36,8 @@ const STATUS_CONTENT = {
                bg: '#FEF2F2', color: '#DC2626' },
 };
 
+const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly' };
+
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
   const { jobs, bookings, posterBookings, bookJob, isBooked } = useJobs();
@@ -127,6 +129,12 @@ export default function JobDetailScreen({ route, navigation }) {
             <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
             <Text style={styles.locText}>{job.location}</Text>
           </View>
+          {RECUR_LABEL[job.recurrence] && (
+            <View style={[styles.recurPill, { flexDirection: 'row', alignItems: 'center' }]}>
+              <Ionicons name="repeat" size={13} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={styles.recurPillText}>Repeats {RECUR_LABEL[job.recurrence]}</Text>
+            </View>
+          )}
         </View>
 
         {job.photos?.length > 0 && (
@@ -383,6 +391,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10,
   },
   locText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  recurPill: {
+    backgroundColor: colors.primary + '14', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 9, marginLeft: 10, marginBottom: 10,
+  },
+  recurPillText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   section: { marginBottom: 24 },
   sectionTitle: {
     fontSize: 12, fontWeight: '800', color: colors.textMuted,

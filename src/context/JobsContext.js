@@ -30,6 +30,7 @@ function transformJob(dbJob) {
     estimatedHours: Number(dbJob.estimated_hours),
     status: dbJob.status,
     photos: dbJob.photos || [],
+    recurrence: dbJob.recurrence || 'none',
     lat: dbJob.lat ?? null,
     lng: dbJob.lng ?? null,
     postedAt: dbJob.created_at
@@ -651,6 +652,7 @@ export function JobsProvider({ children }) {
     if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
     if (jobData.lat !== undefined) dbPatch.lat = jobData.lat;
     if (jobData.lng !== undefined) dbPatch.lng = jobData.lng;
+    if (jobData.recurrence !== undefined) dbPatch.recurrence = jobData.recurrence;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
 
@@ -705,6 +707,7 @@ export function JobsProvider({ children }) {
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
         photos: jobData.photos || [],
         lat: jobData.lat ?? null, lng: jobData.lng ?? null,
+        recurrence: jobData.recurrence || 'none',
         poster_id: user.id,
       })
       .select().single();
