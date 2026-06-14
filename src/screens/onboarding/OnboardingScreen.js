@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients } from '../../theme';
 import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
+import { getReferralCode, recordReferral } from '../../lib/referrals';
 import LocationPicker from '../../components/LocationPicker';
 
 const { width } = Dimensions.get('window');
@@ -101,6 +102,12 @@ export default function OnboardingScreen({ onComplete }) {
     }).eq('id', user.id);
     // Record acceptance of the current legal docs (the signup checkbox is consent).
     try { await recordAcceptances(user.id, await fetchCurrentDocs()); } catch (_) {}
+    // Ensure a referral code exists + record who referred this user (from signup).
+    try {
+      await getReferralCode(user.id);
+      const code = user.user_metadata?.referral_code;
+      if (code) await recordReferral(user.id, code);
+    } catch (_) {}
     setSaving(false);
     onComplete();
   };

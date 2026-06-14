@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator, Linking,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator, Linking, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SUPPORT_EMAIL } from '../lib/legal';
+import { getReferralCode, fetchReferralCount } from '../lib/referrals';
 import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
@@ -36,6 +37,15 @@ export default function ProfileScreen({ navigation }) {
   const [myReviews, setMyReviews] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [refCount, setRefCount] = useState(0);
+
+  const handleInvite = async () => {
+    haptic.medium();
+    try {
+      const code = await getReferralCode(user.id);
+      await Share.share({ message: `Join me on GoHustlr — sign up with my referral code ${code} to get started!` });
+    } catch (_) {}
+  };
 
   const handlePickAvatar = async () => {
     const picked = await pickImage({ allowsEditing: true, aspect: [1, 1] });
@@ -71,6 +81,7 @@ export default function ProfileScreen({ navigation }) {
     useCallback(() => {
       loadReviews();
       getPaymentReadiness().then(setPayReady).catch(() => {});
+      if (user) fetchReferralCount(user.id).then(setRefCount).catch(() => {});
     }, [loadReviews])
   );
 
@@ -269,6 +280,19 @@ export default function ProfileScreen({ navigation }) {
           <View>
             <Text style={styles.manageBtnTitle}>Payments</Text>
             <Text style={styles.manageBtnSub}>{paymentsSub}</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.manageBtn} onPress={handleInvite}>
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="gift-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Invite Friends</Text>
+            <Text style={styles.manageBtnSub}>
+              {refCount > 0 ? `${refCount} friend${refCount !== 1 ? 's' : ''} joined · share your code` : 'Share your referral code'}
+            </Text>
           </View>
         </View>
         <Text style={styles.manageBtnArrow}>›</Text>

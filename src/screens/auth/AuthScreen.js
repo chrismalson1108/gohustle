@@ -19,6 +19,7 @@ export default function AuthScreen() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
+  const [referral, setReferral] = useState('');
   const [loading, setLoading]   = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [localError, setLocalError] = useState('');
@@ -41,6 +42,7 @@ export default function AuthScreen() {
     setEmail('');
     setPassword('');
     setConfirmPw('');
+    setReferral('');
     setAccepted(false);
   };
 
@@ -73,7 +75,7 @@ export default function AuthScreen() {
       await signIn(email.trim(), password);
     } else {
       // On success, AuthContext sets pendingEmail → the verify panel takes over.
-      await signUp(email.trim(), password, name.trim());
+      await signUp(email.trim(), password, name.trim(), referral.trim());
     }
     setLoading(false);
   };
@@ -233,6 +235,22 @@ export default function AuthScreen() {
                 value={confirmPw}
                 onChangeText={setConfirmPw}
                 secureTextEntry
+                returnKeyType="next"
+              />
+            </View>
+          )}
+
+          {tab === 'signup' && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Referral code (optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. A1B2C3"
+                placeholderTextColor={colors.textMuted}
+                value={referral}
+                onChangeText={t => setReferral(t.toUpperCase())}
+                autoCapitalize="characters"
+                autoCorrect={false}
                 returnKeyType="go"
                 onSubmitEditing={handleSubmit}
               />

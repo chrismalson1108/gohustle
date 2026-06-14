@@ -70,12 +70,12 @@ export function AuthProvider({ children }) {
     return true;
   };
 
-  const signUp = async (email, password, name) => {
+  const signUp = async (email, password, name, referralCode) => {
     setAuthError(null);
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: { data: { name, referral_code: referralCode || null } },
     });
     if (error) { setAuthError(error.message); return false; }
     setOnbDone(false);
