@@ -59,7 +59,7 @@ const DETAIL_OPTS = {
   headerShown: true, title: '',
   headerTransparent: false, headerTintColor: colors.primary,
   headerShadowVisible: false, headerStyle: { backgroundColor: '#fff' },
-  headerBackTitleVisible: false,
+  headerBackButtonDisplayMode: 'minimal', // chevron only — no "GigsMain" label (RN-nav v7)
 };
 
 const MANAGE_OPTS = {
