@@ -30,6 +30,7 @@ import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
 import FavoritesScreen      from './src/screens/FavoritesScreen';
+import MessagesScreen       from './src/screens/MessagesScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
@@ -100,6 +101,15 @@ function GigsStack() {
   );
 }
 
+function MessagesStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MessagesMain" component={MessagesScreen} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+    </Stack.Navigator>
+  );
+}
+
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -117,15 +127,16 @@ function ProfileStack() {
 }
 
 const TAB_ICONS = {
-  HomeTab:    ['search',        'search-outline'],
-  EarnTab:    ['briefcase',     'briefcase-outline'],
-  GigsTab:    ['megaphone',     'megaphone-outline'],
-  ProfileTab: ['person-circle', 'person-circle-outline'],
+  HomeTab:     ['search',        'search-outline'],
+  EarnTab:     ['briefcase',     'briefcase-outline'],
+  GigsTab:     ['megaphone',     'megaphone-outline'],
+  MessagesTab: ['chatbubble',    'chatbubble-outline'],
+  ProfileTab:  ['person-circle', 'person-circle-outline'],
 };
 
 // Rendered inside providers so it can read badge counts from context
 function AppNavigator() {
-  const { earnBadgeCount, profileBadgeCount } = useJobs();
+  const { earnBadgeCount, profileBadgeCount, unreadMessages } = useJobs();
 
   return (
     <NavigationContainer ref={navigationRef}>
@@ -146,16 +157,18 @@ function AppNavigator() {
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
           tabBarBadge:
-            route.name === 'EarnTab'  && earnBadgeCount    > 0 ? earnBadgeCount    :
-            route.name === 'GigsTab'  && profileBadgeCount > 0 ? profileBadgeCount :
+            route.name === 'EarnTab'     && earnBadgeCount    > 0 ? earnBadgeCount    :
+            route.name === 'GigsTab'     && profileBadgeCount > 0 ? profileBadgeCount :
+            route.name === 'MessagesTab' && unreadMessages    > 0 ? unreadMessages    :
             undefined,
           tabBarBadgeStyle: { backgroundColor: colors.urgent, fontSize: 10, fontWeight: '800' },
         })}
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
         <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'My Jobs' }} />
-        <Tab.Screen name="GigsTab"    component={GigsStack}    options={{ title: 'Hiring' }} />
-        <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+        <Tab.Screen name="GigsTab"     component={GigsStack}     options={{ title: 'Hiring' }} />
+        <Tab.Screen name="MessagesTab" component={MessagesStack} options={{ title: 'Messages' }} />
+        <Tab.Screen name="ProfileTab"  component={ProfileStack}  options={{ title: 'Profile' }} />
       </Tab.Navigator>
     </NavigationContainer>
   );

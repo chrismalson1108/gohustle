@@ -49,13 +49,15 @@ SafeAreaProvider → AuthProvider → RootNavigator
         ├── UserProvider
         └── JobsProvider
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
-                    └── Tab.Navigator (4 tabs — display labels in parens, route names unchanged)
-                          ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail
-                          ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail
-                          ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob
-                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → ManageBookings
-                                                                       → Settings
+                    └── Tab.Navigator (5 tabs — display labels in parens, route names unchanged)
+                          ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail → UserProfile
+                          ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail → UserProfile
+                          ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob → UserProfile
+                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen (chat via MessageSheet) → UserProfile
+                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → Settings/Expenses/Legal/Favorites/UserProfile/…
 ```
+
+**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat (`MessageSheet`, reused) marks it read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`).
 
 - **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`ProfileTab`) are intentionally kept even though display labels are Browse/My Jobs/Hiring/Profile** — many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.

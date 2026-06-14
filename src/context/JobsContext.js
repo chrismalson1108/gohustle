@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
+import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
@@ -189,6 +190,22 @@ export function JobsProvider({ children }) {
     await blockUserDb(user.id, blockedId);
     setBlockedIds(prev => new Set([...prev, blockedId]));
   };
+
+  // Unread-message count for the Messages tab badge.
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const refreshUnread = useCallback(async () => {
+    if (!user) { setUnreadMessages(0); return; }
+    try {
+      const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])];
+      if (!ids.length) { setUnreadMessages(0); return; }
+      const [last, st] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
+      let n = 0;
+      ids.forEach(id => { const s = st[id]; if (!s?.archived && isUnread(last[id], s, user.id)) n++; });
+      setUnreadMessages(n);
+    } catch (_) {}
+  }, [user?.id, state.bookings, state.posterBookings]);
+
+  useEffect(() => { refreshUnread(); }, [refreshUnread]);
 
   // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -813,6 +830,8 @@ export function JobsProvider({ children }) {
       cancelBooking,
       blockedIds,
       blockUser,
+      unreadMessages,
+      refreshUnread,
       markJobComplete,
       markEarnerDone,
       markPosterDone,

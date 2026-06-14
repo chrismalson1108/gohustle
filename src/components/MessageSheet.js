@@ -14,10 +14,11 @@ import { notify } from '../lib/push';
 import { pickImage, uploadImage } from '../lib/uploadImage';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
+import { markConversationRead } from '../lib/messages';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
   const { user } = useAuth();
-  const { blockUser } = useJobs();
+  const { blockUser, refreshUnread } = useJobs();
   const haptic = useHaptic();
 
   const otherName = otherPerson?.name || 'this user';
@@ -68,6 +69,8 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   useEffect(() => {
     if (!visible || !bookingId) { setMessages([]); return; }
     loadMessages();
+    // Opening a chat marks it read (clears the Messages unread badge).
+    if (user?.id) markConversationRead(user.id, bookingId).then(() => refreshUnread?.()).catch(() => {});
     const cleanup = setupRealtime();
     return cleanup;
   }, [visible, bookingId]);
@@ -149,7 +152,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       setMessages(prev => prev.map(m => m.id === tempId ? data : m));
       // Notify the other party of the new message
       if (otherPerson?.id) {
-        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, {});
+        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, { tab: 'MessagesTab' });
       }
     }
   };
@@ -173,7 +176,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       if (error) throw error;
       setMessages(prev => [...prev, data]);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-      if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', {});
+      if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', { tab: 'MessagesTab' });
     } catch (e) {
       Alert.alert('Failed to send photo', e.message || 'Please try again.');
     }
