@@ -1,13 +1,37 @@
-// Legal documents shown at signup and in Profile → Legal. These are starter
-// templates — have an attorney review before public launch. Bump TERMS_VERSION
-// whenever the substance changes so re-acceptance can be required.
-export const TERMS_VERSION = '2026-06-13';
-export const SUPPORT_EMAIL = 'mainmail@gohustlr.com';
+-- DB-driven legal documents + append-only acceptance audit log.
+-- Update terms by inserting a new (slug, version) row — the app then re-prompts
+-- everyone whose latest acceptance is for an older version. Idempotent.
 
-export const LEGAL_DOCS = {
-  terms: {
-    title: 'Terms of Service',
-    body: `Last updated: ${TERMS_VERSION}
+create table if not exists public.legal_documents (
+  id           uuid primary key default gen_random_uuid(),
+  slug         text not null,
+  version      text not null,
+  title        text not null,
+  body         text not null,
+  published_at timestamptz not null default now(),
+  unique (slug, version)
+);
+alter table public.legal_documents enable row level security;
+drop policy if exists "legal_docs_public_read" on public.legal_documents;
+create policy "legal_docs_public_read" on public.legal_documents for select using (true);
+
+create table if not exists public.legal_acceptances (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  slug        text not null,
+  version     text not null,
+  accepted_at timestamptz not null default now()
+);
+create index if not exists legal_acceptances_user_idx on public.legal_acceptances (user_id);
+alter table public.legal_acceptances enable row level security;
+drop policy if exists "legal_acc_insert_own" on public.legal_acceptances;
+create policy "legal_acc_insert_own" on public.legal_acceptances for insert with check (auth.uid() = user_id);
+drop policy if exists "legal_acc_select_own" on public.legal_acceptances;
+create policy "legal_acc_select_own" on public.legal_acceptances for select using (auth.uid() = user_id);
+
+-- Seed the current versions (dollar-quoted bodies avoid escaping).
+insert into public.legal_documents (slug, version, title, body) values
+('terms', '2026-06-13', 'Terms of Service', $doc$Last updated: 2026-06-13
 
 Welcome to GoHustlr. By creating an account or using the app you agree to these Terms.
 
@@ -15,7 +39,7 @@ Welcome to GoHustlr. By creating an account or using the app you agree to these 
 
 2. Eligibility. You must be at least 18 years old and able to form a binding contract. You agree to provide accurate information and keep it up to date.
 
-3. Bookings and payments. Posters fund a booking through our payment processor (Stripe). Funds are held and released to the Earner after the work is verified. Cash payments arranged off‑platform are at the parties' own risk and are not protected by GoHustlr.
+3. Bookings and payments. Posters fund a booking through our payment processor (Stripe). Funds are held and released to the Earner after the work is verified. Cash payments arranged off-platform are at the parties' own risk and are not protected by GoHustlr.
 
 4. Fees. GoHustlr charges a service fee on platform payments, disclosed before you confirm.
 
@@ -27,11 +51,8 @@ Welcome to GoHustlr. By creating an account or using the app you agree to these 
 
 8. Changes. We may update these Terms; continued use after an update means you accept the new version.
 
-Contact: ${SUPPORT_EMAIL}`,
-  },
-  privacy: {
-    title: 'Privacy Policy',
-    body: `Last updated: ${TERMS_VERSION}
+Contact: mainmail@gohustlr.com$doc$),
+('privacy', '2026-06-13', 'Privacy Policy', $doc$Last updated: 2026-06-13
 
 This Privacy Policy explains what we collect and how we use it.
 
@@ -47,11 +68,8 @@ This Privacy Policy explains what we collect and how we use it.
 
 6. Security. We use access controls and encryption in transit. No system is perfectly secure.
 
-7. Contact. Questions or data requests: ${SUPPORT_EMAIL}`,
-  },
-  contractor: {
-    title: 'Independent Contractor Agreement',
-    body: `Last updated: ${TERMS_VERSION}
+7. Contact. Questions or data requests: mainmail@gohustlr.com$doc$),
+('contractor', '2026-06-13', 'Independent Contractor Agreement', $doc$Last updated: 2026-06-13
 
 This Agreement applies to Earners who perform work through GoHustlr.
 
@@ -59,7 +77,7 @@ This Agreement applies to Earners who perform work through GoHustlr.
 
 2. Your responsibilities. You control how, when, and whether you accept and perform work. You supply your own tools unless a Poster provides them. You are responsible for performing work competently, safely, and lawfully.
 
-3. Taxes. You are solely responsible for reporting and paying all taxes on income you earn, including cash payments. For card payments processed through Stripe, you may receive tax forms (e.g., a 1099‑K) where required by law. Use the in‑app Tax Center to track income and deductible expenses.
+3. Taxes. You are solely responsible for reporting and paying all taxes on income you earn, including cash payments. For card payments processed through Stripe, you may receive tax forms (e.g., a 1099-K) where required by law. Use the in-app Tax Center to track income and deductible expenses.
 
 4. Insurance and liability. You are responsible for any insurance appropriate to your work. GoHustlr is not liable for injuries, damages, or losses arising from work you perform or arrange.
 
@@ -69,6 +87,5 @@ This Agreement applies to Earners who perform work through GoHustlr.
 
 By accepting, you confirm you have read and agree to operate as an independent contractor.
 
-Contact: ${SUPPORT_EMAIL}`,
-  },
-};
+Contact: mainmail@gohustlr.com$doc$)
+on conflict (slug, version) do nothing;

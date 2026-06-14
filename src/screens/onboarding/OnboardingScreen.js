@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { colors, gradients } from '../../theme';
-import { TERMS_VERSION } from '../../data/legal';
+import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
 import LocationPicker from '../../components/LocationPicker';
 
 const { width } = Dimensions.get('window');
@@ -98,9 +98,9 @@ export default function OnboardingScreen({ onComplete }) {
       radius_miles: form.radiusMiles,
       bio: form.bio || null,
       onboarding_done: true,
-      terms_accepted_at: new Date().toISOString(),
-      terms_version: TERMS_VERSION,
     }).eq('id', user.id);
+    // Record acceptance of the current legal docs (the signup checkbox is consent).
+    try { await recordAcceptances(user.id, await fetchCurrentDocs()); } catch (_) {}
     setSaving(false);
     onComplete();
   };

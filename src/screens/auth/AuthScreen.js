@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Modal,
@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { LEGAL_DOCS } from '../../data/legal';
+import { fetchCurrentDocs } from '../../lib/legal';
 import { colors, gradients, shadows } from '../../theme';
 
 // tab: 'signin' | 'signup' | 'forgot'
@@ -26,6 +26,9 @@ export default function AuthScreen() {
   const [resending, setResending]   = useState(false);
   const [accepted, setAccepted]     = useState(false);
   const [legalDoc, setLegalDoc]     = useState(null); // 'terms'|'privacy'|'contractor'
+  const [legalDocs, setLegalDocs]   = useState({});   // current docs from DB
+
+  useEffect(() => { fetchCurrentDocs().then(setLegalDocs).catch(() => {}); }, []);
 
   const showVerify = !!pendingEmail;
 
@@ -301,13 +304,13 @@ export default function AuthScreen() {
       <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
         <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
           <View style={styles.docHeader}>
-            <Text style={styles.docTitle}>{legalDoc ? LEGAL_DOCS[legalDoc].title : ''}</Text>
+            <Text style={styles.docTitle}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
             <TouchableOpacity onPress={() => setLegalDoc(null)} style={{ padding: 4 }}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
-            <Text style={styles.docBody}>{legalDoc ? LEGAL_DOCS[legalDoc].body : ''}</Text>
+            <Text style={styles.docBody}>{legalDoc ? (legalDocs[legalDoc]?.body || 'Loading…') : ''}</Text>
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { unregisterPushToken } from '../lib/push';
 import { track } from '../lib/analytics';
-import { TERMS_VERSION } from '../data/legal';
+import { checkNeedsAcceptance } from '../lib/legal';
 
 const AuthContext = createContext(null);
 
@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [authError, setAuthError]     = useState(null);
   const [onboardingDone, setOnbDone]  = useState(true);
-  const [termsVersion, setTermsVersion] = useState(TERMS_VERSION); // assume current until loaded
+  const [needsTerms, setNeedsTerms]   = useState(false); // re-accept current legal docs
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
 
   useEffect(() => {
@@ -24,31 +24,33 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session?.user) await loadOnboarding(session.user.id);
-      else { setOnbDone(true); setTermsVersion(TERMS_VERSION); } // signed out → reset gates
+      else { setOnbDone(true); setNeedsTerms(false); } // signed out → reset gates
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Derive onboarding state from the profile whenever a session is established.
-  // Returning users have onboarding_done=true (skip); a freshly-confirmed user's
-  // first sign-in reads false and is routed into onboarding.
+  // Derive onboarding + legal-acceptance state whenever a session is established.
+  // Returning users have onboarding_done=true (skip onboarding); the legal gate
+  // is driven by the DB (current legal_documents vs the user's legal_acceptances).
   const loadOnboarding = async (userId) => {
     const { data } = await supabase
       .from('profiles')
-      .select('onboarding_done, terms_version')
+      .select('onboarding_done')
       .eq('id', userId)
       .single();
-    setOnbDone(data?.onboarding_done ?? false);
-    setTermsVersion(data?.terms_version ?? null);
+    const done = data?.onboarding_done ?? false;
+    setOnbDone(done);
+    // Onboarding records acceptance itself, so only gate already-onboarded users.
+    setNeedsTerms(done ? await checkNeedsAcceptance(userId) : false);
   };
 
   const markOnboardingDone = () => {
     setOnbDone(true);
-    setTermsVersion(TERMS_VERSION); // onboarding records current terms
+    setNeedsTerms(false); // onboarding records current acceptances
   };
 
-  const markTermsAccepted = () => setTermsVersion(TERMS_VERSION);
+  const markTermsAccepted = () => setNeedsTerms(false);
 
   const signIn = async (email, password) => {
     setAuthError(null);
@@ -119,7 +121,7 @@ export function AuthProvider({ children }) {
       authError,
       onboardingDone,
       pendingEmail,
-      needsTermsAcceptance: !!session && onboardingDone && termsVersion !== TERMS_VERSION,
+      needsTermsAcceptance: !!session && onboardingDone && needsTerms,
       markTermsAccepted,
       signIn,
       signUp,

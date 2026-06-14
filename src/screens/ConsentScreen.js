@@ -1,30 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { LEGAL_DOCS, TERMS_VERSION } from '../data/legal';
+import { REQUIRED_SLUGS, fetchCurrentDocs, recordAcceptances } from '../lib/legal';
 import { colors, gradients } from '../theme';
 
-// Shown to returning users when the accepted terms version is out of date.
+// Shown to returning users when the current legal docs haven't been accepted.
 export default function ConsentScreen() {
   const { user, markTermsAccepted, signOut } = useAuth();
   const insets = useSafeAreaInsets();
+  const [docs, setDocs] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [doc, setDoc] = useState(null);
+  const [openDoc, setOpenDoc] = useState(null);
+
+  useEffect(() => { fetchCurrentDocs().then(setDocs).catch(() => setDocs({})); }, []);
 
   const accept = async () => {
     setSaving(true);
     try {
-      await supabase.from('profiles').update({
-        terms_accepted_at: new Date().toISOString(),
-        terms_version: TERMS_VERSION,
-      }).eq('id', user.id);
+      await recordAcceptances(user.id, docs || {});
       markTermsAccepted();
     } catch (_) { setSaving(false); }
   };
+
+  const ordered = REQUIRED_SLUGS.map(s => docs?.[s]).filter(Boolean);
 
   return (
     <View style={styles.container}>
@@ -40,20 +41,18 @@ export default function ConsentScreen() {
           contractor and are responsible for your own taxes.
         </Text>
 
-        <TouchableOpacity style={styles.docRow} onPress={() => setDoc('terms')}>
-          <Text style={styles.docRowText}>Terms of Service</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.docRow} onPress={() => setDoc('privacy')}>
-          <Text style={styles.docRowText}>Privacy Policy</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.docRow} onPress={() => setDoc('contractor')}>
-          <Text style={styles.docRowText}>Independent Contractor Agreement</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
+        {docs === null ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+        ) : (
+          ordered.map(d => (
+            <TouchableOpacity key={d.slug} style={styles.docRow} onPress={() => setOpenDoc(d)}>
+              <Text style={styles.docRowText}>{d.title}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))
+        )}
 
-        <TouchableOpacity onPress={accept} disabled={saving} activeOpacity={0.85} style={{ marginTop: 24 }}>
+        <TouchableOpacity onPress={accept} disabled={saving || docs === null} activeOpacity={0.85} style={{ marginTop: 24 }}>
           <LinearGradient colors={gradients.primary} style={styles.acceptBtn}>
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.acceptText}>Accept & Continue</Text>}
           </LinearGradient>
@@ -63,16 +62,16 @@ export default function ConsentScreen() {
         </TouchableOpacity>
       </View>
 
-      <Modal visible={!!doc} animationType="slide" onRequestClose={() => setDoc(null)}>
+      <Modal visible={!!openDoc} animationType="slide" onRequestClose={() => setOpenDoc(null)}>
         <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
           <View style={styles.docHeader}>
-            <Text style={styles.docTitle}>{doc ? LEGAL_DOCS[doc].title : ''}</Text>
-            <TouchableOpacity onPress={() => setDoc(null)} style={{ padding: 4 }}>
+            <Text style={styles.docTitle}>{openDoc?.title || ''}</Text>
+            <TouchableOpacity onPress={() => setOpenDoc(null)} style={{ padding: 4 }}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
-            <Text style={styles.docBody}>{doc ? LEGAL_DOCS[doc].body : ''}</Text>
+            <Text style={styles.docBody}>{openDoc?.body || ''}</Text>
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>
