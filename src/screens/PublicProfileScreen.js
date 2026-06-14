@@ -1,11 +1,14 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useUser } from '../context/UserContext';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
+import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
@@ -17,6 +20,8 @@ const avg = (arr) => arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0
 export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
   const { user } = useAuth();
+  const { name: myName, showToast } = useUser();
+  const { postedJobs } = useJobs();
   const haptic = useHaptic();
   const isSelf = user?.id === userId;
   const [profile, setProfile] = useState(null);
@@ -24,6 +29,16 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  const myOpenGigs = (postedJobs || []).filter(j => j.status === 'open');
+
+  const sendInvite = (job) => {
+    haptic.success();
+    notify(userId, 'You got a gig invitation', `${myName || 'Someone'} invited you to apply to "${job.title}"`, { tab: 'HomeTab' });
+    setInviteOpen(false);
+    showToast({ icon: '✅', title: 'Invitation sent', message: `${profile?.name || 'They'} were invited to "${job.title}".` });
+  };
 
   const toggleFav = async () => {
     if (!user || isSelf) return;
@@ -112,6 +127,13 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       </View>
 
+      {!isSelf && user && myOpenGigs.length > 0 && (
+        <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteOpen(true)} activeOpacity={0.85}>
+          <Ionicons name="paper-plane-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={styles.inviteBtnText}>Invite to a gig</Text>
+        </TouchableOpacity>
+      )}
+
       {profile.bio ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
@@ -186,6 +208,30 @@ export default function PublicProfileScreen({ route, navigation }) {
           </View>
         ))}
       </View>
+
+      <Modal visible={inviteOpen} animationType="slide" transparent onRequestClose={() => setInviteOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setInviteOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>Invite {profile.name || 'them'} to…</Text>
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+              {myOpenGigs.map(j => (
+                <TouchableOpacity key={j.id} style={styles.inviteRow} onPress={() => sendInvite(j)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inviteRowTitle} numberOfLines={1}>{j.title}</Text>
+                    <Text style={styles.inviteRowMeta}>{j.payType === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {j.location}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setInviteOpen(false)} style={styles.cancelBtn}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -211,6 +257,22 @@ const styles = StyleSheet.create({
   breakVal: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, marginTop: 4 },
   breakLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600', marginTop: 2 },
   breakDivider: { width: 1, height: 44, backgroundColor: colors.border },
+  inviteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 13,
+    marginHorizontal: 16, marginTop: 12,
+  },
+  inviteBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 36, ...shadows.md },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 },
+  inviteRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  inviteRowTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  inviteRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  cancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 6 },
+  cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
   section: { paddingHorizontal: 16, marginTop: 24 },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 },
   bio: { fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
