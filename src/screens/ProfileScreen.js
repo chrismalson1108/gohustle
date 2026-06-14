@@ -276,6 +276,20 @@ export default function ProfileScreen({ navigation }) {
 
       <TouchableOpacity
         style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="heart-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Saved People</Text>
+            <Text style={styles.manageBtnSub}>Workers & clients you've favorited</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.manageBtn}
         onPress={() => { haptic.medium(); navigation.navigate('Expenses'); }}
       >
         <View style={styles.manageBtnLeft}>

@@ -3,6 +3,9 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { useHaptic } from '../hooks/useHaptic';
+import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
 import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
@@ -13,12 +16,26 @@ const avg = (arr) => arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0
 
 export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
+  const { user } = useAuth();
+  const haptic = useHaptic();
+  const isSelf = user?.id === userId;
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fav, setFav] = useState(false);
+
+  const toggleFav = async () => {
+    if (!user || isSelf) return;
+    haptic.light();
+    try {
+      if (fav) { await removeFavorite(user.id, userId); setFav(false); }
+      else { await addFavorite(user.id, userId); setFav(true); }
+    } catch (_) {}
+  };
 
   const load = useCallback(async () => {
+    if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }] = await Promise.all([
       supabase.from('profiles')
         .select('id, name, avatar_initial, avatar_url, city, bio, skills, rating, review_count, member_since, verified, created_at')
@@ -72,6 +89,11 @@ export default function PublicProfileScreen({ route, navigation }) {
             </Text>
             {profile.city ? <Text style={styles.subWhite}>{profile.city}</Text> : null}
           </View>
+          {!isSelf && user && (
+            <TouchableOpacity onPress={toggleFav} style={styles.favBtn} activeOpacity={0.8}>
+              <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? '#FB7185' : '#fff'} />
+            </TouchableOpacity>
+          )}
         </View>
       </GradientHeader>
 
@@ -173,6 +195,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, padding: 24 },
   muted: { fontSize: 14, color: colors.textMuted },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
+  favBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+  },
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   name: { fontSize: 22, fontWeight: '900', color: '#fff' },
   subWhite: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 3 },

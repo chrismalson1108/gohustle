@@ -29,6 +29,7 @@ import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
+import FavoritesScreen      from './src/screens/FavoritesScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
@@ -110,6 +111,7 @@ function ProfileStack() {
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
       <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved People' }} />
     </Stack.Navigator>
   );
 }
