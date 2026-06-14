@@ -88,6 +88,28 @@ export async function unregisterPushToken(userId) {
   lastToken = null;
 }
 
+// Schedule a local reminder ~1 hour before a gig's start time. Idempotent per
+// booking (same identifier replaces any prior reminder). No-op if too soon/past.
+export async function scheduleGigReminder(bookingId, startsAtISO, label) {
+  if (!Notifications || !bookingId || !startsAtISO) return;
+  try {
+    const when = new Date(startsAtISO).getTime() - 60 * 60 * 1000; // 1h before
+    if (isNaN(when) || when <= Date.now() + 60 * 1000) return; // too soon / past
+    await Notifications.scheduleNotificationAsync({
+      identifier: `gig-${bookingId}`,
+      content: { title: 'Upcoming gig in 1 hour', body: label || 'You have a gig coming up soon.', sound: 'default' },
+      trigger: { type: 'date', date: new Date(when) },
+    });
+  } catch (e) {
+    console.warn('scheduleGigReminder:', e?.message || e);
+  }
+}
+
+export async function cancelGigReminder(bookingId) {
+  if (!Notifications || !bookingId) return;
+  try { await Notifications.cancelScheduledNotificationAsync(`gig-${bookingId}`); } catch (_) {}
+}
+
 // Add a tap-handler that routes via the provided callback ({ data }) => void.
 // Returns an unsubscribe function.
 export function addNotificationResponseListener(handler) {

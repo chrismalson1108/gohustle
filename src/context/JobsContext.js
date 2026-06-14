@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useState, useC
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
-import { notify } from '../lib/push';
+import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
 import { track, captureError } from '../lib/analytics';
 import { useAuth } from './AuthContext';
@@ -293,13 +293,16 @@ export function JobsProvider({ children }) {
         dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: transformBooking(b) });
         if (b.status === 'confirmed') {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
+          if (b.starts_at) scheduleGigReminder(b.id, b.starts_at, b.slot_label);
         }
         if (b.status === 'verified') {
           const stars = `${Math.round(b.earner_rating || 5)}★`;
           showToast({ icon: '💚', title: 'Job Verified!', message: `${stars} rating — paid via ${b.payment_method || 'cash'}!` });
+          cancelGigReminder(b.id);
         }
-        if (b.status === 'declined') {
-          showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
+        if (b.status === 'declined' || b.status === 'cancelled') {
+          if (b.status === 'declined') showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
+          cancelGigReminder(b.id);
         }
       })
       .subscribe();
