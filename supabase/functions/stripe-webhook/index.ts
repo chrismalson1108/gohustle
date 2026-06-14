@@ -1,7 +1,9 @@
 // Stripe webhook handler — keeps DB in sync with payment events.
 // Register this URL in Stripe Dashboard → Developers → Webhooks:
 //   https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook
-// Required events: payment_intent.succeeded, payment_intent.payment_failed, account.updated
+// Required events: payment_intent.succeeded, payment_intent.payment_failed, account.updated,
+//   identity.verification_session.verified, identity.verification_session.requires_input,
+//   identity.verification_session.canceled
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -73,6 +75,42 @@ Deno.serve(async (req: Request) => {
           await supabase.from('stripe_accounts')
             .update({ onboarded: true })
             .eq('account_id', account.id);
+        }
+        break;
+      }
+
+      case 'identity.verification_session.verified': {
+        // Stripe confirmed the user's government ID + selfie match.
+        const vs = event.data.object as Stripe.Identity.VerificationSession;
+        const uid = vs.metadata?.supabase_uid;
+        if (uid) {
+          await supabase.from('profiles')
+            .update({ verified: true, id_verification_status: 'verified' })
+            .eq('id', uid);
+        }
+        break;
+      }
+
+      case 'identity.verification_session.requires_input': {
+        // Verification could not be completed (e.g. unreadable document).
+        const vs = event.data.object as Stripe.Identity.VerificationSession;
+        const uid = vs.metadata?.supabase_uid;
+        if (uid) {
+          await supabase.from('profiles')
+            .update({ id_verification_status: 'rejected' })
+            .eq('id', uid);
+        }
+        break;
+      }
+
+      case 'identity.verification_session.canceled': {
+        // User abandoned the flow — reset so they can try again.
+        const vs = event.data.object as Stripe.Identity.VerificationSession;
+        const uid = vs.metadata?.supabase_uid;
+        if (uid) {
+          await supabase.from('profiles')
+            .update({ id_verification_status: 'none', stripe_identity_session_id: null })
+            .eq('id', uid);
         }
         break;
       }

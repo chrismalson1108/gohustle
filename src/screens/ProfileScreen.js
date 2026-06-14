@@ -89,21 +89,26 @@ export default function ProfileScreen({ navigation }) {
   );
 
   const handleVerify = async () => {
-    if (idv.verified || idv.status === 'pending') return;
+    if (idv.verified) return;
     haptic.medium();
     Alert.alert(
       'Verify your identity',
-      "We'll confirm your government ID to give your profile a Verified badge. This builds trust with people you work with. Continue?",
+      "We'll confirm your government ID and a selfie through Stripe to give your profile a Verified badge. This builds trust with people you work with. Continue?",
       [
         { text: 'Not now', style: 'cancel' },
         {
           text: 'Start',
           onPress: async () => {
             try {
-              await requestVerification(user.id);
+              const res = await requestVerification();
+              if (res?.alreadyVerified) {
+                setIdv({ verified: true, status: 'verified' });
+                return;
+              }
+              if (!res?.url) throw new Error('No verification URL returned');
               setIdv(prev => ({ ...prev, status: 'pending' }));
               haptic.success();
-              showToast({ icon: '🪪', title: 'Verification started', message: "We've received your request — we'll review it shortly." });
+              await Linking.openURL(res.url);
             } catch (e) {
               showToast({ icon: '⚠️', title: 'Could not start', message: e.message || 'Please try again.' });
             }
@@ -321,7 +326,7 @@ export default function ProfileScreen({ navigation }) {
       <TouchableOpacity
         style={styles.manageBtn}
         onPress={handleVerify}
-        disabled={idv.verified || idv.status === 'pending'}
+        disabled={idv.verified}
       >
         <View style={styles.manageBtnLeft}>
           <Ionicons
@@ -332,18 +337,18 @@ export default function ProfileScreen({ navigation }) {
           />
           <View>
             <Text style={styles.manageBtnTitle}>
-              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification Pending' : 'Verify Your Identity'}
+              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : 'Verify Your Identity'}
             </Text>
             <Text style={styles.manageBtnSub}>
               {idv.verified
                 ? 'Your profile shows a Verified badge'
                 : idv.status === 'pending'
-                  ? "We're reviewing your ID — check back soon"
+                  ? 'Tap to finish or resume your ID check'
                   : 'Get a Verified badge to build trust'}
             </Text>
           </View>
         </View>
-        {!idv.verified && idv.status !== 'pending' && <Text style={styles.manageBtnArrow}>›</Text>}
+        {!idv.verified && <Text style={styles.manageBtnArrow}>›</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.manageBtn} onPress={handleInvite}>

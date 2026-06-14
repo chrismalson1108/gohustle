@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { stripeEdge } from './stripeClient';
 
 // ID verification state on a profile.
 //   'none'     — never requested
@@ -18,18 +19,11 @@ export async function fetchVerificationStatus(userId) {
   };
 }
 
-// Kick off a verification request. With no real provider wired up yet this
-// just records intent (status → 'pending'). When Stripe Identity / Checkr is
-// integrated, this is where we'd create a verification session and return its
-// URL/token; a webhook would later flip profiles.verified + status to 'verified'.
-export async function requestVerification(userId) {
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      id_verification_status: 'pending',
-      id_verification_requested_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
-  if (error) throw error;
-  return true;
+// Kick off a Stripe Identity verification. The edge function creates a
+// VerificationSession (marking the profile 'pending') and returns the hosted
+// verification URL; the caller opens it. Stripe's webhook later flips
+// profiles.verified + id_verification_status once the ID + selfie are confirmed.
+// Returns { url } on success, or { alreadyVerified: true }.
+export async function requestVerification() {
+  return stripeEdge.createIdentitySession();
 }

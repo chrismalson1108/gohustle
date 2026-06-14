@@ -56,4 +56,7 @@ export const stripeEdge = {
 
   detachPaymentMethod: () =>
     callEdgeFunction('stripe-detach-payment-method'),
+
+  createIdentitySession: () =>
+    callEdgeFunction('stripe-create-identity-session'),
 };
