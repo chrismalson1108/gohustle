@@ -206,6 +206,8 @@ export function JobsProvider({ children }) {
   }, [user?.id, state.bookings, state.posterBookings]);
 
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
+  const refreshUnreadRef = useRef(refreshUnread);
+  refreshUnreadRef.current = refreshUnread;
 
   // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -342,9 +344,18 @@ export function JobsProvider({ children }) {
       })
       .subscribe();
 
+    // Live unread badge: recompute when a message arrives from someone else
+    const msgChannel = supabase.channel(`messages-unread-${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        if (payload.new?.sender_id === user.id) return;
+        refreshUnreadRef.current?.();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(posterChannel);
+      supabase.removeChannel(msgChannel);
     };
   };
 
