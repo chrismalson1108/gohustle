@@ -7,9 +7,13 @@ import { useHaptic } from '../hooks/useHaptic';
 export default function SlotPicker({ slots, selected, onSelect }) {
   const haptic = useHaptic();
 
+  // Hide dated slots whose time has already passed (flexible/undated slots stay)
+  const now = Date.now();
+  const visible = slots.filter(s => !s.startsAt || new Date(s.startsAt).getTime() > now);
+
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-      {slots.map(slot => {
+      {visible.map(slot => {
         const isSelected = selected === slot.id;
         return (
           <TouchableOpacity

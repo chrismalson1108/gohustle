@@ -64,17 +64,23 @@ validate the core loop.
 
 ## P1 — Strongly wanted for a good trial
 
-6. **Phone verification (SMS OTP)** — higher-trust identity than email alone (Supabase phone auth or Twilio).
-7. **Location & maps** — `expo-location` is installed but unused. Show distance to gigs, sort by "near me",
-   and a map view of nearby jobs (TaskRabbit/Thumbtack lean heavily on location). Store lat/lng on jobs.
-8. **Tips** — let posters add a tip at verification (TaskRabbit supports tipping); flows through Stripe to
-   the earner.
-9. **Cash income log + net-profit summary** in the Tax Center (see taxes section).
-10. **Better scheduling** — the current slot picker is freeform text; add real date/time slots with
-    availability, reminders before a gig, and calendar integration.
-11. **Dispute / "something went wrong"** path on a completed gig before payment is captured.
-12. **Saved/favorite gigs & posters; "rehire"** shortcut.
+6. **Phone verification (SMS OTP)** — higher-trust identity than email alone (needs an SMS provider:
+   Supabase phone auth or Twilio). *(needs you — provider/account)*
+7. ✅ **Location & maps** — jobs store lat/lng (captured from the LocationPicker geocoder); Browse shows
+   distance, a **Nearest** sort, and a **Map view** (react-native-maps) with a pin per gig.
+8. ✅ **Tips** — posters can add a tip at verification; charged off-session via the `stripe-tip` edge
+   function and routed in full to the earner.
+9. ✅ **Cash income log + net-profit summary** in the Tax Center.
+10. 🟡 **Scheduling** — slots are concrete calendar dates/times stored as machine-readable `starts_at`;
+    past slots are hidden in the picker. *Still optional:* pre-gig reminders + calendar sync.
+11. ✅ **Dispute / "something went wrong"** — at verification the poster can report a problem and pay a
+    reduced % (partial capture releases the rest); a `disputes` row is recorded and the earner notified.
+12. **Saved/favorite gigs & posters; "rehire"** shortcut. *(not started)*
 13. **Empty-state + onboarding polish, skeleton loaders, optimistic UI audit** for a smooth first run.
+    *(not started)*
+
+Tests: ✅ a jest suite (`npm test`) covers the pure logic — content filter, distance math, and the
+tax CSV/summary builders (`__tests__/`). End-to-end UI tests (Detox/Maestro) are still TODO.
 
 ## P2 — Growth / expansion
 

@@ -1,16 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  ScrollView, TextInput, StyleSheet, RefreshControl,
+  ScrollView, TextInput, StyleSheet, RefreshControl, Platform,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../components/GradientHeader';
 import JobCard from '../components/JobCard';
+import JobsMap from '../components/JobsMap';
 import XPBar from '../components/XPBar';
 import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { haversineMiles, milesLabel } from '../lib/geo';
 import { colors, gradients } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 
@@ -58,6 +61,26 @@ export default function HomeScreen({ navigation }) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [showFilter, setShowFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [userCoords, setUserCoords] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+
+  // Best-effort device location for distance + "Nearest" sort (no prompt spam)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        let granted = status === 'granted';
+        if (!granted) {
+          const req = await Location.requestForegroundPermissionsAsync();
+          granted = req.status === 'granted';
+        }
+        if (!granted) return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch (_) {}
+    })();
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -118,6 +141,11 @@ export default function HomeScreen({ navigation }) {
       return true;
     });
 
+    // Attach distance when we know the user's location
+    if (userCoords) {
+      list = list.map(j => ({ ...j, _distanceMi: haversineMiles(userCoords, { lat: j.lat, lng: j.lng }) }));
+    }
+
     // Sort
     if (filters.sortBy === 'pay_high') {
       list = [...list].sort((a, b) => {
@@ -131,10 +159,16 @@ export default function HomeScreen({ navigation }) {
         const pb = b.payType === 'hourly' ? b.pay * (b.estimatedHours || 1) : b.pay;
         return pa - pb;
       });
+    } else if (filters.sortBy === 'nearest') {
+      list = [...list].sort((a, b) => {
+        const da = a._distanceMi ?? Infinity;
+        const db = b._distanceMi ?? Infinity;
+        return da - db;
+      });
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters, blockedIds]);
+  }, [jobs, selectedCat, search, filters, blockedIds, userCoords]);
 
   const activeFilterCount = countActiveFilters(filters);
 
@@ -211,14 +245,43 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.sectionTitle}>
           {filtered.length} gig{filtered.length !== 1 ? 's' : ''} available
         </Text>
-        {activeFilterCount > 0 && (
-          <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)}>
-            <Text style={styles.clearFilters}>Clear filters</Text>
+        <View style={styles.resultsRight}>
+          {activeFilterCount > 0 && (
+            <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)}>
+              <Text style={styles.clearFilters}>Clear filters</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.viewToggle}
+            onPress={() => { haptic.light(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
+          >
+            <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.primary} />
+            <Text style={styles.viewToggleText}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
           </TouchableOpacity>
-        )}
+        </View>
       </View>
     </>
   );
+
+  if (viewMode === 'map') {
+    return (
+      <View style={styles.container}>
+        {header}
+        <JobsMap
+          jobs={filtered}
+          userCoords={userCoords}
+          onPressJob={(j) => navigation.navigate('JobDetail', { jobId: j.id })}
+        />
+        <FilterSheet
+          visible={showFilter}
+          filters={filters}
+          availableStates={availableStates}
+          onApply={(f) => { setFilters(f); setShowFilter(false); }}
+          onClose={() => setShowFilter(false)}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -229,6 +292,7 @@ export default function HomeScreen({ navigation }) {
         renderItem={({ item }) => (
           <JobCard
             job={item}
+            distanceLabel={milesLabel(item._distanceMi)}
             onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
             bookingStatus={bookings.find(b => b.jobId === item.id)?.status}
           />
@@ -320,6 +384,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
   clearFilters: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  resultsRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  viewToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewToggleText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   list: { paddingBottom: 24 },
   empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },

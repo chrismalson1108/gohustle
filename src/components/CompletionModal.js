@@ -51,10 +51,17 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [tipCents, setTipCents] = useState(0);
+  const [disputed, setDisputed] = useState(false);
+  const [pct, setPct] = useState(0.5);
+  const [disputeReason, setDisputeReason] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (visible) { setRating(5); setReviewText(''); setPaymentMethod('cash'); }
+    if (visible) {
+      setRating(5); setReviewText(''); setPaymentMethod('cash');
+      setTipCents(0); setDisputed(false); setPct(0.5); setDisputeReason('');
+    }
   }, [visible]);
 
   if (!visible || !booking) return null;
@@ -67,10 +74,18 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const handleConfirm = async () => {
     haptic.success();
     setLoading(true);
-    await onConfirm({ rating, reviewText, paymentMethod });
+    await onConfirm({
+      rating, reviewText, paymentMethod,
+      tipCents: tipCents || 0,
+      pct: disputed ? pct : 1,
+      disputeReason: disputed ? (disputeReason || null) : null,
+    });
     setLoading(false);
     onClose();
   };
+
+  const TIPS = [0, 300, 500, 1000]; // cents
+  const PCTS = [0.75, 0.5, 0.25];
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -160,6 +175,58 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               ))}
             </View>
 
+            {/* Tip */}
+            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Add a Tip (optional)</Text>
+            <View style={styles.payRow}>
+              {TIPS.map(c => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.payChip, tipCents === c && styles.payChipActive]}
+                  onPress={() => { haptic.selection(); setTipCents(c); }}
+                >
+                  <Text style={[styles.payLabel, tipCents === c && styles.payLabelActive]}>
+                    {c === 0 ? 'No tip' : `$${(c / 100).toFixed(0)}`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {tipCents > 0 && <Text style={styles.tipNote}>Charged to your saved card and sent to {earnerName}.</Text>}
+
+            {/* Report a problem → partial payment */}
+            <TouchableOpacity
+              style={[styles.problemToggle, disputed && styles.problemToggleOn]}
+              onPress={() => { haptic.selection(); setDisputed(d => !d); }}
+            >
+              <Ionicons name={disputed ? 'checkbox' : 'square-outline'} size={18} color={disputed ? colors.urgent : colors.textMuted} style={{ marginRight: 8 }} />
+              <Text style={styles.problemText}>There was a problem — pay a reduced amount</Text>
+            </TouchableOpacity>
+            {disputed && (
+              <>
+                <View style={styles.payRow}>
+                  {PCTS.map(p => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.payChip, pct === p && styles.payChipActive]}
+                      onPress={() => { haptic.selection(); setPct(p); }}
+                    >
+                      <Text style={[styles.payLabel, pct === p && styles.payLabelActive]}>Pay {Math.round(p * 100)}%</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.reviewInput}
+                  placeholder="What went wrong? (shared with support)"
+                  placeholderTextColor={colors.textMuted}
+                  value={disputeReason}
+                  onChangeText={setDisputeReason}
+                  multiline
+                  numberOfLines={2}
+                  textAlignVertical="top"
+                />
+                <Text style={styles.tipNote}>The rest of the hold is released back to you.</Text>
+              </>
+            )}
+
             {/* Confirm button */}
             <TouchableOpacity onPress={handleConfirm} disabled={loading} activeOpacity={0.85} style={{ marginTop: 24 }}>
               <LinearGradient colors={gradients.earn} style={styles.confirmBtn}>
@@ -241,6 +308,10 @@ const styles = StyleSheet.create({
   payIcon: { fontSize: 14, marginRight: 5 },
   payLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   payLabelActive: { color: '#fff' },
+  tipNote: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
+  problemToggle: { flexDirection: 'row', alignItems: 'center', marginTop: 20, paddingVertical: 4 },
+  problemToggleOn: {},
+  problemText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flex: 1 },
   confirmBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
   confirmRow: { flexDirection: 'row', alignItems: 'center' },
   confirmText: { color: '#fff', fontSize: 16, fontWeight: '800' },

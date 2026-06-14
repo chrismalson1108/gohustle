@@ -15,7 +15,7 @@ const BOOKING_PILL = {
   declined:  { label: 'Declined',                 ion: 'close-circle',      bg: '#FEF2F2', text: '#DC2626' },
 };
 
-export default function JobCard({ job, onPress, bookingStatus }) {
+export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) {
   const haptic = useHaptic();
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
@@ -62,7 +62,9 @@ export default function JobCard({ job, onPress, bookingStatus }) {
             <Text style={styles.payText}>{estPay}</Text>
           </View>
           <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 3 }} />
-          <Text style={styles.loc} numberOfLines={1}>{job.location}</Text>
+          <Text style={styles.loc} numberOfLines={1}>
+            {job.location}{distanceLabel ? ` · ${distanceLabel}` : ''}
+          </Text>
         </View>
         <View style={styles.posterRow}>
           <Avatar url={job.poster.avatarUrl} initial={job.poster.avatarInitial} size={20} fontSize={9} style={{ marginRight: 6 }} />

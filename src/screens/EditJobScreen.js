@@ -44,6 +44,7 @@ export default function EditJobScreen({ route, navigation }) {
   });
   const [showCustomCat, setShowCustomCat] = useState(!isKnownCategory && !!job?.category);
   const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
+  const [coords, setCoords] = useState(job?.lat != null ? { lat: job.lat, lng: job.lng } : null);
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -101,6 +102,8 @@ export default function EditJobScreen({ route, navigation }) {
       location: form.location, description: form.description,
       urgent: form.urgent, requirements: reqs, slots: form.slots,
       photos: finalPhotos,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
     });
     if (amendmentAccepted && lockedBooking) {
       await clearAmendment(lockedBooking.id);
@@ -238,7 +241,7 @@ export default function EditJobScreen({ route, navigation }) {
 
           <Field label={`Location *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
-              ? <LocationPicker value={form.location} onChange={v => set('location', v)} />
+              ? <LocationPicker value={form.location} onChange={(v, c) => { set('location', v); setCoords(c); }} />
               : <View style={[styles.input, styles.lockedInput]}><Text style={styles.lockedValue}>{form.location}</Text></View>
             }
           </Field>

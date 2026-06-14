@@ -32,6 +32,7 @@ export default function PostJobScreen({ navigation }) {
   const [form, setForm] = useState(INITIAL);
   const [showCustomCat, setShowCustomCat] = useState(false);
   const [photos, setPhotos] = useState([]); // local URIs
+  const [coords, setCoords] = useState(null); // { lat, lng } from LocationPicker
   const [posting, setPosting] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -88,9 +89,12 @@ export default function PostJobScreen({ navigation }) {
       requirements: reqs,
       slots,
       photos: photoUrls,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
     });
     setForm(INITIAL);
     setPhotos([]);
+    setCoords(null);
     setShowCustomCat(false);
     setPosting(false);
     showToast({ icon: '🚀', title: 'Gig Posted!', message: 'Your gig is live — students can now apply!' });
@@ -192,7 +196,7 @@ export default function PostJobScreen({ navigation }) {
           <Field label="Location *">
             <LocationPicker
               value={form.location}
-              onChange={v => set('location', v)}
+              onChange={(v, c) => { set('location', v); setCoords(c); }}
             />
           </Field>
 

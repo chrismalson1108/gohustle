@@ -23,12 +23,29 @@ function buildDays() {
     d.setDate(now.getDate() + i);
     return {
       key: d.toDateString(),
+      date: d,
       dayName: i === 0 ? 'Today' : i === 1 ? 'Tmrw' : DAY_ABBR[d.getDay()],
       dayNum: d.getDate(),
       month: MON_ABBR[d.getMonth()],
       label: `${DAY_ABBR[d.getDay()]} ${MON_ABBR[d.getMonth()]} ${d.getDate()}`,
     };
   });
+}
+
+// "3:00 PM" + a base Date → ISO string for that day/time
+function computeStartsAt(baseDate, timeStr) {
+  try {
+    const m = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const pm = /pm/i.test(m[3]);
+    if (pm && h !== 12) h += 12;
+    if (!pm && h === 12) h = 0;
+    const d = new Date(baseDate);
+    d.setHours(h, min, 0, 0);
+    return d.toISOString();
+  } catch { return null; }
 }
 
 export default function DateTimePicker({ slots = [], onChange }) {
@@ -51,7 +68,7 @@ export default function DateTimePicker({ slots = [], onChange }) {
     const label = `${selectedDay.label}, ${time}`;
     if (slots.some(s => s.label === label)) return; // already added
     haptic.medium();
-    onChange([...slots, { id: `s${Date.now()}`, label, taken: false }]);
+    onChange([...slots, { id: `s${Date.now()}`, label, taken: false, startsAt: computeStartsAt(selectedDay.date, time) }]);
   };
 
   const removeSlot = (id) => {

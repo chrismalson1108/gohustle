@@ -24,12 +24,14 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    const { bookingId } = await req.json();
+    // Optional pct (0<pct<=1): partial capture for a dispute — releases the
+    // remainder of the authorized hold back to the poster.
+    const { bookingId, pct } = await req.json();
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents')
       .eq('booking_id', bookingId)
       .single();
 
@@ -40,12 +42,29 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, alreadyCaptured: true });
     }
 
-    await stripe.paymentIntents.capture(payment.payment_intent_id);
+    const capturePct = (typeof pct === 'number' && pct > 0 && pct < 1) ? pct : 1;
 
-    await supabase.from('payments').update({
-      status: 'captured',
-      captured_at: new Date().toISOString(),
-    }).eq('id', payment.id);
+    if (capturePct < 1) {
+      const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
+      const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
+      await stripe.paymentIntents.capture(payment.payment_intent_id, {
+        amount_to_capture: captureCents,
+        application_fee_amount: feeCents,
+      });
+      await supabase.from('payments').update({
+        status: 'captured',
+        captured_at: new Date().toISOString(),
+        amount_cents: captureCents,
+        fee_cents: feeCents,
+        earner_amount_cents: captureCents - feeCents,
+      }).eq('id', payment.id);
+    } else {
+      await stripe.paymentIntents.capture(payment.payment_intent_id);
+      await supabase.from('payments').update({
+        status: 'captured',
+        captured_at: new Date().toISOString(),
+      }).eq('id', payment.id);
+    }
 
     return json({ success: true });
   } catch (err: any) {
