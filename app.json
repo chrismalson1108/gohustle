@@ -10,6 +10,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "GoHustlr needs access to your photos so you can set a profile picture and add photos to gigs, chats, and completed jobs.",
         "NSCameraUsageDescription": "GoHustlr needs camera access so you can take photos for your profile, gigs, chats, and completed jobs.",
         "NSMicrophoneUsageDescription": "GoHustlr needs microphone access when you record video."
