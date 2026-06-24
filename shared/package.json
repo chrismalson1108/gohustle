@@ -1,0 +1,8 @@
+{
+  "name": "@gohustlr/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Pure, framework-agnostic logic shared by the GoHustlr mobile app (Expo) and website (Next.js). No react-native or react-dom imports allowed here."
+}

@@ -6,6 +6,7 @@ import { CATEGORY_COLORS } from '../data/mockData';
 import { useHaptic } from '../hooks/useHaptic';
 import RatingStars from './RatingStars';
 import Avatar from './Avatar';
+import StudentBadge from './StudentBadge';
 
 const BOOKING_PILL = {
   pending:   { label: 'Applied — Pending',        ion: 'time',              bg: '#FFF7ED', text: '#D97706' },
@@ -80,6 +81,7 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
           <Avatar url={job.poster.avatarUrl} initial={job.poster.avatarInitial} size={20} fontSize={9} style={{ marginRight: 6 }} />
           <Text style={styles.posterName}>{job.poster.name}</Text>
           {job.poster.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} style={styles.verified} />}
+          {job.poster.studentVerified && <StudentBadge profile={job.poster} compact style={{ marginLeft: 4 }} />}
           <View style={styles.spacer} />
           {job.poster.reviewCount > 0
             ? <RatingStars rating={job.poster.rating} size={12} />

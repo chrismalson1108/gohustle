@@ -43,6 +43,9 @@ function transformJob(dbJob) {
       rating: Number(dbJob.profiles?.rating) || 5.0,
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
+      school: dbJob.profiles?.school || null,
+      studentVerified: dbJob.profiles?.student_verified || false,
+      studentStatus: dbJob.profiles?.student_status || 'none',
     },
     slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken, startsAt: s.starts_at || null })),
     requirements: (dbJob.job_requirements || [])
@@ -82,6 +85,9 @@ function transformBooking(b) {
       avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
+      school: b.earner.school || null,
+      studentVerified: b.earner.student_verified || false,
+      studentStatus: b.earner.student_status || 'none',
     } : null,
     job: b.job ? {
       id: b.job.id,
@@ -231,7 +237,7 @@ export function JobsProvider({ children }) {
       .from('jobs')
       .select(`
         *,
-        profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified),
+        profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status),
         job_slots(*),
         job_requirements(*),
         reviews(*)
@@ -287,7 +293,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count),
+        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status),
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
       `)
       .in('job_id', jobIds)
@@ -685,7 +691,7 @@ export function JobsProvider({ children }) {
     if (!user) return;
     const { data: profile } = await supabase
       .from('profiles')
-      .select('name, avatar_initial, avatar_url, rating, review_count, verified')
+      .select('name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status')
       .eq('id', user.id)
       .single();
 
@@ -696,6 +702,9 @@ export function JobsProvider({ children }) {
       rating: Number(profile?.rating) || 5.0,
       reviewCount: profile?.review_count || 0,
       verified: profile?.verified || false,
+      school: profile?.school || null,
+      studentVerified: profile?.student_verified || false,
+      studentStatus: profile?.student_status || 'none',
     };
 
     const { data: newJob, error } = await supabase

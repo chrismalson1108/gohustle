@@ -14,6 +14,7 @@ export const DEFAULT_FILTERS = {
   location:   'any',   // 'any' | 'remote' | state abbreviation like 'TX'
   payType:    'any',   // 'any' | 'flat' | 'hourly'
   urgentOnly: false,
+  verifiedStudentsOnly: false, // only gigs from Verified Student posters
   sortBy:     'newest', // 'newest' | 'pay_high' | 'pay_low'
 };
 
@@ -24,6 +25,7 @@ export function countActiveFilters(f) {
   if (f.location   !== 'any')   n++;
   if (f.payType    !== 'any')   n++;
   if (f.urgentOnly)             n++;
+  if (f.verifiedStudentsOnly)   n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -205,6 +207,25 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
                 <Switch
                   value={local.urgentOnly}
                   onValueChange={v => { haptic.selection(); set('urgentOnly', v); }}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+            </Section>
+
+            {/* Trust */}
+            <Section title="Trust">
+              <View style={styles.toggleRow}>
+                <View>
+                  <View style={styles.toggleLabelRow}>
+                    <Ionicons name="school" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
+                    <Text style={styles.toggleLabel}>Verified students only</Text>
+                  </View>
+                  <Text style={styles.toggleSub}>Only show gigs from posters with a Verified Student badge</Text>
+                </View>
+                <Switch
+                  value={local.verifiedStudentsOnly}
+                  onValueChange={v => { haptic.selection(); set('verifiedStudentsOnly', v); }}
                   trackColor={{ false: colors.border, true: colors.primary }}
                   thumbColor="#fff"
                 />

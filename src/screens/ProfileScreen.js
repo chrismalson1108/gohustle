@@ -13,6 +13,8 @@ import BadgeGrid from '../components/BadgeGrid';
 import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
 import Avatar from '../components/Avatar';
+import StudentVerifyModal from '../components/StudentVerifyModal';
+import { collegeLine } from '../lib/school';
 import { pickImage, uploadImage } from '../lib/uploadImage';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
@@ -27,6 +29,7 @@ export default function ProfileScreen({ navigation }) {
     name, avatarInitial, avatarUrl, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
     weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
+    school, major, gradYear, studentVerified, studentStatus,
   } = useUser();
   const { postedJobs, bookedJobs, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
@@ -40,6 +43,8 @@ export default function ProfileScreen({ navigation }) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [refCount, setRefCount] = useState(0);
   const [idv, setIdv] = useState({ verified: false, status: 'none' });
+  const [showStudentVerify, setShowStudentVerify] = useState(false);
+  const college = collegeLine({ school, major, gradYear });
 
   const handleInvite = async () => {
     haptic.medium();
@@ -191,8 +196,12 @@ export default function ProfileScreen({ navigation }) {
               {idv.verified && (
                 <Ionicons name="shield-checkmark" size={18} color="#fff" style={{ marginLeft: 6 }} />
               )}
+              {studentVerified && (
+                <Ionicons name="school" size={16} color="#fff" style={{ marginLeft: 6 }} />
+              )}
             </View>
             {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
+            {!!college && <Text style={styles.profileCollege}>{college}</Text>}
             <Text style={styles.profileSub}>
               {actualReviewCount > 0
                 ? `${actualReviewCount} review${actualReviewCount !== 1 ? 's' : ''}`
@@ -351,6 +360,32 @@ export default function ProfileScreen({ navigation }) {
         {!idv.verified && <Text style={styles.manageBtnArrow}>›</Text>}
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={() => { haptic.medium(); if (!studentVerified) setShowStudentVerify(true); }}
+        disabled={studentVerified}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons
+            name={studentVerified ? 'school' : 'school-outline'}
+            size={22}
+            color={studentVerified ? colors.success : colors.primary}
+            style={styles.manageBtnIcon}
+          />
+          <View>
+            <Text style={styles.manageBtnTitle}>
+              {studentVerified ? (studentStatus === 'alumni' ? 'Verified Alumni' : 'Verified Student') : 'Verify Student Status'}
+            </Text>
+            <Text style={styles.manageBtnSub}>
+              {studentVerified
+                ? 'Your profile shows a Verified Student badge'
+                : 'Confirm your .edu email for a Verified Student badge'}
+            </Text>
+          </View>
+        </View>
+        {!studentVerified && <Text style={styles.manageBtnArrow}>›</Text>}
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.manageBtn} onPress={handleInvite}>
         <View style={styles.manageBtnLeft}>
           <Ionicons name="gift-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
@@ -430,6 +465,11 @@ export default function ProfileScreen({ navigation }) {
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
+
+      <StudentVerifyModal
+        visible={showStudentVerify}
+        onClose={() => setShowStudentVerify(false)}
+      />
     </ScrollView>
   );
 }
@@ -507,6 +547,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   profileName: { fontSize: 22, fontWeight: '900', color: '#fff' },
   profileSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
+  profileCollege: { fontSize: 12, color: 'rgba(255,255,255,0.92)', marginTop: 4, fontWeight: '700' },
   roleToggle: {
     backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16,
     borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14,

@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/* ── GoHustlr brand tokens (mirror of shared/theme.js) ───────────────────────
+   Tailwind v4 reads these to generate utilities like bg-primary, text-ink, etc. */
+@theme {
+  --color-primary: #6d28d9;
+  --color-primary-dark: #5b21b6;
+  --color-primary-light: #ede9fe;
+  --color-secondary: #4f46e5;
+  --color-accent: #10b981;
+  --color-accent-light: #d1fae5;
+  --color-gold: #f59e0b;
+  --color-gold-light: #fef3c7;
+  --color-urgent: #ef4444;
+  --color-urgent-light: #fff1f2;
+  --color-ink: #1e1b4b;
+  --color-ink-soft: #6b7280;
+  --color-ink-muted: #9ca3af;
+  --color-line: #e5e7eb;
+  --color-canvas: #f5f3ff;
+  --color-success: #059669;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-soft: 0 4px 16px rgba(109, 40, 217, 0.1);
+  --shadow-pop: 0 10px 30px rgba(109, 40, 217, 0.18);
+
+  --background-image-brand: linear-gradient(135deg, #6d28d9, #4338ca);
+  --background-image-earn: linear-gradient(135deg, #059669, #0d9488);
+  --background-image-gold: linear-gradient(135deg, #f59e0b, #dc2626);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Brand gradient helpers used across hero/header surfaces. */
+.bg-brand {
+  background-image: var(--background-image-brand);
+}
+.bg-earn {
+  background-image: var(--background-image-earn);
+}
+.bg-gold {
+  background-image: var(--background-image-gold);
+}
+
+/* Thin, unobtrusive scrollbars to keep the app feeling native. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d6cef0 transparent;
+}
+
+/* Leaflet map container needs an explicit height wherever it's used. */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 1rem;
+  font-family: inherit;
+}
