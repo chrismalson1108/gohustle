@@ -37,6 +37,10 @@ export interface UserState {
   weeklyEarningGoal: number;
   weeklyJobsGoal: number;
   weeklyJobsDone: number;
+  monthlyEarningGoal: number;
+  workStatus: "available" | "busy" | "away" | "offline";
+  workStatusNote: string | null;
+  availability: Array<{ day: number; start: string; end: string }>;
   // College identity
   school: string | null;
   schoolDomain: string | null;
@@ -46,6 +50,7 @@ export interface UserState {
   gradYear: number | null;
   studentStatus: string;
   studentVerified: boolean;
+  skills: string[];
   badges: Record<string, { unlocked: boolean }>;
   challenges: Challenge[];
   pendingToast: Toast | null;
@@ -67,6 +72,10 @@ const DEFAULT_STATE: UserState = {
   weeklyEarningGoal: 300,
   weeklyJobsGoal: 5,
   weeklyJobsDone: 0,
+  monthlyEarningGoal: 1000,
+  workStatus: "available",
+  workStatusNote: null,
+  availability: [],
   school: null,
   schoolDomain: null,
   major: null,
@@ -75,6 +84,7 @@ const DEFAULT_STATE: UserState = {
   gradYear: null,
   studentStatus: "none",
   studentVerified: false,
+  skills: [],
   badges: {
     firstHustle: { unlocked: false },
     onFire: { unlocked: false },
@@ -130,6 +140,12 @@ function dbToState(
     weeklyEarningGoal: Number(p.weekly_earning_goal) || 300,
     weeklyJobsGoal: Number(p.weekly_jobs_goal) || 5,
     weeklyJobsDone: Number(p.weekly_jobs_done) || 0,
+    monthlyEarningGoal: Number(p.monthly_earning_goal) || 1000,
+    workStatus: (((p.work_status as string) || "available") as UserState["workStatus"]),
+    workStatusNote: (p.work_status_note as string) || null,
+    availability: Array.isArray((profile as Record<string, unknown>).availability)
+      ? ((profile as Record<string, unknown>).availability as UserState["availability"])
+      : [],
     school: (p.school as string) || null,
     schoolDomain: (p.school_domain as string) || null,
     major: (p.major as string) || null,
@@ -138,6 +154,9 @@ function dbToState(
     gradYear: (p.grad_year as number) ?? null,
     studentStatus: (p.student_status as string) || "none",
     studentVerified: Boolean(p.student_verified),
+    skills: Array.isArray((profile as Record<string, unknown>).skills)
+      ? ((profile as Record<string, unknown>).skills as string[])
+      : [],
     badges: badgeMap,
     challenges: mergedChallenges,
     pendingToast: null,
@@ -199,6 +218,9 @@ interface UserValue extends UserState {
   recordApply: (amount: number) => void;
   setRole: (role: UserState["role"]) => void;
   setGoals: (earningGoal: number, jobsGoal: number) => void;
+  setMonthlyGoal: (goal: number) => void;
+  setWorkStatus: (status: UserState["workStatus"], note?: string | null) => void;
+  setAvailability: (windows: UserState["availability"]) => void;
   showToast: (toast: Toast) => void;
   dismissToast: () => void;
   refreshProfile: () => Promise<void>;
@@ -315,6 +337,21 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     scheduleSyncProfile({ weekly_earning_goal: earningGoal, weekly_jobs_goal: jobsGoal });
   };
 
+  const setMonthlyGoal = (goal: number) => {
+    dispatch({ type: "LOAD_PROFILE", profile: { monthlyEarningGoal: goal } });
+    scheduleSyncProfile({ monthly_earning_goal: goal });
+  };
+
+  const setWorkStatus = (status: UserState["workStatus"], note: string | null = null) => {
+    dispatch({ type: "LOAD_PROFILE", profile: { workStatus: status, workStatusNote: note } });
+    scheduleSyncProfile({ work_status: status, work_status_note: note });
+  };
+
+  const setAvailability = (windows: UserState["availability"]) => {
+    dispatch({ type: "LOAD_PROFILE", profile: { availability: windows } });
+    scheduleSyncProfile({ availability: windows });
+  };
+
   const refreshProfile = async () => {
     if (!user) return;
     const cacheKey = `profile_${user.id}`;
@@ -341,6 +378,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         recordApply,
         setRole,
         setGoals,
+        setMonthlyGoal,
+        setWorkStatus,
+        setAvailability,
         showToast,
         dismissToast,
         refreshProfile,
