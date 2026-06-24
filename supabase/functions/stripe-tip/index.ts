@@ -47,7 +47,9 @@ Deno.serve(async (req: Request) => {
     const pm = methods.data[0];
     if (!pm) return json({ error: 'No saved card on file' }, 400);
 
-    // Off-session charge → full tip to earner (no platform fee on tips)
+    // Off-session charge → full tip to earner (no platform fee on tips).
+    // Idempotency key (booking + amount) prevents a retried request from charging
+    // the poster's saved card twice for the same tip.
     const pi = await stripe.paymentIntents.create({
       amount: Math.round(tipCents),
       currency: 'usd',
@@ -58,7 +60,7 @@ Deno.serve(async (req: Request) => {
       transfer_data: { destination: earnerAcct.account_id },
       description: `GoHustlr tip: ${booking.job.title}`,
       metadata: { booking_id: bookingId, type: 'tip', earner_id: booking.earner_id, poster_id: user.id },
-    });
+    }, { idempotencyKey: `tip_${bookingId}_${Math.round(tipCents)}` });
 
     if (pi.status !== 'succeeded') return json({ error: `Tip not completed (${pi.status})` }, 400);
 

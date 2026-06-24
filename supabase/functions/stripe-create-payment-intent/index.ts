@@ -90,7 +90,9 @@ Deno.serve(async (req: Request) => {
       { apiVersion: '2024-06-20' },
     );
 
-    // PaymentIntent with manual capture (funds held, not charged until capture)
+    // PaymentIntent with manual capture (funds held, not charged until capture).
+    // Idempotency key (booking + amount) makes a transport retry return the SAME
+    // intent instead of creating a second, orphaned authorization hold.
     const pi = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: 'usd',
@@ -105,7 +107,7 @@ Deno.serve(async (req: Request) => {
         earner_id: booking.earner_id,
         poster_id: user.id,
       },
-    });
+    }, { idempotencyKey: `pi_create_${bookingId}_${amountCents}` });
 
     // Record in payments table (upsert in case of retry)
     await supabase.from('payments').upsert({
