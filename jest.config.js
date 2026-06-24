@@ -3,5 +3,5 @@
 module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.js'],
-  testPathIgnorePatterns: ['/node_modules/', '/ios/', '/android/'],
+  testPathIgnorePatterns: ['/node_modules/', '/ios/', '/android/', '/web/'],
 };
