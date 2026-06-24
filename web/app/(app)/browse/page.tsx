@@ -25,7 +25,7 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
 });
 
 export default function BrowsePage() {
-  const { name, streakDays, levelInfo, xp } = useUser();
+  const { name, streakDays, levelInfo, xp, school } = useUser();
   const { jobs, bookings, blockedIds } = useJobs();
 
   const [selectedCat, setSelectedCat] = useState("all");
@@ -47,8 +47,8 @@ export default function BrowsePage() {
   const availableStates = useMemo(() => availableStatesFrom(jobs), [jobs]);
 
   const filtered: Job[] = useMemo(
-    () => applyJobFilters(jobs, { selectedCat, search, filters, blockedIds, userCoords }),
-    [jobs, selectedCat, search, filters, blockedIds, userCoords],
+    () => applyJobFilters(jobs, { selectedCat, search, filters, blockedIds, userCoords, mySchool: school }),
+    [jobs, selectedCat, search, filters, blockedIds, userCoords, school],
   );
 
   const activeFilterCount = countActiveFilters(filters);
@@ -126,6 +126,19 @@ export default function BrowsePage() {
           })}
         </div>
 
+        {/* Campus quick-toggle */}
+        {school && (
+          <button
+            onClick={() => setFilters((f) => ({ ...f, campusOnly: !f.campusOnly }))}
+            className={classNames(
+              "mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl border px-4 py-2.5 text-sm font-bold transition",
+              filters.campusOnly ? "border-primary bg-primary text-white" : "border-primary/40 bg-primary-light/50 text-primary",
+            )}
+          >
+            🏫 {filters.campusOnly ? `Showing ${school} only` : `Show gigs from ${school}`}
+          </button>
+        )}
+
         {/* Results bar */}
         <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
@@ -183,6 +196,7 @@ export default function BrowsePage() {
         open={showFilter}
         filters={filters}
         availableStates={availableStates}
+        mySchool={school}
         onApply={(f) => {
           setFilters(f);
           setShowFilter(false);

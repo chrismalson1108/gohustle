@@ -210,6 +210,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPatch = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -239,13 +240,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     cacheSet(cacheKey, profileState);
   };
 
+  // Merge pending patches into one object so a later debounced call (e.g. earnings)
+  // doesn't clobber an earlier one (e.g. xp) — otherwise rapid addXP + recordApply
+  // would drop the XP write entirely.
   const scheduleSyncProfile = (patch: Record<string, unknown>) => {
     if (!user) return;
+    pendingPatch.current = { ...pendingPatch.current, ...patch };
     if (syncTimer.current) clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(() => {
+      const toSend = pendingPatch.current;
+      pendingPatch.current = {};
       supabase
         .from("profiles")
-        .update(patch)
+        .update(toSend)
         .eq("id", user.id)
         .then(({ error }) => {
           if (error) console.warn("Profile sync error:", error.message);

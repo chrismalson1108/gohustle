@@ -53,7 +53,7 @@ function matchesPay(job, payRange) {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, levelInfo, xp } = useUser();
+  const { name, streakDays, levelInfo, xp, school } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
@@ -125,6 +125,9 @@ export default function HomeScreen({ navigation }) {
       // Verified students only
       if (filters.verifiedStudentsOnly && !j.poster?.studentVerified) return false;
 
+      // My campus only
+      if (filters.campusOnly && (!school || (j.poster?.school || '').trim().toLowerCase() !== school.trim().toLowerCase())) return false;
+
       // Location
       if (filters.location !== 'any') {
         if (filters.location === 'remote') {
@@ -171,7 +174,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters, blockedIds, userCoords]);
+  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, school]);
 
   const activeFilterCount = countActiveFilters(filters);
 
@@ -279,6 +282,7 @@ export default function HomeScreen({ navigation }) {
           visible={showFilter}
           filters={filters}
           availableStates={availableStates}
+          mySchool={school}
           onApply={(f) => { setFilters(f); setShowFilter(false); }}
           onClose={() => setShowFilter(false)}
         />

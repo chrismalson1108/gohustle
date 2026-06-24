@@ -15,6 +15,7 @@ import { cacheGet, cacheSet } from "./cache";
 import { stripeEdge } from "./edge";
 import { notify } from "./push";
 import { fetchBlockedIds, blockUserDb } from "./moderation";
+import { fetchSavedJobIds, addSavedJob, removeSavedJob } from "./savedJobs";
 import { fetchLastMessages, fetchConversationState, isUnread } from "./messages";
 import { track, captureError } from "./analytics";
 import { useAuth } from "./auth";
@@ -23,6 +24,13 @@ import type { Job, Booking } from "./types";
 
 const JOBS_CACHE = "jobs_v1";
 const BOOKINGS_CACHE = "bookings_v1";
+
+// Poster/earner sub-selects. "rich" includes the student-verification columns;
+// "base" is the pre-migration fallback (see fetchJobs / loadPosterBookings).
+const POSTER_RICH = "name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status";
+const POSTER_BASE = "name, avatar_initial, avatar_url, rating, review_count, verified";
+const EARNER_RICH = "id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status";
+const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count";
 
 interface State {
   jobs: Job[];
@@ -94,6 +102,9 @@ function reducer(state: State, action: Action): State {
 
 interface JobsValue extends State {
   blockedIds: Set<string>;
+  savedJobIds: Set<string>;
+  toggleSavedJob: (jobId: string) => Promise<void>;
+  bumpJob: (jobId: string) => Promise<void>;
   unreadMessages: number;
   bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null) => Promise<void>;
   addJob: (jobData: Record<string, unknown>) => Promise<void>;
@@ -136,7 +147,7 @@ interface VerifyArgs {
   paymentMethod: string;
   pct?: number;
   tipCents?: number;
-  disputeReason?: string;
+  disputeReason?: string | null;
 }
 
 const JobsContext = createContext<JobsValue | null>(null);
@@ -153,12 +164,42 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
-    if (user) fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
-    else setBlockedIds(new Set());
+    if (user) {
+      fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
+      fetchSavedJobIds(user.id).then(setSavedJobIds).catch(() => {});
+    } else {
+      setBlockedIds(new Set());
+      setSavedJobIds(new Set());
+    }
   }, [user?.id]);
+
+  const toggleSavedJob = async (jobId: string) => {
+    if (!user) return;
+    const saving = !savedJobIds.has(jobId);
+    setSavedJobIds((prev) => {
+      const next = new Set(prev);
+      if (saving) next.add(jobId);
+      else next.delete(jobId);
+      return next;
+    });
+    try {
+      if (saving) await addSavedJob(user.id, jobId);
+      else await removeSavedJob(user.id, jobId);
+    } catch {
+      /* ignore — local state already toggled */
+    }
+  };
+
+  // Poster bumps a slow gig to the top of the feed (refreshes bumped_at).
+  const bumpJob = async (jobId: string) => {
+    const now = new Date().toISOString();
+    dispatch({ type: "UPDATE_JOB", jobId, patch: { bumpedAt: now } });
+    await supabase.from("jobs").update({ bumped_at: now }).eq("id", jobId);
+  };
 
   const blockUser = async (blockedId: string) => {
     if (!user || !blockedId) return;
@@ -213,22 +254,33 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchJobs = useCallback(async () => {
-    const { data, error } = await supabase
+    // Resilient: if the student-verification migration hasn't been run yet, the
+    // school/student_* columns don't exist (PostgREST 42703) — fall back to a base
+    // poster select so the jobs list never blanks out.
+    const jobsSelect = (poster: string) =>
+      `*, profiles!jobs_poster_id_fkey(${poster}), job_slots(*), job_requirements(*), reviews(*)`;
+    let { data, error } = await supabase
       .from("jobs")
-      .select(
-        `*, profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status), job_slots(*), job_requirements(*), reviews(*)`,
-      )
+      .select(jobsSelect(POSTER_RICH))
       .neq("status", "cancelled")
       .order("created_at", { ascending: false });
+    if (error?.code === "42703") {
+      ({ data, error } = await supabase
+        .from("jobs")
+        .select(jobsSelect(POSTER_BASE))
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false }));
+    }
 
     if (error || !data) return;
-    const transformed = data.map(transformJob) as Job[];
+    const rows = data as unknown as Record<string, unknown>[];
+    const transformed = rows.map(transformJob) as Job[];
     dispatch({ type: "SET_JOBS", jobs: transformed });
 
     if (user) {
-      const myIds = data
-        .filter((j: Record<string, unknown>) => j.poster_id === user.id && j.status !== "cancelled")
-        .map((j: Record<string, unknown>) => j.id as string);
+      const myIds = rows
+        .filter((j) => j.poster_id === user.id && j.status !== "cancelled")
+        .map((j) => j.id as string);
       dispatch({ type: "SET_POSTED_IDS", ids: myIds });
     }
     cacheSet(JOBS_CACHE, transformed);
@@ -254,19 +306,31 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const loadPosterBookings = useCallback(async () => {
     if (!user) return;
     const { data: myJobs } = await supabase.from("jobs").select("id").eq("poster_id", user.id);
-    if (!myJobs?.length) return;
+    if (!myJobs?.length) {
+      // Clear any stale poster bookings (e.g. the user just deleted their last gig).
+      dispatch({ type: "SET_POSTER_BOOKINGS", bookings: [] });
+      return;
+    }
     const jobIds = myJobs.map((j) => j.id);
 
-    const { data, error } = await supabase
+    const bookingsSelect = (earner: string) =>
+      `*, earner:profiles!bookings_earner_id_fkey(${earner}), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`;
+    let { data, error } = await supabase
       .from("bookings")
-      .select(
-        `*, earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`,
-      )
+      .select(bookingsSelect(EARNER_RICH))
       .in("job_id", jobIds)
       .order("created_at", { ascending: false });
+    if (error?.code === "42703") {
+      ({ data, error } = await supabase
+        .from("bookings")
+        .select(bookingsSelect(EARNER_BASE))
+        .in("job_id", jobIds)
+        .order("created_at", { ascending: false }));
+    }
 
     if (error || !data) return;
-    dispatch({ type: "SET_POSTER_BOOKINGS", bookings: data.map(transformBooking) as Booking[] });
+    const rows = data as unknown as Record<string, unknown>[];
+    dispatch({ type: "SET_POSTER_BOOKINGS", bookings: rows.map(transformBooking) as Booking[] });
   }, [user?.id]);
 
   const setupRealtime = () => {
@@ -279,7 +343,24 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         { event: "UPDATE", schema: "public", table: "bookings", filter: `earner_id=eq.${user.id}` },
         (payload) => {
           const b = payload.new as Record<string, unknown>;
-          dispatch({ type: "UPDATE_BOOKING_STATUS", id: b.id as string, patch: transformBooking(b) });
+          // Patch only scalar fields — the realtime row has no job/earner embed, so
+          // running the full transformBooking would wipe the embedded job/earner.
+          dispatch({
+            type: "UPDATE_BOOKING_STATUS",
+            id: b.id as string,
+            patch: {
+              status: b.status as Booking["status"],
+              earnerDone: !!b.earner_done,
+              posterDone: !!b.poster_done,
+              earnerRating: b.earner_rating != null ? Number(b.earner_rating) : null,
+              posterRating: b.poster_rating != null ? Number(b.poster_rating) : null,
+              paymentMethod: (b.payment_method as string) ?? null,
+              amendmentStatus: (b.amendment_status as Booking["amendmentStatus"]) || "none",
+              amendmentNote: (b.amendment_note as string) ?? null,
+              tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
+              completionPhotos: (b.completion_photos as string[]) || [],
+            },
+          });
           if (b.status === "confirmed")
             showToast({ icon: "✅", title: "Booking Confirmed!", message: "The poster accepted your booking. Get ready!" });
           if (b.status === "verified") {
@@ -296,9 +377,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       .channel(`poster-bookings-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, (payload) => {
         loadPosterBookings();
-        if (payload.eventType === "INSERT")
+        // Only toast when it's someone ELSE acting on the poster's gig — the broad
+        // subscription also delivers the user's own (earner-side) booking rows.
+        const isOthers = (payload.new as Record<string, unknown>)?.earner_id !== user.id;
+        if (payload.eventType === "INSERT" && isOthers)
           showToast({ icon: "🔔", title: "New Booking Request!", message: "Someone wants to book your gig!" });
-        if ((payload.new as Record<string, unknown>)?.status === "completed")
+        if (isOthers && (payload.new as Record<string, unknown>)?.status === "completed")
           showToast({ icon: "⚡", title: "Job Marked Complete!", message: "An earner says the job is done — verify and rate them!" });
       })
       .subscribe();
@@ -324,6 +408,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const job = state.jobs.find((j) => j.id === jobId);
     if (job?.posterId === user.id) return;
 
+    // Instant Book: a gig flagged instant_book confirms immediately (no accept
+    // round-trip), unless the earner is negotiating with a counter-offer.
+    const instant = !!job?.instantBook && !counterOffer;
+
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: "BOOK_JOB", jobId, slotId, slotLabel, counterOffer, tempId });
 
@@ -337,7 +425,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         slot_label: slotLabel || null,
         starts_at: chosenSlot?.startsAt || null,
         counter_offer: counterOffer || null,
-        status: "pending",
+        status: instant ? "confirmed" : "pending",
       })
       .select()
       .single();
@@ -346,10 +434,16 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Booking sync error:", error.message);
       return;
     }
-    if (slotId) supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
+    if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
     await loadBookings();
-    if (job?.posterId) notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab" });
-    track("booking_created", { jobId, counterOffer: !!counterOffer });
+    if (job?.posterId)
+      notify(
+        job.posterId,
+        instant ? "Gig booked (Instant Book)" : "New booking request",
+        instant ? `Someone instant-booked "${job.title}"` : `Someone wants to book "${job.title}"`,
+        { tab: "GigsTab" },
+      );
+    track("booking_created", { jobId, counterOffer: !!counterOffer, instant });
   };
 
   const markEarnerDone: JobsValue["markEarnerDone"] = async (bookingId, completionPhotos = null) => {
@@ -489,7 +583,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Cancel error:", error.message);
       return;
     }
-    if (booking?.slotId) supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
+    if (booking?.slotId) await supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
 
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
     const title = booking?.job?.title || "a gig";
@@ -554,7 +648,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     if (booking?.jobId) {
       dispatch({ type: "UPDATE_JOB", jobId: booking.jobId, patch: { status: "completed" } });
-      supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
+      await supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
     }
 
     if (booking?.earner?.id) {
@@ -611,11 +705,21 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       description: d.description,
       urgent: d.urgent,
     };
+    if (d.estimatedHours !== undefined) dbPatch.estimated_hours = d.estimatedHours;
+    if (d.instantBook !== undefined) dbPatch.instant_book = d.instantBook;
+    if (d.instantBookAudience !== undefined) dbPatch.instant_book_audience = d.instantBookAudience;
     if (d.photos !== undefined) dbPatch.photos = d.photos;
     if (d.lat !== undefined) dbPatch.lat = d.lat;
     if (d.lng !== undefined) dbPatch.lng = d.lng;
     if (d.recurrence !== undefined) dbPatch.recurrence = d.recurrence;
-    const { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
+    let { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
+    if (error?.code === "42703") {
+      // Pre-migration: drop the instant-book columns and retry.
+      const { instant_book, instant_book_audience, ...rest } = dbPatch;
+      void instant_book;
+      void instant_book_audience;
+      ({ error } = await supabase.from("jobs").update(rest).eq("id", jobId));
+    }
     if (error) {
       console.warn("Update job error:", error.message);
       return;
@@ -665,25 +769,30 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       studentStatus: profile?.student_status || "none",
     };
 
-    const { data: newJob, error } = await supabase
+    const baseInsert: Record<string, unknown> = {
+      title: d.title,
+      category: d.category,
+      pay: d.pay,
+      pay_type: d.payType,
+      location: d.location,
+      description: d.description,
+      urgent: d.urgent,
+      estimated_hours: d.estimatedHours,
+      photos: (d.photos as string[]) || [],
+      lat: (d.lat as number) ?? null,
+      lng: (d.lng as number) ?? null,
+      recurrence: (d.recurrence as string) || "none",
+      poster_id: user.id,
+    };
+    // Resilient: include instant_book only if that migration has run (42703 → retry).
+    let { data: newJob, error } = await supabase
       .from("jobs")
-      .insert({
-        title: d.title,
-        category: d.category,
-        pay: d.pay,
-        pay_type: d.payType,
-        location: d.location,
-        description: d.description,
-        urgent: d.urgent,
-        estimated_hours: d.estimatedHours,
-        photos: (d.photos as string[]) || [],
-        lat: (d.lat as number) ?? null,
-        lng: (d.lng as number) ?? null,
-        recurrence: (d.recurrence as string) || "none",
-        poster_id: user.id,
-      })
+      .insert({ ...baseInsert, instant_book: !!d.instantBook, instant_book_audience: (d.instantBookAudience as string) || "all" })
       .select()
       .single();
+    if (error?.code === "42703") {
+      ({ data: newJob, error } = await supabase.from("jobs").insert(baseInsert).select().single());
+    }
 
     if (error || !newJob) {
       console.warn("Job insert error:", error?.message);
@@ -774,6 +883,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...state,
         blockedIds,
+        savedJobIds,
+        toggleSavedJob,
+        bumpJob,
         unreadMessages,
         bookJob,
         addJob,

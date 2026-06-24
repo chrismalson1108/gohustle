@@ -1,9 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
-import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle } from "lucide-react";
+import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Rocket, Bookmark } from "lucide-react";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
+import { useJobs } from "@/lib/jobs";
 import { payLabel } from "@/lib/format";
 import type { Job, BookingStatus } from "@/lib/types";
 
@@ -24,14 +27,27 @@ interface Props {
 }
 
 export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
+  const { savedJobIds, toggleSavedJob } = useJobs();
   const catColor = CATEGORY_COLORS[job.category] || "#6D28D9";
   const pill = bookingStatus ? BOOKING_PILL[bookingStatus] : null;
+  const saved = savedJobIds.has(job.id);
 
   return (
     <Link
       href={`/jobs/${job.id}`}
-      className="group flex overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
+      className="group relative flex overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
     >
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleSavedJob(job.id);
+        }}
+        className="absolute right-3 top-3 z-10 rounded-full bg-white/90 p-1.5 text-ink-muted ring-1 ring-line backdrop-blur hover:text-primary"
+        aria-label={saved ? "Unsave gig" : "Save gig"}
+      >
+        <Bookmark className={saved ? "size-4 fill-primary text-primary" : "size-4"} />
+      </button>
       <div className="w-1.5 shrink-0" style={{ backgroundColor: catColor }} />
       <div className="min-w-0 flex-1 p-5">
         {job.photos?.length > 0 && (
@@ -62,6 +78,11 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
             {RECUR_LABEL[job.recurrence] && (
               <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
                 <Repeat className="size-3" /> {RECUR_LABEL[job.recurrence]}
+              </span>
+            )}
+            {job.instantBook && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                <Rocket className="size-3" /> Instant
               </span>
             )}
           </div>

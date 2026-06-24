@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn: AuthValue["signIn"] = async (email, password) => {
     setAuthError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       if (
         (error as { code?: string }).code === "email_not_confirmed" ||
@@ -89,6 +89,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthError(error.message);
       return false;
     }
+    // Set session + onboarding state synchronously from the result so the page can
+    // redirect into the app without racing the async onAuthStateChange event
+    // (which otherwise lets the auth gate see a stale null session and bounce back).
+    if (data.session) {
+      setSession(data.session);
+      if (data.user) await loadOnboarding(data.user.id);
+    }
     setPendingEmail(null);
     track("sign_in");
     return true;
@@ -96,17 +103,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp: AuthValue["signUp"] = async (email, password, name, referralCode) => {
     setAuthError(null);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, referral_code: referralCode || null } },
+      options: {
+        data: { name, referral_code: referralCode || null },
+        // Return web sign-ups to the website after they confirm (falls back to
+        // the project's Site URL if this origin isn't in the allow-list).
+        emailRedirectTo:
+          typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+      },
     });
     if (error) {
-      setAuthError(error.message);
+      const code = (error as { code?: string }).code;
+      if (code === "over_email_send_rate_limit" || /rate limit/i.test(error.message)) {
+        setAuthError("Too many sign-up emails were sent recently. Please wait a few minutes and try again.");
+      } else {
+        setAuthError(error.message);
+      }
       return false;
     }
     setOnbDone(false);
-    setPendingEmail(email);
+    if (data.session) {
+      // Email confirmation is disabled on the project — the user is signed in
+      // immediately. Set the session so the app gate routes them to onboarding.
+      setSession(data.session);
+    } else {
+      // Confirmation required — show the "check your email" screen.
+      setPendingEmail(email);
+    }
     track("sign_up");
     return true;
   };

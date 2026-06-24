@@ -10,6 +10,7 @@ export const DEFAULT_FILTERS = {
   payType:    'any',    // 'any' | 'flat' | 'hourly'
   urgentOnly: false,
   verifiedStudentsOnly: false, // only gigs from Verified Student posters
+  campusOnly: false,           // only gigs from posters at the viewer's school
   sortBy:     'newest', // 'newest' | 'nearest' | 'pay_high' | 'pay_low'
 };
 
@@ -44,6 +45,7 @@ export function countActiveFilters(f) {
   if (f.payType    !== 'any')    n++;
   if (f.urgentOnly)              n++;
   if (f.verifiedStudentsOnly)    n++;
+  if (f.campusOnly)              n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -93,7 +95,8 @@ export function availableStatesFrom(jobs) {
 
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
-export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords } = {}) {
+export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, mySchool } = {}) {
+  const schoolKey = (mySchool || '').trim().toLowerCase();
   let list = (jobs || []).filter(j => {
     if (j.status !== 'open') return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
@@ -106,6 +109,7 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
     if (filters.payType !== 'any' && j.payType !== filters.payType) return false;
     if (filters.urgentOnly && !j.urgent) return false;
     if (filters.verifiedStudentsOnly && !j.poster?.studentVerified) return false;
+    if (filters.campusOnly && (!schoolKey || (j.poster?.school || '').trim().toLowerCase() !== schoolKey)) return false;
 
     if (filters.location !== 'any') {
       if (filters.location === 'remote') {
@@ -134,6 +138,10 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
     list = [...list].sort((a, b) => effPay(a) - effPay(b));
   } else if (filters.sortBy === 'nearest') {
     list = [...list].sort((a, b) => (a._distanceMi ?? Infinity) - (b._distanceMi ?? Infinity));
+  } else {
+    // 'newest' — bumped gigs float to the top (a bump refreshes bumped_at).
+    const freshness = (j) => new Date(j.bumpedAt || j.createdAt || 0).getTime();
+    list = [...list].sort((a, b) => freshness(b) - freshness(a));
   }
 
   return list;

@@ -17,6 +17,10 @@ export function transformJob(dbJob) {
     status: dbJob.status,
     photos: dbJob.photos || [],
     recurrence: dbJob.recurrence || 'none',
+    instantBook: dbJob.instant_book || false,
+    instantBookAudience: dbJob.instant_book_audience || 'all',
+    bumpedAt: dbJob.bumped_at || null,
+    createdAt: dbJob.created_at || null,
     lat: dbJob.lat ?? null,
     lng: dbJob.lng ?? null,
     postedAt: dbJob.created_at
