@@ -64,6 +64,26 @@ Deno.serve(async (req: Request) => {
     } = await admin.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
+    // Per-user rate limit (cost guard) — caps requests so a scripted loop can't
+    // run up the Anthropic bill. Service-role table; best-effort (fails open if
+    // the table is missing). 12/min and 300/day per user.
+    try {
+      await admin.from('assistant_rate').insert({ user_id: user.id });
+      const sinceMin = new Date(Date.now() - 60_000).toISOString();
+      const sinceDay = new Date(Date.now() - 86_400_000).toISOString();
+      const [{ count: perMin }, { count: perDay }] = await Promise.all([
+        admin.from('assistant_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceMin),
+        admin.from('assistant_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceDay),
+      ]);
+      if ((perMin ?? 0) > 12 || (perDay ?? 0) > 300) {
+        return json({ error: 'rate_limited', message: "You're messaging Hustlr AI too fast — give it a moment." }, 429);
+      }
+      // Opportunistic cleanup so the table stays bounded per active user.
+      admin.from('assistant_rate').delete().eq('user_id', user.id).lt('created_at', sinceDay).then(() => {}, () => {});
+    } catch (_) {
+      // table not yet created / transient error → don't block the user
+    }
+
     // User-scoped client: forwards the caller's JWT so RLS applies to every query.
     const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: `Bearer ${token}` } },
