@@ -42,9 +42,11 @@ export default function NotificationsScreen({ navigation }) {
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const open = (n) => {
-    if (!n.read) {
-      markRead(n.id);
-      setItems((xs) => xs.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    if (!n.read) markRead(n.id);
+    if (tab === 'inbox') {
+      // Auto-archive on view — handled alerts leave the inbox (still in Archived).
+      setArchived(n.id, true);
+      setItems((xs) => xs.filter((x) => x.id !== n.id));
     }
     const r = notificationRoute(n);
     if (r) {

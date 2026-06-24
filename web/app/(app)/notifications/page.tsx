@@ -56,9 +56,11 @@ export default function NotificationsPage() {
   }, [load]);
 
   const open = (n: NotificationRow) => {
-    if (!n.read) {
-      markRead(n.id);
-      setItems((xs) => xs.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    if (!n.read) markRead(n.id);
+    if (tab === "inbox") {
+      // Auto-archive on view — handled alerts leave the inbox (still in Archived).
+      setArchived(n.id, true);
+      setItems((xs) => xs.filter((x) => x.id !== n.id));
     }
     const href = notificationHref(n);
     if (href) router.push(href);
