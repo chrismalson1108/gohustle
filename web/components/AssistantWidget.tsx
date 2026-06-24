@@ -92,9 +92,15 @@ export default function AssistantWidget() {
       setMessages([...next, { role: "assistant", content: reply }]);
       runActions(actions);
     } catch (err) {
-      const msg = (err as Error).message || "Something went wrong. Try again.";
-      setError(msg);
-      setMessages([...next, { role: "assistant", content: msg }]);
+      // Show one friendly error in the composer banner. Don't inject it as an
+      // assistant bubble — that duplicated the message and (worse) got sent back
+      // to the model as a real assistant turn on the next request.
+      const raw = (err as Error).message || "";
+      const friendly =
+        raw && raw !== "Edge function error" && raw !== "Unauthorized" && !/fetch/i.test(raw)
+          ? raw
+          : "Hustlr AI is unavailable right now. Please try again in a moment.";
+      setError(friendly);
     } finally {
       setBusy(false);
     }
@@ -137,6 +143,10 @@ export default function AssistantWidget() {
     setListening(false);
   };
 
+  // Stop the mic if the component unmounts (e.g. sign-out) while listening.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => stopListening(), []);
+
   return (
     <>
       {/* Floating launcher */}
@@ -162,7 +172,7 @@ export default function AssistantWidget() {
               <p className="font-black leading-tight">Hustlr AI</p>
               <p className="text-xs text-white/80">Your gig sidekick</p>
             </div>
-            <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-full p-1.5 hover:bg-white/15">
+            <button onClick={() => { stopListening(); setOpen(false); }} aria-label="Close" className="rounded-full p-1.5 hover:bg-white/15">
               <X className="size-5" />
             </button>
           </div>
@@ -218,8 +228,9 @@ export default function AssistantWidget() {
                   }
                 }}
                 rows={1}
+                disabled={listening}
                 placeholder={listening ? "Listening…" : "Ask anything, or describe a gig…"}
-                className="max-h-28 min-h-10 flex-1 resize-none rounded-2xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-primary"
+                className="max-h-28 min-h-10 flex-1 resize-none rounded-2xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-primary disabled:opacity-70"
               />
               <button
                 onClick={() => send(input)}

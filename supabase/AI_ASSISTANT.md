@@ -69,8 +69,25 @@ and `create_gig` can only post as the signed-in user.
 - **Mobile:** the device keyboard's dictation mic feeds speech-to-text straight into the
   composer — no extra dependency.
 
+### Safety & limits
+
+- **RLS-bound:** all tool reads/writes use the caller's JWT, so the assistant can
+  never exceed what that user could do by hand.
+- **Untrusted content:** gig/review text written by other users is treated as data,
+  not instructions (the system prompt forbids following directions embedded in it) —
+  mitigating indirect prompt injection.
+- **Per-request write caps:** at most 3 `create_gig` and 3 `book_gig` writes per
+  request, and the tool loop is capped (8 rounds + 1 forced wrap-up) to bound cost.
+- **Not yet added — cross-request rate limiting.** There's no per-user request quota
+  across requests; a scripted authenticated caller could still run up Anthropic spend.
+  For production, add a per-user token-bucket (a small Supabase table or Upstash/KV
+  checked before the loop) and monitor spend in the Anthropic console. Supabase's
+  platform gateway also applies coarse infra-level limits.
+
 ## Future enhancements
 
+- **Per-user rate limiting** (token-bucket keyed on `user.id`) — recommended before
+  heavy production traffic.
 - **Streaming replies** (SSE pass-through) for token-by-token output.
 - **Messaging tool** so the assistant can draft/send chat messages to a poster/earner.
 - **Persisted conversations** (store transcripts in a `assistant_threads` table).

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { askAssistant } from '../lib/assistantClient';
 import { useJobs } from '../context/JobsContext';
@@ -88,8 +89,8 @@ export default function AssistantButton() {
       </TouchableOpacity>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <SafeAreaView style={styles.modal}>
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <SafeAreaView style={styles.modal} edges={['top', 'bottom']}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerIcon}>
