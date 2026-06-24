@@ -43,5 +43,5 @@ as $$
   select to_jsonb(p) from public.profiles p where p.id = auth.uid()
 $$;
 
-revoke execute on function public.my_profile() from anon;
+revoke execute on function public.my_profile() from public;  -- drops the default PUBLIC grant
 grant execute on function public.my_profile() to authenticated;
