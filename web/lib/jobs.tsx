@@ -216,7 +216,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase
       .from("jobs")
       .select(
-        `*, profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified), job_slots(*), job_requirements(*), reviews(*)`,
+        `*, profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status), job_slots(*), job_requirements(*), reviews(*)`,
       )
       .neq("status", "cancelled")
       .order("created_at", { ascending: false });
@@ -260,7 +260,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase
       .from("bookings")
       .select(
-        `*, earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`,
+        `*, earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`,
       )
       .in("job_id", jobIds)
       .order("created_at", { ascending: false });
@@ -649,7 +649,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const d = jobData as Record<string, unknown>;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("name, avatar_initial, avatar_url, rating, review_count, verified")
+      .select("name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status")
       .eq("id", user.id)
       .single();
 
@@ -660,6 +660,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       rating: Number(profile?.rating) || 5.0,
       reviewCount: profile?.review_count || 0,
       verified: profile?.verified || false,
+      school: profile?.school || null,
+      studentVerified: profile?.student_verified || false,
+      studentStatus: profile?.student_status || "none",
     };
 
     const { data: newJob, error } = await supabase

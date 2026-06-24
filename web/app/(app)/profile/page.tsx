@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck } from "lucide-react";
-import { BADGE_DEFS } from "@gohustlr/shared";
+import { Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap } from "lucide-react";
+import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
@@ -18,7 +18,14 @@ export default function ProfilePage() {
   const { postedJobs } = useJobs();
   const { signOut } = useAuth();
 
+  const college = collegeLine({ school: u.school, major: u.major, gradYear: u.gradYear });
+
   const links = [
+    {
+      href: "/verify-student",
+      label: u.studentVerified ? "Verified Student ✓" : "Verify student status",
+      icon: GraduationCap,
+    },
     { href: "/profile/payouts", label: "Payouts & payments", icon: Wallet },
     { href: "/profile/taxes", label: "Tax Center", icon: Receipt },
     { href: "/profile/saved", label: "Saved people", icon: Heart },
@@ -37,6 +44,7 @@ export default function ProfilePage() {
           <div>
             <div className="flex items-center gap-1.5">
               <p className="text-xl font-black">{u.name}</p>
+              {u.studentVerified && <GraduationCap className="size-4 text-white/90" />}
             </div>
             <div className="mt-0.5 flex items-center gap-2 text-white/85">
               <RatingStars value={u.rating} size={14} />
@@ -44,6 +52,7 @@ export default function ProfilePage() {
                 {u.rating.toFixed(1)} · {u.reviewCount} review{u.reviewCount !== 1 ? "s" : ""}
               </span>
             </div>
+            {college && <p className="mt-0.5 text-sm font-semibold text-white/90">{college}</p>}
           </div>
         </div>
         <div className="mt-4">

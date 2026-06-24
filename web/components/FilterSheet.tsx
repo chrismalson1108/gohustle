@@ -19,6 +19,7 @@ export interface Filters {
   location: string;
   payType: string;
   urgentOnly: boolean;
+  verifiedStudentsOnly: boolean;
   sortBy: string;
 }
 
@@ -142,6 +143,12 @@ export default function FilterSheet({ open, filters, availableStates, onApply, o
       <Section title="Urgency">
         <Chip active={local.urgentOnly} onClick={() => set("urgentOnly", !local.urgentOnly)}>
           ⚡ Urgent gigs only
+        </Chip>
+      </Section>
+
+      <Section title="Trust">
+        <Chip active={local.verifiedStudentsOnly} onClick={() => set("verifiedStudentsOnly", !local.verifiedStudentsOnly)}>
+          🎓 Verified students only
         </Chip>
       </Section>
     </Modal>

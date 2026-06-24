@@ -37,6 +37,15 @@ export interface UserState {
   weeklyEarningGoal: number;
   weeklyJobsGoal: number;
   weeklyJobsDone: number;
+  // College identity
+  school: string | null;
+  schoolDomain: string | null;
+  major: string | null;
+  degreeType: string | null;
+  classStanding: string | null;
+  gradYear: number | null;
+  studentStatus: string;
+  studentVerified: boolean;
   badges: Record<string, { unlocked: boolean }>;
   challenges: Challenge[];
   pendingToast: Toast | null;
@@ -58,6 +67,14 @@ const DEFAULT_STATE: UserState = {
   weeklyEarningGoal: 300,
   weeklyJobsGoal: 5,
   weeklyJobsDone: 0,
+  school: null,
+  schoolDomain: null,
+  major: null,
+  degreeType: null,
+  classStanding: null,
+  gradYear: null,
+  studentStatus: "none",
+  studentVerified: false,
   badges: {
     firstHustle: { unlocked: false },
     onFire: { unlocked: false },
@@ -113,6 +130,14 @@ function dbToState(
     weeklyEarningGoal: Number(p.weekly_earning_goal) || 300,
     weeklyJobsGoal: Number(p.weekly_jobs_goal) || 5,
     weeklyJobsDone: Number(p.weekly_jobs_done) || 0,
+    school: (p.school as string) || null,
+    schoolDomain: (p.school_domain as string) || null,
+    major: (p.major as string) || null,
+    degreeType: (p.degree_type as string) || null,
+    classStanding: (p.class_standing as string) || null,
+    gradYear: (p.grad_year as number) ?? null,
+    studentStatus: (p.student_status as string) || "none",
+    studentVerified: Boolean(p.student_verified),
     badges: badgeMap,
     challenges: mergedChallenges,
     pendingToast: null,

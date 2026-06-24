@@ -9,6 +9,7 @@ export const DEFAULT_FILTERS = {
   location:   'any',    // 'any' | 'remote' | state abbreviation like 'TX'
   payType:    'any',    // 'any' | 'flat' | 'hourly'
   urgentOnly: false,
+  verifiedStudentsOnly: false, // only gigs from Verified Student posters
   sortBy:     'newest', // 'newest' | 'nearest' | 'pay_high' | 'pay_low'
 };
 
@@ -42,6 +43,7 @@ export function countActiveFilters(f) {
   if (f.location   !== 'any')    n++;
   if (f.payType    !== 'any')    n++;
   if (f.urgentOnly)              n++;
+  if (f.verifiedStudentsOnly)    n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -103,6 +105,7 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
     if (!matchesPay(j, filters.payRange)) return false;
     if (filters.payType !== 'any' && j.payType !== filters.payType) return false;
     if (filters.urgentOnly && !j.urgent) return false;
+    if (filters.verifiedStudentsOnly && !j.poster?.studentVerified) return false;
 
     if (filters.location !== 'any') {
       if (filters.location === 'remote') {

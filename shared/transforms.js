@@ -29,6 +29,9 @@ export function transformJob(dbJob) {
       rating: Number(dbJob.profiles?.rating) || 5.0,
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
+      school: dbJob.profiles?.school || null,
+      studentVerified: dbJob.profiles?.student_verified || false,
+      studentStatus: dbJob.profiles?.student_status || 'none',
     },
     slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken, startsAt: s.starts_at || null })),
     requirements: (dbJob.job_requirements || [])
@@ -68,6 +71,9 @@ export function transformBooking(b) {
       avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
+      school: b.earner.school || null,
+      studentVerified: b.earner.student_verified || false,
+      studentStatus: b.earner.student_status || 'none',
     } : null,
     job: b.job ? {
       id: b.job.id,

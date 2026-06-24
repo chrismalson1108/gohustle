@@ -3,6 +3,7 @@ import { CATEGORY_COLORS } from "@gohustlr/shared";
 import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle } from "lucide-react";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
+import StudentBadge from "./ui/StudentBadge";
 import { payLabel } from "@/lib/format";
 import type { Job, BookingStatus } from "@/lib/types";
 
@@ -86,6 +87,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
           <Avatar url={job.poster.avatarUrl} initial={job.poster.avatarInitial} name={job.poster.name} size={22} />
           <span className="truncate text-xs font-semibold text-ink-soft">{job.poster.name}</span>
           {job.poster.verified && <CheckCircle2 className="size-3.5 text-success" />}
+          {job.poster.studentVerified && <StudentBadge profile={job.poster} compact />}
           <span className="ml-auto">
             {job.poster.reviewCount > 0 ? (
               <RatingStars value={job.poster.rating} size={13} />

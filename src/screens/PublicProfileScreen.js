@@ -12,6 +12,7 @@ import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
+import { collegeLine } from '../lib/school';
 import { colors, gradients, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 
@@ -53,7 +54,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }] = await Promise.all([
       supabase.from('profiles')
-        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at')
+        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
         .eq('id', userId).single(),
       supabase.from('reviews')
         .select('id, rating, text, date, role, job:jobs(title), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
@@ -94,6 +95,7 @@ export default function PublicProfileScreen({ route, navigation }) {
             <View style={styles.nameRow}>
               <Text style={styles.name}>{profile.name || 'GoHustlr user'}</Text>
               {profile.verified && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
+              {profile.student_verified && <Ionicons name="school" size={14} color="#fff" style={{ marginLeft: 6 }} />}
             </View>
             {overall != null
               ? <RatingStars rating={overall} size={14} />
@@ -102,6 +104,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               {reviews.length > 0 ? `${overall.toFixed(1)} · ${reviews.length} review${reviews.length !== 1 ? 's' : ''}` : ''}
               {profile.member_since ? `${reviews.length ? ' · ' : ''}Since ${profile.member_since}` : ''}
             </Text>
+            {!!collegeLine(profile) && <Text style={styles.subWhite}>{collegeLine(profile)}</Text>}
             {profile.city ? <Text style={styles.subWhite}>{profile.city}</Text> : null}
           </View>
           {!isSelf && user && (

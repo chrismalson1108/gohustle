@@ -9,3 +9,4 @@ export * from './leveling.js';
 export * from './transforms.js';
 export * from './filters.js';
 export * from './lifecycle.js';
+export * from './school.js';

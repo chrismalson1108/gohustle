@@ -42,6 +42,7 @@ declare module "@gohustlr/shared" {
     location: string;
     payType: string;
     urgentOnly: boolean;
+    verifiedStudentsOnly: boolean;
     sortBy: string;
   }
   export const DEFAULT_FILTERS: JobFilters;
@@ -88,4 +89,25 @@ declare module "@gohustlr/shared" {
   // ── contentFilter ──
   export function findProhibited(text: string): string | null;
   export function isClean(...texts: string[]): boolean;
+
+  // ── school ──
+  export const CLASS_STANDINGS: string[];
+  export const DEGREE_TYPES: string[];
+  export const COLLEGE_DOMAINS: Record<string, string>;
+  export function gradYearOptions(currentYear: number, back?: number, forward?: number): number[];
+  export function isEduEmail(email: string): boolean;
+  export function schoolDomainFromEmail(email: string): string | null;
+  export function schoolNameFromDomain(domain: string | null): string | null;
+  export function studentTrustLabel(profile: {
+    studentVerified?: boolean;
+    student_verified?: boolean;
+    studentStatus?: string;
+    student_status?: string;
+  } | null): string | null;
+  export function collegeLine(profile: {
+    school?: string | null;
+    major?: string | null;
+    gradYear?: number | null;
+    grad_year?: number | null;
+  } | null): string | null;
 }

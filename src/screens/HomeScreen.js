@@ -122,6 +122,9 @@ export default function HomeScreen({ navigation }) {
       // Urgent only
       if (filters.urgentOnly && !j.urgent) return false;
 
+      // Verified students only
+      if (filters.verifiedStudentsOnly && !j.poster?.studentVerified) return false;
+
       // Location
       if (filters.location !== 'any') {
         if (filters.location === 'remote') {

@@ -3,9 +3,12 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import RatingStars from './RatingStars';
 import Avatar from './Avatar';
+import StudentBadge from './StudentBadge';
+import { collegeLine } from '../lib/school';
 import { colors, shadows } from '../theme';
 
 export default function PosterTrustCard({ poster }) {
+  const college = collegeLine(poster);
   return (
     <View style={styles.card}>
       <Avatar url={poster.avatarUrl} initial={poster.avatarInitial} size={52} fontSize={20} style={{ marginRight: 14 }} />
@@ -18,7 +21,9 @@ export default function PosterTrustCard({ poster }) {
               <Text style={styles.verifiedText}>Verified</Text>
             </View>
           )}
+          <StudentBadge profile={poster} compact style={{ marginLeft: 6 }} />
         </View>
+        {!!college && <Text style={styles.college}>{college}</Text>}
         {poster.reviewCount > 0 ? (
           <>
             <RatingStars rating={poster.rating} />
@@ -62,6 +67,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
   },
   verifiedText: { fontSize: 11, fontWeight: '700', color: colors.success },
+  college: { fontSize: 12, color: colors.textSecondary, marginBottom: 4, fontWeight: '600' },
   sub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   newRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
 });

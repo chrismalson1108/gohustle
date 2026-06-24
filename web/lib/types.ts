@@ -26,6 +26,9 @@ export interface PosterMini {
   rating: number;
   reviewCount: number;
   verified: boolean;
+  school: string | null;
+  studentVerified: boolean;
+  studentStatus: string;
 }
 
 export interface Review {
@@ -67,6 +70,9 @@ export interface EarnerMini {
   avatarUrl: string | null;
   rating: number;
   reviewCount: number;
+  school: string | null;
+  studentVerified: boolean;
+  studentStatus: string;
 }
 
 export interface BookingJobMini {
@@ -117,6 +123,15 @@ export interface Profile {
   skills: string[];
   radiusMiles: number;
   verified: boolean;
+  // College identity
+  school: string | null;
+  schoolDomain: string | null;
+  major: string | null;
+  degreeType: string | null;
+  classStanding: string | null;
+  gradYear: number | null;
+  studentStatus: "none" | "student" | "alumni";
+  studentVerified: boolean;
   xp: number;
   streakDays: number;
   earningsToday: number;

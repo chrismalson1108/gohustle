@@ -12,6 +12,7 @@ import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients } from '../theme';
 import LocationPicker from '../components/LocationPicker';
+import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -35,6 +36,7 @@ export default function SettingsScreen({ navigation }) {
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
     city: '', role: 'earner', skills: [], radiusMiles: 25, skillRates: {},
+    school: '', major: '', degreeType: '', classStanding: '', gradYear: '',
   });
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function SettingsScreen({ navigation }) {
   const loadProfile = async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates')
+      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year')
       .eq('id', user.id)
       .single();
     if (data) {
@@ -57,6 +59,11 @@ export default function SettingsScreen({ navigation }) {
         skills: data.skills || [],
         radiusMiles: data.radius_miles || 25,
         skillRates: data.skill_rates || {},
+        school: data.school || '',
+        major: data.major || '',
+        degreeType: data.degree_type || '',
+        classStanding: data.class_standing || '',
+        gradYear: data.grad_year ? String(data.grad_year) : '',
       });
     }
     setLoading(false);
@@ -114,6 +121,11 @@ export default function SettingsScreen({ navigation }) {
         if (r > 0) acc[s] = r;
         return acc;
       }, {}),
+      school: form.school || null,
+      major: form.major || null,
+      degree_type: form.degreeType || null,
+      class_standing: form.classStanding || null,
+      grad_year: form.gradYear ? parseInt(form.gradYear, 10) || null : null,
     }).eq('id', user.id);
     setSaving(false);
     if (error) {
@@ -202,6 +214,64 @@ export default function SettingsScreen({ navigation }) {
               placeholder="Your city or 'Remote'"
             />
           </Field>
+
+          <Field label="College (optional)">
+            <TextInput
+              style={styles.input} placeholder="e.g. University of Texas at Austin"
+              placeholderTextColor={colors.textMuted} value={form.school}
+              onChangeText={v => set('school', v)}
+            />
+            <Text style={styles.hintText}>Verify your .edu email on your Profile to earn a Verified Student badge.</Text>
+          </Field>
+
+          {!!form.school && (
+            <>
+              <Field label="Major">
+                <TextInput
+                  style={styles.input} placeholder="e.g. Computer Science"
+                  placeholderTextColor={colors.textMuted} value={form.major}
+                  onChangeText={v => set('major', v)}
+                />
+              </Field>
+
+              <Field label="Class Standing">
+                <View style={styles.skillGrid}>
+                  {CLASS_STANDINGS.map(s => (
+                    <TouchableOpacity
+                      key={s}
+                      style={[styles.skillChip, form.classStanding === s && styles.skillChipActive]}
+                      onPress={() => { haptic.selection(); set('classStanding', form.classStanding === s ? '' : s); }}
+                    >
+                      <Text style={[styles.skillChipText, form.classStanding === s && styles.skillChipTextActive]}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Field>
+
+              <Field label="Degree">
+                <View style={styles.skillGrid}>
+                  {DEGREE_TYPES.map(d => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[styles.skillChip, form.degreeType === d && styles.skillChipActive]}
+                      onPress={() => { haptic.selection(); set('degreeType', form.degreeType === d ? '' : d); }}
+                    >
+                      <Text style={[styles.skillChipText, form.degreeType === d && styles.skillChipTextActive]}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Field>
+
+              <Field label="Graduation Year">
+                <TextInput
+                  style={styles.input} placeholder="e.g. 2027"
+                  placeholderTextColor={colors.textMuted} value={form.gradYear}
+                  onChangeText={v => set('gradYear', v.replace(/[^0-9]/g, '').slice(0, 4))}
+                  keyboardType="number-pad" maxLength={4}
+                />
+              </Field>
+            </>
+          )}
 
           {(form.role === 'earner' || form.role === 'both') && (
             <>
