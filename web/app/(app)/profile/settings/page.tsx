@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { Input, Textarea, Label } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
@@ -38,12 +39,14 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { setRole, refreshProfile, showToast } = useUser();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [usernameError, setUsernameError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [f, setF] = useState({
     name: "", username: "", bio: "", city: "", role: "earner" as "earner" | "poster" | "both",
     skills: [] as string[], radiusMiles: 25, skillRates: {} as Record<string, string>,
@@ -126,6 +129,20 @@ export default function SettingsPage() {
     await refreshProfile();
     showToast({ icon: "✅", title: "Profile updated!", message: "Your settings have been saved." });
     router.push("/profile");
+  };
+
+  const deleteAccount = async () => {
+    setDeleting(true);
+    const { error } = await supabase.functions.invoke("delete-account");
+    if (error) {
+      setDeleting(false);
+      setConfirmDelete(false);
+      showToast({ icon: "❌", title: "Could not delete", message: "Please try again, or email support." });
+      return;
+    }
+    // Account is gone — clear the now-invalid session and return to sign-in.
+    await signOut();
+    router.replace("/login");
   };
 
   if (loading) return <FullPageSpinner />;
@@ -249,8 +266,40 @@ export default function SettingsPage() {
           </div>
 
           <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
+
+          {/* Danger zone */}
+          <div className="mt-8 rounded-2xl border border-urgent/30 bg-urgent/5 p-4">
+            <p className="text-xs font-extrabold uppercase tracking-wide text-urgent">Danger zone</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              Permanently delete your account, profile, gigs, bookings, messages, reviews, and photos. This can&apos;t be undone.
+            </p>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-urgent bg-white px-4 py-2.5 text-sm font-bold text-urgent hover:bg-urgent/5"
+            >
+              <Trash2 className="size-4" /> Delete account
+            </button>
+          </div>
         </div>
       </PageContainer>
+
+      <Modal
+        open={confirmDelete}
+        onClose={() => !deleting && setConfirmDelete(false)}
+        title="Delete your account?"
+        size="sm"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" fullWidth onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</Button>
+            <Button fullWidth loading={deleting} onClick={deleteAccount} className="bg-urgent hover:bg-urgent">Delete forever</Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          This permanently deletes your account and all your data — your profile, gigs, bookings, messages, reviews, and uploaded
+          photos. This action <span className="font-bold text-ink">cannot be undone</span>.
+        </p>
+      </Modal>
     </div>
   );
 }

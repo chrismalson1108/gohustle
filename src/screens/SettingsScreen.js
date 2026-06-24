@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
+  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,13 +24,14 @@ const SKILL_OPTIONS = [
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
 export default function SettingsScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { showToast, setRole, refreshProfile } = useUser();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
+  const [deleting, setDeleting]     = useState(false);
   const [usernameError, setUsernameError] = useState('');
 
   const [form, setForm] = useState({
@@ -136,6 +137,31 @@ export default function SettingsScreen({ navigation }) {
     await refreshProfile();
     showToast({ icon: '✅', title: 'Profile Updated!', message: 'Your settings have been saved.' });
     navigation.goBack();
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account, profile, gigs, bookings, messages, reviews, and photos. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            const { error } = await supabase.functions.invoke('delete-account');
+            if (error) {
+              setDeleting(false);
+              showToast({ icon: '❌', title: 'Could not delete', message: 'Please try again, or email support.' });
+              return;
+            }
+            // Account is gone — clear the now-invalid session and return to sign-in.
+            await signOut();
+          },
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -337,6 +363,22 @@ export default function SettingsScreen({ navigation }) {
               }
             </LinearGradient>
           </TouchableOpacity>
+
+          <View style={styles.dangerZone}>
+            <Text style={styles.dangerLabel}>Danger zone</Text>
+            <TouchableOpacity onPress={handleDeleteAccount} disabled={deleting} style={styles.deleteBtn} activeOpacity={0.85}>
+              {deleting
+                ? <ActivityIndicator color={colors.urgent} />
+                : (
+                  <>
+                    <Ionicons name="trash-outline" size={18} color={colors.urgent} style={{ marginRight: 8 }} />
+                    <Text style={styles.deleteBtnText}>Delete account</Text>
+                  </>
+                )
+              }
+            </TouchableOpacity>
+            <Text style={styles.dangerHint}>Permanently deletes your account and all your data. This can't be undone.</Text>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -409,4 +451,12 @@ const styles = StyleSheet.create({
   skillChipTextActive: { color: '#fff' },
   saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  dangerZone: { marginTop: 36, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
+  dangerLabel: { fontSize: 12, fontWeight: '800', color: colors.urgent, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.urgent, backgroundColor: colors.surface,
+  },
+  deleteBtnText: { color: colors.urgent, fontSize: 15, fontWeight: '800' },
+  dangerHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, textAlign: 'center' },
 });
