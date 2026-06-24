@@ -8,6 +8,7 @@ import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
+import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
@@ -22,7 +23,7 @@ export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
   const { user } = useAuth();
   const { name: myName, showToast } = useUser();
-  const { postedJobs } = useJobs();
+  const { postedJobs, blockUser } = useJobs();
   const haptic = useHaptic();
   const isSelf = user?.id === userId;
   const [profile, setProfile] = useState(null);
@@ -31,6 +32,8 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const myOpenGigs = (postedJobs || []).filter(j => j.status === 'open');
 
@@ -48,6 +51,27 @@ export default function PublicProfileScreen({ route, navigation }) {
       if (fav) { await removeFavorite(user.id, userId); setFav(false); }
       else { await addFavorite(user.id, userId); setFav(true); }
     } catch (_) {}
+  };
+
+  const doBlock = async () => {
+    setMenuOpen(false);
+    try {
+      await blockUser(userId);
+      showToast({ icon: '🚫', title: 'User blocked', message: "You won't see their gigs anymore." });
+      navigation.goBack();
+    } catch (_) {
+      showToast({ icon: '⚠️', title: "Couldn't block", message: 'Please try again.' });
+    }
+  };
+
+  const doReport = async (reason) => {
+    setReportOpen(false);
+    try {
+      await submitReport({ reporterId: user.id, reportedUserId: userId, reason });
+      showToast({ icon: '🚩', title: 'Report submitted', message: 'Thanks — our team will review it.' });
+    } catch (_) {
+      showToast({ icon: '⚠️', title: "Couldn't submit", message: 'Please try again.' });
+    }
   };
 
   const load = useCallback(async () => {
@@ -108,12 +132,46 @@ export default function PublicProfileScreen({ route, navigation }) {
             {profile.city ? <Text style={styles.subWhite}>{profile.city}</Text> : null}
           </View>
           {!isSelf && user && (
-            <TouchableOpacity onPress={toggleFav} style={styles.favBtn} activeOpacity={0.8}>
-              <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? '#FB7185' : '#fff'} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={toggleFav} style={styles.favBtn} activeOpacity={0.8}>
+                <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? '#FB7185' : '#fff'} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.favBtn} activeOpacity={0.8} accessibilityLabel="More options">
+                <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </GradientHeader>
+
+      {/* Report / block action sheet */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setMenuOpen(false)}>
+          <View style={styles.sheet}>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setMenuOpen(false); setReportOpen(true); }}>
+              <Ionicons name="flag-outline" size={18} color={colors.textPrimary} style={{ marginRight: 10 }} />
+              <Text style={styles.sheetText}>Report</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={doBlock}>
+              <Ionicons name="ban-outline" size={18} color={colors.urgent} style={{ marginRight: 10 }} />
+              <Text style={[styles.sheetText, { color: colors.urgent }]}>Block this user</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setReportOpen(false)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Report {profile.name || 'this user'}</Text>
+            {REPORT_REASONS.map((r) => (
+              <TouchableOpacity key={r} style={styles.sheetItem} onPress={() => doReport(r)}>
+                <Text style={styles.sheetText}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Rating breakdown */}
       <View style={styles.breakRow}>
@@ -250,6 +308,12 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center', justifyContent: 'center', marginLeft: 8,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 12, paddingBottom: 28 },
+  sheetTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, padding: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12 },
+  sheetText: { fontSize: 15.5, fontWeight: '700', color: colors.textPrimary },
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   name: { fontSize: 22, fontWeight: '900', color: '#fff' },
   subWhite: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
