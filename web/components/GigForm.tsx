@@ -46,6 +46,8 @@ export interface GigFormInitial {
   requirements?: string[];
   recurrence?: string;
   urgent?: boolean;
+  slots?: Slot[];
+  estimatedHours?: number;
 }
 
 function Chip({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -93,7 +95,8 @@ export default function GigForm({
   const [location, setLocation] = useState(initial?.location || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [requirements, setRequirements] = useState((initial?.requirements || []).join("\n"));
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<Slot[]>(initial?.slots || []);
+  const [estimatedHours, setEstimatedHours] = useState(String(initial?.estimatedHours || 2));
   const [recurrence, setRecurrence] = useState(initial?.recurrence || "none");
   const [urgent, setUrgent] = useState(!!initial?.urgent);
   const [keptPhotos, setKeptPhotos] = useState<string[]>(existingPhotos);
@@ -129,7 +132,7 @@ export default function GigForm({
       location,
       description,
       urgent,
-      estimatedHours: 2,
+      estimatedHours: payType === "hourly" ? Math.max(1, parseFloat(estimatedHours) || 2) : 2,
       requirements: requirements ? requirements.split("\n").filter(Boolean) : [],
       slots: finalSlots,
       photos: [...keptPhotos, ...newUrls],
@@ -183,6 +186,19 @@ export default function GigForm({
           ))}
         </div>
       </div>
+
+      {payType === "hourly" && (
+        <div>
+          <Label>Estimated hours</Label>
+          <Input
+            value={estimatedHours}
+            onChange={(e) => setEstimatedHours(e.target.value.replace(/[^0-9.]/g, ""))}
+            inputMode="decimal"
+            placeholder="2"
+          />
+          <p className="mt-1 text-xs text-ink-muted">Used to estimate total pay and to filter by pay range.</p>
+        </div>
+      )}
 
       <div>
         <Label>Location *</Label>

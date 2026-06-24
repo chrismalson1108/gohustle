@@ -272,7 +272,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const loadPosterBookings = useCallback(async () => {
     if (!user) return;
     const { data: myJobs } = await supabase.from("jobs").select("id").eq("poster_id", user.id);
-    if (!myJobs?.length) return;
+    if (!myJobs?.length) {
+      // Clear any stale poster bookings (e.g. the user just deleted their last gig).
+      dispatch({ type: "SET_POSTER_BOOKINGS", bookings: [] });
+      return;
+    }
     const jobIds = myJobs.map((j) => j.id);
 
     const bookingsSelect = (earner: string) =>
@@ -305,7 +309,24 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         { event: "UPDATE", schema: "public", table: "bookings", filter: `earner_id=eq.${user.id}` },
         (payload) => {
           const b = payload.new as Record<string, unknown>;
-          dispatch({ type: "UPDATE_BOOKING_STATUS", id: b.id as string, patch: transformBooking(b) });
+          // Patch only scalar fields — the realtime row has no job/earner embed, so
+          // running the full transformBooking would wipe the embedded job/earner.
+          dispatch({
+            type: "UPDATE_BOOKING_STATUS",
+            id: b.id as string,
+            patch: {
+              status: b.status as Booking["status"],
+              earnerDone: !!b.earner_done,
+              posterDone: !!b.poster_done,
+              earnerRating: b.earner_rating != null ? Number(b.earner_rating) : null,
+              posterRating: b.poster_rating != null ? Number(b.poster_rating) : null,
+              paymentMethod: (b.payment_method as string) ?? null,
+              amendmentStatus: (b.amendment_status as Booking["amendmentStatus"]) || "none",
+              amendmentNote: (b.amendment_note as string) ?? null,
+              tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
+              completionPhotos: (b.completion_photos as string[]) || [],
+            },
+          });
           if (b.status === "confirmed")
             showToast({ icon: "✅", title: "Booking Confirmed!", message: "The poster accepted your booking. Get ready!" });
           if (b.status === "verified") {
@@ -322,9 +343,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       .channel(`poster-bookings-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, (payload) => {
         loadPosterBookings();
-        if (payload.eventType === "INSERT")
+        // Only toast when it's someone ELSE acting on the poster's gig — the broad
+        // subscription also delivers the user's own (earner-side) booking rows.
+        const isOthers = (payload.new as Record<string, unknown>)?.earner_id !== user.id;
+        if (payload.eventType === "INSERT" && isOthers)
           showToast({ icon: "🔔", title: "New Booking Request!", message: "Someone wants to book your gig!" });
-        if ((payload.new as Record<string, unknown>)?.status === "completed")
+        if (isOthers && (payload.new as Record<string, unknown>)?.status === "completed")
           showToast({ icon: "⚡", title: "Job Marked Complete!", message: "An earner says the job is done — verify and rate them!" });
       })
       .subscribe();
@@ -372,7 +396,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Booking sync error:", error.message);
       return;
     }
-    if (slotId) supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
+    if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
     await loadBookings();
     if (job?.posterId) notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab" });
     track("booking_created", { jobId, counterOffer: !!counterOffer });
@@ -515,7 +539,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Cancel error:", error.message);
       return;
     }
-    if (booking?.slotId) supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
+    if (booking?.slotId) await supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
 
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
     const title = booking?.job?.title || "a gig";
@@ -580,7 +604,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     if (booking?.jobId) {
       dispatch({ type: "UPDATE_JOB", jobId: booking.jobId, patch: { status: "completed" } });
-      supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
+      await supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
     }
 
     if (booking?.earner?.id) {
@@ -637,6 +661,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       description: d.description,
       urgent: d.urgent,
     };
+    if (d.estimatedHours !== undefined) dbPatch.estimated_hours = d.estimatedHours;
     if (d.photos !== undefined) dbPatch.photos = d.photos;
     if (d.lat !== undefined) dbPatch.lat = d.lat;
     if (d.lng !== undefined) dbPatch.lng = d.lng;

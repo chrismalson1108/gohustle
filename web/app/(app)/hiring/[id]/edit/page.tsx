@@ -52,6 +52,8 @@ export default function EditGigPage() {
             requirements: job.requirements,
             recurrence: job.recurrence,
             urgent: job.urgent,
+            slots: job.slots,
+            estimatedHours: job.estimatedHours,
           }}
           onError={(message) => showToast({ icon: "⚠️", title: "Check your gig", message })}
           onSubmit={async (data) => {
