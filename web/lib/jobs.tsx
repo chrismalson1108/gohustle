@@ -24,6 +24,13 @@ import type { Job, Booking } from "./types";
 const JOBS_CACHE = "jobs_v1";
 const BOOKINGS_CACHE = "bookings_v1";
 
+// Poster/earner sub-selects. "rich" includes the student-verification columns;
+// "base" is the pre-migration fallback (see fetchJobs / loadPosterBookings).
+const POSTER_RICH = "name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status";
+const POSTER_BASE = "name, avatar_initial, avatar_url, rating, review_count, verified";
+const EARNER_RICH = "id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status";
+const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count";
+
 interface State {
   jobs: Job[];
   bookings: Booking[];
@@ -213,22 +220,33 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchJobs = useCallback(async () => {
-    const { data, error } = await supabase
+    // Resilient: if the student-verification migration hasn't been run yet, the
+    // school/student_* columns don't exist (PostgREST 42703) — fall back to a base
+    // poster select so the jobs list never blanks out.
+    const jobsSelect = (poster: string) =>
+      `*, profiles!jobs_poster_id_fkey(${poster}), job_slots(*), job_requirements(*), reviews(*)`;
+    let { data, error } = await supabase
       .from("jobs")
-      .select(
-        `*, profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status), job_slots(*), job_requirements(*), reviews(*)`,
-      )
+      .select(jobsSelect(POSTER_RICH))
       .neq("status", "cancelled")
       .order("created_at", { ascending: false });
+    if (error?.code === "42703") {
+      ({ data, error } = await supabase
+        .from("jobs")
+        .select(jobsSelect(POSTER_BASE))
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false }));
+    }
 
     if (error || !data) return;
-    const transformed = data.map(transformJob) as Job[];
+    const rows = data as unknown as Record<string, unknown>[];
+    const transformed = rows.map(transformJob) as Job[];
     dispatch({ type: "SET_JOBS", jobs: transformed });
 
     if (user) {
-      const myIds = data
-        .filter((j: Record<string, unknown>) => j.poster_id === user.id && j.status !== "cancelled")
-        .map((j: Record<string, unknown>) => j.id as string);
+      const myIds = rows
+        .filter((j) => j.poster_id === user.id && j.status !== "cancelled")
+        .map((j) => j.id as string);
       dispatch({ type: "SET_POSTED_IDS", ids: myIds });
     }
     cacheSet(JOBS_CACHE, transformed);
@@ -257,16 +275,24 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (!myJobs?.length) return;
     const jobIds = myJobs.map((j) => j.id);
 
-    const { data, error } = await supabase
+    const bookingsSelect = (earner: string) =>
+      `*, earner:profiles!bookings_earner_id_fkey(${earner}), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`;
+    let { data, error } = await supabase
       .from("bookings")
-      .select(
-        `*, earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`,
-      )
+      .select(bookingsSelect(EARNER_RICH))
       .in("job_id", jobIds)
       .order("created_at", { ascending: false });
+    if (error?.code === "42703") {
+      ({ data, error } = await supabase
+        .from("bookings")
+        .select(bookingsSelect(EARNER_BASE))
+        .in("job_id", jobIds)
+        .order("created_at", { ascending: false }));
+    }
 
     if (error || !data) return;
-    dispatch({ type: "SET_POSTER_BOOKINGS", bookings: data.map(transformBooking) as Booking[] });
+    const rows = data as unknown as Record<string, unknown>[];
+    dispatch({ type: "SET_POSTER_BOOKINGS", bookings: rows.map(transformBooking) as Booking[] });
   }, [user?.id]);
 
   const setupRealtime = () => {
