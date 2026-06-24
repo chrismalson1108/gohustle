@@ -31,6 +31,7 @@ import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
 import FavoritesScreen      from './src/screens/FavoritesScreen';
+import AvailabilityScreen   from './src/screens/AvailabilityScreen';
 import MessagesScreen       from './src/screens/MessagesScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
@@ -118,6 +119,7 @@ function ProfileStack() {
       <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
       <Stack.Screen name="EditJob"        component={EditJobScreen} />
       <Stack.Screen name="Settings"       component={SettingsScreen} />
+      <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />

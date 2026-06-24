@@ -428,6 +428,20 @@ export default function ProfileScreen({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="time-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Availability & Schedule</Text>
+            <Text style={styles.manageBtnSub}>Set your work status, hours & classes</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.settingsBtn}
         onPress={() => navigation.navigate('Settings')}
       >
