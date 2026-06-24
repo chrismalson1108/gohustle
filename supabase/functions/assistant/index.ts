@@ -69,7 +69,11 @@ Deno.serve(async (req: Request) => {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
 
-    const body = (await req.json().catch(() => ({}))) as { messages?: Array<{ role: string; content: string }> };
+    const body = (await req.json().catch(() => ({}))) as {
+      messages?: Array<{ role: string; content: string }>;
+      thread_id?: string;
+      new_thread?: boolean;
+    };
     const incoming = Array.isArray(body.messages) ? body.messages : [];
     // Keep the transcript bounded — only the most recent turns are needed for context.
     const history = incoming
@@ -180,7 +184,36 @@ Deno.serve(async (req: Request) => {
         : 'Done! Anything else I can help you with?';
     }
 
-    return json({ reply, actions });
+    // Persist the conversation if the client opted into threads. Best-effort — a
+    // persistence failure must never swallow the reply. Context stays bounded (we
+    // only ever send the last 16 turns), so threads can grow without growing cost.
+    let threadId: string | null = null;
+    if (typeof body.thread_id === 'string' || body.new_thread === true) {
+      try {
+        threadId = typeof body.thread_id === 'string' ? body.thread_id : null;
+        if (!threadId) {
+          const first = history.find((m) => m.role === 'user')?.content ?? 'New chat';
+          const { data: t } = await sb
+            .from('assistant_threads')
+            .insert({ user_id: user.id, title: first.slice(0, 48) })
+            .select('id')
+            .single();
+          threadId = ((t as Json | null)?.id as string) ?? null;
+        }
+        if (threadId) {
+          const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
+          const rows: Json[] = [];
+          if (lastUser) rows.push({ thread_id: threadId, user_id: user.id, role: 'user', content: lastUser });
+          rows.push({ thread_id: threadId, user_id: user.id, role: 'assistant', content: reply });
+          await sb.from('assistant_messages').insert(rows);
+          await sb.from('assistant_threads').update({ updated_at: new Date().toISOString() }).eq('id', threadId);
+        }
+      } catch (e) {
+        console.error('assistant: thread persist failed', e);
+      }
+    }
+
+    return json({ reply, actions, thread_id: threadId });
   } catch (err) {
     console.error('assistant:', err);
     return json({ error: 'server_error', message: 'Something went wrong.' }, 500);
@@ -315,6 +348,16 @@ const TOOLS = [
       "Get the user's availability: work status (available/busy/away/offline), weekly availability windows, and class schedule. Use before recommending gigs that must fit their free time, or when they ask about their schedule. To change any of it, use update_profile.",
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'remember',
+    description:
+      "Save a short, durable fact about the user to recall in FUTURE conversations — a goal ('saving for spring break'), a standing preference ('prefers weekend gigs', 'no delivery jobs'), or lasting context. Use when the user shares something worth keeping long-term. One short sentence; don't store trivial or one-off details.",
+    input_schema: {
+      type: 'object',
+      properties: { fact: { type: 'string', description: 'One concise sentence to remember.' } },
+      required: ['fact'],
+    },
+  },
 ];
 
 async function runTool(
@@ -345,6 +388,8 @@ async function runTool(
       return suggestPrice(sb, userId, input);
     case 'get_my_schedule':
       return mySchedule(sb, userId);
+    case 'remember':
+      return remember(sb, userId, input, actions);
     default:
       return JSON.stringify({ error: `unknown_tool: ${name}` });
   }
@@ -824,6 +869,28 @@ async function mySchedule(sb: SupabaseClient, userId: string): Promise<string> {
   });
 }
 
+async function remember(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
+  const fact = String(input.fact ?? '').trim().slice(0, 200);
+  if (!fact) return JSON.stringify({ error: 'empty_fact' });
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  let mem: string[] = Array.isArray((profile as Json | null)?.assistant_memory)
+    ? ((profile as Json).assistant_memory as string[])
+    : [];
+  if (mem.some((m) => String(m).toLowerCase() === fact.toLowerCase())) {
+    return JSON.stringify({ ok: true, note: 'already remembered' });
+  }
+  mem = [...mem, fact].slice(-25); // keep the 25 most recent facts
+  const { error } = await sb.from('profiles').update({ assistant_memory: mem }).eq('id', userId);
+  if (error) {
+    if ((error as Json).code === '42703') {
+      return JSON.stringify({ ok: false, note: "memory isn't enabled yet — the owner needs to run the latest database update" });
+    }
+    return JSON.stringify({ error: error.message });
+  }
+  actions.push({ type: 'memory_updated' });
+  return JSON.stringify({ ok: true, remembered: fact, total: mem.length });
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function gigSummary(j: Json): Json {
@@ -878,6 +945,10 @@ function buildSystemPrompt(userId: string, profile: Json): string {
   const monthlyGoal = profile.monthly_earning_goal ? `$${profile.monthly_earning_goal}` : 'not set';
   const workStatus = (profile.work_status as string) || 'available';
   const availSet = Array.isArray(profile.availability) && (profile.availability as unknown[]).length > 0 ? 'set' : 'not set';
+  const memory = Array.isArray(profile.assistant_memory) ? (profile.assistant_memory as string[]) : [];
+  const memoryBlock = memory.length
+    ? `\n\nThings you remember about ${name} from past chats (use them to be a better coach):\n${memory.map((m) => `- ${m}`).join('\n')}`
+    : '';
   const today = new Date().toISOString().slice(0, 10);
 
   return `You are **Hustlr AI**, the built-in assistant for GoHustlr — a gig marketplace built for college students.
@@ -896,7 +967,7 @@ The signed-in user:
 - City: ${city}
 - Monthly earning goal: ${monthlyGoal}
 - Work status: ${workStatus} · availability windows: ${availSet}
-- Today: ${today}
+- Today: ${today}${memoryBlock}
 
 What you can DO for them (via your tools):
 - Find work: search_gigs and recommend_gigs (personalized to their skills/history).
@@ -918,6 +989,7 @@ How to behave:
 - After you take an action, confirm what happened in plain language and suggest a natural next step. Refer to gigs by their title, never by raw id.
 - When recommending or listing gigs, show title, pay, location, and why it fits — keep it skimmable.
 - If asked something outside GoHustlr, answer briefly if helpful, then steer back to how you can help on the app.
+- You remember useful things across conversations. When the user shares a durable goal, preference, or fact worth keeping (e.g. "I'm saving for spring break", "I prefer weekend gigs", "no delivery jobs"), call **remember** with a one-line note. Don't store trivial or one-off details, and don't make a show of remembering — a brief "got it" is enough.
 - Respond with your final answer only — do not narrate your internal steps or tool usage.`;
 }
 
