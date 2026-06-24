@@ -32,6 +32,7 @@ function LoginInner() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [referral, setReferral] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
@@ -46,6 +47,7 @@ function LoginInner() {
     setMode(m);
     setLocalErr(null);
     setResetSent(false);
+    setAgreed(false);
     clearError();
     clearPending();
   };
@@ -68,6 +70,7 @@ function LoginInner() {
       if (!name.trim()) return setLocalErr("Enter your name.");
       if (password.length < 6) return setLocalErr("Password must be at least 6 characters.");
       if (password !== confirm) return setLocalErr("Passwords don't match.");
+      if (!agreed) return setLocalErr("Please confirm you're 18 or older and accept the Terms, Privacy Policy, and Contractor Agreement.");
       setBusy(true);
       await signUp(email, password, name.trim(), referral.trim() || undefined);
       setBusy(false);
@@ -175,10 +178,27 @@ function LoginInner() {
           </>
         )}
 
+        {mode === "signup" && (
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-primary"
+            />
+            <span>
+              I confirm I&apos;m 18 or older and agree to the{" "}
+              <Link href="/legal/terms" target="_blank" className="font-semibold text-primary hover:underline">Terms</Link>,{" "}
+              <Link href="/legal/privacy" target="_blank" className="font-semibold text-primary hover:underline">Privacy Policy</Link>, and{" "}
+              <Link href="/legal/contractor" target="_blank" className="font-semibold text-primary hover:underline">Independent Contractor Agreement</Link>.
+            </span>
+          </label>
+        )}
+
         <FieldError>{err}</FieldError>
         {resetSent && <p className="text-sm font-medium text-success">Check your inbox for the reset link.</p>}
 
-        <Button type="submit" fullWidth size="lg" loading={busy}>
+        <Button type="submit" fullWidth size="lg" loading={busy} disabled={mode === "signup" && !agreed}>
           {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
           <ArrowRight className="size-5" />
         </Button>

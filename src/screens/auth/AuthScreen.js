@@ -66,7 +66,7 @@ export default function AuthScreen() {
     if (tab === 'signup') {
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
-      if (!accepted) { setLocalError('Please accept the Terms, Privacy Policy, and Contractor Agreement'); return; }
+      if (!accepted) { setLocalError('Please confirm you are 18 or older and accept the Terms, Privacy Policy, and Contractor Agreement'); return; }
     }
 
     setLoading(true);
@@ -267,7 +267,7 @@ export default function AuthScreen() {
                 {accepted && <Ionicons name="checkmark" size={14} color="#fff" />}
               </TouchableOpacity>
               <Text style={styles.acceptText}>
-                I agree to the{' '}
+                I confirm I'm 18 or older and agree to the{' '}
                 <Text style={styles.acceptLink} onPress={() => setLegalDoc('terms')}>Terms</Text>,{' '}
                 <Text style={styles.acceptLink} onPress={() => setLegalDoc('privacy')}>Privacy Policy</Text>, and{' '}
                 <Text style={styles.acceptLink} onPress={() => setLegalDoc('contractor')}>Independent Contractor Agreement</Text>.
