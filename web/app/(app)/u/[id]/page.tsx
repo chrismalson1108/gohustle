@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CheckCircle2, GraduationCap, MapPin, ArrowLeft } from "lucide-react";
+import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart } from "lucide-react";
 import { collegeLine } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/auth";
+import { isFavorite, addFavorite, removeFavorite } from "@/lib/favorites";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import RatingStars from "@/components/ui/RatingStars";
@@ -52,10 +54,29 @@ interface PubListing {
 
 export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [reviews, setReviews] = useState<PubReview[]>([]);
   const [listings, setListings] = useState<PubListing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fav, setFav] = useState(false);
+  const isSelf = user?.id === id;
+
+  useEffect(() => {
+    if (user && id && !isSelf) isFavorite(user.id, id).then(setFav).catch(() => {});
+  }, [user, id, isSelf]);
+
+  const toggleFav = async () => {
+    if (!user || isSelf) return;
+    const next = !fav;
+    setFav(next);
+    try {
+      if (next) await addFavorite(user.id, id);
+      else await removeFavorite(user.id, id);
+    } catch {
+      setFav(!next);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -99,9 +120,16 @@ export default function PublicProfilePage() {
   return (
     <div>
       <PageHeader title="" subtitle="">
-        <Link href="/browse" className="mb-3 flex items-center gap-1 text-sm font-bold text-white/80">
-          <ArrowLeft className="size-4" /> Back
-        </Link>
+        <div className="mb-3 flex items-center justify-between">
+          <Link href="/browse" className="flex items-center gap-1 text-sm font-bold text-white/80">
+            <ArrowLeft className="size-4" /> Back
+          </Link>
+          {!isSelf && user && (
+            <button onClick={toggleFav} className="rounded-full bg-white/15 p-2 text-white" aria-label={fav ? "Unsave" : "Save"}>
+              <Heart className={fav ? "size-5 fill-white" : "size-5"} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} name={profile.name} size={64} ring />
           <div className="min-w-0">
