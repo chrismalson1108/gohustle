@@ -280,13 +280,18 @@ export function JobsProvider({ children }) {
 
   const loadPosterBookings = useCallback(async () => {
     if (!user) return;
-    // Get IDs of jobs posted by this user
+    // Get IDs of jobs posted by this user (exclude cancelled/deleted gigs so their
+    // bookings don't keep counting toward the Hiring badge after the gig is removed).
     const { data: myJobs } = await supabase
       .from('jobs')
       .select('id')
-      .eq('poster_id', user.id);
+      .eq('poster_id', user.id)
+      .neq('status', 'cancelled');
 
-    if (!myJobs?.length) return;
+    if (!myJobs?.length) {
+      dispatch({ type: 'SET_POSTER_BOOKINGS', bookings: [] }); // clear stale (e.g. last gig deleted)
+      return;
+    }
     const jobIds = myJobs.map(j => j.id);
 
     const { data, error } = await supabase
