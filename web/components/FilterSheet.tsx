@@ -20,6 +20,7 @@ export interface Filters {
   payType: string;
   urgentOnly: boolean;
   verifiedStudentsOnly: boolean;
+  campusOnly: boolean;
   sortBy: string;
 }
 
@@ -27,6 +28,7 @@ interface Props {
   open: boolean;
   filters: Filters;
   availableStates: string[];
+  mySchool?: string | null;
   onApply: (f: Filters) => void;
   onClose: () => void;
 }
@@ -55,7 +57,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function FilterSheet({ open, filters, availableStates, onApply, onClose }: Props) {
+export default function FilterSheet({ open, filters, availableStates, mySchool, onApply, onClose }: Props) {
   const [local, setLocal] = useState<Filters>(filters);
   useEffect(() => {
     if (open) setLocal(filters);
@@ -150,6 +152,11 @@ export default function FilterSheet({ open, filters, availableStates, onApply, o
         <Chip active={local.verifiedStudentsOnly} onClick={() => set("verifiedStudentsOnly", !local.verifiedStudentsOnly)}>
           🎓 Verified students only
         </Chip>
+        {mySchool && (
+          <Chip active={local.campusOnly} onClick={() => set("campusOnly", !local.campusOnly)}>
+            🏫 Only {mySchool}
+          </Chip>
+        )}
       </Section>
     </Modal>
   );

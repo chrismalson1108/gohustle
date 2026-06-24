@@ -43,6 +43,7 @@ declare module "@gohustlr/shared" {
     payType: string;
     urgentOnly: boolean;
     verifiedStudentsOnly: boolean;
+    campusOnly: boolean;
     sortBy: string;
   }
   export const DEFAULT_FILTERS: JobFilters;
@@ -63,6 +64,7 @@ declare module "@gohustlr/shared" {
       filters?: JobFilters;
       blockedIds?: Set<string>;
       userCoords?: { lat: number; lng: number } | null;
+      mySchool?: string | null;
     },
   ): Array<T & { _distanceMi?: number | null }>;
 

@@ -15,6 +15,7 @@ export const DEFAULT_FILTERS = {
   payType:    'any',   // 'any' | 'flat' | 'hourly'
   urgentOnly: false,
   verifiedStudentsOnly: false, // only gigs from Verified Student posters
+  campusOnly: false,           // only gigs from posters at the viewer's school
   sortBy:     'newest', // 'newest' | 'pay_high' | 'pay_low'
 };
 
@@ -26,6 +27,7 @@ export function countActiveFilters(f) {
   if (f.payType    !== 'any')   n++;
   if (f.urgentOnly)             n++;
   if (f.verifiedStudentsOnly)   n++;
+  if (f.campusOnly)             n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -47,7 +49,7 @@ const SORT_OPTIONS = [
   { id: 'pay_low',  ion: 'trending-down', label: 'Pay: Low → High' },
 ];
 
-export default function FilterSheet({ visible, filters, availableStates, onApply, onClose }) {
+export default function FilterSheet({ visible, filters, availableStates, mySchool, onApply, onClose }) {
   const haptic = useHaptic();
   const [local, setLocal] = useState(filters);
 
@@ -230,6 +232,23 @@ export default function FilterSheet({ visible, filters, availableStates, onApply
                   thumbColor="#fff"
                 />
               </View>
+              {!!mySchool && (
+                <View style={[styles.toggleRow, { marginTop: 10 }]}>
+                  <View>
+                    <View style={styles.toggleLabelRow}>
+                      <Ionicons name="business" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
+                      <Text style={styles.toggleLabel}>My campus only</Text>
+                    </View>
+                    <Text style={styles.toggleSub}>Only gigs from posters at {mySchool}</Text>
+                  </View>
+                  <Switch
+                    value={local.campusOnly}
+                    onValueChange={v => { haptic.selection(); set('campusOnly', v); }}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              )}
             </Section>
 
           </ScrollView>
