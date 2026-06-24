@@ -185,11 +185,13 @@ create trigger trg_guard_bookings_write
   for each row execute function public.guard_bookings_write();
 
 -- 2. Stripe accounts/customers: client read-only (writes via service role) -----
-drop policy if exists "stripe_accounts_own"  on public.stripe_accounts;
+drop policy if exists "stripe_accounts_own"        on public.stripe_accounts;
+drop policy if exists "stripe_accounts_select_own" on public.stripe_accounts;
 create policy "stripe_accounts_select_own" on public.stripe_accounts
   for select using (auth.uid() = user_id);
 
-drop policy if exists "stripe_customers_own" on public.stripe_customers;
+drop policy if exists "stripe_customers_own"        on public.stripe_customers;
+drop policy if exists "stripe_customers_select_own" on public.stripe_customers;
 create policy "stripe_customers_select_own" on public.stripe_customers
   for select using (auth.uid() = user_id);
 
