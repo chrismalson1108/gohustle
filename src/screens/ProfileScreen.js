@@ -442,6 +442,20 @@ export default function ProfileScreen({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity
+        style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('Notifications'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="notifications-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Alerts</Text>
+            <Text style={styles.manageBtnSub}>Gig matches from your AI watches</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.settingsBtn}
         onPress={() => navigation.navigate('Settings')}
       >
