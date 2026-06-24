@@ -31,6 +31,17 @@ Deno.serve(async (req: Request) => {
     // Don't notify yourself.
     if (userId === user.id) return json({ sent: 0, skipped: 'self' });
 
+    // Anti-spoof: only allow notifying someone you share a booking with, so this
+    // endpoint can't be used to plant arbitrary alerts in a stranger's inbox.
+    const [asEarner, asPoster] = await Promise.all([
+      supabase.from('bookings').select('id, jobs!bookings_job_id_fkey!inner(poster_id)')
+        .eq('earner_id', user.id).eq('jobs.poster_id', userId).limit(1),
+      supabase.from('bookings').select('id, jobs!bookings_job_id_fkey!inner(poster_id)')
+        .eq('earner_id', userId).eq('jobs.poster_id', user.id).limit(1),
+    ]);
+    const related = (asEarner.data?.length ?? 0) + (asPoster.data?.length ?? 0) > 0;
+    if (!related) return json({ error: 'Not allowed to notify this user' }, 403);
+
     // Persist an in-app alert (best-effort) so the recipient sees it in their
     // Alerts inbox even without a push-capable device. A missing column (before
     // the inbox migration) just logs and continues.

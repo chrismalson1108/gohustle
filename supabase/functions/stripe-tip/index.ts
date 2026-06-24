@@ -23,7 +23,10 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
     const { bookingId, tipCents } = await req.json();
-    if (!bookingId || !tipCents || tipCents < 50) return json({ error: 'A valid tip amount is required' }, 400);
+    // Bound the tip (50¢–$1000) — it charges the poster's card off-session.
+    if (!bookingId || !tipCents || tipCents < 50 || tipCents > 100_000) {
+      return json({ error: 'A valid tip amount (50¢–$1000) is required' }, 400);
+    }
 
     // Verify the caller is the poster of this booking
     const { data: booking } = await supabase

@@ -59,6 +59,11 @@ Deno.serve(async (req: Request) => {
     const rate = booking.counter_offer ? Number(booking.counter_offer) : Number(booking.job.pay);
     const hours = booking.job.pay_type === 'hourly' ? Number(booking.job.estimated_hours) : 1;
     const amountCents = Math.round(rate * hours * 100);
+    // Sanity-bound the amount — counter_offer is earner-controlled, so reject a
+    // non-positive or absurd value (cap $10,000) before it reaches Stripe.
+    if (!Number.isFinite(amountCents) || amountCents < 50 || amountCents > 1_000_000) {
+      return json({ error: 'Invalid booking amount' }, 400);
+    }
     const feeCents = Math.round(amountCents * 0.10);         // 10% GoHustlr fee
     const earnerAmountCents = amountCents - feeCents;
 
