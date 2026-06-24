@@ -1,20 +1,23 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
-// Content-Security-Policy. Shipped in Report-Only mode first (below) so a missed
-// source can't break the live app — promote the header name to
-// "Content-Security-Policy" once the browser console shows no violations.
+// Content-Security-Policy (ENFORCING). 'unsafe-inline'/'unsafe-eval' are kept for
+// Next.js + Tailwind compatibility; the hard wins here are frame-ancestors
+// (clickjacking), restricted connect/img/frame sources, base-uri and form-action.
+// Stripe Elements needs js.stripe.com (script/frame), *.stripe.com (api + m/q/r
+// telemetry) and *.stripe.network (3-D Secure). Maps use OSM/Carto tiles.
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.supabase.co https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
+  "img-src 'self' data: blob: https://*.supabase.co https://*.stripe.com https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://nominatim.openstreetmap.org",
-  "frame-src https://js.stripe.com https://hooks.stripe.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.stripe.com https://nominatim.openstreetmap.org",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://*.stripe.network",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+  "object-src 'none'",
 ].join("; ");
 
 const securityHeaders = [
@@ -24,7 +27,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(self), payment=(self)" },
-  { key: "Content-Security-Policy-Report-Only", value: CSP },
+  { key: "Content-Security-Policy", value: CSP },
 ];
 
 const nextConfig: NextConfig = {

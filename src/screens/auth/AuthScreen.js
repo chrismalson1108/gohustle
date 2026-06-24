@@ -64,7 +64,7 @@ export default function AuthScreen() {
     if (!email || !password || (tab === 'signup' && (!name || !confirmPw))) return;
 
     if (tab === 'signup') {
-      if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
+      if (password.length < 8) { setLocalError('Password must be at least 8 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
       if (!accepted) { setLocalError('Please confirm you are 18 or older and accept the Terms, Privacy Policy, and Contractor Agreement'); return; }
     }

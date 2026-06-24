@@ -68,7 +68,7 @@ function LoginInner() {
 
     if (mode === "signup") {
       if (!name.trim()) return setLocalErr("Enter your name.");
-      if (password.length < 6) return setLocalErr("Password must be at least 6 characters.");
+      if (password.length < 8) return setLocalErr("Password must be at least 8 characters.");
       if (password !== confirm) return setLocalErr("Passwords don't match.");
       if (!agreed) return setLocalErr("Please confirm you're 18 or older and accept the Terms, Privacy Policy, and Contractor Agreement.");
       setBusy(true);
