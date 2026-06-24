@@ -17,24 +17,27 @@ export interface ThreadMessage {
 }
 
 export async function listThreads(): Promise<ThreadRow[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("assistant_threads")
     .select("id, title, updated_at, created_at")
     .order("updated_at", { ascending: false })
     .limit(50);
+  if (error) throw new Error(error.message);
   return (data as ThreadRow[]) ?? [];
 }
 
 export async function loadThread(threadId: string): Promise<ThreadMessage[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("assistant_messages")
     .select("role, content, created_at")
     .eq("thread_id", threadId)
     .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
   return (data as ThreadMessage[]) ?? [];
 }
 
 export async function deleteThread(threadId: string): Promise<void> {
   // FK on assistant_messages cascades, so the messages go with it.
-  await supabase.from("assistant_threads").delete().eq("id", threadId);
+  const { error } = await supabase.from("assistant_threads").delete().eq("id", threadId);
+  if (error) throw new Error(error.message);
 }

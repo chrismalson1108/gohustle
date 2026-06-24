@@ -190,7 +190,18 @@ Deno.serve(async (req: Request) => {
     let threadId: string | null = null;
     if (typeof body.thread_id === 'string' || body.new_thread === true) {
       try {
-        threadId = typeof body.thread_id === 'string' ? body.thread_id : null;
+        let createdNew = false;
+        if (typeof body.thread_id === 'string') {
+          // Verify the client-supplied thread actually belongs to this user. RLS
+          // scopes the select to the owner, so a foreign/unknown id returns null —
+          // in which case we never write into it (start a fresh thread instead).
+          const { data: owned } = await sb
+            .from('assistant_threads')
+            .select('id')
+            .eq('id', body.thread_id)
+            .maybeSingle();
+          threadId = owned ? body.thread_id : null;
+        }
         if (!threadId) {
           const first = history.find((m) => m.role === 'user')?.content ?? 'New chat';
           const { data: t } = await sb
@@ -199,11 +210,19 @@ Deno.serve(async (req: Request) => {
             .select('id')
             .single();
           threadId = ((t as Json | null)?.id as string) ?? null;
+          createdNew = true;
         }
         if (threadId) {
-          const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
           const rows: Json[] = [];
-          if (lastUser) rows.push({ thread_id: threadId, user_id: user.id, role: 'user', content: lastUser });
+          if (createdNew) {
+            // New thread: persist the full (already-bounded) opening history so a
+            // reopened thread isn't missing its first turns.
+            for (const m of history) rows.push({ thread_id: threadId, user_id: user.id, role: m.role, content: m.content });
+          } else {
+            // Existing thread: append only the new user turn (prior turns are saved).
+            const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
+            if (lastUser) rows.push({ thread_id: threadId, user_id: user.id, role: 'user', content: lastUser });
+          }
           rows.push({ thread_id: threadId, user_id: user.id, role: 'assistant', content: reply });
           await sb.from('assistant_messages').insert(rows);
           await sb.from('assistant_threads').update({ updated_at: new Date().toISOString() }).eq('id', threadId);

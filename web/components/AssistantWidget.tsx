@@ -60,12 +60,12 @@ export default function AssistantWidget() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy, open]);
 
-  // Greet on first open.
+  // Greet a fresh chat only — not when a reopened thread loads empty or errors.
   useEffect(() => {
-    if (open && messages.length === 0) {
+    if (open && messages.length === 0 && threadId === null) {
       setMessages([{ role: "assistant", content: GREETING }]);
     }
-  }, [open, messages.length]);
+  }, [open, messages.length, threadId]);
 
   const runActions = (actions: AssistantAction[]) => {
     if (!actions.length) return;
@@ -93,7 +93,9 @@ export default function AssistantWidget() {
     setMessages(next);
     setBusy(true);
     try {
-      const res = await askAssistant(next, { threadId, newThread: !threadId });
+      // The synthetic greeting bubble is render-only — don't feed it to the model.
+      const payload = next[0]?.role === "assistant" && next[0].content === GREETING ? next.slice(1) : next;
+      const res = await askAssistant(payload, { threadId, newThread: !threadId });
       setMessages([...next, { role: "assistant", content: res.reply }]);
       if (res.thread_id) setThreadId(res.thread_id);
       runActions(res.actions);
@@ -153,7 +155,10 @@ export default function AssistantWidget() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => stopListening(), []);
 
+  // These switch conversation context, so they're blocked mid-send (and their
+  // buttons disabled) — otherwise an in-flight reply could clobber the new view.
   const newChat = () => {
+    if (busy) return;
     stopListening();
     setError(null);
     setThreadId(null);
@@ -162,24 +167,39 @@ export default function AssistantWidget() {
   };
 
   const openHistory = async () => {
+    if (busy) return;
     setView("history");
     setLoadingThreads(true);
-    setThreads(await listThreads());
+    try {
+      setThreads(await listThreads());
+    } catch {
+      setThreads([]);
+    }
     setLoadingThreads(false);
   };
 
   const pickThread = async (t: ThreadRow) => {
-    const msgs = await loadThread(t.id);
-    setThreadId(t.id);
-    setMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
-    setError(null);
-    setView("chat");
+    if (busy) return;
+    try {
+      const msgs = await loadThread(t.id);
+      setThreadId(t.id);
+      setMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
+      setError(null);
+      setView("chat");
+    } catch {
+      setError("Couldn't open that conversation — please try again.");
+    }
   };
 
   const removeThread = async (id: string) => {
-    await deleteThread(id);
-    setThreads((ts) => ts.filter((t) => t.id !== id));
-    if (id === threadId) newChat();
+    if (busy) return;
+    try {
+      await deleteThread(id);
+      setThreads((ts) => ts.filter((t) => t.id !== id));
+      if (id === threadId) newChat();
+    } catch {
+      setError("Couldn't delete that conversation.");
+    }
   };
 
   return (
@@ -207,10 +227,10 @@ export default function AssistantWidget() {
               <p className="font-black leading-tight">Hustlr AI</p>
               <p className="text-xs text-white/80">Your gig sidekick</p>
             </div>
-            <button onClick={newChat} aria-label="New chat" title="New chat" className="rounded-full p-1.5 hover:bg-white/15">
+            <button onClick={newChat} disabled={busy} aria-label="New chat" title="New chat" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
               <Plus className="size-5" />
             </button>
-            <button onClick={openHistory} aria-label="Past conversations" title="Past conversations" className="rounded-full p-1.5 hover:bg-white/15">
+            <button onClick={openHistory} disabled={busy} aria-label="Past conversations" title="Past conversations" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
               <History className="size-5" />
             </button>
             <button onClick={() => { stopListening(); setOpen(false); }} aria-label="Close" className="rounded-full p-1.5 hover:bg-white/15">
