@@ -106,7 +106,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, referral_code: referralCode || null } },
+      options: {
+        data: { name, referral_code: referralCode || null },
+        // Return web sign-ups to the website after they confirm (falls back to
+        // the project's Site URL if this origin isn't in the allow-list).
+        emailRedirectTo:
+          typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+      },
     });
     if (error) {
       setAuthError(error.message);
