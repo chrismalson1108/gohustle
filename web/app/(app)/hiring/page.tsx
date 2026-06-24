@@ -11,6 +11,7 @@ import StudentBadge from "@/components/ui/StudentBadge";
 import Avatar from "@/components/ui/Avatar";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import CompletionModal, { type VerifyArgs } from "@/components/CompletionModal";
+import AcceptPaymentModal from "@/components/AcceptPaymentModal";
 import { money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
@@ -18,6 +19,7 @@ export default function HiringPage() {
   const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob } = useJobs();
   const { showToast } = useUser();
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
+  const [payBooking, setPayBooking] = useState<Booking | null>(null);
 
   const onVerify = async (args: VerifyArgs) => {
     if (!verifyBooking) return;
@@ -88,7 +90,7 @@ export default function HiringPage() {
                           <div className="mt-2.5 flex flex-wrap gap-2">
                             {b.status === "pending" && (
                               <>
-                                <Button size="sm" onClick={() => acceptBooking(b.id)}>
+                                <Button size="sm" onClick={() => setPayBooking(b)}>
                                   <Check className="size-4" /> Accept
                                 </Button>
                                 <Button size="sm" variant="outline" className="text-urgent" onClick={() => declineBooking(b.id)}>
@@ -135,6 +137,18 @@ export default function HiringPage() {
       </PageContainer>
 
       <CompletionModal open={!!verifyBooking} booking={verifyBooking} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
+      <AcceptPaymentModal
+        booking={payBooking}
+        onClose={() => setPayBooking(null)}
+        onConfirmed={async () => {
+          const b = payBooking;
+          setPayBooking(null);
+          if (b) {
+            await acceptBooking(b.id);
+            showToast({ icon: "✅", title: "Accepted — funds held", message: "Payment is in escrow until you verify the work." });
+          }
+        }}
+      />
     </div>
   );
 }
