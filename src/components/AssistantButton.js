@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { askAssistant } from '../lib/assistantClient';
+import { listThreads, loadThread, deleteThread } from '../lib/assistantThreads';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
@@ -26,17 +27,23 @@ export default function AssistantButton() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [threadId, setThreadId] = useState(null);
+  const [view, setView] = useState('chat'); // 'chat' | 'history'
+  const [threads, setThreads] = useState([]);
+  const [loadingThreads, setLoadingThreads] = useState(false);
+  const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const haptic = useHaptic();
 
   const { refreshJobs, refreshBookings, refreshPosterBookings } = useJobs();
   const { refreshProfile, showToast } = useUser();
 
+  // Greet a fresh chat only — not when reopening a saved thread.
   useEffect(() => {
-    if (open && messages.length === 0) {
+    if (open && messages.length === 0 && threadId === null) {
       setMessages([{ role: 'assistant', content: GREETING }]);
     }
-  }, [open]);
+  }, [open, messages.length, threadId]);
 
   useEffect(() => {
     if (scrollRef.current) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
@@ -62,17 +69,63 @@ export default function AssistantButton() {
     if (!trimmed || busy) return;
     haptic?.light?.();
     setInput('');
+    setError(null);
     const next = [...messages, { role: 'user', content: trimmed }];
     setMessages(next);
     setBusy(true);
     try {
-      const { reply, actions } = await askAssistant(next);
-      setMessages([...next, { role: 'assistant', content: reply }]);
-      runActions(actions);
+      // The synthetic greeting bubble is render-only — don't feed it to the model.
+      const payload = next[0]?.role === 'assistant' && next[0].content === GREETING ? next.slice(1) : next;
+      const res = await askAssistant(payload, { threadId, newThread: !threadId });
+      setMessages([...next, { role: 'assistant', content: res.reply }]);
+      if (res.thread_id) setThreadId(res.thread_id);
+      runActions(res.actions);
     } catch (err) {
-      setMessages([...next, { role: 'assistant', content: err.message || 'Something went wrong. Try again.' }]);
+      setError(err.message || 'Hustlr AI is unavailable right now. Try again.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Context-switching actions — blocked mid-send so an in-flight reply can't
+  // clobber the new view (and the buttons are disabled while busy).
+  const newChat = () => {
+    if (busy) return;
+    setError(null);
+    setThreadId(null);
+    setMessages([{ role: 'assistant', content: GREETING }]);
+    setView('chat');
+  };
+
+  const openHistory = async () => {
+    if (busy) return;
+    setView('history');
+    setLoadingThreads(true);
+    try { setThreads(await listThreads()); } catch { setThreads([]); }
+    setLoadingThreads(false);
+  };
+
+  const pickThread = async (t) => {
+    if (busy) return;
+    try {
+      const msgs = await loadThread(t.id);
+      setThreadId(t.id);
+      setMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
+      setError(null);
+      setView('chat');
+    } catch {
+      setError("Couldn't open that conversation — try again.");
+    }
+  };
+
+  const removeThread = async (id) => {
+    if (busy) return;
+    try {
+      await deleteThread(id);
+      setThreads((ts) => ts.filter((t) => t.id !== id));
+      if (id === threadId) newChat();
+    } catch {
+      setError("Couldn't delete that conversation.");
     }
   };
 
@@ -100,53 +153,73 @@ export default function AssistantButton() {
                 <Text style={styles.headerTitle}>Hustlr AI</Text>
                 <Text style={styles.headerSub}>Your gig sidekick</Text>
               </View>
-              <TouchableOpacity onPress={() => setOpen(false)} accessibilityLabel="Close">
+              <TouchableOpacity onPress={newChat} disabled={busy} accessibilityLabel="New chat" style={[styles.headerBtn, busy && { opacity: 0.4 }]}>
+                <Ionicons name="add" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={openHistory} disabled={busy} accessibilityLabel="Past conversations" style={[styles.headerBtn, busy && { opacity: 0.4 }]}>
+                <Ionicons name="time-outline" size={23} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setOpen(false)} accessibilityLabel="Close" style={styles.headerBtn}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
             </View>
 
-            {/* Messages */}
-            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ padding: 14, gap: 10 }}>
-              {messages.map((m, i) => (
-                <Bubble key={i} role={m.role} content={m.content} />
-              ))}
-              {busy && (
-                <View style={styles.thinking}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={styles.thinkingText}>Thinking…</Text>
-                </View>
-              )}
-              {messages.length <= 1 && !busy && (
-                <View style={styles.chips}>
-                  {SUGGESTIONS.map((s) => (
-                    <TouchableOpacity key={s} style={styles.chip} onPress={() => send(s)}>
-                      <Text style={styles.chipText}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </ScrollView>
-
-            {/* Composer */}
-            <View style={styles.composer}>
-              <TextInput
-                style={styles.input}
-                value={input}
-                onChangeText={setInput}
-                placeholder="Ask anything, or describe a gig…"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                onSubmitEditing={() => send(input)}
+            {view === 'history' ? (
+              <HistoryPanel
+                threads={threads}
+                loading={loadingThreads}
+                activeId={threadId}
+                onBack={() => setView('chat')}
+                onPick={pickThread}
+                onDelete={removeThread}
               />
-              <TouchableOpacity
-                style={[styles.sendBtn, (!input.trim() || busy) && { opacity: 0.4 }]}
-                onPress={() => send(input)}
-                disabled={!input.trim() || busy}
-                accessibilityLabel="Send"
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
+            ) : (
+              <>
+                {/* Messages */}
+                <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ padding: 14, gap: 10 }}>
+                  {messages.map((m, i) => (
+                    <Bubble key={i} role={m.role} content={m.content} />
+                  ))}
+                  {busy && (
+                    <View style={styles.thinking}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.thinkingText}>Thinking…</Text>
+                    </View>
+                  )}
+                  {messages.length <= 1 && !busy && (
+                    <View style={styles.chips}>
+                      {SUGGESTIONS.map((s) => (
+                        <TouchableOpacity key={s} style={styles.chip} onPress={() => send(s)}>
+                          <Text style={styles.chipText}>{s}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+
+                {/* Composer */}
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                <View style={styles.composer}>
+                  <TextInput
+                    style={styles.input}
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Ask anything, or describe a gig…"
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    onSubmitEditing={() => send(input)}
+                  />
+                  <TouchableOpacity
+                    style={[styles.sendBtn, (!input.trim() || busy) && { opacity: 0.4 }]}
+                    onPress={() => send(input)}
+                    disabled={!input.trim() || busy}
+                    accessibilityLabel="Send"
+                  >
+                    <Ionicons name="send" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -182,6 +255,50 @@ function renderRich(text, isUser) {
       </Text>
     );
   });
+}
+
+function HistoryPanel({ threads, loading, activeId, onBack, onPick, onDelete }) {
+  return (
+    <View style={styles.histPanel}>
+      <TouchableOpacity onPress={onBack} style={styles.histBack}>
+        <Ionicons name="arrow-back" size={18} color={colors.primary} />
+        <Text style={styles.histBackText}>Back to chat</Text>
+      </TouchableOpacity>
+      <ScrollView contentContainerStyle={{ padding: 12, gap: 6 }}>
+        {loading ? (
+          <View style={styles.thinking}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.thinkingText}>Loading…</Text>
+          </View>
+        ) : threads.length === 0 ? (
+          <Text style={styles.histEmpty}>No past conversations yet.</Text>
+        ) : (
+          threads.map((t) => (
+            <View key={t.id} style={[styles.histRow, t.id === activeId && styles.histRowActive]}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => onPick(t)}>
+                <Text style={styles.histTitle} numberOfLines={1}>{t.title || 'Conversation'}</Text>
+                <Text style={styles.histTime}>{relTime(t.updated_at)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onDelete(t.id)} style={styles.histDelete} accessibilityLabel="Delete conversation">
+                <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function relTime(iso) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 const styles = StyleSheet.create({
@@ -226,4 +343,18 @@ const styles = StyleSheet.create({
     width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
+  headerBtn: { padding: 4 },
+  errorText: { color: colors.urgent, fontSize: 12.5, fontWeight: '700', paddingHorizontal: 14, paddingTop: 8 },
+  histPanel: { flex: 1, backgroundColor: colors.background },
+  histBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 12 },
+  histBackText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
+  histEmpty: { textAlign: 'center', color: colors.textMuted, fontSize: 14, paddingVertical: 24 },
+  histRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 14,
+    paddingHorizontal: 12, paddingVertical: 11, borderWidth: 1, borderColor: colors.border,
+  },
+  histRowActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  histTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  histTime: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  histDelete: { padding: 4 },
 });
