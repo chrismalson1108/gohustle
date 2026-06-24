@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil } from "lucide-react";
+import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
+import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import StudentBadge from "@/components/ui/StudentBadge";
@@ -14,7 +15,8 @@ import { money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
 export default function HiringPage() {
-  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate } = useJobs();
+  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob } = useJobs();
+  const { showToast } = useUser();
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
 
   const onVerify = async (args: VerifyArgs) => {
@@ -49,9 +51,18 @@ export default function HiringPage() {
                         {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
                       </p>
                     </Link>
-                    <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
-                      <Pencil className="size-3.5" /> Edit
-                    </Link>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        onClick={() => { bumpJob(job.id); showToast({ icon: "🚀", title: "Bumped!", message: "Your gig jumped to the top of Browse." }); }}
+                        className={buttonClasses("ghost", "sm")}
+                        title="Bump to top of the feed"
+                      >
+                        <ArrowUpToLine className="size-3.5" /> Bump
+                      </button>
+                      <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
+                        <Pencil className="size-3.5" /> Edit
+                      </Link>
+                    </div>
                   </div>
 
                   {reqs.length > 0 && (

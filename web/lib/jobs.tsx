@@ -15,6 +15,7 @@ import { cacheGet, cacheSet } from "./cache";
 import { stripeEdge } from "./edge";
 import { notify } from "./push";
 import { fetchBlockedIds, blockUserDb } from "./moderation";
+import { fetchSavedJobIds, addSavedJob, removeSavedJob } from "./savedJobs";
 import { fetchLastMessages, fetchConversationState, isUnread } from "./messages";
 import { track, captureError } from "./analytics";
 import { useAuth } from "./auth";
@@ -101,6 +102,9 @@ function reducer(state: State, action: Action): State {
 
 interface JobsValue extends State {
   blockedIds: Set<string>;
+  savedJobIds: Set<string>;
+  toggleSavedJob: (jobId: string) => Promise<void>;
+  bumpJob: (jobId: string) => Promise<void>;
   unreadMessages: number;
   bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null) => Promise<void>;
   addJob: (jobData: Record<string, unknown>) => Promise<void>;
@@ -160,12 +164,42 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
-    if (user) fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
-    else setBlockedIds(new Set());
+    if (user) {
+      fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
+      fetchSavedJobIds(user.id).then(setSavedJobIds).catch(() => {});
+    } else {
+      setBlockedIds(new Set());
+      setSavedJobIds(new Set());
+    }
   }, [user?.id]);
+
+  const toggleSavedJob = async (jobId: string) => {
+    if (!user) return;
+    const saving = !savedJobIds.has(jobId);
+    setSavedJobIds((prev) => {
+      const next = new Set(prev);
+      if (saving) next.add(jobId);
+      else next.delete(jobId);
+      return next;
+    });
+    try {
+      if (saving) await addSavedJob(user.id, jobId);
+      else await removeSavedJob(user.id, jobId);
+    } catch {
+      /* ignore — local state already toggled */
+    }
+  };
+
+  // Poster bumps a slow gig to the top of the feed (refreshes bumped_at).
+  const bumpJob = async (jobId: string) => {
+    const now = new Date().toISOString();
+    dispatch({ type: "UPDATE_JOB", jobId, patch: { bumpedAt: now } });
+    await supabase.from("jobs").update({ bumped_at: now }).eq("id", jobId);
+  };
 
   const blockUser = async (blockedId: string) => {
     if (!user || !blockedId) return;
@@ -374,6 +408,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const job = state.jobs.find((j) => j.id === jobId);
     if (job?.posterId === user.id) return;
 
+    // Instant Book: a gig flagged instant_book confirms immediately (no accept
+    // round-trip), unless the earner is negotiating with a counter-offer.
+    const instant = !!job?.instantBook && !counterOffer;
+
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: "BOOK_JOB", jobId, slotId, slotLabel, counterOffer, tempId });
 
@@ -387,7 +425,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         slot_label: slotLabel || null,
         starts_at: chosenSlot?.startsAt || null,
         counter_offer: counterOffer || null,
-        status: "pending",
+        status: instant ? "confirmed" : "pending",
       })
       .select()
       .single();
@@ -398,8 +436,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }
     if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
     await loadBookings();
-    if (job?.posterId) notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab" });
-    track("booking_created", { jobId, counterOffer: !!counterOffer });
+    if (job?.posterId)
+      notify(
+        job.posterId,
+        instant ? "Gig booked (Instant Book)" : "New booking request",
+        instant ? `Someone instant-booked "${job.title}"` : `Someone wants to book "${job.title}"`,
+        { tab: "GigsTab" },
+      );
+    track("booking_created", { jobId, counterOffer: !!counterOffer, instant });
   };
 
   const markEarnerDone: JobsValue["markEarnerDone"] = async (bookingId, completionPhotos = null) => {
@@ -662,6 +706,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       urgent: d.urgent,
     };
     if (d.estimatedHours !== undefined) dbPatch.estimated_hours = d.estimatedHours;
+    if (d.instantBook !== undefined) dbPatch.instant_book = d.instantBook;
+    if (d.instantBookAudience !== undefined) dbPatch.instant_book_audience = d.instantBookAudience;
     if (d.photos !== undefined) dbPatch.photos = d.photos;
     if (d.lat !== undefined) dbPatch.lat = d.lat;
     if (d.lng !== undefined) dbPatch.lng = d.lng;
@@ -731,6 +777,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         lat: (d.lat as number) ?? null,
         lng: (d.lng as number) ?? null,
         recurrence: (d.recurrence as string) || "none",
+        instant_book: !!d.instantBook,
+        instant_book_audience: (d.instantBookAudience as string) || "all",
         poster_id: user.id,
       })
       .select()
@@ -825,6 +873,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...state,
         blockedIds,
+        savedJobIds,
+        toggleSavedJob,
+        bumpJob,
         unreadMessages,
         bookJob,
         addJob,

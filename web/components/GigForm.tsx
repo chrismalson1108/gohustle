@@ -32,6 +32,8 @@ export interface GigFormData {
   slots: Slot[];
   photos: string[];
   recurrence: string;
+  instantBook: boolean;
+  instantBookAudience: string;
   lat: number | null;
   lng: number | null;
 }
@@ -48,6 +50,7 @@ export interface GigFormInitial {
   urgent?: boolean;
   slots?: Slot[];
   estimatedHours?: number;
+  instantBook?: boolean;
 }
 
 function Chip({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -99,6 +102,7 @@ export default function GigForm({
   const [estimatedHours, setEstimatedHours] = useState(String(initial?.estimatedHours || 2));
   const [recurrence, setRecurrence] = useState(initial?.recurrence || "none");
   const [urgent, setUrgent] = useState(!!initial?.urgent);
+  const [instantBook, setInstantBook] = useState(!!initial?.instantBook);
   const [keptPhotos, setKeptPhotos] = useState<string[]>(existingPhotos);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -137,6 +141,8 @@ export default function GigForm({
       slots: finalSlots,
       photos: [...keptPhotos, ...newUrls],
       recurrence,
+      instantBook,
+      instantBookAudience: "all",
       lat: null,
       lng: null,
     });
@@ -267,6 +273,16 @@ export default function GigForm({
         className={classNames("w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition", urgent ? "border-urgent bg-urgent-light text-urgent" : "border-[#FCA5A5] bg-white text-urgent")}
       >
         {urgent ? "⚡ Marked as Urgent — Needed ASAP" : "Mark as Urgent (optional)"}
+      </button>
+
+      <button
+        onClick={() => setInstantBook(!instantBook)}
+        className={classNames(
+          "w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition",
+          instantBook ? "border-primary bg-primary-light text-primary" : "border-line bg-white text-ink-soft",
+        )}
+      >
+        {instantBook ? "🚀 Instant Book ON — students book without waiting" : "Enable Instant Book (skip accept/decline)"}
       </button>
 
       {!valid && <p className="text-center text-sm text-ink-muted">* Fill in all required fields</p>}

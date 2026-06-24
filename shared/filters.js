@@ -138,6 +138,10 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
     list = [...list].sort((a, b) => effPay(a) - effPay(b));
   } else if (filters.sortBy === 'nearest') {
     list = [...list].sort((a, b) => (a._distanceMi ?? Infinity) - (b._distanceMi ?? Infinity));
+  } else {
+    // 'newest' — bumped gigs float to the top (a bump refreshes bumped_at).
+    const freshness = (j) => new Date(j.bumpedAt || j.createdAt || 0).getTime();
+    list = [...list].sort((a, b) => freshness(b) - freshness(a));
   }
 
   return list;

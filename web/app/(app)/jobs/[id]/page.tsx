@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle } from "lucide-react";
+import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Rocket, Bookmark } from "lucide-react";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -39,7 +39,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { jobs, bookings, posterBookings, bookJob, isBooked } = useJobs();
+  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob } = useJobs();
   const { addXP, recordApply, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
 
@@ -105,9 +105,25 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      <span className="inline-block rounded-lg px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
-        {job.category}
-      </span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-block rounded-lg px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
+            {job.category}
+          </span>
+          {job.instantBook && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
+              <Rocket className="size-3.5" /> Instant Book
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => toggleSavedJob(job.id)}
+          className="rounded-full p-2 text-ink-muted ring-1 ring-line hover:text-primary"
+          aria-label={savedJobIds.has(job.id) ? "Unsave" : "Save"}
+        >
+          <Bookmark className={savedJobIds.has(job.id) ? "size-5 fill-primary text-primary" : "size-5"} />
+        </button>
+      </div>
       <h1 className="mt-3 text-2xl font-black leading-tight text-ink">{job.title}</h1>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -255,13 +271,13 @@ export default function JobDetailPage() {
             </div>
           ) : (
             <Button fullWidth size="lg" loading={booking} disabled={!selectedSlot && hasAvailableSlot} onClick={handleBook}>
-              {selectedSlot
+              {selectedSlot || !hasAvailableSlot
                 ? counterPrice
                   ? `Book · counter $${counterPrice}`
-                  : "Book this gig"
-                : hasAvailableSlot
-                  ? "Select a time slot first"
-                  : "Book this gig"}
+                  : job.instantBook
+                    ? "🚀 Instant Book"
+                    : "Book this gig"
+                : "Select a time slot first"}
             </Button>
           )}
         </div>

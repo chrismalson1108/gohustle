@@ -54,6 +54,7 @@ export default function EditGigPage() {
             urgent: job.urgent,
             slots: job.slots,
             estimatedHours: job.estimatedHours,
+            instantBook: job.instantBook,
           }}
           onError={(message) => showToast({ icon: "⚠️", title: "Check your gig", message })}
           onSubmit={async (data) => {
