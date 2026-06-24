@@ -209,8 +209,13 @@ export default function GigsScreen({ navigation }) {
 
   const handleVerify = async (data) => {
     if (!verifyTarget) return;
-    await verifyAndRate(verifyTarget.id, data);
-    showToast({ icon: '⭐', title: 'Job Verified!', message: 'Rating submitted and job marked complete.' });
+    try {
+      await verifyAndRate(verifyTarget.id, data);
+      showToast({ icon: '⭐', title: 'Job Verified!', message: 'Rating submitted and job marked complete.' });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Could not verify', message: e?.message || 'Please try again.' });
+      throw e; // keep the modal open so the poster can retry
+    }
   };
 
   const handleProposeAmendment = async () => {

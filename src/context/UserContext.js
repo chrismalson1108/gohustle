@@ -146,13 +146,9 @@ function reducer(state, action) {
         badges: { ...state.badges, [action.key]: { unlocked: true } },
       };
 
-    case 'RECORD_APPLY': {
-      const earningsToday = state.earningsToday + action.amount;
-      const earningsWeek  = state.earningsWeek  + action.amount;
-      const earningsTotal = state.earningsTotal + action.amount;
-      const weeklyJobsDone = state.weeklyJobsDone + 1;
-      return { ...state, earningsToday, earningsWeek, earningsTotal, weeklyJobsDone };
-    }
+    case 'RECORD_APPLY':
+      // No earnings credit at apply time — only the weekly counter advances.
+      return { ...state, weeklyJobsDone: state.weeklyJobsDone + 1 };
 
     case 'SET_GOALS':
       return { ...state, weeklyEarningGoal: action.earningGoal, weeklyJobsGoal: action.jobsGoal };
@@ -172,6 +168,7 @@ export function UserProvider({ children }) {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
   const syncTimer = useRef(null);
+  const pendingPatch = useRef({});
 
   useEffect(() => {
     if (!user) return;
@@ -198,12 +195,17 @@ export function UserProvider({ children }) {
     cacheSet(cacheKey, profileState);
   };
 
-  // Debounced sync to Supabase so rapid XP taps don't flood the DB
+  // Debounced sync to Supabase so rapid XP taps don't flood the DB. Patches are
+  // MERGED into a pending object so two calls in the same tick (e.g. addXP +
+  // recordApply) don't clobber each other's fields.
   const scheduleSyncProfile = (patch) => {
     if (!user) return;
+    pendingPatch.current = { ...pendingPatch.current, ...patch };
     if (syncTimer.current) clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(() => {
-      supabase.from('profiles').update(patch).eq('id', user.id)
+      const toSync = pendingPatch.current;
+      pendingPatch.current = {};
+      supabase.from('profiles').update(toSync).eq('id', user.id)
         .then(({ error }) => { if (error) console.warn('Profile sync error:', error.message); });
     }, SYNC_DEBOUNCE_MS);
   };
@@ -230,14 +232,11 @@ export function UserProvider({ children }) {
       .then(({ error }) => { if (error) console.warn('Badge sync error:', error.message); });
   };
 
-  const recordApply = (amount) => {
-    dispatch({ type: 'RECORD_APPLY', amount });
-    scheduleSyncProfile({
-      earnings_today: state.earningsToday + amount,
-      earnings_week:  state.earningsWeek  + amount,
-      earnings_total: state.earningsTotal + amount,
-      weekly_jobs_done: state.weeklyJobsDone + 1,
-    });
+  const recordApply = () => {
+    // Booking/applying advances the weekly gamification counter only — real
+    // earnings are credited at settlement (Stripe capture), never at apply time.
+    dispatch({ type: 'RECORD_APPLY' });
+    scheduleSyncProfile({ weekly_jobs_done: state.weeklyJobsDone + 1 });
   };
 
   const setRole = (role) => {

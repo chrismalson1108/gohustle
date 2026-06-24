@@ -25,11 +25,15 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
     // 1. Remove the user's files from each bucket (storage is not FK-cascaded).
+    // Paginate: each pass deletes a batch, so re-listing from the start returns the
+    // next one — handles users with >1000 objects. Bounded to avoid an infinite loop.
     for (const bucket of BUCKETS) {
       try {
-        const { data: files } = await admin.storage.from(bucket).list(user.id, { limit: 1000 });
-        if (files?.length) {
-          await admin.storage.from(bucket).remove(files.map((f) => `${user.id}/${f.name}`));
+        for (let guard = 0; guard < 100; guard++) {
+          const { data: files } = await admin.storage.from(bucket).list(user.id, { limit: 100 });
+          if (!files?.length) break;
+          const { error: rmErr } = await admin.storage.from(bucket).remove(files.map((f) => `${user.id}/${f.name}`));
+          if (rmErr || files.length < 100) break;
         }
       } catch (_) {
         // bucket missing / empty — keep going

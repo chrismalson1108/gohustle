@@ -31,12 +31,17 @@ Deno.serve(async (req: Request) => {
     // Without this any signed-in user could void others' confirmed holds.
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
+      .select('id, status, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
     if (booking.job?.poster_id !== user.id && booking.earner_id !== user.id) {
       return json({ error: 'Forbidden' }, 403);
+    }
+    // A hold may only be released while the booking is still open. Once work is
+    // done (completed/verified) the funds belong to the earner — use a refund.
+    if (['completed', 'verified'].includes(booking.status)) {
+      return json({ error: 'This booking can no longer be cancelled.' }, 409);
     }
 
     const { data: payment, error: pErr } = await supabase

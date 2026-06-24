@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
     // work is done. Without this any signed-in user could settle others' bookings.
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, status, job:jobs!bookings_job_id_fkey(poster_id)')
+      .select('id, status, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
@@ -78,6 +78,30 @@ Deno.serve(async (req: Request) => {
         status: 'captured',
         captured_at: new Date().toISOString(),
       }).eq('id', payment.id);
+    }
+
+    // Credit the earner's earnings dashboard with the NET payout. This is the
+    // single source of truth for earnings (the client no longer credits at apply
+    // or verify time). Runs once — the already-captured guard above returns early
+    // on retries. Service role, so the profiles write-guard trigger exempts it.
+    try {
+      const { data: pay2 } = await supabase
+        .from('payments').select('earner_amount_cents').eq('id', payment.id).single();
+      const dollars = (pay2?.earner_amount_cents ?? 0) / 100;
+      if (dollars > 0 && booking.earner_id) {
+        const { data: prof } = await supabase
+          .from('profiles').select('earnings_today, earnings_week, earnings_total')
+          .eq('id', booking.earner_id).single();
+        if (prof) {
+          await supabase.from('profiles').update({
+            earnings_today: Number(prof.earnings_today || 0) + dollars,
+            earnings_week:  Number(prof.earnings_week  || 0) + dollars,
+            earnings_total: Number(prof.earnings_total || 0) + dollars,
+          }).eq('id', booking.earner_id);
+        }
+      }
+    } catch (e) {
+      console.error('capture earnings-credit:', e);
     }
 
     return json({ success: true });

@@ -74,14 +74,20 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const handleConfirm = async () => {
     haptic.success();
     setLoading(true);
-    await onConfirm({
-      rating, reviewText, paymentMethod,
-      tipCents: tipCents || 0,
-      pct: disputed ? pct : 1,
-      disputeReason: disputed ? (disputeReason || null) : null,
-    });
-    setLoading(false);
-    onClose();
+    try {
+      await onConfirm({
+        rating, reviewText, paymentMethod,
+        tipCents: tipCents || 0,
+        pct: disputed ? pct : 1,
+        disputeReason: disputed ? (disputeReason || null) : null,
+      });
+      onClose();           // only close on success
+    } catch (e) {
+      // Keep the modal open so the poster can retry; the parent surfaces the error.
+      console.warn('Completion confirm failed:', e?.message);
+    } finally {
+      setLoading(false);   // never strand the spinner
+    }
   };
 
   const TIPS = [0, 300, 500, 1000]; // cents

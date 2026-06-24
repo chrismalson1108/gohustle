@@ -28,7 +28,12 @@ export default function HiringPage() {
 
   const onVerify = async (args: VerifyArgs) => {
     if (!verifyBooking) return;
-    await verifyAndRate(verifyBooking.id, args);
+    try {
+      await verifyAndRate(verifyBooking.id, args);
+    } catch (e) {
+      showToast({ icon: "⚠️", title: "Couldn't verify", message: (e as Error)?.message || "Please try again." });
+      throw e; // keep the modal open so the poster can retry
+    }
   };
 
   const submitAmendment = async () => {

@@ -626,30 +626,9 @@ export function JobsProvider({ children }) {
       await recomputeRatings(booking.earner.id);
     }
 
-    // Credit the earner's earnings with their captured payout (amount after the 10% fee)
-    if (booking?.earner?.id) {
-      const { data: payment } = await supabase
-        .from('payments')
-        .select('earner_amount_cents')
-        .eq('booking_id', bookingId)
-        .single();
-
-      if (payment?.earner_amount_cents) {
-        const dollars = payment.earner_amount_cents / 100;
-        const { data: ep } = await supabase
-          .from('profiles')
-          .select('earnings_today, earnings_week, earnings_total')
-          .eq('id', booking.earner.id)
-          .single();
-        if (ep) {
-          await supabase.from('profiles').update({
-            earnings_today: Number(ep.earnings_today || 0) + dollars,
-            earnings_week:  Number(ep.earnings_week  || 0) + dollars,
-            earnings_total: Number(ep.earnings_total || 0) + dollars,
-          }).eq('id', booking.earner.id);
-        }
-      }
-    }
+    // Earner earnings are credited server-side in stripe-capture-payment (service
+    // role, exempt from the profiles write-guard trigger) — the single source of
+    // truth, so we don't double-credit here.
   };
 
   const updateJob = async (jobId, jobData) => {

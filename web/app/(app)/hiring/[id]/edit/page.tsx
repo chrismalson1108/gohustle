@@ -14,7 +14,7 @@ import Modal from "@/components/ui/Modal";
 export default function EditGigPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { jobs, posterBookings, updateJob, deleteJob } = useJobs();
+  const { jobs, posterBookings, updateJob, deleteJob, clearAmendment } = useJobs();
   const { showToast } = useUser();
   const { user } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -59,6 +59,10 @@ export default function EditGigPage() {
           onError={(message) => showToast({ icon: "⚠️", title: "Check your gig", message })}
           onSubmit={async (data) => {
             await updateJob(job.id, data as unknown as Record<string, unknown>);
+            // If this edit was unlocked by an accepted amendment, reset it so the
+            // core terms re-lock afterward (mirrors mobile EditJobScreen).
+            const amended = bookings.find((b) => b.amendmentStatus === "accepted");
+            if (amended) await clearAmendment(amended.id);
             showToast({ icon: "✅", title: "Gig updated!", message: "Your changes are live." });
             router.push("/hiring");
           }}

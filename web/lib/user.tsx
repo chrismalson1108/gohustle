@@ -192,13 +192,8 @@ function reducer(state: UserState, action: Action): UserState {
     case "UNLOCK_BADGE":
       return { ...state, badges: { ...state.badges, [action.key]: { unlocked: true } } };
     case "RECORD_APPLY":
-      return {
-        ...state,
-        earningsToday: state.earningsToday + action.amount,
-        earningsWeek: state.earningsWeek + action.amount,
-        earningsTotal: state.earningsTotal + action.amount,
-        weeklyJobsDone: state.weeklyJobsDone + 1,
-      };
+      // No earnings credit at apply time — credited at settlement (Stripe capture).
+      return { ...state, weeklyJobsDone: state.weeklyJobsDone + 1 };
     case "SET_GOALS":
       return { ...state, weeklyEarningGoal: action.earningGoal, weeklyJobsGoal: action.jobsGoal };
     case "SHOW_TOAST":
@@ -318,13 +313,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   const recordApply = (amount: number) => {
+    // Earnings are credited at settlement (Stripe capture), not at apply time.
     dispatch({ type: "RECORD_APPLY", amount });
-    scheduleSyncProfile({
-      earnings_today: state.earningsToday + amount,
-      earnings_week: state.earningsWeek + amount,
-      earnings_total: state.earningsTotal + amount,
-      weekly_jobs_done: state.weeklyJobsDone + 1,
-    });
+    scheduleSyncProfile({ weekly_jobs_done: state.weeklyJobsDone + 1 });
   };
 
   const setRole = (role: UserState["role"]) => {

@@ -83,16 +83,21 @@ export default function CompletionModal({
 
   const confirm = async () => {
     setBusy(true);
-    await onConfirm({
-      rating,
-      reviewText,
-      paymentMethod,
-      tipCents: tipCents || 0,
-      pct: disputed ? pct : 1,
-      disputeReason: disputed ? disputeReason || null : null,
-    });
-    setBusy(false);
-    onClose();
+    try {
+      await onConfirm({
+        rating,
+        reviewText,
+        paymentMethod,
+        tipCents: tipCents || 0,
+        pct: disputed ? pct : 1,
+        disputeReason: disputed ? disputeReason || null : null,
+      });
+      onClose();           // only close on success
+    } catch (e) {
+      console.warn("Completion confirm failed:", (e as Error)?.message);
+    } finally {
+      setBusy(false);      // never strand the spinner
+    }
   };
 
   return (

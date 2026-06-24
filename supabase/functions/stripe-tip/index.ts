@@ -31,11 +31,15 @@ Deno.serve(async (req: Request) => {
     // Verify the caller is the poster of this booking
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, earner_id, job:jobs!bookings_job_id_fkey(title, poster_id)')
+      .select('id, status, earner_id, job:jobs!bookings_job_id_fkey(title, poster_id)')
       .eq('id', bookingId)
       .single();
     if (!booking) return json({ error: 'Booking not found' }, 404);
     if (booking.job.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    // Tips are only for finished work — gate to completed/verified bookings.
+    if (!['completed', 'verified'].includes(booking.status)) {
+      return json({ error: 'You can tip once the job is complete.' }, 409);
+    }
 
     // Earner Connect account
     const { data: earnerAcct } = await supabase
