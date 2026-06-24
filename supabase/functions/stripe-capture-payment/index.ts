@@ -29,6 +29,20 @@ Deno.serve(async (req: Request) => {
     const { bookingId, pct } = await req.json();
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
+    // Authorization (IDOR guard): capture releases escrow to the earner, so only
+    // the poster who owns this booking's job may trigger it, and only once the
+    // work is done. Without this any signed-in user could settle others' bookings.
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, status, job:jobs!bookings_job_id_fkey(poster_id)')
+      .eq('id', bookingId)
+      .single();
+    if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
+    if (booking.job?.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    if (!['completed', 'verified'].includes(booking.status)) {
+      return json({ error: 'Booking is not ready to capture' }, 409);
+    }
+
     const { data: payment, error: pErr } = await supabase
       .from('payments')
       .select('id, payment_intent_id, status, amount_cents, fee_cents')

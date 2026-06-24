@@ -26,6 +26,19 @@ Deno.serve(async (req: Request) => {
     const { bookingId } = await req.json();
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
+    // Authorization (IDOR guard): releasing a card hold may only be done by the
+    // poster (on decline/cancel) or the earner (on withdraw) of this booking.
+    // Without this any signed-in user could void others' confirmed holds.
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
+      .eq('id', bookingId)
+      .single();
+    if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
+    if (booking.job?.poster_id !== user.id && booking.earner_id !== user.id) {
+      return json({ error: 'Forbidden' }, 403);
+    }
+
     const { data: payment, error: pErr } = await supabase
       .from('payments')
       .select('id, payment_intent_id, status')
