@@ -715,8 +715,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (d.instantBook !== undefined) dbPatch.instant_book = d.instantBook;
     if (d.instantBookAudience !== undefined) dbPatch.instant_book_audience = d.instantBookAudience;
     if (d.photos !== undefined) dbPatch.photos = d.photos;
-    if (d.lat !== undefined) dbPatch.lat = d.lat;
-    if (d.lng !== undefined) dbPatch.lng = d.lng;
+    // Privacy: snap public job coords to ~1km (exact location shared post-booking).
+    if (d.lat !== undefined) dbPatch.lat = d.lat != null ? Math.round((d.lat as number) * 100) / 100 : null;
+    if (d.lng !== undefined) dbPatch.lng = d.lng != null ? Math.round((d.lng as number) * 100) / 100 : null;
     if (d.recurrence !== undefined) dbPatch.recurrence = d.recurrence;
     let { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
     if (error?.code === "42703") {
@@ -785,8 +786,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       urgent: d.urgent,
       estimated_hours: d.estimatedHours,
       photos: (d.photos as string[]) || [],
-      lat: (d.lat as number) ?? null,
-      lng: (d.lng as number) ?? null,
+      lat: d.lat != null ? Math.round((d.lat as number) * 100) / 100 : null,
+      lng: d.lng != null ? Math.round((d.lng as number) * 100) / 100 : null,
       recurrence: (d.recurrence as string) || "none",
       poster_id: user.id,
     };

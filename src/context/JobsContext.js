@@ -661,8 +661,10 @@ export function JobsProvider({ children }) {
       urgent: jobData.urgent,
     };
     if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
-    if (jobData.lat !== undefined) dbPatch.lat = jobData.lat;
-    if (jobData.lng !== undefined) dbPatch.lng = jobData.lng;
+    // Privacy: snap public job coords to ~1km so a poster's exact address is
+    // never published; the precise location is shared with the earner after booking.
+    if (jobData.lat !== undefined) dbPatch.lat = jobData.lat != null ? Math.round(jobData.lat * 100) / 100 : null;
+    if (jobData.lng !== undefined) dbPatch.lng = jobData.lng != null ? Math.round(jobData.lng * 100) / 100 : null;
     if (jobData.recurrence !== undefined) dbPatch.recurrence = jobData.recurrence;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
@@ -720,7 +722,8 @@ export function JobsProvider({ children }) {
         location: jobData.location, description: jobData.description,
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
         photos: jobData.photos || [],
-        lat: jobData.lat ?? null, lng: jobData.lng ?? null,
+        lat: jobData.lat != null ? Math.round(jobData.lat * 100) / 100 : null,
+        lng: jobData.lng != null ? Math.round(jobData.lng * 100) / 100 : null,
         recurrence: jobData.recurrence || 'none',
         poster_id: user.id,
       })
