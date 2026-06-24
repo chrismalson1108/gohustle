@@ -32,6 +32,21 @@ eas submit --platform ios --profile production
   build includes it, so push will work once installed — but you must enable the
   **APNs key** in your Apple account and in EAS (`eas credentials`).
 
+## 🤖 Android → Play Console (you — same codebase)
+
+The app is already Android-config-ready: package `com.gohustlr.app`, adaptive icon,
+and the `expo-location` plugin auto-adds `ACCESS_FINE_LOCATION` to the manifest.
+`eas.json` already has the build profiles.
+
+```bash
+eas build --platform android --profile production   # produces an .aab
+eas submit --platform android --profile production   # needs a Google Play service-account JSON
+```
+- Create the app in the **Google Play Console** (one-time), and a **service account**
+  key for `eas submit`.
+- **Push on Android** needs an **FCM** setup (Firebase project + `google-services`
+  credentials in EAS) — `eas credentials` walks you through it.
+
 ## 🌐 Web (Vercel) — when you're ready
 
 Root directory `web`, framework Next.js. Env vars are already public-safe
