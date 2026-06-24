@@ -712,7 +712,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (d.lat !== undefined) dbPatch.lat = d.lat;
     if (d.lng !== undefined) dbPatch.lng = d.lng;
     if (d.recurrence !== undefined) dbPatch.recurrence = d.recurrence;
-    const { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
+    let { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
+    if (error?.code === "42703") {
+      // Pre-migration: drop the instant-book columns and retry.
+      const { instant_book, instant_book_audience, ...rest } = dbPatch;
+      void instant_book;
+      void instant_book_audience;
+      ({ error } = await supabase.from("jobs").update(rest).eq("id", jobId));
+    }
     if (error) {
       console.warn("Update job error:", error.message);
       return;
@@ -762,27 +769,30 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       studentStatus: profile?.student_status || "none",
     };
 
-    const { data: newJob, error } = await supabase
+    const baseInsert: Record<string, unknown> = {
+      title: d.title,
+      category: d.category,
+      pay: d.pay,
+      pay_type: d.payType,
+      location: d.location,
+      description: d.description,
+      urgent: d.urgent,
+      estimated_hours: d.estimatedHours,
+      photos: (d.photos as string[]) || [],
+      lat: (d.lat as number) ?? null,
+      lng: (d.lng as number) ?? null,
+      recurrence: (d.recurrence as string) || "none",
+      poster_id: user.id,
+    };
+    // Resilient: include instant_book only if that migration has run (42703 → retry).
+    let { data: newJob, error } = await supabase
       .from("jobs")
-      .insert({
-        title: d.title,
-        category: d.category,
-        pay: d.pay,
-        pay_type: d.payType,
-        location: d.location,
-        description: d.description,
-        urgent: d.urgent,
-        estimated_hours: d.estimatedHours,
-        photos: (d.photos as string[]) || [],
-        lat: (d.lat as number) ?? null,
-        lng: (d.lng as number) ?? null,
-        recurrence: (d.recurrence as string) || "none",
-        instant_book: !!d.instantBook,
-        instant_book_audience: (d.instantBookAudience as string) || "all",
-        poster_id: user.id,
-      })
+      .insert({ ...baseInsert, instant_book: !!d.instantBook, instant_book_audience: (d.instantBookAudience as string) || "all" })
       .select()
       .single();
+    if (error?.code === "42703") {
+      ({ data: newJob, error } = await supabase.from("jobs").insert(baseInsert).select().single());
+    }
 
     if (error || !newJob) {
       console.warn("Job insert error:", error?.message);
