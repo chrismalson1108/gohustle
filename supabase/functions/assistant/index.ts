@@ -20,7 +20,15 @@ const corsHeaders = {
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-opus-4-8';
+// Model routing — use the cheapest model that still nails the task (the owner
+// opted into cost-saving routing). Routine tool turns run on Sonnet; genuinely
+// complex / multi-step asks escalate to Opus. Haiku is reserved for cheap
+// background jobs (e.g. notification summaries) so the live chat never degrades.
+const MODELS = {
+  fast: 'claude-haiku-4-5',
+  balanced: 'claude-sonnet-4-6',
+  smart: 'claude-opus-4-8',
+};
 const MAX_TOOL_ITERATIONS = 8;
 
 const VALID_CATEGORIES = ['Tutoring', 'Delivery', 'Moving', 'Tech Help', 'Creative', 'Odd Jobs', 'Errands', 'Other'];
@@ -75,6 +83,13 @@ Deno.serve(async (req: Request) => {
 
     const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
     const system = buildSystemPrompt(user.id, profile ?? {});
+    // Cache the large, stable tools+system prefix. A cache_control breakpoint on
+    // the system block also covers the tool definitions that render before it, so
+    // every loop iteration (and every follow-up turn within ~5 min) reuses it at
+    // ~10% of the input cost. Pick the model ONCE per message — caches are
+    // model-scoped, so switching mid-loop would throw the warm cache away.
+    const systemBlocks = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    const model = pickModel(history);
 
     const messages: Json[] = history.map((m) => ({ role: m.role, content: m.content }));
     const actions: Action[] = [];
@@ -86,9 +101,9 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i <= MAX_TOOL_ITERATIONS; i++) {
       const wrapUp = i === MAX_TOOL_ITERATIONS;
       const reqBody: Json = {
-        model: MODEL,
+        model,
         max_tokens: 4096,
-        system,
+        system: systemBlocks,
         tools: TOOLS,
         messages,
       };
@@ -626,6 +641,18 @@ function clampInt(v: unknown, dflt: number, min: number, max: number): number {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+}
+
+// Route to the cheapest capable model. Routine asks → Sonnet; complex / multi-step
+// / planning asks → Opus. Decided once per user message so the model-scoped prompt
+// cache stays warm across the whole tool loop.
+function pickModel(history: Array<{ role: string; content: string }>): string {
+  const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const text = String(lastUser).toLowerCase();
+  const complex =
+    text.length > 280 ||
+    /\b(plan|compare|strateg|budget|goal|schedule|availab|optimi[sz]e|negotiat|analy[sz]|breakdown|step by step|multiple|several|and then|after that)\b/.test(text);
+  return complex ? MODELS.smart : MODELS.balanced;
 }
 
 function buildSystemPrompt(userId: string, profile: Json): string {
