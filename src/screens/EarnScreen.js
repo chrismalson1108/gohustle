@@ -11,6 +11,8 @@ import GradientHeader from '../components/GradientHeader';
 import ChallengeCard from '../components/ChallengeCard';
 import JobCard from '../components/JobCard';
 import XPBar from '../components/XPBar';
+import MoneyGoalCard from '../components/MoneyGoalCard';
+import WorkStatusBar from '../components/WorkStatusBar';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import MessageSheet from '../components/MessageSheet';
 import { useUser } from '../context/UserContext';
@@ -193,6 +195,9 @@ export default function EarnScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
         </TouchableOpacity>
       )}
+
+      <MoneyGoalCard navigation={navigation} />
+      <WorkStatusBar />
 
       {/* Segmented control for my gigs */}
       <View style={styles.segment}>
