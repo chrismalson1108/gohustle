@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
+import AssistantButton from './src/components/AssistantButton';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
 import { registerPushToken, addNotificationResponseListener } from './src/lib/push';
@@ -180,6 +181,7 @@ function MainApp() {
       <JobsProvider>
         <View style={{ flex: 1, position: 'relative' }}>
           <AppNavigator />
+          <AssistantButton />
           <AchievementToast />
           <PushManager />
         </View>

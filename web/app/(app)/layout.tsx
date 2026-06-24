@@ -7,6 +7,7 @@ import { UserProvider } from "@/lib/user";
 import { JobsProvider } from "@/lib/jobs";
 import AppShell from "@/components/AppShell";
 import Toast from "@/components/Toast";
+import AssistantWidget from "@/components/AssistantWidget";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 
 // Auth gate for the whole authenticated app. Mirrors RootNavigator in App.js:
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <UserProvider>
       <JobsProvider>
         <AppShell>{children}</AppShell>
+        <AssistantWidget />
         <Toast />
       </JobsProvider>
     </UserProvider>
