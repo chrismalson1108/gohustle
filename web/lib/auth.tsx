@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn: AuthValue["signIn"] = async (email, password) => {
     setAuthError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       if (
         (error as { code?: string }).code === "email_not_confirmed" ||
@@ -88,6 +88,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setAuthError(error.message);
       return false;
+    }
+    // Set session + onboarding state synchronously from the result so the page can
+    // redirect into the app without racing the async onAuthStateChange event
+    // (which otherwise lets the auth gate see a stale null session and bounce back).
+    if (data.session) {
+      setSession(data.session);
+      if (data.user) await loadOnboarding(data.user.id);
     }
     setPendingEmail(null);
     track("sign_in");
