@@ -6,8 +6,11 @@ const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';
 // Calls the `assistant` edge function (Claude tool-use loop) with the running
 // transcript. Returns { reply, actions } — actions tell the UI which slices of
 // state to refresh (a gig was created, a booking made, the profile changed).
-export async function askAssistant(messages) {
+export async function askAssistant(messages, opts = {}) {
   const { data: { session } } = await supabase.auth.getSession();
+  const body = { messages };
+  if (opts.threadId) body.thread_id = opts.threadId;
+  if (opts.newThread) body.new_thread = true;
   const res = await fetch(`${FUNCTIONS_URL}/assistant`, {
     method: 'POST',
     headers: {
@@ -15,7 +18,7 @@ export async function askAssistant(messages) {
       Authorization: `Bearer ${session?.access_token}`,
       apikey: SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

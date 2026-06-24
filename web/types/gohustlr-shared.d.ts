@@ -112,4 +112,46 @@ declare module "@gohustlr/shared" {
     gradYear?: number | null;
     grad_year?: number | null;
   } | null): string | null;
+
+  // ── finance ──
+  export const CATEGORY_BASE_RATES: Record<string, number>;
+  export function computeGoalPlan(args: {
+    monthlyGoal: number;
+    earnedThisMonth?: number;
+    avgGigValue?: number;
+    gigsThisMonth?: number;
+    now?: Date;
+  }): {
+    goal: number; earned: number; remaining: number; pctComplete: number;
+    daysInMonth: number; dayOfMonth: number; daysLeft: number;
+    gigsNeeded: number | null; perDayNeeded: number; perWeekNeeded: number;
+    projectedTotal: number; expectedByNow: number; gigsThisMonth: number;
+    status: "unset" | "behind" | "onTrack" | "ahead" | "reached";
+  };
+  export function suggestRate(args: { category?: string; skillRate?: number | null; marketAvg?: number | null }): {
+    low: number; typical: number; high: number; basis: string;
+  };
+  export function marketRate(
+    jobs: Array<{ category?: string; pay?: number }>,
+    category?: string | null,
+  ): { avg: number | null; median: number | null; count: number };
+  export function scoreGig(job: Record<string, unknown>, opts?: { skills?: string[]; remaining?: number }): number;
+  export function rankGigsForGoal<T>(jobs: T[], opts?: { skills?: string[]; remaining?: number }): T[];
+
+  // ── availability ──
+  export const DAYS: string[];
+  export interface WorkStatus { id: string; label: string; emoji: string; color: string }
+  export const WORK_STATUSES: WorkStatus[];
+  export function workStatusMeta(id: string): WorkStatus;
+  export function parseTime(hhmm: string): number | null;
+  export function fmtTime(hhmm: string): string;
+  export interface AvailWindow { day: number; start: string; end: string }
+  export function windowsForDay(availability: AvailWindow[], day: number): AvailWindow[];
+  export function classOverlaps(classSchedule: Array<Record<string, unknown>>, window: { day: number; start: string; end: string }): boolean;
+  export function isFreeAt(
+    availability: AvailWindow[],
+    classSchedule: Array<Record<string, unknown>>,
+    window: { day: number; start: string; end: string },
+  ): boolean;
+  export function availabilitySummary(availability: AvailWindow[]): string;
 }

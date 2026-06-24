@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, Briefcase, Megaphone, MessageCircle, UserCircle2 } from "lucide-react";
+import { Search, Briefcase, Megaphone, MessageCircle, UserCircle2, Bell } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
+import { useUnreadNotifications } from "@/lib/notifications";
 import { classNames } from "@/lib/format";
 import Logo from "./Logo";
 
@@ -12,6 +13,7 @@ const NAV = [
   { href: "/my-jobs", label: "My Jobs", icon: Briefcase, badge: "earn" },
   { href: "/hiring", label: "Hiring", icon: Megaphone, badge: "poster" },
   { href: "/messages", label: "Messages", icon: MessageCircle, badge: "unread" },
+  { href: "/notifications", label: "Alerts", icon: Bell, badge: "alerts" },
   { href: "/profile", label: "Profile", icon: UserCircle2, badge: null },
 ] as const;
 
@@ -27,9 +29,18 @@ function Badge({ count }: { count: number }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { earnBadgeCount, profileBadgeCount, unreadMessages } = useJobs();
+  const { count: alertCount } = useUnreadNotifications();
 
   const badgeFor = (kind: string | null) =>
-    kind === "earn" ? earnBadgeCount : kind === "poster" ? profileBadgeCount : kind === "unread" ? unreadMessages : 0;
+    kind === "earn"
+      ? earnBadgeCount
+      : kind === "poster"
+        ? profileBadgeCount
+        : kind === "unread"
+          ? unreadMessages
+          : kind === "alerts"
+            ? alertCount
+            : 0;
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 

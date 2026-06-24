@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock,
 } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
@@ -116,6 +116,7 @@ export default function ProfilePage() {
     { href: "/profile/taxes", label: "Tax Center", icon: Receipt },
     { href: "/profile/saved", label: "Saved people", icon: Heart },
     { href: "/profile/saved-gigs", label: "Saved gigs", icon: Bookmark },
+    { href: "/profile/availability", label: "Availability & schedule", icon: CalendarClock },
     { href: "/profile/settings", label: "Settings", icon: Settings },
     { href: "/legal/terms", label: "Legal & terms", icon: FileText },
   ];

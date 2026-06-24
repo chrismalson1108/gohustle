@@ -41,6 +41,11 @@ const DEFAULT_STATE = {
   weeklyEarningGoal: 300,
   weeklyJobsGoal: 5,
   weeklyJobsDone: 0,
+  monthlyEarningGoal: 1000,
+  workStatus: 'available',
+  workStatusNote: null,
+  availability: [],
+  skills: [],
   school: null,
   schoolDomain: null,
   major: null,
@@ -94,6 +99,11 @@ function dbToState(profile, badges = [], challenges = []) {
     weeklyEarningGoal: Number(profile.weekly_earning_goal) || 300,
     weeklyJobsGoal: profile.weekly_jobs_goal || 5,
     weeklyJobsDone: profile.weekly_jobs_done || 0,
+    monthlyEarningGoal: Number(profile.monthly_earning_goal) || 1000,
+    workStatus: profile.work_status || 'available',
+    workStatusNote: profile.work_status_note || null,
+    availability: Array.isArray(profile.availability) ? profile.availability : [],
+    skills: Array.isArray(profile.skills) ? profile.skills : [],
     school: profile.school || null,
     schoolDomain: profile.school_domain || null,
     major: profile.major || null,
@@ -240,6 +250,30 @@ export function UserProvider({ children }) {
     scheduleSyncProfile({ weekly_earning_goal: earningGoal, weekly_jobs_goal: jobsGoal });
   };
 
+  // Discrete settings — write immediately (not debounced) so they can't be
+  // clobbered by a pending debounced sync.
+  const writeProfile = (patch) => {
+    if (user) {
+      supabase.from('profiles').update(patch).eq('id', user.id)
+        .then(({ error }) => { if (error) console.warn('Profile write error:', error.message); });
+    }
+  };
+
+  const setMonthlyGoal = (goal) => {
+    dispatch({ type: 'LOAD_PROFILE', profile: { monthlyEarningGoal: goal } });
+    writeProfile({ monthly_earning_goal: goal });
+  };
+
+  const setWorkStatus = (status, note = null) => {
+    dispatch({ type: 'LOAD_PROFILE', profile: { workStatus: status, workStatusNote: note } });
+    writeProfile({ work_status: status, work_status_note: note });
+  };
+
+  const setAvailability = (windows) => {
+    dispatch({ type: 'LOAD_PROFILE', profile: { availability: windows } });
+    writeProfile({ availability: windows });
+  };
+
   const refreshProfile = async () => {
     if (!user) return;
     const cacheKey = `profile_${user.id}`;
@@ -269,6 +303,9 @@ export function UserProvider({ children }) {
       recordApply,
       setRole,
       setGoals,
+      setMonthlyGoal,
+      setWorkStatus,
+      setAvailability,
       showToast,
       dismissToast,
       refreshProfile,

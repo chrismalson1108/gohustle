@@ -11,6 +11,8 @@ import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import RatingStars from "@/components/ui/RatingStars";
 import { Textarea } from "@/components/ui/Field";
+import MoneyGoalCard from "@/components/MoneyGoalCard";
+import WorkStatusBar from "@/components/WorkStatusBar";
 import { money } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
@@ -55,6 +57,10 @@ export default function MyJobsPage() {
       </PageHeader>
 
       <PageContainer>
+        <div className="mb-4 space-y-3">
+          <MoneyGoalCard />
+          <WorkStatusBar />
+        </div>
         {bookings.length === 0 ? (
           <EmptyState icon={<Briefcase className="size-10" />} title="No booked gigs yet" body="Find a gig on Browse and book a slot to get started." />
         ) : (

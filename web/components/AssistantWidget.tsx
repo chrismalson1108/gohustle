@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Mic, MicOff, X, Loader2 } from "lucide-react";
+import { Sparkles, Send, Mic, MicOff, X, Loader2, History, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { askAssistant, type AssistantMsg, type AssistantAction } from "@/lib/assistant";
+import { listThreads, loadThread, deleteThread, type ThreadRow } from "@/lib/assistantThreads";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { classNames } from "@/lib/format";
@@ -36,6 +37,10 @@ export default function AssistantWidget() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [loadingThreads, setLoadingThreads] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -55,12 +60,12 @@ export default function AssistantWidget() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy, open]);
 
-  // Greet on first open.
+  // Greet a fresh chat only — not when a reopened thread loads empty or errors.
   useEffect(() => {
-    if (open && messages.length === 0) {
+    if (open && messages.length === 0 && threadId === null) {
       setMessages([{ role: "assistant", content: GREETING }]);
     }
-  }, [open, messages.length]);
+  }, [open, messages.length, threadId]);
 
   const runActions = (actions: AssistantAction[]) => {
     if (!actions.length) return;
@@ -88,9 +93,12 @@ export default function AssistantWidget() {
     setMessages(next);
     setBusy(true);
     try {
-      const { reply, actions } = await askAssistant(next);
-      setMessages([...next, { role: "assistant", content: reply }]);
-      runActions(actions);
+      // The synthetic greeting bubble is render-only — don't feed it to the model.
+      const payload = next[0]?.role === "assistant" && next[0].content === GREETING ? next.slice(1) : next;
+      const res = await askAssistant(payload, { threadId, newThread: !threadId });
+      setMessages([...next, { role: "assistant", content: res.reply }]);
+      if (res.thread_id) setThreadId(res.thread_id);
+      runActions(res.actions);
     } catch (err) {
       // Show one friendly error in the composer banner. Don't inject it as an
       // assistant bubble — that duplicated the message and (worse) got sent back
@@ -147,6 +155,53 @@ export default function AssistantWidget() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => stopListening(), []);
 
+  // These switch conversation context, so they're blocked mid-send (and their
+  // buttons disabled) — otherwise an in-flight reply could clobber the new view.
+  const newChat = () => {
+    if (busy) return;
+    stopListening();
+    setError(null);
+    setThreadId(null);
+    setMessages([{ role: "assistant", content: GREETING }]);
+    setView("chat");
+  };
+
+  const openHistory = async () => {
+    if (busy) return;
+    setView("history");
+    setLoadingThreads(true);
+    try {
+      setThreads(await listThreads());
+    } catch {
+      setThreads([]);
+    }
+    setLoadingThreads(false);
+  };
+
+  const pickThread = async (t: ThreadRow) => {
+    if (busy) return;
+    try {
+      const msgs = await loadThread(t.id);
+      setThreadId(t.id);
+      setMessages(msgs.map((m) => ({ role: m.role, content: m.content })));
+      setError(null);
+      setView("chat");
+    } catch {
+      setError("Couldn't open that conversation — please try again.");
+    }
+  };
+
+  const removeThread = async (id: string) => {
+    if (busy) return;
+    try {
+      await deleteThread(id);
+      setThreads((ts) => ts.filter((t) => t.id !== id));
+      if (id === threadId) newChat();
+    } catch {
+      setError("Couldn't delete that conversation.");
+    }
+  };
+
   return (
     <>
       {/* Floating launcher */}
@@ -172,11 +227,28 @@ export default function AssistantWidget() {
               <p className="font-black leading-tight">Hustlr AI</p>
               <p className="text-xs text-white/80">Your gig sidekick</p>
             </div>
+            <button onClick={newChat} disabled={busy} aria-label="New chat" title="New chat" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
+              <Plus className="size-5" />
+            </button>
+            <button onClick={openHistory} disabled={busy} aria-label="Past conversations" title="Past conversations" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
+              <History className="size-5" />
+            </button>
             <button onClick={() => { stopListening(); setOpen(false); }} aria-label="Close" className="rounded-full p-1.5 hover:bg-white/15">
               <X className="size-5" />
             </button>
           </div>
 
+          {view === "history" ? (
+            <HistoryPanel
+              threads={threads}
+              loading={loadingThreads}
+              activeId={threadId}
+              onBack={() => setView("chat")}
+              onPick={pickThread}
+              onDelete={removeThread}
+            />
+          ) : (
+            <>
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-canvas px-3 py-4">
             {messages.map((m, i) => (
@@ -242,10 +314,81 @@ export default function AssistantWidget() {
               </button>
             </div>
           </div>
+            </>
+          )}
         </div>
       )}
     </>
   );
+}
+
+function HistoryPanel({
+  threads,
+  loading,
+  activeId,
+  onBack,
+  onPick,
+  onDelete,
+}: {
+  threads: ThreadRow[];
+  loading: boolean;
+  activeId: string | null;
+  onBack: () => void;
+  onPick: (t: ThreadRow) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden bg-canvas">
+      <button onClick={onBack} className="flex items-center gap-1 px-4 py-3 text-sm font-bold text-primary">
+        <ArrowLeft className="size-4" /> Back to chat
+      </button>
+      <div className="flex-1 overflow-y-auto px-3 pb-4">
+        {loading ? (
+          <div className="flex items-center gap-2 px-1 py-4 text-sm text-ink-muted">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </div>
+        ) : threads.length === 0 ? (
+          <p className="px-1 py-6 text-center text-sm text-ink-muted">No past conversations yet.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {threads.map((t) => (
+              <div
+                key={t.id}
+                className={classNames(
+                  "group flex items-center gap-2 rounded-xl px-3 py-2.5 ring-1 transition",
+                  t.id === activeId ? "bg-primary-light ring-primary/30" : "bg-white ring-line/70 hover:bg-primary-light/40",
+                )}
+              >
+                <button onClick={() => onPick(t)} className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-sm font-semibold text-ink">{t.title || "Conversation"}</p>
+                  <p className="text-[11px] text-ink-muted">{relTime(t.updated_at)}</p>
+                </button>
+                <button
+                  onClick={() => onDelete(t.id)}
+                  aria-label="Delete conversation"
+                  className="rounded-full p-1.5 text-ink-muted opacity-60 transition hover:bg-urgent/10 hover:text-urgent"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function relTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const m = Math.floor((Date.now() - then) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function Bubble({ role, content }: { role: "user" | "assistant"; content: string }) {
