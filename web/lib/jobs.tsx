@@ -136,7 +136,7 @@ interface VerifyArgs {
   paymentMethod: string;
   pct?: number;
   tipCents?: number;
-  disputeReason?: string;
+  disputeReason?: string | null;
 }
 
 const JobsContext = createContext<JobsValue | null>(null);
