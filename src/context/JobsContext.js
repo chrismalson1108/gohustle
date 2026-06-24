@@ -347,10 +347,13 @@ export function JobsProvider({ children }) {
       }, (payload) => {
         // Refresh poster bookings on any change — simple and reliable
         loadPosterBookings();
-        if (payload.eventType === 'INSERT') {
+        // The channel also delivers the user's OWN bookings (they're a party via
+        // RLS), so only fire poster-facing toasts when someone ELSE is the earner.
+        const fromOther = payload.new?.earner_id && payload.new.earner_id !== user.id;
+        if (payload.eventType === 'INSERT' && fromOther) {
           showToast({ icon: '🔔', title: 'New Booking Request!', message: 'Someone wants to book your gig!' });
         }
-        if (payload.new?.status === 'completed') {
+        if (payload.new?.status === 'completed' && fromOther) {
           showToast({ icon: '⚡', title: 'Job Marked Complete!', message: 'An earner says the job is done — verify and rate them!' });
         }
       })

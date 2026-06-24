@@ -438,6 +438,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     if (error) {
       console.warn("Booking sync error:", error.message);
+      // Roll back the optimistic temp booking + slot flip so the UI doesn't show
+      // a phantom 'pending' booking on a 'taken' slot.
+      if (job) dispatch({ type: "UPDATE_JOB", jobId, patch: { slots: job.slots } });
+      await loadBookings();
       return;
     }
     if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
