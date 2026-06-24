@@ -105,7 +105,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'no_message', message: 'Send a message to Hustlr AI.' }, 400);
     }
 
-    const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    const { data: profile } = await sb.rpc('my_profile'); // owner's full row (private cols revoked from direct reads)
     const system = buildSystemPrompt(user.id, profile ?? {});
     // Cache the large, stable tools+system prefix. A cache_control breakpoint on
     // the system block also covers the tool definitions that render before it, so
@@ -501,7 +501,7 @@ async function recommendGigs(sb: SupabaseClient, userId: string, input: Json): P
   const limit = clampInt(input.limit, 6, 1, 12);
 
   const [{ data: profile }, { data: myBookings }, { data: openJobs }] = await Promise.all([
-    sb.from('profiles').select('*').eq('id', userId).maybeSingle(),
+    sb.rpc('my_profile'),
     sb.from('bookings').select('jobs(category)').eq('earner_id', userId),
     sb
       .from('jobs')
@@ -713,7 +713,7 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
 
 async function myActivity(sb: SupabaseClient, userId: string): Promise<string> {
   const [{ data: profile }, { data: bookings }, { data: posted }] = await Promise.all([
-    sb.from('profiles').select('*').eq('id', userId).maybeSingle(),
+    sb.rpc('my_profile'),
     sb
       .from('bookings')
       .select('id, status, slot_label, counter_offer, created_at, jobs(title, category, pay, pay_type)')
@@ -817,7 +817,7 @@ function round2(n: number): number {
 }
 
 async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string> {
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data: profile } = await sb.rpc('my_profile');
   const p = (profile ?? {}) as Json;
   const goal = Number(p.monthly_earning_goal) || 1000;
 
@@ -880,7 +880,7 @@ async function suggestPrice(sb: SupabaseClient, userId: string, input: Json): Pr
   const category = normalizeCategory(String(input.category ?? ''));
   if (!category) return JSON.stringify({ error: 'category_required', message: 'Which category? e.g. Tutoring, Moving, Creative.' });
 
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data: profile } = await sb.rpc('my_profile');
   let skillRate = 0;
   const rates = (profile as Json | null)?.skill_rates;
   if (rates && typeof rates === 'object') {
@@ -915,7 +915,7 @@ async function suggestPrice(sb: SupabaseClient, userId: string, input: Json): Pr
 }
 
 async function mySchedule(sb: SupabaseClient, userId: string): Promise<string> {
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data: profile } = await sb.rpc('my_profile');
   const p = (profile ?? {}) as Json;
   const availability = Array.isArray(p.availability) ? (p.availability as Json[]) : [];
 
@@ -946,7 +946,7 @@ async function mySchedule(sb: SupabaseClient, userId: string): Promise<string> {
 async function remember(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
   const fact = String(input.fact ?? '').trim().slice(0, 200);
   if (!fact) return JSON.stringify({ error: 'empty_fact' });
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data: profile } = await sb.rpc('my_profile');
   let mem: string[] = Array.isArray((profile as Json | null)?.assistant_memory)
     ? ((profile as Json).assistant_memory as string[])
     : [];

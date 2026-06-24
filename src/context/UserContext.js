@@ -184,7 +184,7 @@ export function UserProvider({ children }) {
 
     // 2. Fetch fresh from Supabase
     const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.rpc('my_profile'),
       supabase.from('badges').select('*').eq('user_id', user.id),
       supabase.from('user_challenges').select('*').eq('user_id', user.id),
     ]);
@@ -277,7 +277,7 @@ export function UserProvider({ children }) {
     if (!user) return;
     const cacheKey = `profile_${user.id}`;
     const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.rpc('my_profile'),
       supabase.from('badges').select('*').eq('user_id', user.id),
       supabase.from('user_challenges').select('*').eq('user_id', user.id),
     ]);

@@ -237,7 +237,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfileBundle = async (userId: string) => {
     const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).single(),
+      supabase.rpc("my_profile"), // owner's full row (private columns are revoked from direct reads)
       supabase.from("badges").select("*").eq("user_id", userId),
       supabase.from("user_challenges").select("*").eq("user_id", userId),
     ]);
