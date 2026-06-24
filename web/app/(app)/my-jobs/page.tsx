@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, MessageCircle, Check } from "lucide-react";
+import { Briefcase, MessageCircle, Check, Camera, X, FileText } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Button, { buttonClasses } from "@/components/ui/Button";
@@ -13,17 +14,60 @@ import RatingStars from "@/components/ui/RatingStars";
 import { Textarea } from "@/components/ui/Field";
 import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
+import { uploadImages } from "@/lib/uploadImage";
 import { money } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
 export default function MyJobsPage() {
-  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster } = useJobs();
-  const { earningsToday, earningsWeek, earningsTotal } = useUser();
+  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment } = useJobs();
+  const { earningsToday, earningsWeek, earningsTotal, showToast } = useUser();
+  const { user } = useAuth();
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Finish (mark-done) sheet with optional proof-of-work photos → completion-photos bucket.
+  const [finishBooking, setFinishBooking] = useState<Booking | null>(null);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const openFinish = (b: Booking) => {
+    setFinishBooking(b);
+    setPhotos([]);
+  };
+
+  const addPhotos = async (files: FileList | null) => {
+    if (!files?.length || !user) return;
+    setUploading(true);
+    try {
+      const urls = await uploadImages(Array.from(files), "completion-photos", user.id);
+      setPhotos((p) => [...p, ...urls]);
+    } catch {
+      showToast({ icon: "⚠️", title: "Upload failed", message: "Couldn't add those photos." });
+    }
+    setUploading(false);
+  };
+
+  const submitFinish = async () => {
+    if (!finishBooking) return;
+    setBusy(true);
+    await markEarnerDone(finishBooking.id, photos.length ? photos : null);
+    setBusy(false);
+    setFinishBooking(null);
+    showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
+  };
+
+  const respondAmend = async (b: Booking, accept: boolean) => {
+    await respondToAmendment(b.id, accept);
+    showToast(
+      accept
+        ? { icon: "✅", title: "Change accepted", message: "The poster can now update the gig terms." }
+        : { icon: "❌", title: "Change declined", message: "The original terms stay in effect." },
+    );
+  };
 
   const openRate = (b: Booking) => {
     setRateBooking(b);
@@ -90,7 +134,7 @@ export default function MyJobsPage() {
                     {b.status === "confirmed" && (
                       <>
                         {!b.earnerDone ? (
-                          <Button size="sm" onClick={() => markEarnerDone(b.id)}>
+                          <Button size="sm" onClick={() => openFinish(b)}>
                             <Check className="size-4" /> Mark done
                           </Button>
                         ) : (
@@ -116,6 +160,30 @@ export default function MyJobsPage() {
                         </Button>
                       ))}
                   </div>
+
+                  {b.amendmentStatus === "pending" && (
+                    <div className="mt-3 rounded-2xl border border-primary/30 bg-primary-light/40 p-3">
+                      <div className="flex items-center gap-1.5 text-sm font-bold text-primary">
+                        <FileText className="size-4" /> Change proposed by poster
+                      </div>
+                      {b.amendmentNote && <p className="mt-1 text-sm text-ink-soft">{b.amendmentNote}</p>}
+                      <p className="mt-1 text-xs text-ink-muted">Accepting lets the poster update the gig terms.</p>
+                      <div className="mt-2.5 flex gap-2">
+                        <Button size="sm" onClick={() => respondAmend(b, true)}>
+                          <Check className="size-4" /> Accept
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-urgent" onClick={() => respondAmend(b, false)}>
+                          <X className="size-4" /> Decline
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {b.amendmentStatus === "accepted" && (
+                    <p className="mt-3 rounded-xl bg-success/10 px-3 py-2 text-xs font-bold text-success">Change accepted — the poster can update the terms.</p>
+                  )}
+                  {b.amendmentStatus === "declined" && (
+                    <p className="mt-3 rounded-xl bg-urgent/10 px-3 py-2 text-xs font-bold text-urgent">Change declined — original terms remain.</p>
+                  )}
                 </div>
               );
             })}
@@ -136,6 +204,44 @@ export default function MyJobsPage() {
         <p className="mb-3 text-sm text-ink-soft">How was working with this poster?</p>
         <RatingStars value={rating} size={34} onChange={setRating} />
         <Textarea className="mt-4 min-h-[90px]" value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="Share a few words (optional)" />
+      </Modal>
+
+      <Modal
+        open={!!finishBooking}
+        onClose={() => setFinishBooking(null)}
+        title="Mark gig complete"
+        footer={
+          <Button fullWidth size="lg" loading={busy} onClick={submitFinish}>
+            Mark complete
+          </Button>
+        }
+      >
+        <p className="text-sm text-ink-soft">Add photos of the finished work (optional) so the poster can verify and release payment.</p>
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+        {photos.length > 0 && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {photos.map((url, i) => (
+              <div key={url} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <button
+                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
+                  aria-label="Remove photo"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
+        >
+          <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
+        </button>
       </Modal>
     </div>
   );

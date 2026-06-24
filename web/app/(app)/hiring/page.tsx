@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine } from "lucide-react";
+import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine, FileText } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
@@ -10,20 +10,36 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import StudentBadge from "@/components/ui/StudentBadge";
 import Avatar from "@/components/ui/Avatar";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import { Textarea } from "@/components/ui/Field";
 import CompletionModal, { type VerifyArgs } from "@/components/CompletionModal";
 import AcceptPaymentModal from "@/components/AcceptPaymentModal";
 import { money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
 export default function HiringPage() {
-  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob } = useJobs();
+  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob, proposeAmendment } = useJobs();
   const { showToast } = useUser();
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
+  const [amendTarget, setAmendTarget] = useState<Booking | null>(null);
+  const [amendNote, setAmendNote] = useState("");
+  const [amendBusy, setAmendBusy] = useState(false);
 
   const onVerify = async (args: VerifyArgs) => {
     if (!verifyBooking) return;
     await verifyAndRate(verifyBooking.id, args);
+  };
+
+  const submitAmendment = async () => {
+    if (!amendTarget || !amendNote.trim()) return;
+    setAmendBusy(true);
+    await proposeAmendment(amendTarget.id, amendNote.trim());
+    setAmendBusy(false);
+    const earnerName = amendTarget.earner?.name || "The earner";
+    setAmendTarget(null);
+    setAmendNote("");
+    showToast({ icon: "📝", title: "Change requested", message: `${earnerName} will be asked to approve or decline.` });
   };
 
   return (
@@ -125,6 +141,33 @@ export default function HiringPage() {
                               </span>
                             )}
                           </div>
+
+                          {(b.status === "confirmed" || b.status === "completed") && b.amendmentStatus === "none" && (
+                            <button
+                              onClick={() => { setAmendTarget(b); setAmendNote(""); }}
+                              className="mt-2 flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+                            >
+                              <FileText className="size-3.5" /> Request a change to the terms
+                            </button>
+                          )}
+                          {b.amendmentStatus === "pending" && (
+                            <p className="mt-2 rounded-xl bg-primary-light/50 px-3 py-2 text-xs font-semibold text-primary">
+                              Change requested — waiting for {b.earner?.name || "the earner"} to approve.
+                            </p>
+                          )}
+                          {b.amendmentStatus === "accepted" && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-success/10 px-3 py-2">
+                              <span className="text-xs font-bold text-success">Change approved — you can edit the gig terms.</span>
+                              <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
+                                <Pencil className="size-3.5" /> Edit terms
+                              </Link>
+                            </div>
+                          )}
+                          {b.amendmentStatus === "declined" && (
+                            <p className="mt-2 rounded-xl bg-urgent/10 px-3 py-2 text-xs font-bold text-urgent">
+                              {b.earner?.name || "The earner"} declined the change — original terms remain.
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -135,6 +178,29 @@ export default function HiringPage() {
           </div>
         )}
       </PageContainer>
+
+      <Modal
+        open={!!amendTarget}
+        onClose={() => setAmendTarget(null)}
+        title="Request a change"
+        size="sm"
+        footer={
+          <Button fullWidth size="lg" loading={amendBusy} disabled={!amendNote.trim()} onClick={submitAmendment}>
+            Send request
+          </Button>
+        }
+      >
+        <p className="mb-3 text-sm text-ink-soft">
+          Core terms are locked once a booking is active. Describe the change you need — {amendTarget?.earner?.name || "the earner"} must
+          approve before you can edit the gig.
+        </p>
+        <Textarea
+          value={amendNote}
+          onChange={(e) => setAmendNote(e.target.value)}
+          placeholder="e.g. Move the start time to 3pm, or raise the pay to $80."
+          className="min-h-[96px]"
+        />
+      </Modal>
 
       <CompletionModal open={!!verifyBooking} booking={verifyBooking} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
       <AcceptPaymentModal

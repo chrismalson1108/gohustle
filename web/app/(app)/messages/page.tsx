@@ -1,18 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageCircle, Send, ArrowLeft } from "lucide-react";
+import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
+import { useUser } from "@/lib/user";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead } from "@/lib/messages";
+import { notify } from "@/lib/push";
+import { uploadToBucket } from "@/lib/uploadImage";
+import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
 import PageHeader, { EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
+import Modal from "@/components/ui/Modal";
+import Button from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames, timeAgo } from "@/lib/format";
 
 interface Conversation {
   bookingId: string;
+  otherId: string | null;
   name: string;
   avatarUrl: string | null;
   avatarInitial: string | null;
@@ -39,6 +47,7 @@ export default function MessagesPage() {
       const job = jobs.find((j) => j.id === b.jobId);
       list.push({
         bookingId: b.id,
+        otherId: job?.posterId ?? null,
         name: job?.poster.name || b.job?.title || "Poster",
         avatarUrl: job?.poster.avatarUrl || null,
         avatarInitial: job?.poster.avatarInitial || "P",
@@ -48,6 +57,7 @@ export default function MessagesPage() {
     posterBookings.forEach((b) => {
       list.push({
         bookingId: b.id,
+        otherId: b.earner?.id ?? null,
         name: b.earner?.name || "Earner",
         avatarUrl: b.earner?.avatarUrl || null,
         avatarInitial: b.earner?.avatarInitial || "E",
@@ -132,9 +142,15 @@ export default function MessagesPage() {
 }
 
 function ChatPane({ conversation, userId, onBack }: { conversation: Conversation; userId: string; onBack: () => void }) {
+  const { showToast } = useUser();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
+  const [reportDetails, setReportDetails] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -165,6 +181,13 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Ping the other party's phone + drop an in-app Alert (send-push persists a notification row).
+  const pingOther = (preview: string) => {
+    if (conversation.otherId) {
+      notify(conversation.otherId, "New message", preview, { tab: "MessagesTab", type: "message" });
+    }
+  };
+
   const send = async () => {
     const body = text.trim();
     if (!body) return;
@@ -176,23 +199,77 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
       .select("id, booking_id, sender_id, text, image_url, created_at")
       .single();
     if (data) setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
+    pingOther(body);
     setSending(false);
+  };
+
+  const sendImage = async (file: File) => {
+    setSending(true);
+    try {
+      const url = await uploadToBucket(file, "chat-photos", userId);
+      const { data } = await supabase
+        .from("messages")
+        .insert({ booking_id: conversation.bookingId, sender_id: userId, image_url: url })
+        .select("id, booking_id, sender_id, text, image_url, created_at")
+        .single();
+      if (data) setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
+      pingOther("📷 Photo");
+    } catch {
+      showToast({ icon: "⚠️", title: "Upload failed", message: "Couldn't send that image. Try again." });
+    }
+    setSending(false);
+  };
+
+  const doReport = async () => {
+    try {
+      await submitReport({ reporterId: userId, reportedUserId: conversation.otherId, bookingId: conversation.bookingId, reason: reportReason, details: reportDetails || null });
+      showToast({ icon: "🚩", title: "Report submitted", message: "Thanks — our team will review it." });
+    } catch {
+      showToast({ icon: "⚠️", title: "Couldn't submit", message: "Please try again." });
+    }
+    setReportOpen(false);
+    setReportDetails("");
+  };
+
+  const doBlock = async () => {
+    setMenuOpen(false);
+    if (!conversation.otherId) return;
+    try {
+      await blockUserDb(userId, conversation.otherId);
+      showToast({ icon: "🚫", title: `${conversation.name} blocked`, message: "You won't see their gigs anymore." });
+      onBack();
+    } catch {
+      showToast({ icon: "⚠️", title: "Couldn't block", message: "Please try again." });
+    }
   };
 
   return (
     <div className="flex h-[calc(100vh-4rem)] w-full flex-col md:h-[calc(100vh-2rem)] md:flex-1">
-      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+      <div className="relative flex items-center gap-3 border-b border-line px-4 py-3">
         <button onClick={onBack} className="md:hidden">
           <ArrowLeft className="size-5 text-ink-soft" />
         </button>
         <Avatar url={conversation.avatarUrl} initial={conversation.avatarInitial} name={conversation.name} size={36} />
-        <div>
-          <p className="font-bold text-ink">{conversation.name}</p>
-          <p className="text-xs text-ink-muted">{conversation.jobTitle}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-bold text-ink">{conversation.name}</p>
+          <p className="truncate text-xs text-ink-muted">{conversation.jobTitle}</p>
         </div>
+        <button onClick={() => setMenuOpen((o) => !o)} className="rounded-full p-1.5 text-ink-muted hover:bg-line/60" aria-label="Conversation options">
+          <MoreVertical className="size-5" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-3 top-[52px] z-20 w-44 overflow-hidden rounded-xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-line">
+            <button onClick={() => { setMenuOpen(false); setReportOpen(true); }} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-ink hover:bg-canvas">
+              <Flag className="size-4" /> Report
+            </button>
+            <button onClick={doBlock} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-urgent hover:bg-canvas">
+              <Ban className="size-4" /> Block
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto bg-canvas px-4 py-4">
+      <div className="flex-1 space-y-2 overflow-y-auto bg-canvas px-4 py-4" onClick={() => menuOpen && setMenuOpen(false)}>
         {messages.map((m, i) => {
           const mine = m.sender_id === userId;
           return (
@@ -212,16 +289,65 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
 
       <div className="flex items-center gap-2 border-t border-line p-3">
         <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) sendImage(f);
+            e.target.value = "";
+          }}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={sending}
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary disabled:opacity-50"
+          aria-label="Send a photo"
+        >
+          <ImagePlus className="size-5" />
+        </button>
+        <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
           placeholder="Type a message…"
           className="flex-1 rounded-full border border-line bg-white px-4 py-2.5 text-[15px] outline-none focus:border-primary"
         />
-        <button onClick={send} disabled={sending || !text.trim()} className="flex size-11 items-center justify-center rounded-full bg-primary text-white disabled:opacity-50">
+        <button onClick={send} disabled={sending || !text.trim()} className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-white disabled:opacity-50">
           <Send className="size-5" />
         </button>
       </div>
+
+      <Modal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        title={`Report ${conversation.name}`}
+        size="sm"
+        footer={<Button fullWidth onClick={doReport}>Submit report</Button>}
+      >
+        <div className="space-y-2">
+          {REPORT_REASONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setReportReason(r)}
+              className={classNames(
+                "flex w-full items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition",
+                reportReason === r ? "border-primary bg-primary-light/50 text-primary" : "border-line text-ink-soft hover:border-ink-muted",
+              )}
+            >
+              {r}
+              {reportReason === r && <span>✓</span>}
+            </button>
+          ))}
+          <Textarea
+            value={reportDetails}
+            onChange={(e) => setReportDetails(e.target.value)}
+            placeholder="Add details (optional)"
+            className="min-h-[72px]"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
