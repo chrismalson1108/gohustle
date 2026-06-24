@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { listNotifications, markRead, markAllRead } from '../lib/notifications';
+import { listNotifications, markRead, markAllRead, setArchived, notificationRoute } from '../lib/notifications';
 import { colors, shadows } from '../theme';
 
 function relTime(iso) {
@@ -18,30 +18,44 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
+function iconFor(type) {
+  if (type === 'saved_search') return 'briefcase';
+  if (type === 'message') return 'chatbubble';
+  return 'notifications';
+}
+
 export default function NotificationsScreen({ navigation }) {
+  const [tab, setTab] = useState('inbox'); // 'inbox' | 'archived'
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setItems(await listNotifications());
+  const load = useCallback(async (t = tab) => {
+    setItems(await listNotifications(t === 'archived'));
     setLoading(false);
-  }, []);
+  }, [tab]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  const switchTab = (t) => { setTab(t); setLoading(true); load(t); };
+
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const open = (n) => {
     if (!n.read) {
       markRead(n.id);
       setItems((xs) => xs.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
     }
-    if (n.job_id) navigation.navigate('HomeTab', { screen: 'JobDetail', params: { jobId: n.job_id } });
+    const r = notificationRoute(n);
+    if (r) {
+      if (r.screen) navigation.navigate(r.tab, { screen: r.screen, params: r.params });
+      else navigation.navigate(r.tab);
+    }
+  };
+
+  const archive = async (n) => {
+    await setArchived(n.id, tab === 'inbox');
+    setItems((xs) => xs.filter((x) => x.id !== n.id));
   };
 
   const allRead = async () => {
@@ -53,13 +67,22 @@ export default function NotificationsScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      {hasUnread && (
+      <View style={styles.segment}>
+        {['inbox', 'archived'].map((t) => (
+          <TouchableOpacity key={t} style={[styles.segBtn, tab === t && styles.segBtnActive]} onPress={() => switchTab(t)}>
+            <Text style={[styles.segText, tab === t && styles.segTextActive]}>{t === 'inbox' ? 'Inbox' : 'Archived'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {tab === 'inbox' && hasUnread && (
         <TouchableOpacity style={styles.markAll} onPress={allRead}>
           <Text style={styles.markAllText}>Mark all read</Text>
         </TouchableOpacity>
       )}
+
       <ScrollView
-        contentContainerStyle={{ padding: 16, gap: 8 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 8 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {loading ? (
@@ -67,24 +90,28 @@ export default function NotificationsScreen({ navigation }) {
         ) : items.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="notifications-outline" size={44} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No alerts yet</Text>
+            <Text style={styles.emptyTitle}>{tab === 'inbox' ? 'No alerts yet' : 'Nothing archived'}</Text>
             <Text style={styles.emptyBody}>
-              Ask Hustlr AI to watch for gigs (e.g. “tell me when photography gigs come up”) and matches show up here.
+              {tab === 'inbox'
+                ? 'Booking updates, messages, and gig matches show up here. Ask Hustlr AI to watch for gigs (e.g. “tell me when photography gigs come up”).'
+                : 'Alerts you archive are kept here.'}
             </Text>
           </View>
         ) : (
           items.map((n) => (
-            <TouchableOpacity key={n.id} style={[styles.row, !n.read && styles.rowUnread]} onPress={() => open(n)} activeOpacity={0.85}>
+            <View key={n.id} style={[styles.row, !n.read && tab === 'inbox' && styles.rowUnread]}>
               <View style={styles.rowIcon}>
-                <Ionicons name={n.type === 'saved_search' ? 'briefcase' : 'notifications'} size={20} color={colors.primary} />
+                <Ionicons name={iconFor(n.type)} size={20} color={colors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => open(n)} activeOpacity={0.85}>
                 <Text style={styles.rowTitle}>{n.title}</Text>
                 {!!n.body && <Text style={styles.rowBody} numberOfLines={1}>{n.body}</Text>}
                 <Text style={styles.rowTime}>{relTime(n.created_at)}</Text>
-              </View>
-              {!n.read && <View style={styles.dot} />}
-            </TouchableOpacity>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => archive(n)} style={styles.rowAction} accessibilityLabel={tab === 'inbox' ? 'Archive' : 'Move to inbox'}>
+                <Ionicons name={tab === 'inbox' ? 'close' : 'arrow-undo-outline'} size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
           ))
         )}
       </ScrollView>
@@ -94,7 +121,12 @@ export default function NotificationsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  markAll: { alignSelf: 'flex-end', paddingHorizontal: 16, paddingTop: 10 },
+  segment: { flexDirection: 'row', gap: 4, backgroundColor: colors.divider, borderRadius: 14, padding: 4, margin: 16, marginBottom: 4 },
+  segBtn: { flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 8 },
+  segBtnActive: { backgroundColor: colors.surface, ...shadows.sm },
+  segText: { fontSize: 13.5, fontWeight: '800', color: colors.textSecondary },
+  segTextActive: { color: colors.primary },
+  markAll: { alignSelf: 'flex-end', paddingHorizontal: 16, paddingTop: 6 },
   markAllText: { color: colors.primary, fontSize: 13, fontWeight: '800' },
   empty: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 48, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '900', color: colors.textPrimary },
@@ -108,5 +140,5 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 14.5, fontWeight: '800', color: colors.textPrimary },
   rowBody: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
   rowTime: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary, marginTop: 4 },
+  rowAction: { padding: 4 },
 });

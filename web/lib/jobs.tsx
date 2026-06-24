@@ -305,7 +305,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const loadPosterBookings = useCallback(async () => {
     if (!user) return;
-    const { data: myJobs } = await supabase.from("jobs").select("id").eq("poster_id", user.id);
+    // Exclude cancelled/deleted gigs so a booking on a gig the user removed doesn't
+    // keep counting toward the Hiring badge while the gig is hidden from the page.
+    const { data: myJobs } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("poster_id", user.id)
+      .neq("status", "cancelled");
     if (!myJobs?.length) {
       // Clear any stale poster bookings (e.g. the user just deleted their last gig).
       dispatch({ type: "SET_POSTER_BOOKINGS", bookings: [] });

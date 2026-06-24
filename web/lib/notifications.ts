@@ -10,13 +10,18 @@ export interface NotificationRow {
   body: string | null;
   job_id: string | null;
   read: boolean;
+  archived: boolean;
+  data: Record<string, unknown> | null;
   created_at: string;
 }
 
-export async function listNotifications(): Promise<NotificationRow[]> {
+const COLS = "id, type, title, body, job_id, read, archived, data, created_at";
+
+export async function listNotifications(archived = false): Promise<NotificationRow[]> {
   const { data } = await supabase
     .from("notifications")
-    .select("id, type, title, body, job_id, read, created_at")
+    .select(COLS)
+    .eq("archived", archived)
     .order("created_at", { ascending: false })
     .limit(50);
   return (data as NotificationRow[]) ?? [];
@@ -27,12 +32,32 @@ export async function markRead(id: string): Promise<void> {
 }
 
 export async function markAllRead(): Promise<void> {
-  await supabase.from("notifications").update({ read: true }).eq("read", false);
+  await supabase.from("notifications").update({ read: true }).eq("read", false).eq("archived", false);
 }
 
-// Live unread count for the nav badge. Refetches on mount and on any realtime
-// change to the user's notifications (RLS scopes the stream to the owner). If the
-// table isn't in the realtime publication the manual refresh still works.
+export async function setArchived(id: string, archived: boolean): Promise<void> {
+  await supabase.from("notifications").update({ archived }).eq("id", id);
+}
+
+// Archive everything already read in the inbox (the "clear handled alerts" action).
+export async function archiveAllRead(): Promise<void> {
+  await supabase.from("notifications").update({ archived: true }).eq("read", true).eq("archived", false);
+}
+
+// Where an alert should take you when tapped (gig deep-link, else a tab).
+const TAB_ROUTE: Record<string, string> = {
+  EarnTab: "/my-jobs",
+  GigsTab: "/hiring",
+  MessagesTab: "/messages",
+  HomeTab: "/browse",
+};
+export function notificationHref(n: NotificationRow): string | null {
+  if (n.job_id) return `/jobs/${n.job_id}`;
+  const tab = (n.data?.tab as string) || "";
+  return TAB_ROUTE[tab] ?? null;
+}
+
+// Live unread count (non-archived) for the nav badge.
 export function useUnreadNotifications() {
   const [count, setCount] = useState(0);
 
@@ -40,7 +65,8 @@ export function useUnreadNotifications() {
     const { count: c } = await supabase
       .from("notifications")
       .select("id", { count: "exact", head: true })
-      .eq("read", false);
+      .eq("read", false)
+      .eq("archived", false);
     setCount(c ?? 0);
   }, []);
 
