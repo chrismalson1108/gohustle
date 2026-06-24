@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
     return json({ url: session.url, sessionId: session.id });
   } catch (err: any) {
     console.error('stripe-create-identity-session:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

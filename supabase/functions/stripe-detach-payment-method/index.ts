@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
     return json({ success: true, removed: methods.data.length });
   } catch (err: any) {
     console.error('stripe-detach-payment-method:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

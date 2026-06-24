@@ -67,7 +67,7 @@ Deno.serve(async (req: Request) => {
     return json({ success: true });
   } catch (err: any) {
     console.error('stripe-cancel-payment:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

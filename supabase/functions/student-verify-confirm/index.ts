@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
     return json({ verified: true, schoolDomain: row.domain, school: patch.school ?? profile?.school ?? null });
   } catch (err) {
     console.error('student-verify-confirm:', err);
-    return json({ error: (err as Error).message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
     return json({ sent: tokens.length, pruned: dead.length });
   } catch (err: any) {
     console.error('send-push:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

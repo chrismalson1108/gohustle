@@ -186,7 +186,7 @@ Deno.serve(async (req: Request) => {
           try {
             result = await runTool(sb, user.id, name, input, actions);
           } catch (err) {
-            result = JSON.stringify({ error: (err as Error).message || 'tool_failed' });
+            result = JSON.stringify({ error: 'Something went wrong. Please try again.' || 'tool_failed' });
           }
           toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
         }

@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (err: any) {
     console.error('stripe-payment-method-status:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 

@@ -38,7 +38,7 @@ Deno.serve(async (req: Request) => {
     return json({ url: link.url });
   } catch (err: any) {
     console.error('stripe-payout-login-link:', err);
-    return json({ error: err.message }, 500);
+    return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
 
