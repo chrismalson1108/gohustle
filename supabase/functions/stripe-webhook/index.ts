@@ -44,6 +44,12 @@ Deno.serve(async (req: Request) => {
         await supabase.from('payments')
           .update({ status: 'captured', captured_at: new Date().toISOString() })
           .eq('payment_intent_id', pi.id);
+        // Settlement must credit the earner exactly once, no matter which path
+        // (this webhook or the capture edge function) observes it first. The
+        // credit_earnings RPC is atomic + idempotent, so calling it here is safe.
+        const { data: paid } = await supabase
+          .from('payments').select('id').eq('payment_intent_id', pi.id).single();
+        if (paid?.id) await supabase.rpc('credit_earnings', { p_payment_id: paid.id });
         break;
       }
 
@@ -125,8 +131,9 @@ Deno.serve(async (req: Request) => {
         break;
     }
   } catch (err: any) {
+    // Log internals server-side only; never leak exception text to the caller.
     console.error('Webhook handler error:', err);
-    return new Response(`Handler error: ${err.message}`, { status: 500 });
+    return new Response('Handler error', { status: 500 });
   }
 
   return new Response(JSON.stringify({ received: true }), {

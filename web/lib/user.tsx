@@ -277,6 +277,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }, SYNC_DEBOUNCE_MS);
   };
 
+  // Discrete, user-intent settings (role, goals, work status, availability) must
+  // persist NOW — a 2s debounce could drop them if the user navigates/refreshes in
+  // the window. Flush immediately, folding in any pending xp/earnings patch so we
+  // don't clobber a debounced write that hasn't fired yet.
+  const syncProfileNow = (patch: Record<string, unknown>) => {
+    if (!user) return;
+    const toSend = { ...pendingPatch.current, ...patch };
+    pendingPatch.current = {};
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    supabase
+      .from("profiles")
+      .update(toSend)
+      .eq("id", user.id)
+      .then(({ error }) => {
+        if (error) console.warn("Profile sync error:", error.message);
+      });
+  };
+
   const addXP = (amount: number) => {
     dispatch({ type: "ADD_XP", amount });
     scheduleSyncProfile({ xp: state.xp + amount });
@@ -320,27 +338,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const setRole = (role: UserState["role"]) => {
     dispatch({ type: "SET_ROLE", role });
-    scheduleSyncProfile({ role });
+    syncProfileNow({ role });
   };
 
   const setGoals = (earningGoal: number, jobsGoal: number) => {
     dispatch({ type: "SET_GOALS", earningGoal, jobsGoal });
-    scheduleSyncProfile({ weekly_earning_goal: earningGoal, weekly_jobs_goal: jobsGoal });
+    syncProfileNow({ weekly_earning_goal: earningGoal, weekly_jobs_goal: jobsGoal });
   };
 
   const setMonthlyGoal = (goal: number) => {
     dispatch({ type: "LOAD_PROFILE", profile: { monthlyEarningGoal: goal } });
-    scheduleSyncProfile({ monthly_earning_goal: goal });
+    syncProfileNow({ monthly_earning_goal: goal });
   };
 
   const setWorkStatus = (status: UserState["workStatus"], note: string | null = null) => {
     dispatch({ type: "LOAD_PROFILE", profile: { workStatus: status, workStatusNote: note } });
-    scheduleSyncProfile({ work_status: status, work_status_note: note });
+    syncProfileNow({ work_status: status, work_status_note: note });
   };
 
   const setAvailability = (windows: UserState["availability"]) => {
     dispatch({ type: "LOAD_PROFILE", profile: { availability: windows } });
-    scheduleSyncProfile({ availability: windows });
+    syncProfileNow({ availability: windows });
   };
 
   const refreshProfile = async () => {

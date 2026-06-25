@@ -587,6 +587,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const cancelBooking: JobsValue["cancelBooking"] = async (bookingId) => {
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
+    // Only a pre-settlement booking may be cancelled (the DB guard enforces this too).
+    if (booking && !["pending", "confirmed"].includes(booking.status)) {
+      showToast({ icon: "⚠️", title: "Can't cancel", message: "This booking can no longer be cancelled." });
+      return;
+    }
     try {
       await stripeEdge.cancelPayment(bookingId);
     } catch {
@@ -612,13 +617,29 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     { rating, reviewText, paymentMethod, pct, tipCents, disputeReason },
   ) => {
     const partial = typeof pct === "number" && pct > 0 && pct < 1;
+
+    // Validate state BEFORE moving any money — don't capture escrow or log a dispute
+    // for a booking that's missing or already finalized.
+    const booking = state.posterBookings.find((b) => b.id === bookingId);
+    if (!booking) {
+      showToast({ icon: "⚠️", title: "Can't verify", message: "Booking not found — refresh and try again." });
+      return;
+    }
+    if (["verified", "declined", "cancelled"].includes(booking.status)) {
+      showToast({ icon: "⚠️", title: "Already finalized", message: "This booking can no longer be verified." });
+      return;
+    }
+
+    // 'Payment not found' = a pre-Stripe booking with no hold → continue, but remember
+    // no money moved so we don't record a meaningless dispute.
+    let moneyMoved = true;
     try {
       await stripeEdge.capturePayment(bookingId, partial ? pct : undefined);
     } catch (err) {
       if (!(err as Error).message?.includes("Payment not found")) throw err;
+      moneyMoved = false;
     }
 
-    const booking = state.posterBookings.find((b) => b.id === bookingId);
     const patch = {
       status: "verified",
       earner_rating: rating,
@@ -633,7 +654,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // than believing the rating/verification was recorded.
     if (error) throw new Error(error.message);
 
-    if (partial && user?.id) {
+    if (partial && moneyMoved && user?.id) {
       await supabase.from("disputes").insert({
         booking_id: bookingId,
         raised_by: user.id,

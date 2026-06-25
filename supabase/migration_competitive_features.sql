@@ -72,7 +72,7 @@ exception when duplicate_object then null; end $$;
 -- user. Matching is intentionally light (category + pay floor + remote/state) to
 -- stay index-friendly; the client applies the full filter on open.
 create or replace function public.notify_saved_searches()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 declare s record;
 begin
   for s in select * from public.saved_searches where notify loop

@@ -83,27 +83,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Credit the earner's earnings dashboard with the NET payout — exactly ONCE.
-    // Guarded by payments.earnings_credited so a retry still applies a credit that
-    // failed the first time (even when the capture itself already succeeded), and
-    // never double-credits. Service role, so the profiles write-guard exempts it.
-    if (!payment.earnings_credited && earnerAmountCents > 0 && booking.earner_id) {
-      const dollars = earnerAmountCents / 100;
-      const { data: prof } = await supabase
-        .from('profiles').select('earnings_today, earnings_week, earnings_total')
-        .eq('id', booking.earner_id).single();
-      if (prof) {
-        const { error: credErr } = await supabase.from('profiles').update({
-          earnings_today: Number(prof.earnings_today || 0) + dollars,
-          earnings_week:  Number(prof.earnings_week  || 0) + dollars,
-          earnings_total: Number(prof.earnings_total || 0) + dollars,
-        }).eq('id', booking.earner_id);
-        // Only mark credited on success, so a transient failure retries next time.
-        if (!credErr) {
-          await supabase.from('payments').update({ earnings_credited: true }).eq('id', payment.id);
-        }
-      }
-    }
+    // Credit the earner's earnings dashboard with the NET payout — atomically and
+    // exactly once. credit_earnings claims the credit via a single conditional
+    // UPDATE (flips earnings_credited only if it was false) and increments earnings
+    // in the SAME transaction, so concurrent captures or the webhook can't
+    // double-credit, and a transient failure rolls back so a retry still credits.
+    void earnerAmountCents; // (now read inside the RPC from the payments row)
+    await supabase.rpc('credit_earnings', { p_payment_id: payment.id });
 
     return json({ success: true });
   } catch (err: any) {

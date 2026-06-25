@@ -33,6 +33,8 @@ function transformJob(dbJob) {
     recurrence: dbJob.recurrence || 'none',
     lat: dbJob.lat ?? null,
     lng: dbJob.lng ?? null,
+    createdAt: dbJob.created_at || null,
+    bumpedAt: dbJob.bumped_at || null,
     postedAt: dbJob.created_at
       ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : 'Recently',
@@ -328,6 +330,9 @@ export function JobsProvider({ children }) {
           earnerDone: b.earner_done,
           posterDone: b.poster_done,
           earnerRating: b.earner_rating != null ? Number(b.earner_rating) : null,
+          posterRating: b.poster_rating != null ? Number(b.poster_rating) : null,
+          posterReview: b.poster_review || null,
+          completionPhotos: b.completion_photos || null,
           paymentMethod: b.payment_method,
           amendmentStatus: b.amendment_status || 'none',
           amendmentNote: b.amendment_note || null,
@@ -582,6 +587,13 @@ export function JobsProvider({ children }) {
   // frees the slot, and notifies the other side.
   const cancelBooking = async (bookingId) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    // Only a pre-settlement booking may be cancelled. Cancelling a completed/verified
+    // (already paid out) booking would free the slot after payout and desync the
+    // lifecycle. The DB guard now rejects this too, but stop here for a clean message.
+    if (booking && !['pending', 'confirmed'].includes(booking.status)) {
+      showToast({ icon: '⚠️', title: "Can't cancel", message: 'This booking can no longer be cancelled.' });
+      return;
+    }
     try { await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment */ }
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'cancelled' } });
     const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
@@ -600,17 +612,33 @@ export function JobsProvider({ children }) {
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason }) => {
     const partial = typeof pct === 'number' && pct > 0 && pct < 1;
-    // Capture escrow payment first (partial if a dispute) — if this fails, abort.
+
+    // Validate state BEFORE moving any money: capture/verify only makes sense on a
+    // completed booking that isn't already finalized — otherwise we could capture
+    // escrow (or log a dispute) for a cancelled/declined/already-verified booking.
+    const booking = state.posterBookings.find(b => b.id === bookingId);
+    if (!booking) {
+      showToast({ icon: '⚠️', title: "Can't verify", message: 'Booking not found — pull to refresh.' });
+      return;
+    }
+    if (['verified', 'declined', 'cancelled'].includes(booking.status)) {
+      showToast({ icon: '⚠️', title: 'Already finalized', message: 'This booking can no longer be verified.' });
+      return;
+    }
+
+    // Capture escrow payment (partial if a dispute). 'Payment not found' = a
+    // pre-Stripe booking with no hold → continue without capture, but remember that
+    // no money moved so we don't record a meaningless dispute below.
+    let moneyMoved = true;
     try {
       await stripeEdge.capturePayment(bookingId, partial ? pct : undefined);
     } catch (err) {
       if (!err.message?.includes('Payment not found')) {
         throw err;
       }
-      // Booking has no payment record (pre-Stripe) — continue without capture
+      moneyMoved = false;
     }
 
-    const booking = state.posterBookings.find(b => b.id === bookingId);
     const patch = {
       status: 'verified',
       earner_rating: rating,
@@ -626,8 +654,9 @@ export function JobsProvider({ children }) {
     // the booking unverified with money already moved.
     if (error) { console.warn('Verify error:', error.message); throw new Error(error.message); }
 
-    // Record a dispute when the poster paid a reduced amount
-    if (partial && user?.id) {
+    // Record a dispute only when the poster actually paid a reduced amount (skip it
+    // for a pre-Stripe booking where no capture happened — there's nothing to dispute).
+    if (partial && moneyMoved && user?.id) {
       await supabase.from('disputes').insert({
         booking_id: bookingId, raised_by: user.id, reason: disputeReason || null, pct_paid: Math.round(pct * 100),
       });

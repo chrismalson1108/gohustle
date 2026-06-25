@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
       .select(`
-        id, job_id, earner_id, counter_offer,
+        id, job_id, earner_id, counter_offer, status,
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, poster_id),
         earner:profiles!bookings_earner_id_fkey(id, name)
       `)
@@ -43,6 +43,19 @@ Deno.serve(async (req: Request) => {
 
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
     if (booking.job.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+
+    // A card hold is only created while accepting — reject settled/closed bookings
+    // so a poster can't place a fresh hold on an already-finished or cancelled gig.
+    if (!['pending', 'confirmed'].includes(booking.status)) {
+      return json({ error: 'This booking can no longer take a payment hold.' }, 409);
+    }
+    // Never destructively overwrite a payment that's already past the authorized
+    // stage (captured/cancelled/refunded) — that would orphan a settled record.
+    const { data: existingPay } = await supabase
+      .from('payments').select('status').eq('booking_id', bookingId).maybeSingle();
+    if (existingPay && !['authorized', 'failed'].includes(existingPay.status)) {
+      return json({ error: 'This booking already has a settled payment.' }, 409);
+    }
 
     // Earner must have a Connect account
     const { data: earnerAcct } = await supabase

@@ -1,14 +1,20 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
-// Content-Security-Policy (ENFORCING). 'unsafe-inline'/'unsafe-eval' are kept for
-// Next.js + Tailwind compatibility; the hard wins here are frame-ancestors
-// (clickjacking), restricted connect/img/frame sources, base-uri and form-action.
-// Stripe Elements needs js.stripe.com (script/frame), *.stripe.com (api + m/q/r
-// telemetry) and *.stripe.network (3-D Secure). Maps use OSM/Carto tiles.
+// Content-Security-Policy (ENFORCING). 'unsafe-eval' is DEV-only (React Fast
+// Refresh needs it); production drops it so an injected script can't eval(). Next's
+// App Router still needs 'unsafe-inline' for its hydration bootstrap scripts (a
+// nonce-based CSP would require per-request middleware). The other hard wins:
+// frame-ancestors (clickjacking), restricted connect/img/frame sources, base-uri,
+// form-action, object-src 'none'. Stripe Elements needs js.stripe.com (script/frame),
+// *.stripe.com (api + telemetry) and *.stripe.network (3-D Secure); maps use OSM/Carto.
+const isDev = process.env.NODE_ENV !== "production";
+const scriptSrc = isDev
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com"
+  : "script-src 'self' 'unsafe-inline' https://js.stripe.com";
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+  scriptSrc,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co https://*.stripe.com https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
   "font-src 'self' data:",

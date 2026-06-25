@@ -171,6 +171,11 @@ export default function HomeScreen({ navigation }) {
         const db = b._distanceMi ?? Infinity;
         return da - db;
       });
+    } else {
+      // 'newest' — bumped gigs float to the top (a bump refreshes bumped_at), so
+      // sort by recency rather than relying on the DB's created_at fetch order.
+      const freshness = (j) => new Date(j.bumpedAt || j.createdAt || 0).getTime();
+      list = [...list].sort((a, b) => freshness(b) - freshness(a));
     }
 
     return list;
