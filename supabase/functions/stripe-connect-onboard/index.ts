@@ -78,14 +78,18 @@ Deno.serve(async (req: Request) => {
     return json({ url: accountLink.url, accountId });
   } catch (err: any) {
     console.error('stripe-connect-onboard:', err);
-    // Surface Stripe's own (safe, actionable) message — e.g. "Connect is not enabled
-    // on this account" — so the user sees the real reason instead of a silent no-op.
-    // Stripe SDK errors carry a descriptive .message and a .type starting "Stripe".
-    const isStripe = typeof err?.type === 'string' && err.type.startsWith('Stripe');
-    const message = isStripe
+    const t = typeof err?.type === 'string' ? err.type : '';
+    // A bad/expired/missing API key is an OPERATOR config problem, not something the
+    // end user can act on — show a friendly message and keep the real error in logs
+    // (never leak the key prefix to users). Surface other Stripe errors (e.g. Connect
+    // not enabled) since those ARE actionable.
+    if (t === 'StripeAuthenticationError') {
+      return json({ error: 'Payments are temporarily unavailable. Please try again later.' }, 503);
+    }
+    const message = t.startsWith('Stripe')
       ? (err.message || 'Stripe could not create the payout account.')
       : 'Something went wrong. Please try again.';
-    return json({ error: message, type: err?.type ?? null }, 500);
+    return json({ error: message, type: t || null }, 500);
   }
 });
 
