@@ -456,16 +456,9 @@ export function JobsProvider({ children }) {
   // rating/review_count plus the role caches (poster_* = as a client; the earner
   // breakdown is derived from role='earner' reviews on the profile screen).
   const recomputeRatings = async (userId) => {
-    const { data } = await supabase.from('reviews').select('rating, role').eq('reviewed_user_id', userId);
-    const rows = data || [];
-    const avg = (arr) => arr.length ? parseFloat((arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length).toFixed(2)) : 5;
-    const poster = rows.filter(r => r.role === 'poster');
-    await supabase.from('profiles').update({
-      rating: avg(rows),                 // combined / general rating
-      review_count: rows.length,
-      poster_rating: avg(poster),        // "as a client" cache
-      poster_review_count: poster.length,
-    }).eq('id', userId);
+    // Server-side, tamper-proof: the RPC derives rating/review_count from the
+    // reviews table (clients can no longer write rating columns directly).
+    await supabase.rpc('recompute_user_rating', { target: userId });
   };
 
   const ratePoster = async (bookingId, { rating, reviewText }) => {
@@ -573,7 +566,11 @@ export function JobsProvider({ children }) {
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { ...patch, earnerRating: rating, paymentMethod } });
 
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-    if (error) { console.warn('Verify error:', error.message); return; }
+    // Escrow is already captured at this point — if the status write fails, throw
+    // so the verify modal stays open and the poster can retry (capture is
+    // idempotent, so the retry won't double-charge), instead of silently leaving
+    // the booking unverified with money already moved.
+    if (error) { console.warn('Verify error:', error.message); throw new Error(error.message); }
 
     // Record a dispute when the poster paid a reduced amount
     if (partial && user?.id) {

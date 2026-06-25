@@ -106,7 +106,7 @@ interface JobsValue extends State {
   toggleSavedJob: (jobId: string) => Promise<void>;
   bumpJob: (jobId: string) => Promise<void>;
   unreadMessages: number;
-  bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null) => Promise<void>;
+  bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null) => Promise<boolean>;
   addJob: (jobData: Record<string, unknown>) => Promise<void>;
   updateJob: (jobId: string, jobData: Record<string, unknown>) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
@@ -410,14 +410,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   // ── Earner actions ───────────────────────────────────────────────────────--
   const bookJob: JobsValue["bookJob"] = async (jobId, slotId, slotLabel = null, counterOffer = null) => {
-    if (!user) return;
+    if (!user) return false;
     const job = state.jobs.find((j) => j.id === jobId);
-    if (job?.posterId === user.id) return;
+    if (job?.posterId === user.id) return false;
 
-    // Instant Book: a gig flagged instant_book confirms immediately (no accept
-    // round-trip), unless the earner is negotiating with a counter-offer.
-    const instant = !!job?.instantBook && !counterOffer;
-
+    // All bookings start 'pending' and require the poster to Accept (which creates
+    // the escrow hold). Instant-book auto-confirm was removed — it skipped escrow,
+    // so an instant-booked earner would have worked for free.
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: "BOOK_JOB", jobId, slotId, slotLabel, counterOffer, tempId });
 
@@ -431,7 +430,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         slot_label: slotLabel || null,
         starts_at: chosenSlot?.startsAt || null,
         counter_offer: counterOffer || null,
-        status: instant ? "confirmed" : "pending",
+        status: "pending",
       })
       .select()
       .single();
@@ -442,18 +441,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       // a phantom 'pending' booking on a 'taken' slot.
       if (job) dispatch({ type: "UPDATE_JOB", jobId, patch: { slots: job.slots } });
       await loadBookings();
-      return;
+      return false;
     }
     if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
     await loadBookings();
     if (job?.posterId)
-      notify(
-        job.posterId,
-        instant ? "Gig booked (Instant Book)" : "New booking request",
-        instant ? `Someone instant-booked "${job.title}"` : `Someone wants to book "${job.title}"`,
-        { tab: "GigsTab" },
-      );
-    track("booking_created", { jobId, counterOffer: !!counterOffer, instant });
+      notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab" });
+    track("booking_created", { jobId, counterOffer: !!counterOffer });
+    return true;
   };
 
   const markEarnerDone: JobsValue["markEarnerDone"] = async (bookingId, completionPhotos = null) => {
@@ -503,20 +498,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const markJobComplete = markEarnerDone;
 
   const recomputeRatings = async (userId: string) => {
-    const { data } = await supabase.from("reviews").select("rating, role").eq("reviewed_user_id", userId);
-    const rows = data || [];
-    const avg = (arr: Array<{ rating: number }>) =>
-      arr.length ? parseFloat((arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length).toFixed(2)) : 5;
-    const poster = rows.filter((r) => r.role === "poster");
-    await supabase
-      .from("profiles")
-      .update({
-        rating: avg(rows),
-        review_count: rows.length,
-        poster_rating: avg(poster),
-        poster_review_count: poster.length,
-      })
-      .eq("id", userId);
+    // Server-side, tamper-proof: the RPC derives the values from the reviews
+    // table (clients can no longer write rating columns directly).
+    await supabase.rpc("recompute_user_rating", { target: userId });
   };
 
   const ratePoster: JobsValue["ratePoster"] = async (bookingId, { rating, reviewText }) => {

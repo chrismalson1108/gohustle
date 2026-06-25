@@ -22,7 +22,7 @@ export default function ResetPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 6) return setError("Password must be at least 6 characters.");
+    if (password.length < 8) return setError("Password must be at least 8 characters.");
     if (password !== confirm) return setError("Passwords don't match.");
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });

@@ -70,7 +70,13 @@ export default function JobDetailPage() {
     setBooking(true);
     const slot = job.slots?.find((s) => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
-    await bookJob(job.id, selectedSlot, slot?.label, counter);
+    const ok = await bookJob(job.id, selectedSlot, slot?.label, counter);
+    if (!ok) {
+      // The booking didn't persist — don't award XP/challenges or claim success.
+      setBooking(false);
+      showToast({ icon: "⚠️", title: "Couldn't book", message: "That gig couldn't be booked. Please try again." });
+      return;
+    }
     addXP(25);
     recordApply(job.payType === "flat" ? job.pay : job.pay * job.estimatedHours);
     updateChallenge("c1", 1);

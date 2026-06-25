@@ -46,13 +46,21 @@ Deno.serve(async (req: Request) => {
       .from('stripe_accounts').select('account_id, onboarded').eq('user_id', booking.earner_id).single();
     if (!earnerAcct?.onboarded) return json({ error: 'Earner has no payout account' }, 400);
 
-    // Poster customer + saved card
+    // Poster customer + saved card. Prefer the customer's DEFAULT payment method
+    // (the card they'd expect to be charged) rather than whatever Stripe lists first.
     const { data: cust } = await supabase
       .from('stripe_customers').select('customer_id').eq('user_id', user.id).single();
     if (!cust) return json({ error: 'No saved payment method' }, 400);
-    const methods = await stripe.paymentMethods.list({ customer: cust.customer_id, type: 'card', limit: 1 });
-    const pm = methods.data[0];
-    if (!pm) return json({ error: 'No saved card on file' }, 400);
+    const customer = await stripe.customers.retrieve(cust.customer_id);
+    let pmId: string | null =
+      typeof customer !== 'string' && !(customer as any).deleted
+        ? ((customer as any).invoice_settings?.default_payment_method ?? null)
+        : null;
+    if (!pmId) {
+      const methods = await stripe.paymentMethods.list({ customer: cust.customer_id, type: 'card', limit: 1 });
+      pmId = methods.data[0]?.id ?? null;
+    }
+    if (!pmId) return json({ error: 'No saved card on file' }, 400);
 
     // Off-session charge → full tip to earner (no platform fee on tips).
     // Idempotency key (booking + amount) prevents a retried request from charging
@@ -61,7 +69,7 @@ Deno.serve(async (req: Request) => {
       amount: Math.round(tipCents),
       currency: 'usd',
       customer: cust.customer_id,
-      payment_method: pm.id,
+      payment_method: pmId,
       off_session: true,
       confirm: true,
       transfer_data: { destination: earnerAcct.account_id },

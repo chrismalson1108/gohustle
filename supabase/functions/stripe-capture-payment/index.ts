@@ -45,63 +45,61 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited')
       .eq('booking_id', bookingId)
       .single();
 
     if (pErr || !payment) return json({ error: 'Payment not found' }, 404);
 
-    // Idempotent — already captured is a success
-    if (payment.status === 'captured') {
-      return json({ success: true, alreadyCaptured: true });
+    let earnerAmountCents = payment.earner_amount_cents ?? 0;
+
+    // Capture the hold if not already captured (idempotent on retry).
+    if (payment.status !== 'captured') {
+      const capturePct = (typeof pct === 'number' && pct > 0 && pct < 1) ? pct : 1;
+      if (capturePct < 1) {
+        const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
+        const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
+        await stripe.paymentIntents.capture(payment.payment_intent_id, {
+          amount_to_capture: captureCents,
+          application_fee_amount: feeCents,
+        });
+        earnerAmountCents = captureCents - feeCents;
+        await supabase.from('payments').update({
+          status: 'captured',
+          captured_at: new Date().toISOString(),
+          amount_cents: captureCents,
+          fee_cents: feeCents,
+          earner_amount_cents: earnerAmountCents,
+        }).eq('id', payment.id);
+      } else {
+        await stripe.paymentIntents.capture(payment.payment_intent_id);
+        await supabase.from('payments').update({
+          status: 'captured',
+          captured_at: new Date().toISOString(),
+        }).eq('id', payment.id);
+      }
     }
 
-    const capturePct = (typeof pct === 'number' && pct > 0 && pct < 1) ? pct : 1;
-
-    if (capturePct < 1) {
-      const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
-      const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
-      await stripe.paymentIntents.capture(payment.payment_intent_id, {
-        amount_to_capture: captureCents,
-        application_fee_amount: feeCents,
-      });
-      await supabase.from('payments').update({
-        status: 'captured',
-        captured_at: new Date().toISOString(),
-        amount_cents: captureCents,
-        fee_cents: feeCents,
-        earner_amount_cents: captureCents - feeCents,
-      }).eq('id', payment.id);
-    } else {
-      await stripe.paymentIntents.capture(payment.payment_intent_id);
-      await supabase.from('payments').update({
-        status: 'captured',
-        captured_at: new Date().toISOString(),
-      }).eq('id', payment.id);
-    }
-
-    // Credit the earner's earnings dashboard with the NET payout. This is the
-    // single source of truth for earnings (the client no longer credits at apply
-    // or verify time). Runs once — the already-captured guard above returns early
-    // on retries. Service role, so the profiles write-guard trigger exempts it.
-    try {
-      const { data: pay2 } = await supabase
-        .from('payments').select('earner_amount_cents').eq('id', payment.id).single();
-      const dollars = (pay2?.earner_amount_cents ?? 0) / 100;
-      if (dollars > 0 && booking.earner_id) {
-        const { data: prof } = await supabase
-          .from('profiles').select('earnings_today, earnings_week, earnings_total')
-          .eq('id', booking.earner_id).single();
-        if (prof) {
-          await supabase.from('profiles').update({
-            earnings_today: Number(prof.earnings_today || 0) + dollars,
-            earnings_week:  Number(prof.earnings_week  || 0) + dollars,
-            earnings_total: Number(prof.earnings_total || 0) + dollars,
-          }).eq('id', booking.earner_id);
+    // Credit the earner's earnings dashboard with the NET payout — exactly ONCE.
+    // Guarded by payments.earnings_credited so a retry still applies a credit that
+    // failed the first time (even when the capture itself already succeeded), and
+    // never double-credits. Service role, so the profiles write-guard exempts it.
+    if (!payment.earnings_credited && earnerAmountCents > 0 && booking.earner_id) {
+      const dollars = earnerAmountCents / 100;
+      const { data: prof } = await supabase
+        .from('profiles').select('earnings_today, earnings_week, earnings_total')
+        .eq('id', booking.earner_id).single();
+      if (prof) {
+        const { error: credErr } = await supabase.from('profiles').update({
+          earnings_today: Number(prof.earnings_today || 0) + dollars,
+          earnings_week:  Number(prof.earnings_week  || 0) + dollars,
+          earnings_total: Number(prof.earnings_total || 0) + dollars,
+        }).eq('id', booking.earner_id);
+        // Only mark credited on success, so a transient failure retries next time.
+        if (!credErr) {
+          await supabase.from('payments').update({ earnings_credited: true }).eq('id', payment.id);
         }
       }
-    } catch (e) {
-      console.error('capture earnings-credit:', e);
     }
 
     return json({ success: true });
