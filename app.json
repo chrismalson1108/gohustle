@@ -3,12 +3,14 @@
     "name": "GoHustlr",
     "slug": "GoHustlr",
     "version": "1.0.0",
+    "scheme": "gohustlr",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "GoHustlr needs access to your photos so you can set a profile picture and add photos to gigs, chats, and completed jobs.",
@@ -27,6 +29,7 @@
     },
     "android": {
       "package": "com.gohustlr.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
