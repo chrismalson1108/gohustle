@@ -52,7 +52,7 @@ Deno.serve(async (req: Request) => {
     // Never destructively overwrite a payment that's already past the authorized
     // stage (captured/cancelled/refunded) — that would orphan a settled record.
     const { data: existingPay } = await supabase
-      .from('payments').select('status').eq('booking_id', bookingId).maybeSingle();
+      .from('payments').select('status, amount_cents, payment_intent_id').eq('booking_id', bookingId).maybeSingle();
     if (existingPay && !['authorized', 'failed'].includes(existingPay.status)) {
       return json({ error: 'This booking already has a settled payment.' }, 409);
     }
@@ -107,6 +107,18 @@ Deno.serve(async (req: Request) => {
       { customer: customerId },
       { apiVersion: '2024-06-20' },
     );
+
+    // If a prior hold exists at a DIFFERENT amount (e.g. the poster edited pay then
+    // re-accepted), cancel it first. The new intent has a different idempotency key,
+    // so the old authorization would otherwise be orphaned on the poster's card until
+    // Stripe auto-expires it (~7 days), and the single payments row would point only
+    // at the new intent. A same-amount retry keeps the same idempotency key below, so
+    // it reuses the existing intent and this cancel is skipped.
+    if (existingPay?.payment_intent_id && existingPay.status === 'authorized'
+        && (existingPay.amount_cents ?? 0) !== amountCents) {
+      try { await stripe.paymentIntents.cancel(existingPay.payment_intent_id); }
+      catch (_) { /* already captured / cancelled / expired — ignore */ }
+    }
 
     // PaymentIntent with manual capture (funds held, not charged until capture).
     // Idempotency key (booking + amount) makes a transport retry return the SAME
