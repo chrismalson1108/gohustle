@@ -458,6 +458,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       ? { earner_done: true, status: "completed", completed_at: new Date().toISOString() }
       : { earner_done: true };
     if (completionPhotos?.length) patch.completion_photos = completionPhotos;
+    const prev = { earnerDone: !!booking?.earnerDone, status: booking?.status, completionPhotos: booking?.completionPhotos };
     dispatch({
       type: "UPDATE_BOOKING_STATUS",
       id: bookingId,
@@ -470,6 +471,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from("bookings").update(patch).eq("id", bookingId);
     if (error) {
       console.warn("Earner done error:", error.message);
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: prev }); // roll back
+      showToast({ icon: "⚠️", title: "Couldn't mark done", message: "Something went wrong — please try again." });
       return;
     }
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
@@ -482,6 +485,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const patch: Record<string, unknown> = bothDone
       ? { poster_done: true, status: "completed", completed_at: new Date().toISOString() }
       : { poster_done: true };
+    const prev = { posterDone: !!booking?.posterDone, status: booking?.status };
     dispatch({
       type: "UPDATE_BOOKING_STATUS",
       id: bookingId,
@@ -490,6 +494,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from("bookings").update(patch).eq("id", bookingId);
     if (error) {
       console.warn("Poster done error:", error.message);
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: prev }); // roll back
+      showToast({ icon: "⚠️", title: "Couldn't mark done", message: "Something went wrong — please try again." });
       return;
     }
     if (booking?.earner?.id) notify(booking.earner.id, "Poster confirmed completion", "The poster marked the job done on their side.", { tab: "EarnTab" });
@@ -505,6 +511,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const ratePoster: JobsValue["ratePoster"] = async (bookingId, { rating, reviewText }) => {
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
+    const prev = { posterRating: booking?.posterRating, posterReview: booking?.posterReview };
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { posterRating: rating, posterReview: reviewText || null } });
     const { error } = await supabase
       .from("bookings")
@@ -512,21 +519,32 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       .eq("id", bookingId);
     if (error) {
       console.warn("Rate poster error:", error.message);
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: prev }); // roll back
+      showToast({ icon: "⚠️", title: "Couldn't submit rating", message: "Something went wrong — please try again." });
       return;
     }
     const { data: jobRow } = await supabase.from("jobs").select("poster_id").eq("id", booking?.jobId).single();
     const posterId = jobRow?.poster_id;
     if (posterId && user) {
-      await supabase.from("reviews").insert({
-        job_id: booking!.jobId,
-        reviewer_id: user.id,
-        reviewed_user_id: posterId,
-        author: "Earner",
-        role: "poster",
-        rating,
-        text: reviewText || "",
-        date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      });
+      // Guard against a duplicate insert (the unique reviews index rejects re-rating
+      // the same booking) so a retry doesn't surface a hard error.
+      const { data: existing } = await supabase
+        .from("reviews").select("id")
+        .eq("job_id", booking!.jobId).eq("reviewer_id", user.id)
+        .eq("reviewed_user_id", posterId).eq("role", "poster").maybeSingle();
+      if (!existing) {
+        const { error: revErr } = await supabase.from("reviews").insert({
+          job_id: booking!.jobId,
+          reviewer_id: user.id,
+          reviewed_user_id: posterId,
+          author: "Earner",
+          role: "poster",
+          rating,
+          text: reviewText || "",
+          date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        });
+        if (revErr) { console.warn("Poster review insert error:", revErr.message); return; }
+      }
       await recomputeRatings(posterId);
       notify(posterId, "You were rated", `An earner rated you ${rating}★ as an employer.`, { tab: "GigsTab" });
     }
@@ -535,11 +553,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   // ── Poster actions ───────────────────────────────────────────────────────--
   const acceptBooking: JobsValue["acceptBooking"] = async (bookingId) => {
     const booking = state.posterBookings.find((b) => b.id === bookingId);
+    const prevStatus = booking?.status;
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "confirmed" } });
     const { error } = await supabase.from("bookings").update({ status: "confirmed" }).eq("id", bookingId);
     if (error) {
       console.warn("Accept error:", error.message);
       captureError(error, { op: "acceptBooking", bookingId });
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: prevStatus } }); // roll back
+      showToast({ icon: "⚠️", title: "Couldn't accept booking", message: "Something went wrong — please try again." });
       return;
     }
     if (booking?.earner?.id)
@@ -607,10 +628,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "verified", earnerRating: rating, paymentMethod } });
 
     const { error } = await supabase.from("bookings").update(patch).eq("id", bookingId);
-    if (error) {
-      console.warn("Verify error:", error.message);
-      return;
-    }
+    // The card was already captured above — if persisting the verified status
+    // fails we must surface it (not swallow), so the poster knows to retry rather
+    // than believing the rating/verification was recorded.
+    if (error) throw new Error(error.message);
 
     if (partial && user?.id) {
       await supabase.from("disputes").insert({

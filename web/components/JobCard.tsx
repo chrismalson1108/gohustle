@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
-import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Rocket, Bookmark } from "lucide-react";
+import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark } from "lucide-react";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
@@ -78,11 +78,6 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
             {RECUR_LABEL[job.recurrence] && (
               <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
                 <Repeat className="size-3" /> {RECUR_LABEL[job.recurrence]}
-              </span>
-            )}
-            {job.instantBook && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                <Rocket className="size-3" /> Instant
               </span>
             )}
           </div>

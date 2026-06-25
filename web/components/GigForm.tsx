@@ -72,10 +72,13 @@ function Chip({ active, disabled, onClick, children }: { active: boolean; disabl
 
 // Shared gig editor used by Post (/hiring/new) and Edit (/hiring/[id]/edit).
 // `lockedCore` disables core terms (used on Edit once a booking is active).
+// `lockedPay` disables pay/payType specifically — it stays locked even when an
+// amendment unlocks the rest, because the escrow hold can't be re-priced in place.
 export default function GigForm({
   initial,
   existingPhotos = [],
   lockedCore = false,
+  lockedPay,
   submitLabel,
   onSubmit,
   onError,
@@ -83,10 +86,14 @@ export default function GigForm({
   initial?: GigFormInitial;
   existingPhotos?: string[];
   lockedCore?: boolean;
+  lockedPay?: boolean;
   submitLabel: string;
   onSubmit: (data: GigFormData) => Promise<void>;
   onError?: (message: string) => void;
 }) {
+  // Pay locks at least as often as the rest of the core terms; if not given
+  // explicitly, fall back to lockedCore.
+  const payLocked = lockedPay ?? lockedCore;
   const { user } = useAuth();
   const knownCat = CATS.some((c) => c.id === initial?.category);
 
@@ -102,7 +109,9 @@ export default function GigForm({
   const [estimatedHours, setEstimatedHours] = useState(String(initial?.estimatedHours || 2));
   const [recurrence, setRecurrence] = useState(initial?.recurrence || "none");
   const [urgent, setUrgent] = useState(!!initial?.urgent);
-  const [instantBook, setInstantBook] = useState(!!initial?.instantBook);
+  // Preserve any previously-set instant_book value on edit, but the poster can no
+  // longer toggle it (see the parked-feature note below) — so it's read-only here.
+  const [instantBook] = useState(!!initial?.instantBook);
   const [keptPhotos, setKeptPhotos] = useState<string[]>(existingPhotos);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -179,14 +188,14 @@ export default function GigForm({
       </div>
 
       <div>
-        <Label>Pay *</Label>
+        <Label>Pay *{payLocked && !lockedCore ? " (locked — backed by escrow)" : ""}</Label>
         <div className="flex gap-2">
           <div className="flex flex-1 items-center gap-1.5 rounded-2xl border border-line bg-white px-4">
             <span className="text-ink-soft">$</span>
-            <input value={pay} disabled={lockedCore} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" inputMode="decimal" className="w-full bg-transparent py-3 text-[15px] outline-none disabled:opacity-60" />
+            <input value={pay} disabled={payLocked} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" inputMode="decimal" className="w-full bg-transparent py-3 text-[15px] outline-none disabled:opacity-60" />
           </div>
           {(["flat", "hourly"] as const).map((t) => (
-            <Chip key={t} active={payType === t} disabled={lockedCore} onClick={() => setPayType(t)}>
+            <Chip key={t} active={payType === t} disabled={payLocked} onClick={() => setPayType(t)}>
               {t === "flat" ? "Flat" : "/hr"}
             </Chip>
           ))}
@@ -275,15 +284,9 @@ export default function GigForm({
         {urgent ? "⚡ Marked as Urgent — Needed ASAP" : "Mark as Urgent (optional)"}
       </button>
 
-      <button
-        onClick={() => setInstantBook(!instantBook)}
-        className={classNames(
-          "w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition",
-          instantBook ? "border-primary bg-primary-light text-primary" : "border-line bg-white text-ink-soft",
-        )}
-      >
-        {instantBook ? "🚀 Instant Book ON — students book without waiting" : "Enable Instant Book (skip accept/decline)"}
-      </button>
+      {/* Instant Book is parked: auto-confirm was removed because it skipped the
+          escrow hold (the earner could end up working unpaid). It needs escrow
+          authorization at book-time before it can be re-enabled. */}
 
       {!valid && <p className="text-center text-sm text-ink-muted">* Fill in all required fields</p>}
 

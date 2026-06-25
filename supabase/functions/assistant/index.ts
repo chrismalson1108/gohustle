@@ -671,12 +671,12 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
   }
   // `slot` is now undefined only when the gig has no slots at all → book as Flexible.
 
-  // Instant-book if the gig supports it. A missing column on an older DB returns an
-  // error object (it does not throw), so we just fall back to a normal request.
-  const { data: extra, error: ibErr } = await sb.from('jobs').select('instant_book').eq('id', gigId).maybeSingle();
-  const instant = !ibErr && Boolean((extra as Json | null)?.instant_book);
+  // Always create a PENDING request. A booking only becomes 'confirmed' when the
+  // poster accepts AND authorizes payment (the escrow card hold) through the normal
+  // flow. An assistant-side "instant confirm" would skip that and leave a confirmed
+  // booking with no money held — so we never self-confirm here.
   const counter = typeof input.counter_offer === 'number' && input.counter_offer > 0 ? input.counter_offer : null;
-  const status = instant && !counter ? 'confirmed' : 'pending';
+  const status = 'pending';
 
   const { data: booking, error } = await sb
     .from('bookings')
@@ -707,7 +707,7 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     gig: (job as Json).title,
     slot: slot ? slot.label : 'Flexible',
     status,
-    note: status === 'confirmed' ? 'Instantly confirmed.' : 'Request sent — the poster will accept it.',
+    note: 'Request sent — the poster will review and accept it.',
   });
 }
 

@@ -79,7 +79,48 @@ Deno.serve(async (req: Request) => {
 
     if (pi.status !== 'succeeded') return json({ error: `Tip not completed (${pi.status})` }, 400);
 
-    await supabase.from('bookings').update({ tip_amount: Math.round(tipCents) / 100 }).eq('id', bookingId);
+    const tipDollars = Math.round(tipCents) / 100;
+
+    // Idempotency gate: one ledger row per PaymentIntent. A Stripe idempotent replay
+    // (same booking + amount within 24h) returns the SAME pi.id, so the unique index
+    // makes the duplicate insert fail — and we then skip the accumulate + credit so a
+    // retry can never double-count the tip. Race-safe via unique(payment_intent_id).
+    const { error: ledgerErr } = await supabase.from('tip_ledger').insert({
+      booking_id: bookingId,
+      payment_intent_id: pi.id,
+      earner_id: booking.earner_id,
+      amount_cents: Math.round(tipCents),
+    });
+    const alreadyCounted = !!ledgerErr &&
+      (String((ledgerErr as any).code) === '23505' ||
+        String(ledgerErr.message || '').toLowerCase().includes('duplicate'));
+    if (ledgerErr && !alreadyCounted) throw ledgerErr;
+
+    if (!alreadyCounted) {
+      // ACCUMULATE the tip onto the booking (a gig may be tipped more than once) —
+      // re-read the current value rather than overwriting it.
+      const { data: bk } = await supabase
+        .from('bookings').select('tip_amount').eq('id', bookingId).single();
+      await supabase
+        .from('bookings')
+        .update({ tip_amount: Number(bk?.tip_amount || 0) + tipDollars })
+        .eq('id', bookingId);
+
+      // Tips go in full to the earner — count them in the earner's earnings dashboard
+      // (today / week / total), same as captured escrow payouts.
+      if (booking.earner_id) {
+        const { data: prof } = await supabase
+          .from('profiles').select('earnings_today, earnings_week, earnings_total')
+          .eq('id', booking.earner_id).single();
+        if (prof) {
+          await supabase.from('profiles').update({
+            earnings_today: Number(prof.earnings_today || 0) + tipDollars,
+            earnings_week:  Number(prof.earnings_week  || 0) + tipDollars,
+            earnings_total: Number(prof.earnings_total || 0) + tipDollars,
+          }).eq('id', booking.earner_id);
+        }
+      }
+    }
 
     return json({ success: true, tipCents: Math.round(tipCents) });
   } catch (err: any) {

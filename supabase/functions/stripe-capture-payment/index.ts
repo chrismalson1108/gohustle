@@ -64,10 +64,13 @@ Deno.serve(async (req: Request) => {
           application_fee_amount: feeCents,
         });
         earnerAmountCents = captureCents - feeCents;
+        // Keep amount_cents as the originally-AUTHORIZED hold (audit record of what
+        // the poster agreed to). The actually-captured total is derivable as
+        // earner_amount_cents + fee_cents; overwriting amount_cents here would erase
+        // the authorized figure and break dispute reconciliation.
         await supabase.from('payments').update({
           status: 'captured',
           captured_at: new Date().toISOString(),
-          amount_cents: captureCents,
           fee_cents: feeCents,
           earner_amount_cents: earnerAmountCents,
         }).eq('id', payment.id);

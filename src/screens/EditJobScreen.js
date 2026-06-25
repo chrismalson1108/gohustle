@@ -72,6 +72,12 @@ export default function EditJobScreen({ route, navigation }) {
   const isLocked = !!lockedBooking;
   const amendmentAccepted = isLocked && lockedBooking.amendmentStatus === 'accepted';
   const canEditCore = !isLocked || amendmentAccepted;
+  // Pay is special: once a booking is active there's an escrow hold authorized at
+  // the agreed amount, and a Stripe hold cannot be re-priced in place. So pay/payType
+  // stay locked even under an accepted amendment — changing them would desync the
+  // money from the terms. To change pay, cancel the booking (which releases the hold)
+  // and let the earner re-book at the new rate.
+  const canEditPay = !isLocked;
 
   if (!job) return null;
 
@@ -180,7 +186,7 @@ export default function EditJobScreen({ route, navigation }) {
             <View style={{ flex: 1 }}>
               <Text style={styles.amendTitle}>Amendment Accepted</Text>
               <Text style={styles.lockDesc}>
-                The earner approved your proposed change. Edit the terms below and save — this unlock is used once.
+                The earner approved your proposed change. Edit the terms below and save — this unlock is used once. Pay stays locked: it's backed by an escrow hold. To change pay, cancel the booking (releasing the hold) and have the earner re-book.
               </Text>
             </View>
           </View>
@@ -224,20 +230,20 @@ export default function EditJobScreen({ route, navigation }) {
             )}
           </Field>
 
-          <Field label={`Pay *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
-            <View style={[styles.payRow, !canEditCore && styles.lockedRow]}>
+          <Field label={`Pay *${isLocked && !canEditPay ? '  (locked)' : ''}`}>
+            <View style={[styles.payRow, !canEditPay && styles.lockedRow]}>
               <View style={styles.payInputWrap}>
                 <Text style={styles.dollar}>$</Text>
                 <TextInput
                   style={styles.payInput} placeholder="0" value={form.pay}
                   onChangeText={v => set('pay', v)} keyboardType="numeric"
-                  placeholderTextColor={colors.textMuted} editable={canEditCore}
+                  placeholderTextColor={colors.textMuted} editable={canEditPay}
                 />
               </View>
               {['flat', 'hourly'].map(t => (
                 <TouchableOpacity key={t}
-                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive, !canEditCore && styles.payTypeBtnLocked]}
-                  onPress={() => { if (!canEditCore) return; haptic.selection(); set('payType', t); }}
+                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive, !canEditPay && styles.payTypeBtnLocked]}
+                  onPress={() => { if (!canEditPay) return; haptic.selection(); set('payType', t); }}
                 >
                   <Text style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}>
                     {t === 'flat' ? 'Flat' : '/hr'}

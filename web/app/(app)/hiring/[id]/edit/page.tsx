@@ -29,6 +29,9 @@ export default function EditGigPage() {
   const hasActive = bookings.some((b) => ["confirmed", "completed", "verified"].includes(b.status));
   const amendmentAccepted = bookings.some((b) => b.amendmentStatus === "accepted");
   const lockedCore = hasActive && !amendmentAccepted;
+  // Pay stays locked whenever a booking is active (escrow hold can't be re-priced),
+  // even after an amendment unlocks the other core terms.
+  const lockedPay = hasActive;
 
   return (
     <div>
@@ -41,6 +44,7 @@ export default function EditGigPage() {
         <GigForm
           submitLabel="Save changes"
           lockedCore={lockedCore}
+          lockedPay={lockedPay}
           existingPhotos={job.photos}
           initial={{
             title: job.title,

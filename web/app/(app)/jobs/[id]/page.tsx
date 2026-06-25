@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Rocket, Bookmark } from "lucide-react";
+import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark } from "lucide-react";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -116,11 +116,6 @@ export default function JobDetailPage() {
           <span className="inline-block rounded-lg px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
             {job.category}
           </span>
-          {job.instantBook && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
-              <Rocket className="size-3.5" /> Instant Book
-            </span>
-          )}
         </div>
         <button
           onClick={() => toggleSavedJob(job.id)}
@@ -280,9 +275,7 @@ export default function JobDetailPage() {
               {selectedSlot || !hasAvailableSlot
                 ? counterPrice
                   ? `Book · counter $${counterPrice}`
-                  : job.instantBook
-                    ? "🚀 Instant Book"
-                    : "Book this gig"
+                  : "Book this gig"
                 : "Select a time slot first"}
             </Button>
           )}
