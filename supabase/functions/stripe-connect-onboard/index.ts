@@ -78,7 +78,14 @@ Deno.serve(async (req: Request) => {
     return json({ url: accountLink.url, accountId });
   } catch (err: any) {
     console.error('stripe-connect-onboard:', err);
-    return json({ error: 'Something went wrong. Please try again.' }, 500);
+    // Surface Stripe's own (safe, actionable) message — e.g. "Connect is not enabled
+    // on this account" — so the user sees the real reason instead of a silent no-op.
+    // Stripe SDK errors carry a descriptive .message and a .type starting "Stripe".
+    const isStripe = typeof err?.type === 'string' && err.type.startsWith('Stripe');
+    const message = isStripe
+      ? (err.message || 'Stripe could not create the payout account.')
+      : 'Something went wrong. Please try again.';
+    return json({ error: message, type: err?.type ?? null }, 500);
   }
 });
 

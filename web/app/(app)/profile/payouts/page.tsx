@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Wallet, CreditCard, CheckCircle2 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
+import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
@@ -11,6 +12,7 @@ import { FullPageSpinner } from "@/components/ui/Spinner";
 export default function PayoutsPage() {
   const router = useRouter();
   const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink } = useJobs();
+  const { showToast } = useUser();
   const [ready, setReady] = useState<{ payoutReady: boolean; paymentMethodReady: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -21,10 +23,26 @@ export default function PayoutsPage() {
   const go = async (which: "onboard" | "manage") => {
     setBusy(which);
     try {
-      const { url } = which === "onboard" ? await getPayoutOnboardingUrl() : await getPayoutLoginLink();
-      if (url) window.location.href = url;
-    } catch {
+      const res = (which === "onboard" ? await getPayoutOnboardingUrl() : await getPayoutLoginLink()) as {
+        url?: string;
+        alreadyOnboarded?: boolean;
+      };
+      if (res?.url) {
+        window.location.href = res.url;
+        return;
+      }
+      if (res?.alreadyOnboarded) {
+        const r = await getPaymentReadiness();
+        setReady(r);
+        showToast({ icon: "✅", title: "Payouts already active", message: "Your payout account is set up." });
+      } else {
+        showToast({ icon: "⚠️", title: "Couldn't open payout setup", message: "No setup link was returned — please try again." });
+      }
       setBusy(null);
+    } catch (e) {
+      // Surface the real reason (e.g. Stripe Connect not enabled) instead of a silent no-op.
+      setBusy(null);
+      showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
     }
   };
 
