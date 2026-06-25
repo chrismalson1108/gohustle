@@ -80,8 +80,11 @@ Deno.serve(async (req: Request) => {
       }
       // Opportunistic cleanup so the table stays bounded per active user.
       admin.from('assistant_rate').delete().eq('user_id', user.id).lt('created_at', sinceDay).then(() => {}, () => {});
-    } catch (_) {
-      // table not yet created / transient error → don't block the user
+    } catch (e) {
+      // Best-effort: don't hard-block the user if the rate table is unavailable, but
+      // log LOUDLY — a missing/broken assistant_rate table silently removes the
+      // per-user Anthropic-cost cap, which we want surfaced in monitoring, not hidden.
+      console.error('assistant: rate-limit check unavailable (cost cap NOT enforced):', e);
     }
 
     // User-scoped client: forwards the caller's JWT so RLS applies to every query.

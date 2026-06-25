@@ -555,12 +555,21 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const booking = state.posterBookings.find((b) => b.id === bookingId);
     const prevStatus = booking?.status;
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "confirmed" } });
-    const { error } = await supabase.from("bookings").update({ status: "confirmed" }).eq("id", bookingId);
+    // Read back the row: the guard trigger silently reverts an illegal transition
+    // (e.g. the earner cancelled concurrently) with NO error, so trusting error===null
+    // would leave a phantom 'confirmed' with no escrow hold. Reconcile to the truth.
+    const { data: row, error } = await supabase
+      .from("bookings").update({ status: "confirmed" }).eq("id", bookingId).select("status").single();
     if (error) {
       console.warn("Accept error:", error.message);
       captureError(error, { op: "acceptBooking", bookingId });
       dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: prevStatus } }); // roll back
       showToast({ icon: "⚠️", title: "Couldn't accept booking", message: "Something went wrong — please try again." });
+      return;
+    }
+    if (row && row.status !== "confirmed") {
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: row.status as typeof prevStatus } });
+      showToast({ icon: "⚠️", title: "Booking changed", message: "This booking was updated elsewhere — refreshed." });
       return;
     }
     if (booking?.earner?.id)

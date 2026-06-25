@@ -1,0 +1,22 @@
+project_id = "nfioebqsgmmzhbksxozc"
+
+# Edge functions that are reached WITHOUT a Supabase JWT must opt out of the
+# gateway's default JWT verification, or every request is rejected 401 before the
+# function body (and its own auth) ever runs.
+#
+#   • stripe-webhook        — Stripe POSTs, authenticated by the stripe-signature
+#                             header (verified in-function), never a Supabase JWT.
+#   • stripe-identity-return / stripe-connect-return — browser landing pages the
+#                             user is redirected to after the hosted Stripe flow.
+#
+# Every OTHER function is called by the app WITH a JWT and additionally calls
+# supabase.auth.getUser(token) itself, so it keeps the default verify_jwt = true.
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.stripe-identity-return]
+verify_jwt = false
+
+[functions.stripe-connect-return]
+verify_jwt = false

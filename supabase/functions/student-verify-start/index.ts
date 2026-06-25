@@ -54,6 +54,28 @@ Deno.serve(async (req: Request) => {
       .gte('created_at', since);
     if ((count ?? 0) >= 5) return json({ error: 'rate_limited', message: 'Too many attempts. Try again later.' }, 429);
 
+    // Per-TARGET-email throttle: cap how often any single inbox can be emailed (even
+    // from rotating accounts), so this branded-OTP endpoint can't be used to bomb /
+    // phish an arbitrary .edu address. Max 3 sends to a given address per 15 min.
+    const { count: emailCount } = await supabase
+      .from('student_email_verifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('email', cleanEmail)
+      .gte('created_at', since);
+    if ((emailCount ?? 0) >= 3) {
+      return json({ error: 'rate_limited', message: 'Too many attempts for that email. Try again later.' }, 429);
+    }
+
+    // If this inbox already verified ANOTHER account, refuse up front (mirrors the
+    // confirm-side one-account-per-email rule) — no point emailing a dead-end code,
+    // and it stops us from being used to repeatedly message an in-use address.
+    const { data: priorUse } = await supabase
+      .from('student_email_verifications')
+      .select('user_id').eq('email', cleanEmail).eq('consumed', true).neq('user_id', user.id).limit(1);
+    if (priorUse?.length) {
+      return json({ error: 'email_in_use', message: 'That school email has already verified another account.' }, 409);
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const codeHash = await sha256(`${code}:${user.id}`);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();

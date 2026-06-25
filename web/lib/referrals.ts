@@ -1,14 +1,20 @@
 // Referral helpers. Port of src/lib/referrals.js.
 import { supabase } from "./supabaseClient";
 
-function genCode(userId: string): string {
-  return (userId || "").replace(/-/g, "").slice(0, 6).toUpperCase();
+// Random, non-reversible code. Deliberately NOT derived from the user id — a
+// UUID-prefix code leaked a fragment of the internal id and was trivially
+// enumerable. Ambiguous characters (0/O/1/I/L) are excluded for shareability.
+function genCode(): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 7; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
 }
 
 export async function getReferralCode(userId: string): Promise<string> {
   const { data } = await supabase.from("profiles").select("referral_code").eq("id", userId).single();
   if (data?.referral_code) return data.referral_code;
-  const code = genCode(userId);
+  const code = genCode();
   try {
     await supabase.from("profiles").update({ referral_code: code }).eq("id", userId);
   } catch {

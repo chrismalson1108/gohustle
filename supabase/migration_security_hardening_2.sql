@@ -1,3 +1,13 @@
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║  SUPERSEDED — DO NOT RUN.                                                 ║
+-- ║  These guard functions / RLS policies were rewritten and HARDENED in the ║
+-- ║  tracked migrations supabase/migrations/2026062419xxxx..2406240000.       ║
+-- ║  Re-running this file would REVERT the live DB to a weaker guard/policy   ║
+-- ║  (e.g. the poster-path status check, slot ownership, column pins).        ║
+-- ║  The tracked supabase/migrations/ files are the source of truth; apply    ║
+-- ║  them with `supabase db push`. Kept only for historical reference.        ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Security hardening — round 2 (idempotent). Run in the Supabase SQL editor.
 -- From the deep data-flow audit. Closes:

@@ -79,35 +79,20 @@ Deno.serve(async (req: Request) => {
 
     if (pi.status !== 'succeeded') return json({ error: `Tip not completed (${pi.status})` }, 400);
 
-    const tipDollars = Math.round(tipCents) / 100;
-
-    // Idempotency gate: one ledger row per PaymentIntent. A Stripe idempotent replay
-    // (same booking + amount within 24h) returns the SAME pi.id, so the unique index
-    // makes the duplicate insert fail — and we then skip the accumulate + credit so a
-    // retry can never double-count the tip. Race-safe via unique(payment_intent_id).
-    const { error: ledgerErr } = await supabase.from('tip_ledger').insert({
-      booking_id: bookingId,
-      payment_intent_id: pi.id,
-      earner_id: booking.earner_id,
-      amount_cents: Math.round(tipCents),
+    // Record + credit the tip ATOMICALLY and exactly once. claim_and_credit_tip
+    // inserts the idempotency ledger row (unique on the PaymentIntent id) AND credits
+    // bookings.tip_amount + the earner's earnings in ONE transaction, claiming a
+    // `credited` flag. So a Stripe idempotent replay (same booking+amount) is a
+    // no-op, and a retry after a mid-way failure still credits exactly once (the
+    // ledger row exists but credited is still false). Replaces the previous
+    // ledger-insert-then-separate-credit, which could strand an un-credited tip.
+    const { error: creditErr } = await supabase.rpc('claim_and_credit_tip', {
+      p_pi: pi.id,
+      p_booking: bookingId,
+      p_earner: booking.earner_id,
+      p_cents: Math.round(tipCents),
     });
-    const alreadyCounted = !!ledgerErr &&
-      (String((ledgerErr as any).code) === '23505' ||
-        String(ledgerErr.message || '').toLowerCase().includes('duplicate'));
-    if (ledgerErr && !alreadyCounted) throw ledgerErr;
-
-    if (!alreadyCounted) {
-      // Accumulate the tip onto the booking AND credit the earner's earnings
-      // dashboard (today/week/total) ATOMICALLY via credit_tip — a single
-      // row-locked UPDATE each, so two concurrent tips on the same earner can't
-      // lose an update the way a read-modify-write would.
-      void tipDollars;
-      await supabase.rpc('credit_tip', {
-        p_booking: bookingId,
-        p_earner: booking.earner_id,
-        p_cents: Math.round(tipCents),
-      });
-    }
+    if (creditErr) throw creditErr;
 
     return json({ success: true, tipCents: Math.round(tipCents) });
   } catch (err: any) {

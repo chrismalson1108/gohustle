@@ -80,9 +80,18 @@ Deno.serve(async (req: Request) => {
         }).eq('id', payment.id);
       } else {
         await stripe.paymentIntents.capture(payment.payment_intent_id);
+        // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
+        // overwritten). A prior failed partial-capture attempt may have left a
+        // reduced fee_cents/earner_amount_cents on the row; a full capture transfers
+        // the original 10% application fee, so restore the matching full figures —
+        // otherwise credit_earnings would credit the stale reduced amount.
+        const fullFee = Math.round((payment.amount_cents || 0) * 0.10);
+        earnerAmountCents = (payment.amount_cents || 0) - fullFee;
         await supabase.from('payments').update({
           status: 'captured',
           captured_at: new Date().toISOString(),
+          fee_cents: fullFee,
+          earner_amount_cents: earnerAmountCents,
         }).eq('id', payment.id);
       }
     }

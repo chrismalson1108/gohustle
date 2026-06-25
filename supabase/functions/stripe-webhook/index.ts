@@ -75,18 +75,19 @@ Deno.serve(async (req: Request) => {
       }
 
       case 'account.updated': {
-        // Earner completed (or updated) their Connect onboarding
+        // Earner's Connect account capability changed. Track it BOTH ways: if Stripe
+        // later restricts/deauthorizes the account (loses charges/payouts), demote
+        // onboarded to false so new escrow holds + tips stop targeting an account
+        // that can no longer receive funds.
         const account = event.data.object as Stripe.Account;
-        const fullyOnboarded =
+        const fullyOnboarded = !!(
           account.details_submitted &&
           account.charges_enabled &&
-          account.payouts_enabled;
-
-        if (fullyOnboarded) {
-          await supabase.from('stripe_accounts')
-            .update({ onboarded: true })
-            .eq('account_id', account.id);
-        }
+          account.payouts_enabled
+        );
+        await supabase.from('stripe_accounts')
+          .update({ onboarded: fullyOnboarded })
+          .eq('account_id', account.id);
         break;
       }
 
