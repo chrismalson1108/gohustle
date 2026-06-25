@@ -590,6 +590,18 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Decline error:", error.message);
       return;
     }
+    // Free the slot in local state so it immediately shows open again (the
+    // sync_slot_taken DB trigger already frees it server-side on the status change).
+    if (booking?.slotId && booking?.jobId) {
+      const job = state.jobs.find((j) => j.id === booking.jobId);
+      if (job) {
+        dispatch({
+          type: "UPDATE_JOB",
+          jobId: booking.jobId,
+          patch: { slots: (job.slots || []).map((s) => (s.id === booking.slotId ? { ...s, taken: false } : s)) },
+        });
+      }
+    }
     if (booking?.earner?.id)
       notify(booking.earner.id, "Booking declined", `Your booking for "${booking.job?.title || "a gig"}" wasn't accepted this time.`, { tab: "EarnTab" });
   };

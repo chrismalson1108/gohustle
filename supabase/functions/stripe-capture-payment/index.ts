@@ -79,19 +79,22 @@ Deno.serve(async (req: Request) => {
           captured_at: new Date().toISOString(),
         }).eq('id', payment.id);
       } else {
-        await stripe.paymentIntents.capture(payment.payment_intent_id);
         // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
-        // overwritten). A prior failed partial-capture attempt may have left a
-        // reduced fee_cents/earner_amount_cents on the row; a full capture transfers
-        // the original 10% application fee, so restore the matching full figures —
-        // otherwise credit_earnings would credit the stale reduced amount.
+        // overwritten) and persist it BEFORE capturing — same reason as the partial
+        // branch: capture emits payment_intent.succeeded and the webhook credits from
+        // whatever earner_amount_cents the row holds, so a prior failed partial
+        // attempt's stale reduced value must be corrected before a racing webhook can
+        // read it (otherwise the earner is under-credited vs. the full amount paid).
         const fullFee = Math.round((payment.amount_cents || 0) * 0.10);
         earnerAmountCents = (payment.amount_cents || 0) - fullFee;
         await supabase.from('payments').update({
-          status: 'captured',
-          captured_at: new Date().toISOString(),
           fee_cents: fullFee,
           earner_amount_cents: earnerAmountCents,
+        }).eq('id', payment.id);
+        await stripe.paymentIntents.capture(payment.payment_intent_id);
+        await supabase.from('payments').update({
+          status: 'captured',
+          captured_at: new Date().toISOString(),
         }).eq('id', payment.id);
       }
     }

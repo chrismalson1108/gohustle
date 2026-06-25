@@ -99,8 +99,14 @@ export function AuthProvider({ children }) {
 
   const resetPassword = async (email) => {
     setAuthError(null);
+    // Send users to the WEB reset page (which exchanges the recovery token and lets
+    // them set a new password), not a custom gohustlr:// scheme — that scheme isn't
+    // registered and the app has no deep-link handler / reset screen, so the link
+    // was a dead end on mobile. The browser flow works on every platform.
+    // NOTE: https://gohustlr.com/reset-password must be in the Supabase Auth
+    // "Redirect URLs" allow-list (it already is for web password resets).
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'gohustlr://reset-password',
+      redirectTo: 'https://gohustlr.com/reset-password',
     });
     if (error) { setAuthError(error.message); return false; }
     return true;
