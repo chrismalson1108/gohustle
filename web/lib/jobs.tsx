@@ -640,23 +640,37 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Mark the job completed only when no OTHER booking on it is still active
+    // (multi-slot gigs can have several earners).
     if (booking?.jobId) {
-      dispatch({ type: "UPDATE_JOB", jobId: booking.jobId, patch: { status: "completed" } });
-      await supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
+      const { data: others } = await supabase
+        .from("bookings").select("id")
+        .eq("job_id", booking.jobId).neq("id", bookingId)
+        .in("status", ["pending", "confirmed", "completed"]).limit(1);
+      if (!others?.length) {
+        dispatch({ type: "UPDATE_JOB", jobId: booking.jobId, patch: { status: "completed" } });
+        await supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
+      }
     }
 
     if (booking?.earner?.id) {
-      const { error: revErr } = await supabase.from("reviews").insert({
-        job_id: booking.jobId,
-        reviewer_id: user!.id,
-        reviewed_user_id: booking.earner.id,
-        author: "Poster",
-        role: "earner",
-        rating,
-        text: reviewText || "",
-        date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      });
-      if (revErr) console.warn("Review insert error:", revErr.message);
+      // Insert once — guard against a double-verify re-inserting the review.
+      const { data: existing } = await supabase.from("reviews").select("id")
+        .eq("job_id", booking.jobId).eq("reviewer_id", user!.id)
+        .eq("reviewed_user_id", booking.earner.id).eq("role", "earner").maybeSingle();
+      if (!existing) {
+        const { error: revErr } = await supabase.from("reviews").insert({
+          job_id: booking.jobId,
+          reviewer_id: user!.id,
+          reviewed_user_id: booking.earner.id,
+          author: "Poster",
+          role: "earner",
+          rating,
+          text: reviewText || "",
+          date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        });
+        if (revErr) console.warn("Review insert error:", revErr.message);
+      }
       await recomputeRatings(booking.earner.id);
     }
 

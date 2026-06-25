@@ -321,7 +321,18 @@ export function JobsProvider({ children }) {
         filter: `earner_id=eq.${user.id}`,
       }, (payload) => {
         const b = payload.new;
-        dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: transformBooking(b) });
+        // Patch only scalar status fields — the raw realtime row carries no job/
+        // earner join, so transforming it would null those out on the booking.
+        dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: {
+          status: b.status,
+          earnerDone: b.earner_done,
+          posterDone: b.poster_done,
+          earnerRating: b.earner_rating != null ? Number(b.earner_rating) : null,
+          paymentMethod: b.payment_method,
+          amendmentStatus: b.amendment_status || 'none',
+          amendmentNote: b.amendment_note || null,
+          tipAmount: b.tip_amount || 0,
+        } });
         if (b.status === 'confirmed') {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
           if (b.starts_at) scheduleGigReminder(b.id, b.starts_at, b.slot_label);
@@ -603,25 +614,38 @@ export function JobsProvider({ children }) {
       }
     }
 
-    // Mark the job itself as completed so it leaves the Browse screen
+    // Mark the job completed only when no OTHER booking on it is still active — a
+    // multi-slot gig can have several earners, so verifying one shouldn't close it.
     if (booking?.jobId) {
-      dispatch({ type: 'UPDATE_JOB', jobId: booking.jobId, patch: { status: 'completed' } });
-      supabase.from('jobs').update({ status: 'completed' }).eq('id', booking.jobId);
+      const { data: others } = await supabase
+        .from('bookings').select('id')
+        .eq('job_id', booking.jobId).neq('id', bookingId)
+        .in('status', ['pending', 'confirmed', 'completed']).limit(1);
+      if (!others?.length) {
+        dispatch({ type: 'UPDATE_JOB', jobId: booking.jobId, patch: { status: 'completed' } });
+        supabase.from('jobs').update({ status: 'completed' }).eq('id', booking.jobId);
+      }
     }
 
-    // Insert review — always insert (even without text) so review_count stays accurate
+    // Insert review ONCE — guard against a double-verify re-inserting it (which
+    // would inflate the earner's review_count and skew the server recompute).
     if (booking?.earner?.id) {
-      const { error: revErr } = await supabase.from('reviews').insert({
-        job_id: booking.jobId,
-        reviewer_id: user.id,
-        reviewed_user_id: booking.earner.id,
-        author: 'Poster',
-        role: 'earner',
-        rating,
-        text: reviewText || '',
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      });
-      if (revErr) console.warn('Review insert error:', revErr.message);
+      const { data: existing } = await supabase.from('reviews').select('id')
+        .eq('job_id', booking.jobId).eq('reviewer_id', user.id)
+        .eq('reviewed_user_id', booking.earner.id).eq('role', 'earner').maybeSingle();
+      if (!existing) {
+        const { error: revErr } = await supabase.from('reviews').insert({
+          job_id: booking.jobId,
+          reviewer_id: user.id,
+          reviewed_user_id: booking.earner.id,
+          author: 'Poster',
+          role: 'earner',
+          rating,
+          text: reviewText || '',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        });
+        if (revErr) console.warn('Review insert error:', revErr.message);
+      }
       // Recompute the earner's combined rating from all their reviews
       await recomputeRatings(booking.earner.id);
     }
