@@ -33,6 +33,10 @@ export const stripeEdge = {
   createPaymentIntent: (bookingId) =>
     callEdgeFunction('stripe-create-payment-intent', { bookingId }),
 
+  // Server-verified accept: confirms the booking ONLY if a real escrow hold exists.
+  acceptBooking: (bookingId) =>
+    callEdgeFunction('accept-booking', { bookingId }),
+
   capturePayment: (bookingId, pct) =>
     callEdgeFunction('stripe-capture-payment', { bookingId, pct }),
 

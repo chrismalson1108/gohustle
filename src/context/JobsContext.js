@@ -547,27 +547,16 @@ export function JobsProvider({ children }) {
     const booking = state.posterBookings.find(b => b.id === bookingId);
     const prevStatus = booking?.status;
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'confirmed' } });
-    // Read back the row: the guard trigger silently reverts an illegal transition
-    // (e.g. the earner cancelled concurrently) by returning the OLD status with NO
-    // error — so trusting error===null would leave a phantom 'confirmed' with no
-    // escrow hold. Reconcile to the actual persisted status instead.
-    const { data: row, error } = await supabase
-      .from('bookings')
-      .update({ status: 'confirmed' })
-      .eq('id', bookingId)
-      .select('status')
-      .single();
-    if (error) {
-      console.warn('Accept error:', error.message);
-      captureError(error, { op: 'acceptBooking', bookingId });
+    // Confirm via the server, which verifies a REAL escrow hold (Stripe PI is
+    // requires_capture) before flipping status. A client can no longer set
+    // 'confirmed' directly (the guard reverts it), so this is the only accept path.
+    try {
+      await stripeEdge.acceptBooking(bookingId);
+    } catch (e) {
+      console.warn('Accept error:', e.message);
+      captureError(e, { op: 'acceptBooking', bookingId });
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: prevStatus } }); // roll back
-      showToast({ icon: '⚠️', title: "Couldn't accept booking", message: 'Something went wrong — please try again.' });
-      return;
-    }
-    if (row && row.status !== 'confirmed') {
-      // Guard reverted it — converge the UI to the truth and tell the poster why.
-      dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: row.status } });
-      showToast({ icon: '⚠️', title: 'Booking changed', message: 'This booking was updated elsewhere — refreshed.' });
+      showToast({ icon: '⚠️', title: "Couldn't accept booking", message: e.message || 'Please complete the payment step and try again.' });
       return;
     }
     if (booking?.earner?.id) {
