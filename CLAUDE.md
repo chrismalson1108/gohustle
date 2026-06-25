@@ -30,8 +30,8 @@ Documents live in the **`legal_documents`** table (latest row per `slug` = curre
 - **Expo SDK 54**, React Native 0.81.5, React 19.1.0. Expo Go on device must be the SDK 54 build.
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Migrations live in `supabase/` and must be run manually in the Supabase SQL Editor: `schema.sql` first, then `migration_fix_lifecycle.sql`.
-- **`migration_fix_lifecycle.sql` is idempotent** — safe to re-run at any time. It consolidates all RLS fixes for the full job lifecycle (messaging, booking accept/decline, mutual completion, amendment flow, poster rating). Run it if any booking action returns a permission error.
+- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **Incremental security/bug fixes now live in `supabase/migrations/` and are applied with `supabase db push --linked`** (the CLI is linked; this is the canonical path going forward — the timestamped files there are the source of truth for every guard, policy, trigger, and RPC fix from review rounds 2–6).
+- **`migration_fix_lifecycle.sql` is idempotent and now ships the HARDENED policies** (party-scoped `messages_insert`, owner-only `profiles_update_own`) — re-running it no longer reverts later hardening. Run it (or, preferably, `supabase db push`) if a booking action returns a permission error. The guard triggers/functions, slot integrity, atomic earnings/tip credit, and column lockdown are all in the tracked `supabase/migrations/` files — applying those reproduces the hardened state.
 
 ## App Flow
 

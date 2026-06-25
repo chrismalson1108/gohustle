@@ -59,6 +59,7 @@ create or replace function public.guard_student_verified()
 returns trigger
 language plpgsql
 security definer
+set search_path = public
 as $$
 begin
   if auth.role() is distinct from 'service_role' then

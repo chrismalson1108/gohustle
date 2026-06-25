@@ -67,29 +67,16 @@ CREATE POLICY "bookings_update_parties" ON public.bookings FOR UPDATE USING (
   OR EXISTS (SELECT 1 FROM public.jobs WHERE id = job_id AND poster_id = auth.uid())
 );
 
--- ── 5. Profiles RLS: both earner↔poster can update ratings ─
+-- ── 5. Profiles RLS: OWNER-ONLY update ─
+-- Ratings used to be written cross-user by the counterparty client; that was
+-- replaced by the SECURITY DEFINER recompute_user_rating RPC (review #5/#6). This
+-- policy is deliberately owner-only so re-running this file can NEVER silently
+-- re-open a cross-user profile write.
 DROP POLICY IF EXISTS "profiles_update_own"              ON public.profiles;
 DROP POLICY IF EXISTS "users can update own profile"     ON public.profiles;
 
 CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE USING (
-  -- Own profile
   auth.uid() = id
-  -- Earner can update poster's profile (ratePoster after verified)
-  OR EXISTS (
-    SELECT 1 FROM public.bookings b
-    JOIN public.jobs j ON j.id = b.job_id
-    WHERE b.earner_id = auth.uid()
-      AND j.poster_id = profiles.id
-      AND b.status = 'verified'
-  )
-  -- Poster can update earner's profile (verifyAndRate: rating + review_count)
-  OR EXISTS (
-    SELECT 1 FROM public.bookings b
-    JOIN public.jobs j ON j.id = b.job_id
-    WHERE j.poster_id = auth.uid()
-      AND b.earner_id = profiles.id
-      AND b.status = 'verified'
-  )
 );
 
 -- ── 6. Messages table ────────────────────────────────────────
@@ -114,11 +101,18 @@ CREATE POLICY "messages_read" ON public.messages FOR SELECT USING (
   )
 );
 
--- INSERT: only require sender = authenticated user
--- (bookingId UUID is only obtainable by parties to the booking via the app)
+-- INSERT: sender must be a PARTY to the booking (not just any authenticated user) —
+-- otherwise anyone who learns a booking_id could post into a conversation they're
+-- not in. Hardened here so re-running this file can't revert the party check.
 DROP POLICY IF EXISTS "messages_insert" ON public.messages;
 CREATE POLICY "messages_insert" ON public.messages FOR INSERT WITH CHECK (
   sender_id = auth.uid()
+  AND EXISTS (
+    SELECT 1 FROM public.bookings b
+    JOIN public.jobs j ON j.id = b.job_id
+    WHERE b.id = booking_id
+      AND (b.earner_id = auth.uid() OR j.poster_id = auth.uid())
+  )
 );
 
 -- ── 7. Backfill: mark jobs as completed where a verified booking exists ─────

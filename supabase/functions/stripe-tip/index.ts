@@ -97,29 +97,16 @@ Deno.serve(async (req: Request) => {
     if (ledgerErr && !alreadyCounted) throw ledgerErr;
 
     if (!alreadyCounted) {
-      // ACCUMULATE the tip onto the booking (a gig may be tipped more than once) —
-      // re-read the current value rather than overwriting it.
-      const { data: bk } = await supabase
-        .from('bookings').select('tip_amount').eq('id', bookingId).single();
-      await supabase
-        .from('bookings')
-        .update({ tip_amount: Number(bk?.tip_amount || 0) + tipDollars })
-        .eq('id', bookingId);
-
-      // Tips go in full to the earner — count them in the earner's earnings dashboard
-      // (today / week / total), same as captured escrow payouts.
-      if (booking.earner_id) {
-        const { data: prof } = await supabase
-          .from('profiles').select('earnings_today, earnings_week, earnings_total')
-          .eq('id', booking.earner_id).single();
-        if (prof) {
-          await supabase.from('profiles').update({
-            earnings_today: Number(prof.earnings_today || 0) + tipDollars,
-            earnings_week:  Number(prof.earnings_week  || 0) + tipDollars,
-            earnings_total: Number(prof.earnings_total || 0) + tipDollars,
-          }).eq('id', booking.earner_id);
-        }
-      }
+      // Accumulate the tip onto the booking AND credit the earner's earnings
+      // dashboard (today/week/total) ATOMICALLY via credit_tip — a single
+      // row-locked UPDATE each, so two concurrent tips on the same earner can't
+      // lose an update the way a read-modify-write would.
+      void tipDollars;
+      await supabase.rpc('credit_tip', {
+        p_booking: bookingId,
+        p_earner: booking.earner_id,
+        p_cents: Math.round(tipCents),
+      });
     }
 
     return json({ success: true, tipCents: Math.round(tipCents) });

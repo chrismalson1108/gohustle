@@ -59,20 +59,24 @@ Deno.serve(async (req: Request) => {
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
         const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
+        earnerAmountCents = captureCents - feeCents;
+        // Persist the REDUCED net BEFORE capturing. Capturing emits
+        // payment_intent.succeeded, and the webhook credits earnings from whatever
+        // earner_amount_cents the row holds — if we wrote it AFTER the capture, a
+        // fast webhook could read the stale full amount and over-credit the earner.
+        // Keep amount_cents as the originally-AUTHORIZED hold (audit record); the
+        // captured total is derivable as earner_amount_cents + fee_cents.
+        await supabase.from('payments').update({
+          fee_cents: feeCents,
+          earner_amount_cents: earnerAmountCents,
+        }).eq('id', payment.id);
         await stripe.paymentIntents.capture(payment.payment_intent_id, {
           amount_to_capture: captureCents,
           application_fee_amount: feeCents,
         });
-        earnerAmountCents = captureCents - feeCents;
-        // Keep amount_cents as the originally-AUTHORIZED hold (audit record of what
-        // the poster agreed to). The actually-captured total is derivable as
-        // earner_amount_cents + fee_cents; overwriting amount_cents here would erase
-        // the authorized figure and break dispute reconciliation.
         await supabase.from('payments').update({
           status: 'captured',
           captured_at: new Date().toISOString(),
-          fee_cents: feeCents,
-          earner_amount_cents: earnerAmountCents,
         }).eq('id', payment.id);
       } else {
         await stripe.paymentIntents.capture(payment.payment_intent_id);

@@ -3,11 +3,21 @@ import path from "node:path";
 
 // Content-Security-Policy (ENFORCING). 'unsafe-eval' is DEV-only (React Fast
 // Refresh needs it); production drops it so an injected script can't eval(). Next's
-// App Router still needs 'unsafe-inline' for its hydration bootstrap scripts (a
-// nonce-based CSP would require per-request middleware). The other hard wins:
-// frame-ancestors (clickjacking), restricted connect/img/frame sources, base-uri,
-// form-action, object-src 'none'. Stripe Elements needs js.stripe.com (script/frame),
-// *.stripe.com (api + telemetry) and *.stripe.network (3-D Secure); maps use OSM/Carto.
+// App Router still needs 'unsafe-inline' for its hydration bootstrap scripts.
+//
+// Residual-risk decision (reviewed): we deliberately do NOT use a nonce-based CSP.
+// In Next 16 a nonce forces EVERY page into dynamic rendering — disabling static
+// generation and CDN caching for the SEO landing/browse pages, raising cost, and
+// risking Stripe Elements / hydration breakage. The 'unsafe-inline' it would remove
+// has nothing to backstop here: the web app has no XSS sink (no dangerouslySetInnerHTML,
+// innerHTML, eval, or new Function — all user content flows through React's
+// auto-escaping). If a raw-HTML sink is ever introduced, revisit and adopt a nonce
+// (Next renames middleware -> proxy; see node_modules/next/dist/docs CSP guide).
+//
+// The hard wins remain: frame-ancestors (clickjacking), restricted connect/img/frame
+// sources, base-uri, form-action, object-src 'none'. Stripe Elements needs
+// js.stripe.com (script/frame), *.stripe.com (api + telemetry) and *.stripe.network
+// (3-D Secure); maps use OSM/Carto.
 const isDev = process.env.NODE_ENV !== "production";
 const scriptSrc = isDev
   ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com"
