@@ -52,13 +52,18 @@ Deno.serve(async (req: Request) => {
         await supabase.from('payments')
           .update({ status: 'failed' })
           .eq('payment_intent_id', pi.id);
-        // Update booking back to 'pending' so poster can retry
         const { data: payment } = await supabase
           .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
         if (payment) {
-          await supabase.from('bookings')
-            .update({ status: 'pending' })
-            .eq('id', payment.booking_id);
+          // Only revert to 'pending' while the booking is still pre-settlement. If
+          // the work is already done (completed/verified) this is a CAPTURE failure
+          // — don't undo a finished job; leave the status so the poster can retry
+          // capture rather than silently resurfacing a completed gig as a request.
+          const { data: bk } = await supabase
+            .from('bookings').select('status').eq('id', payment.booking_id).single();
+          if (bk && ['pending', 'confirmed'].includes(bk.status)) {
+            await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
+          }
         }
         break;
       }

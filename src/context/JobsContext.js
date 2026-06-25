@@ -388,15 +388,15 @@ export function JobsProvider({ children }) {
   // ── Earner actions ─────────────────────────────────────────────────────────
 
   const bookJob = async (jobId, slotId, slotLabel, counterOffer) => {
-    if (!user) return;
+    if (!user) return false;
     const job = state.jobs.find(j => j.id === jobId);
-    if (job?.posterId === user.id) return; // can't book own gig
+    if (job?.posterId === user.id) return false; // can't book own gig
 
     const tempId = `temp-${Date.now()}`;
     dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, tempId });
 
     const chosenSlot = job?.slots?.find(s => s.id === slotId);
-    const { data, error } = await supabase.from('bookings').insert({
+    const { error } = await supabase.from('bookings').insert({
       job_id: jobId,
       earner_id: user.id,
       slot_id: slotId || null,
@@ -406,7 +406,14 @@ export function JobsProvider({ children }) {
       status: 'pending',
     }).select().single();
 
-    if (error) { console.warn('Booking sync error:', error.message); return; }
+    if (error) {
+      console.warn('Booking sync error:', error.message);
+      // Roll back the optimistic temp booking + slot flip so the UI doesn't show
+      // a phantom booking on a taken slot, and signal failure to the caller.
+      if (job) dispatch({ type: 'UPDATE_JOB', jobId, patch: { slots: job.slots } });
+      await loadBookings();
+      return false;
+    }
 
     if (slotId) {
       supabase.from('job_slots').update({ taken: true }).eq('id', slotId);
@@ -420,6 +427,7 @@ export function JobsProvider({ children }) {
       notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
     }
     track('booking_created', { jobId, counterOffer: !!counterOffer });
+    return true;
   };
 
   // Earner marks their side done; if poster already done → complete.

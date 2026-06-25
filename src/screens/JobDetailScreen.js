@@ -78,16 +78,22 @@ export default function JobDetailScreen({ route, navigation }) {
     Alert.alert('Report this gig', 'Why are you reporting it?', buttons);
   };
 
-  const handleBook = () => {
+  const handleBook = async () => {
     const hasAvailableSlot = job.slots?.some(s => !s.taken);
     if (!selectedSlot && hasAvailableSlot) {
       haptic.error();
       return;
     }
-    haptic.success();
     const slot = job.slots?.find(s => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
-    bookJob(jobId, selectedSlot, slot?.label, counter);
+    const ok = await bookJob(jobId, selectedSlot, slot?.label, counter);
+    if (!ok) {
+      // The booking didn't persist — don't award XP/challenges or claim success.
+      haptic.error();
+      showToast({ icon: '⚠️', title: "Couldn't book", message: 'That gig could not be booked. Please try again.' });
+      return;
+    }
+    haptic.success();
     addXP(25);
     recordApply(job.payType === 'flat' ? job.pay : job.pay * job.estimatedHours);
     updateChallenge('c1', 1);

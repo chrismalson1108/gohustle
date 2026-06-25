@@ -51,6 +51,18 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'invalid_code', message: "That code doesn't match." }, 400);
     }
 
+    // One .edu inbox verifies only ONE account — block reuse on a different user.
+    const { data: priorUse } = await supabase
+      .from('student_email_verifications')
+      .select('user_id')
+      .eq('email', cleanEmail)
+      .eq('consumed', true)
+      .neq('user_id', user.id)
+      .limit(1);
+    if (priorUse?.length) {
+      return json({ error: 'email_in_use', message: 'That school email has already verified another account.' }, 409);
+    }
+
     // Success — consume the code and mark the profile a Verified Student.
     await supabase.from('student_email_verifications').update({ consumed: true }).eq('id', row.id);
 
