@@ -53,6 +53,23 @@ Deno.serve(async (req: Request) => {
 
     let earnerAmountCents = payment.earner_amount_cents ?? 0;
 
+    // Re-check the earner's Connect account is STILL payout-capable before we move
+    // money. It was verified at accept time, but Stripe can restrict an account in
+    // the accept→verify window (the webhook demotes onboarded=false). Capturing into
+    // a restricted destination would hold the funds there while we credit the
+    // dashboard anyway. Only gate a fresh capture — a retry on an already-captured
+    // payment should still fall through to crediting.
+    if (payment.status !== 'captured') {
+      const { data: earnerAcct } = await supabase
+        .from('stripe_accounts').select('onboarded').eq('user_id', booking.earner_id).single();
+      if (!earnerAcct?.onboarded) {
+        return json({
+          error: 'EARNER_PAYOUTS_DISABLED',
+          message: "The earner's payout account is no longer active. They need to re-verify it before payment can be released.",
+        }, 409);
+      }
+    }
+
     // Capture the hold if not already captured (idempotent on retry).
     if (payment.status !== 'captured') {
       const capturePct = (typeof pct === 'number' && pct > 0 && pct < 1) ? pct : 1;
