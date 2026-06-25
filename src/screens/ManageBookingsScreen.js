@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useJobs } from '../context/JobsContext';
+import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
@@ -23,7 +25,9 @@ const SECTION_TITLES = {
 const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'completed']);
 
 export default function ManageBookingsScreen() {
-  const { posterBookings, acceptBooking, declineBooking, verifyAndRate, markPosterDone, refreshPosterBookings } = useJobs();
+  const { posterBookings, declineBooking, verifyAndRate, markPosterDone, refreshPosterBookings } = useJobs();
+  const { showToast } = useUser();
+  const navigation = useNavigation();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
   const [verifyTarget, setVerifyTarget] = useState(null);
@@ -43,11 +47,14 @@ export default function ManageBookingsScreen() {
     setRefreshing(false);
   };
 
-  const handleAccept = async (bookingId) => {
-    haptic.success();
-    setLoadingId(bookingId);
-    await acceptBooking(bookingId);
-    setLoadingId(null);
+  const handleAccept = async () => {
+    // Accepting requires authorizing the escrow card hold, which lives in the Hiring
+    // tab's accept flow (GigsScreen → AcceptPaymentModal). This legacy screen has no
+    // payment step, so route the poster there instead of attempting a confirm that
+    // the server would reject for having no funded hold.
+    haptic.selection();
+    showToast({ icon: '💳', title: 'Accept from Hiring', message: 'Open the gig in the Hiring tab to authorize payment and accept.' });
+    navigation.navigate('GigsTab');
   };
 
   const handleDecline = async (bookingId) => {
