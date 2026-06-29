@@ -16,6 +16,10 @@ import { useHaptic } from '../hooks/useHaptic';
 import { haversineMiles, milesLabel } from '../lib/geo';
 import { colors, gradients } from '../theme';
 import { CATEGORIES } from '../data/mockData';
+import { matchesForYou } from '../lib/filters';
+
+// "For You" is a pseudo-category that matches gigs to the viewer's profile skills.
+const CHIPS = [{ id: 'foryou', label: 'For You', ion: 'sparkles' }, ...CATEGORIES];
 
 // Extract state abbreviation from location string like "Austin, TX"
 function getState(location) {
@@ -53,7 +57,7 @@ function matchesPay(job, payRange) {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, levelInfo, xp, school } = useUser();
+  const { name, streakDays, levelInfo, xp, school, skills } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
@@ -106,8 +110,10 @@ export default function HomeScreen({ navigation }) {
       // Hide gigs from users you've blocked
       if (blockedIds?.has(j.posterId)) return false;
 
-      // Category chip
-      if (selectedCat !== 'all' && j.category !== selectedCat) return false;
+      // Category chip ("For You" matches against the viewer's profile skills)
+      if (selectedCat === 'foryou') {
+        if (!matchesForYou(j, skills)) return false;
+      } else if (selectedCat !== 'all' && j.category !== selectedCat) return false;
 
       // Search text
       const q = search.toLowerCase();
@@ -179,9 +185,10 @@ export default function HomeScreen({ navigation }) {
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, school]);
+  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, school, skills]);
 
   const activeFilterCount = countActiveFilters(filters);
+  const forYouNoSkills = selectedCat === 'foryou' && (skills?.length || 0) === 0;
 
   const header = (
     <>
@@ -235,7 +242,7 @@ export default function HomeScreen({ navigation }) {
         horizontal showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.catRow}
       >
-        {CATEGORIES.map(cat => {
+        {CHIPS.map(cat => {
           const active = selectedCat === cat.id;
           return (
             <TouchableOpacity
@@ -316,13 +323,23 @@ export default function HomeScreen({ navigation }) {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="search" size={44} color={colors.textMuted} style={styles.emptyIcon} />
-            <Text style={styles.emptyText}>No gigs match your filters</Text>
-            {activeFilterCount > 0 && (
+            <Ionicons name={forYouNoSkills ? 'sparkles-outline' : 'search'} size={44} color={colors.textMuted} style={styles.emptyIcon} />
+            <Text style={styles.emptyText}>
+              {forYouNoSkills
+                ? 'Add skills to your profile to get gigs matched to you'
+                : selectedCat === 'foryou'
+                  ? 'No gigs match your skills right now'
+                  : 'No gigs match your filters'}
+            </Text>
+            {forYouNoSkills ? (
+              <TouchableOpacity onPress={() => navigation.navigate('ProfileTab', { screen: 'Settings' })} style={styles.emptyReset}>
+                <Text style={styles.emptyResetText}>Add your skills</Text>
+              </TouchableOpacity>
+            ) : activeFilterCount > 0 ? (
               <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)} style={styles.emptyReset}>
                 <Text style={styles.emptyResetText}>Reset all filters</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         }
       />

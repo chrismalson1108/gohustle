@@ -67,6 +67,9 @@ export default function EarnScreen({ navigation }) {
   };
 
   const earningPct = Math.min(1, earningsWeek / weeklyEarningGoal);
+  // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
+  const completedCount = (bookings || []).filter(b => b.status === 'verified').length;
+  const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
   const jobsPct    = Math.min(1, weeklyJobsDone / weeklyJobsGoal);
 
   // Pair each booked job with its booking, then split by segment
@@ -167,6 +170,8 @@ export default function EarnScreen({ navigation }) {
             <EarStat label="This Week" value={`$${earningsWeek}`} highlight />
             <View style={styles.divider} />
             <EarStat label="All Time"  value={`$${earningsTotal.toLocaleString()}`} />
+            <View style={styles.divider} />
+            <EarStat label="Avg/Job"   value={completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—'} />
           </View>
         </LinearGradient>
         <View style={styles.streakLevelRow}>

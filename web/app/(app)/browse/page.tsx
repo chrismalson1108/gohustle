@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame } from "lucide-react";
 import {
@@ -24,8 +25,10 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
   loading: () => <div className="h-[70vh] w-full animate-pulse rounded-3xl bg-white/60" />,
 });
 
+const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
+
 export default function BrowsePage() {
-  const { name, streakDays, levelInfo, xp, school } = useUser();
+  const { name, streakDays, levelInfo, xp, school, skills } = useUser();
   const { jobs, bookings, blockedIds } = useJobs();
 
   const [selectedCat, setSelectedCat] = useState("all");
@@ -47,9 +50,11 @@ export default function BrowsePage() {
   const availableStates = useMemo(() => availableStatesFrom(jobs), [jobs]);
 
   const filtered: Job[] = useMemo(
-    () => applyJobFilters(jobs, { selectedCat, search, filters, blockedIds, userCoords, mySchool: school }),
-    [jobs, selectedCat, search, filters, blockedIds, userCoords, school],
+    () => applyJobFilters(jobs, { selectedCat, search, filters, blockedIds, userCoords, mySchool: school, forYouSkills: skills }),
+    [jobs, selectedCat, search, filters, blockedIds, userCoords, school, skills],
   );
+
+  const forYouNoSkills = selectedCat === "foryou" && skills.length === 0;
 
   const activeFilterCount = countActiveFilters(filters);
 
@@ -108,7 +113,7 @@ export default function BrowsePage() {
       <div className="mx-auto w-full max-w-3xl px-5">
         {/* Category chips */}
         <div className="-mx-1 flex gap-2 overflow-x-auto py-4">
-          {CATEGORIES.map((cat) => {
+          {CHIPS.map((cat) => {
             const active = selectedCat === cat.id;
             return (
               <button
@@ -168,14 +173,26 @@ export default function BrowsePage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <Search className="size-10 text-ink-muted" />
-            <p className="text-ink-soft">No gigs match your filters</p>
-            {activeFilterCount > 0 && (
-              <button
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-                className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary"
-              >
-                Reset all filters
-              </button>
+            <p className="text-ink-soft">
+              {forYouNoSkills
+                ? "Add skills to your profile to get gigs matched to you"
+                : selectedCat === "foryou"
+                  ? "No gigs match your skills right now"
+                  : "No gigs match your filters"}
+            </p>
+            {forYouNoSkills ? (
+              <Link href="/profile/settings" className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary">
+                Add your skills
+              </Link>
+            ) : (
+              activeFilterCount > 0 && (
+                <button
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                  className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary"
+                >
+                  Reset all filters
+                </button>
+              )
             )}
           </div>
         ) : (

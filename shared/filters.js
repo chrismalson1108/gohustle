@@ -71,6 +71,22 @@ export function getSlotDays(slots) {
   return days;
 }
 
+// A gig is "For You" if its category, title, or description relates to one of the
+// viewer's profile skills. Free-text skills are matched loosely against the gig's
+// fixed category (either contains the other) and against title/description text.
+export function matchesForYou(job, skills) {
+  const sk = (skills || []).map(s => String(s).toLowerCase().trim()).filter(Boolean);
+  if (sk.length === 0 || !job) return false;
+  const cat = String(job.category || '').toLowerCase().trim();
+  const title = String(job.title || '').toLowerCase();
+  const desc = String(job.description || '').toLowerCase();
+  return sk.some(s =>
+    (cat && (cat === s || cat.includes(s) || s.includes(cat))) ||
+    title.includes(s) ||
+    desc.includes(s),
+  );
+}
+
 export function matchesPay(job, payRange) {
   if (payRange === 'any') return true;
   const effective = job.payType === 'hourly'
@@ -95,12 +111,14 @@ export function availableStatesFrom(jobs) {
 
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
-export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, mySchool } = {}) {
+export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, mySchool, forYouSkills = [] } = {}) {
   const schoolKey = (mySchool || '').trim().toLowerCase();
   let list = (jobs || []).filter(j => {
     if (j.status !== 'open') return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
-    if (selectedCat !== 'all' && j.category !== selectedCat) return false;
+    if (selectedCat === 'foryou') {
+      if (!matchesForYou(j, forYouSkills)) return false;
+    } else if (selectedCat !== 'all' && j.category !== selectedCat) return false;
 
     const q = search.toLowerCase();
     if (q && !j.title.toLowerCase().includes(q) && !j.description.toLowerCase().includes(q)) return false;
