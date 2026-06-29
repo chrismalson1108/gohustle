@@ -16,6 +16,7 @@ import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
 import { collegeLine } from '../lib/school';
+import { DAYS, windowsForDay, fmtTime, availabilitySummary } from '../lib/availability';
 import { colors, gradients, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 
@@ -81,7 +82,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
       supabase.from('profiles')
-        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
+        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status, availability')
         .eq('id', userId).single(),
       supabase.from('reviews')
         .select('id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
@@ -113,6 +114,11 @@ export default function PublicProfileScreen({ route, navigation }) {
   const overall = avg(reviews);
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
+
+  const availability = Array.isArray(profile.availability) ? profile.availability : [];
+  const availDays = DAYS
+    .map((label, day) => ({ label, day, windows: windowsForDay(availability, day) }))
+    .filter((d) => d.windows.length > 0);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -197,6 +203,23 @@ export default function PublicProfileScreen({ route, navigation }) {
         <View style={styles.selfBanner}>
           <Ionicons name="eye-outline" size={15} color={colors.primary} style={{ marginRight: 8 }} />
           <Text style={styles.selfBannerText}>This is your public profile — exactly how others see you.</Text>
+        </View>
+      )}
+
+      {availDays.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Availability</Text>
+          <View style={styles.availCard}>
+            <Text style={styles.availSummary}>{availabilitySummary(availability)}</Text>
+            {availDays.map(({ label, day, windows }) => (
+              <View key={day} style={styles.availRow}>
+                <Text style={styles.availDay}>{label}</Text>
+                <Text style={styles.availTimes}>
+                  {windows.map((w) => `${fmtTime(w.start)}–${fmtTime(w.end)}`).join(', ')}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
       )}
 
@@ -430,6 +453,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   jobAccent: { width: 4, height: 36, borderRadius: 2, marginRight: 12 },
+  availCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  availSummary: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  availRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.divider },
+  availDay: { fontSize: 13, fontWeight: '800', color: colors.primary, width: 48 },
+  availTimes: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   certCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
     borderRadius: 14, padding: 12, marginBottom: 8,
