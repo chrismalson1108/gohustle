@@ -75,6 +75,12 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
             ))}
           </View>
         )}
+        {job.hazards?.length > 0 && (
+          <View style={styles.hazardRow}>
+            <Ionicons name="warning" size={12} color={colors.urgent} style={{ marginRight: 4 }} />
+            <Text style={styles.hazardText}>Safety notes</Text>
+          </View>
+        )}
         <View style={styles.footer}>
           <View style={styles.payBadge}>
             <Text style={styles.payText}>{estPay}</Text>
@@ -141,6 +147,8 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
   tagChip: { backgroundColor: colors.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border },
   tagText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
+  hazardRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  hazardText: { fontSize: 11, fontWeight: '700', color: colors.urgent },
   footer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   payBadge: {
     backgroundColor: colors.accentLight, borderRadius: 8,

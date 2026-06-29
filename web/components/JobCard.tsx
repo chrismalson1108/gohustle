@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
-import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark } from "lucide-react";
+import { Zap, MapPin, Repeat, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark, AlertTriangle } from "lucide-react";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
@@ -94,6 +94,13 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
                 #{t}
               </span>
             ))}
+          </div>
+        )}
+
+        {job.hazards?.length > 0 && (
+          <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-urgent">
+            <AlertTriangle className="size-3.5" />
+            Safety notes
           </div>
         )}
 
