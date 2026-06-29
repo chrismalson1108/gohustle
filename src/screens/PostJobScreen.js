@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
+import TagInput from '../components/TagInput';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { colors, gradients } from '../theme';
@@ -27,7 +28,7 @@ const RECURRENCE_OPTS = [
 const INITIAL = {
   title: '', category: '', customCategory: '', pay: '', payType: 'flat',
   location: '', description: '', requirements: '', urgent: false, slots: [],
-  recurrence: 'none',
+  recurrence: 'none', tags: [],
 };
 
 // Build initial form state, optionally prefilled from a job being duplicated.
@@ -46,6 +47,7 @@ function buildInitial(prefill) {
     urgent: !!prefill.urgent,
     slots: [],
     recurrence: prefill.recurrence || 'none',
+    tags: prefill.tags || [],
   };
 }
 
@@ -117,6 +119,7 @@ export default function PostJobScreen({ navigation, route }) {
       slots,
       photos: photoUrls,
       recurrence: form.recurrence,
+      tags: form.tags,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -192,6 +195,10 @@ export default function PostJobScreen({ navigation, route }) {
                 onChangeText={v => set('customCategory', v)}
               />
             )}
+          </Field>
+
+          <Field label="Tags (optional)">
+            <TagInput value={form.tags} onChange={v => set('tags', v)} />
           </Field>
 
           <Field label="Pay *">

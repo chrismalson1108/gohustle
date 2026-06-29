@@ -78,10 +78,12 @@ export function matchesForYou(job, skills) {
   const sk = (skills || []).map(s => String(s).toLowerCase().trim()).filter(Boolean);
   if (sk.length === 0 || !job) return false;
   const cat = String(job.category || '').toLowerCase().trim();
+  const tags = (job.tags || []).map(t => String(t).toLowerCase().trim()).filter(Boolean);
   const title = String(job.title || '').toLowerCase();
   const desc = String(job.description || '').toLowerCase();
   return sk.some(s =>
     (cat && (cat === s || cat.includes(s) || s.includes(cat))) ||
+    tags.some(t => t === s || t.includes(s) || s.includes(t)) ||
     title.includes(s) ||
     desc.includes(s),
   );

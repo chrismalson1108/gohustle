@@ -87,6 +87,16 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
         <h3 className="mt-2 line-clamp-2 text-base font-extrabold leading-snug text-ink">{job.title}</h3>
         <p className="mt-1 line-clamp-2 text-sm text-ink-soft">{job.description}</p>
 
+        {job.tags?.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {job.tags.slice(0, 4).map((t) => (
+              <span key={t} className="rounded-md bg-canvas px-2 py-0.5 text-[11px] font-semibold text-ink-soft ring-1 ring-line">
+                #{t}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="mt-3 flex items-center gap-2">
           <span className="rounded-lg bg-accent px-2.5 py-1 text-[13px] font-extrabold text-ink">
             {payLabel(job)}

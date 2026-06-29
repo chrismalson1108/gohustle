@@ -55,7 +55,7 @@ declare module "@gohustlr/shared" {
   export function getState(location: string): string | null;
   export function getSlotDays(slots: Array<{ taken?: boolean; label?: string }>): Set<string>;
   export function matchesPay(job: { pay: number; payType: string; estimatedHours?: number }, payRange: string): boolean;
-  export function matchesForYou(job: { category?: string; title?: string; description?: string } | null, skills: string[]): boolean;
+  export function matchesForYou(job: { category?: string; title?: string; description?: string; tags?: string[] } | null, skills: string[]): boolean;
   export function availableStatesFrom(jobs: Array<{ location: string }>): string[];
   export function applyJobFilters<T>(
     jobs: T[],

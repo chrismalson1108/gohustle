@@ -158,6 +158,13 @@ export default function JobDetailScreen({ route, navigation }) {
 
         <Section title="About this gig">
           <Text style={styles.description}>{job.description}</Text>
+          {job.tags?.length > 0 && (
+            <View style={styles.tagRow}>
+              {job.tags.map(t => (
+                <View key={t} style={styles.tagChip}><Text style={styles.tagText}>#{t}</Text></View>
+              ))}
+            </View>
+          )}
         </Section>
 
         {job.requirements?.length > 0 && (
@@ -408,6 +415,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12,
   },
   description: { fontSize: 15, color: colors.textPrimary, lineHeight: 24 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  tagChip: { backgroundColor: colors.background, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1, borderColor: colors.border },
+  tagText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   feeCard: { backgroundColor: colors.background, borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: colors.border },
   feeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
   feeLabel: { fontSize: 14, color: colors.textSecondary },

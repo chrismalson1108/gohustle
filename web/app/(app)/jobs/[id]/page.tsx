@@ -141,6 +141,16 @@ export default function JobDetailPage() {
         )}
       </div>
 
+      {job.tags?.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {job.tags.map((t) => (
+            <span key={t} className="rounded-md bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-soft ring-1 ring-line">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
+
       {job.photos?.length > 0 && (
         <div className="mt-5 flex gap-3 overflow-x-auto">
           {job.photos.map((u, i) => (
