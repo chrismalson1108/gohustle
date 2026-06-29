@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, Image, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -8,6 +8,7 @@ import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
+import { fetchCertifications } from '../lib/certifications';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
@@ -29,6 +30,7 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [listings, setListings] = useState([]);
+  const [certs, setCerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -76,7 +78,7 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
-    const [{ data: prof }, { data: revs }, { data: jobs }] = await Promise.all([
+    const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
       supabase.from('profiles')
         .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
         .eq('id', userId).single(),
@@ -86,10 +88,12 @@ export default function PublicProfileScreen({ route, navigation }) {
       supabase.from('jobs')
         .select('id, title, category, pay, pay_type, location, status')
         .eq('poster_id', userId).eq('status', 'open').order('created_at', { ascending: false }),
+      fetchCertifications(userId).catch(() => []),
     ]);
     setProfile(prof || null);
     setReviews(revs || []);
     setListings(jobs || []);
+    setCerts(certRows || []);
     setLoading(false);
   }, [userId]);
 
@@ -218,6 +222,36 @@ export default function PublicProfileScreen({ route, navigation }) {
               </View>
             ))}
           </View>
+        </View>
+      )}
+
+      {certs.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Certifications ({certs.length})</Text>
+          {certs.map(c => (
+            <TouchableOpacity
+              key={c.id}
+              activeOpacity={c.image_url ? 0.8 : 1}
+              disabled={!c.image_url}
+              onPress={() => c.image_url && Linking.openURL(c.image_url)}
+              style={styles.certCard}
+            >
+              {c.image_url ? (
+                <Image source={{ uri: c.image_url }} style={styles.certThumb} />
+              ) : (
+                <View style={styles.certThumbPlaceholder}>
+                  <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.certTitle} numberOfLines={1}>{c.title}</Text>
+                {(c.issuer || c.year) ? (
+                  <Text style={styles.certMeta} numberOfLines={1}>{[c.issuer, c.year].filter(Boolean).join(' · ')}</Text>
+                ) : null}
+              </View>
+              {c.image_url ? <Ionicons name="open-outline" size={16} color={colors.textMuted} /> : null}
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -363,6 +397,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   jobAccent: { width: 4, height: 36, borderRadius: 2, marginRight: 12 },
+  certCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
+    borderRadius: 14, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  certThumb: { width: 44, height: 44, borderRadius: 8, marginRight: 12 },
+  certThumbPlaceholder: {
+    width: 44, height: 44, borderRadius: 8, marginRight: 12,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryLight,
+  },
+  certTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   jobTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   jobMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   workRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },

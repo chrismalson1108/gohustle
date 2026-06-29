@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert,
+  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,8 @@ import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients } from '../theme';
 import LocationPicker from '../components/LocationPicker';
 import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
+import { pickImage } from '../lib/uploadImage';
+import { fetchCertifications, addCertification, deleteCertification } from '../lib/certifications';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -33,6 +35,10 @@ export default function SettingsScreen({ navigation }) {
   const [saving, setSaving]         = useState(false);
   const [deleting, setDeleting]     = useState(false);
   const [usernameError, setUsernameError] = useState('');
+
+  const [certs, setCerts] = useState([]);
+  const [savingCert, setSavingCert] = useState(false);
+  const [certForm, setCertForm] = useState({ title: '', issuer: '', year: '', imageUri: null });
 
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
@@ -67,10 +73,64 @@ export default function SettingsScreen({ navigation }) {
         gradYear: data.grad_year ? String(data.grad_year) : '',
       });
     }
+    try { setCerts(await fetchCertifications(user.id)); } catch (_) {}
     setLoading(false);
   };
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const setCert = (k, v) => setCertForm(p => ({ ...p, [k]: v }));
+
+  const pickCertImage = async () => {
+    const res = await pickImage();
+    if (!res.canceled) setCert('imageUri', res.uri);
+  };
+
+  const handleAddCert = async () => {
+    const title = certForm.title.trim();
+    if (!title) {
+      showToast({ icon: '⚠️', title: 'Title required', message: 'Add the certification name.' });
+      return;
+    }
+    Keyboard.dismiss();
+    setSavingCert(true);
+    haptic.success();
+    try {
+      const created = await addCertification({
+        userId: user.id,
+        title,
+        issuer: certForm.issuer.trim() || null,
+        year: certForm.year ? parseInt(certForm.year, 10) || null : null,
+        imageUri: certForm.imageUri,
+      });
+      setCerts(p => [created, ...p]);
+      setCertForm({ title: '', issuer: '', year: '', imageUri: null });
+      showToast({ icon: '✅', title: 'Certification added!', message: 'It now shows on your profile.' });
+    } catch (e) {
+      showToast({ icon: '❌', title: 'Couldn’t add', message: e?.message || 'Please try again.' });
+    }
+    setSavingCert(false);
+  };
+
+  const handleDeleteCert = (id) => {
+    Alert.alert('Remove certification?', 'This will remove it from your profile.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const prev = certs;
+          setCerts(p => p.filter(c => c.id !== id));
+          try {
+            await deleteCertification(id);
+          } catch (_) {
+            setCerts(prev);
+            showToast({ icon: '⚠️', title: 'Couldn’t remove', message: 'Please try again.' });
+          }
+        },
+      },
+    ]);
+  };
 
   const toggleSkill = (s) => {
     set('skills', form.skills.includes(s)
@@ -355,6 +415,64 @@ export default function SettingsScreen({ navigation }) {
             </>
           )}
 
+          <Field label="Certifications">
+            <Text style={styles.hintText}>Trade certs & credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.</Text>
+            {certs.map(c => (
+              <View key={c.id} style={styles.certRow}>
+                {c.image_url ? (
+                  <Image source={{ uri: c.image_url }} style={styles.certThumb} />
+                ) : (
+                  <View style={styles.certThumbPlaceholder}>
+                    <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
+                  </View>
+                )}
+                <View style={styles.certInfo}>
+                  <Text style={styles.certTitle} numberOfLines={1}>{c.title}</Text>
+                  {(c.issuer || c.year) ? (
+                    <Text style={styles.certMeta} numberOfLines={1}>{[c.issuer, c.year].filter(Boolean).join(' · ')}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteCert(c.id)} style={styles.certRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            <View style={styles.certForm}>
+              <TextInput
+                style={styles.input} placeholder="Title (e.g. EPA 608 Certification)"
+                placeholderTextColor={colors.textMuted} value={certForm.title}
+                onChangeText={v => setCert('title', v)} maxLength={120}
+              />
+              <TextInput
+                style={[styles.input, { marginTop: 8 }]} placeholder="Issuer (e.g. Trade Tech)"
+                placeholderTextColor={colors.textMuted} value={certForm.issuer}
+                onChangeText={v => setCert('issuer', v)} maxLength={120}
+              />
+              <TextInput
+                style={[styles.input, { marginTop: 8 }]} placeholder="Year (e.g. 2024)"
+                placeholderTextColor={colors.textMuted} value={certForm.year}
+                onChangeText={v => setCert('year', v.replace(/[^0-9]/g, '').slice(0, 4))}
+                keyboardType="number-pad" maxLength={4}
+              />
+              <TouchableOpacity onPress={pickCertImage} style={styles.certImageBtn} activeOpacity={0.85}>
+                <Ionicons name={certForm.imageUri ? 'checkmark-circle' : 'image-outline'} size={18} color={colors.primary} style={{ marginRight: 6 }} />
+                <Text style={styles.certImageBtnText}>{certForm.imageUri ? 'Image selected' : 'Add image (optional)'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleAddCert} disabled={savingCert} style={styles.certAddBtn} activeOpacity={0.85}>
+                {savingCert
+                  ? <ActivityIndicator color={colors.primary} />
+                  : (
+                    <>
+                      <Ionicons name="add" size={18} color={colors.primary} style={{ marginRight: 4 }} />
+                      <Text style={styles.certAddBtnText}>Add certification</Text>
+                    </>
+                  )
+                }
+              </TouchableOpacity>
+            </View>
+          </Field>
+
           <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85}>
             <LinearGradient colors={gradients.profile} style={styles.saveBtn}>
               {saving
@@ -449,6 +567,27 @@ const styles = StyleSheet.create({
   skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   skillChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   skillChipTextActive: { color: '#fff' },
+  certRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 10,
+    backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, padding: 10,
+  },
+  certThumb: { width: 40, height: 40, borderRadius: 8, marginRight: 10 },
+  certThumbPlaceholder: {
+    width: 40, height: 40, borderRadius: 8, marginRight: 10,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background,
+  },
+  certInfo: { flex: 1 },
+  certTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  certRemove: { padding: 4, marginLeft: 8 },
+  certForm: { marginTop: 12, backgroundColor: colors.background, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border },
+  certImageBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, marginTop: 8 },
+  certImageBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  certAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface, marginTop: 4,
+  },
+  certAddBtnText: { fontSize: 14, fontWeight: '800', color: colors.primary },
   saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   dangerZone: { marginTop: 36, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
