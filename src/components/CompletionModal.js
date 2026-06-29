@@ -126,10 +126,22 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               </View>
             </View>
 
-            {/* Completion photos submitted by the earner */}
+            {/* Before photos submitted by the earner */}
+            {booking.beforePhotos?.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Before</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {booking.beforePhotos.map((u, i) => (
+                    <Image key={i} source={{ uri: u }} style={styles.completionPhoto} />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* After (completion) photos submitted by the earner */}
             {booking.completionPhotos?.length > 0 && (
               <>
-                <Text style={styles.sectionLabel}>Completion Photos</Text>
+                <Text style={styles.sectionLabel}>After</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {booking.completionPhotos.map((u, i) => (
                     <Image key={i} source={{ uri: u }} style={styles.completionPhoto} />

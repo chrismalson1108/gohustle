@@ -68,6 +68,7 @@ export function transformBooking(b) {
     posterReview: b.poster_review || null,
     amendmentNote: b.amendment_note || null,
     amendmentStatus: b.amendment_status || 'none',
+    beforePhotos: b.before_photos || [],
     completionPhotos: b.completion_photos || [],
     startsAt: b.starts_at || null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,

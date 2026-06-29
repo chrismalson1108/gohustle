@@ -119,8 +119,8 @@ interface JobsValue extends State {
   cancelBooking: (bookingId: string) => Promise<void>;
   blockUser: (blockedId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
-  markJobComplete: (bookingId: string, completionPhotos?: string[] | null) => Promise<void>;
-  markEarnerDone: (bookingId: string, completionPhotos?: string[] | null) => Promise<void>;
+  markJobComplete: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<void>;
+  markEarnerDone: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<void>;
   markPosterDone: (bookingId: string) => Promise<void>;
   ratePoster: (bookingId: string, args: { rating: number; reviewText?: string }) => Promise<void>;
   verifyAndRate: (bookingId: string, args: VerifyArgs) => Promise<void>;
@@ -365,6 +365,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
               amendmentStatus: (b.amendment_status as Booking["amendmentStatus"]) || "none",
               amendmentNote: (b.amendment_note as string) ?? null,
               tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
+              beforePhotos: (b.before_photos as string[]) || [],
               completionPhotos: (b.completion_photos as string[]) || [],
             },
           });
@@ -453,20 +454,22 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     return true;
   };
 
-  const markEarnerDone: JobsValue["markEarnerDone"] = async (bookingId, completionPhotos = null) => {
+  const markEarnerDone: JobsValue["markEarnerDone"] = async (bookingId, completionPhotos = null, beforePhotos = null) => {
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
     const bothDone = booking?.posterDone;
     const patch: Record<string, unknown> = bothDone
       ? { earner_done: true, status: "completed", completed_at: new Date().toISOString() }
       : { earner_done: true };
     if (completionPhotos?.length) patch.completion_photos = completionPhotos;
-    const prev = { earnerDone: !!booking?.earnerDone, status: booking?.status, completionPhotos: booking?.completionPhotos };
+    if (beforePhotos?.length) patch.before_photos = beforePhotos;
+    const prev = { earnerDone: !!booking?.earnerDone, status: booking?.status, completionPhotos: booking?.completionPhotos, beforePhotos: booking?.beforePhotos };
     dispatch({
       type: "UPDATE_BOOKING_STATUS",
       id: bookingId,
       patch: {
         earnerDone: true,
         ...(completionPhotos?.length && { completionPhotos }),
+        ...(beforePhotos?.length && { beforePhotos }),
         ...(bothDone && { status: "completed" as const }),
       },
     });

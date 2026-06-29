@@ -32,23 +32,27 @@ export default function MyJobsPage() {
   const [reviewText, setReviewText] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Finish (mark-done) sheet with optional proof-of-work photos → completion-photos bucket.
+  // Finish (mark-done) sheet with optional before & after proof-of-work photos → completion-photos bucket.
   const [finishBooking, setFinishBooking] = useState<Booking | null>(null);
+  const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const beforeFileRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const openFinish = (b: Booking) => {
     setFinishBooking(b);
+    setBeforePhotos([]);
     setPhotos([]);
   };
 
-  const addPhotos = async (files: FileList | null) => {
+  const addPhotos = async (files: FileList | null, kind: "before" | "after") => {
     if (!files?.length || !user) return;
     setUploading(true);
     try {
       const urls = await uploadImages(Array.from(files), "completion-photos", user.id);
-      setPhotos((p) => [...p, ...urls]);
+      if (kind === "before") setBeforePhotos((p) => [...p, ...urls]);
+      else setPhotos((p) => [...p, ...urls]);
     } catch {
       showToast({ icon: "⚠️", title: "Upload failed", message: "Couldn't add those photos." });
     }
@@ -58,7 +62,7 @@ export default function MyJobsPage() {
   const submitFinish = async () => {
     if (!finishBooking) return;
     setBusy(true);
-    await markEarnerDone(finishBooking.id, photos.length ? photos : null);
+    await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
     setBusy(false);
     setFinishBooking(null);
     showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
@@ -221,10 +225,39 @@ export default function MyJobsPage() {
           </Button>
         }
       >
-        <p className="text-sm text-ink-soft">Add photos of the finished work (optional) so the poster can verify and release payment.</p>
-        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+        <p className="text-sm text-ink-soft">Add before & after photos of the finished work (optional) so the poster can verify and release payment.</p>
+
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-ink-muted">Before photos (optional)</p>
+        <input ref={beforeFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "before"); e.target.value = ""; }} />
+        {beforePhotos.length > 0 && (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {beforePhotos.map((url, i) => (
+              <div key={url} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <button
+                  onClick={() => setBeforePhotos((p) => p.filter((_, j) => j !== i))}
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
+                  aria-label="Remove photo"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => beforeFileRef.current?.click()}
+          disabled={uploading}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
+        >
+          <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
+        </button>
+
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-ink-muted">After photos (optional)</p>
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "after"); e.target.value = ""; }} />
         {photos.length > 0 && (
-          <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-3 gap-2">
             {photos.map((url, i) => (
               <div key={url} className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -243,7 +276,7 @@ export default function MyJobsPage() {
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
         >
           <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
         </button>
