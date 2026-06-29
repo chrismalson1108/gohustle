@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine, FileText } from "lucide-react";
+import { skillFitScore } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
@@ -15,13 +16,35 @@ import { Textarea } from "@/components/ui/Field";
 import CompletionModal, { type VerifyArgs } from "@/components/CompletionModal";
 import AcceptPaymentModal from "@/components/AcceptPaymentModal";
 import { money, payLabel } from "@/lib/format";
-import type { Booking } from "@/lib/types";
+import type { Booking, Job } from "@/lib/types";
+
+// Applicant sort options for a gig's request list.
+const APPLICANT_SORTS = [
+  { id: "newest", label: "Newest" },
+  { id: "wage", label: "Wage" },
+  { id: "rating", label: "Rating" },
+  { id: "fit", label: "Fit" },
+] as const;
+type ApplicantSort = (typeof APPLICANT_SORTS)[number]["id"];
+
+// Sort one gig's applicant bookings by the chosen key. Returns a new array; the
+// default "newest" keeps the incoming (created-desc) order untouched.
+function sortApplicants(reqs: Booking[], job: Job, sortBy: ApplicantSort): Booking[] {
+  if (sortBy === "newest") return reqs;
+  const wage = (b: Booking) => b.counterOffer ?? job.pay;
+  const copy = [...reqs];
+  if (sortBy === "wage") copy.sort((a, b) => wage(a) - wage(b)); // cheapest first
+  else if (sortBy === "rating") copy.sort((a, b) => (b.earner?.rating ?? 0) - (a.earner?.rating ?? 0));
+  else if (sortBy === "fit") copy.sort((a, b) => skillFitScore(job, b.earner?.skills) - skillFitScore(job, a.earner?.skills));
+  return copy;
+}
 
 export default function HiringPage() {
   const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob, proposeAmendment } = useJobs();
   const { showToast } = useUser();
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
+  const [sortBy, setSortBy] = useState<ApplicantSort>("newest");
   const [amendTarget, setAmendTarget] = useState<Booking | null>(null);
   const [amendNote, setAmendNote] = useState("");
   const [amendBusy, setAmendBusy] = useState(false);
@@ -64,7 +87,7 @@ export default function HiringPage() {
         ) : (
           <div className="space-y-4">
             {postedJobs.map((job) => {
-              const reqs = posterBookings.filter((b) => b.jobId === job.id);
+              const reqs = sortApplicants(posterBookings.filter((b) => b.jobId === job.id), job, sortBy);
               return (
                 <div key={job.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="flex items-center justify-between gap-3">
@@ -88,8 +111,27 @@ export default function HiringPage() {
                     </div>
                   </div>
 
+                  {reqs.length > 1 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-divider pt-3">
+                      <span className="mr-0.5 text-xs font-bold text-ink-muted">Sort:</span>
+                      {APPLICANT_SORTS.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setSortBy(s.id)}
+                          className={
+                            sortBy === s.id
+                              ? "rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white"
+                              : "rounded-full bg-canvas px-2.5 py-1 text-xs font-bold text-ink-soft ring-1 ring-line/70 hover:bg-primary-light/40"
+                          }
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {reqs.length > 0 && (
-                    <div className="mt-3 space-y-3 border-t border-divider pt-3">
+                    <div className={`space-y-3 ${reqs.length > 1 ? "mt-3" : "mt-3 border-t border-divider pt-3"}`}>
                       {reqs.map((b) => (
                         <div key={b.id} className="rounded-2xl bg-canvas p-3">
                           <div className="flex items-center gap-2.5">

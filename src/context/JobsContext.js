@@ -90,6 +90,7 @@ function transformBooking(b) {
       avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
+      skills: b.earner.skills || [],
       school: b.earner.school || null,
       studentVerified: b.earner.student_verified || false,
       studentStatus: b.earner.student_status || 'none',
@@ -304,7 +305,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status),
+        earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, skills, school, student_verified, student_status),
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
       `)
       .in('job_id', jobIds)
