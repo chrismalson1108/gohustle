@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban, ShieldCheck } from "lucide-react";
-import { collegeLine, computeCertifications } from "@gohustlr/shared";
+import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, availabilitySummary } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
+import { useJobs } from "@/lib/jobs";
+import { notify } from "@/lib/push";
 import { isFavorite, addFavorite, removeFavorite } from "@/lib/favorites";
 import { fetchCertifications, type Certification } from "@/lib/certifications";
 import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
@@ -38,6 +40,7 @@ interface PubProfile {
   grad_year: number | null;
   student_verified: boolean;
   student_status: string;
+  availability: Array<{ day: number; start: string; end: string }> | null;
 }
 
 interface PubReview {
@@ -63,7 +66,8 @@ export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { showToast } = useUser();
+  const { showToast, name: myName } = useUser();
+  const { postedJobs } = useJobs();
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [reviews, setReviews] = useState<PubReview[]>([]);
   const [listings, setListings] = useState<PubListing[]>([]);
@@ -72,9 +76,18 @@ export default function PublicProfilePage() {
   const [fav, setFav] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
   const [reportDetails, setReportDetails] = useState("");
   const isSelf = user?.id === id;
+
+  const myOpenGigs = (postedJobs || []).filter((j) => j.status === "open");
+
+  const sendInvite = (job: { id: string; title: string }) => {
+    notify(id, "You got a gig invitation", `${myName || "Someone"} invited you to apply to "${job.title}"`, { tab: "HomeTab" });
+    setInviteOpen(false);
+    showToast({ icon: "✅", title: "Invitation sent", message: `${profile?.name || "They"} were invited to "${job.title}".` });
+  };
 
   const doBlock = async () => {
     setMenuOpen(false);
@@ -123,7 +136,7 @@ export default function PublicProfilePage() {
         supabase
           .from("profiles")
           .select(
-            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status",
+            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status, availability",
           )
           .eq("id", id)
           .single(),
@@ -159,6 +172,11 @@ export default function PublicProfilePage() {
   const earnerReviews = reviews.filter((r) => r.role === "earner");
   const recentWork = earnerReviews.slice(0, 10);
   const { certified, progress } = computeCertifications(earnerReviews);
+
+  const availability = Array.isArray(profile.availability) ? profile.availability : [];
+  const availDays = DAYS.map((label, day) => ({ label, day, windows: windowsForDay(availability, day) })).filter(
+    (d) => d.windows.length > 0,
+  );
 
   return (
     <div>
@@ -221,6 +239,31 @@ export default function PublicProfilePage() {
           <div className="mb-4 flex items-center gap-2 rounded-2xl bg-primary-light px-4 py-3 text-sm font-semibold text-primary">
             👀 This is your public profile — exactly how others see you.
           </div>
+        )}
+
+        {availDays.length > 0 && (
+          <>
+            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Availability</h2>
+            <div className="mb-6 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              <p className="mb-3 text-sm font-bold text-ink">{availabilitySummary(availability)}</p>
+              <div className="space-y-1.5">
+                {availDays.map(({ label, day, windows }) => (
+                  <div key={day} className="flex items-center justify-between border-t border-line/70 pt-1.5 text-sm first:border-t-0 first:pt-0">
+                    <span className="font-extrabold text-primary">{label}</span>
+                    <span className="font-semibold text-ink-soft">
+                      {windows.map((w) => `${fmtTime(w.start)}–${fmtTime(w.end)}`).join(", ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {!isSelf && user && myOpenGigs.length > 0 && (
+          <Button fullWidth onClick={() => setInviteOpen(true)} className="mb-6">
+            Invite to a gig
+          </Button>
         )}
 
         {profile.bio && (
@@ -383,6 +426,21 @@ export default function PublicProfilePage() {
             </button>
           ))}
           <Textarea value={reportDetails} onChange={(e) => setReportDetails(e.target.value)} placeholder="Add details (optional)" className="min-h-[72px]" />
+        </div>
+      </Modal>
+
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title={`Invite ${profile.name || "them"} to…`} size="sm">
+        <div className="space-y-2">
+          {myOpenGigs.map((j) => (
+            <button
+              key={j.id}
+              onClick={() => sendInvite(j)}
+              className="flex w-full items-center justify-between rounded-xl border border-line px-3.5 py-2.5 text-left text-sm font-semibold text-ink-soft transition hover:border-primary hover:bg-primary-light/40"
+            >
+              <span className="min-w-0 truncate">{j.title}</span>
+              <span className="ml-2 shrink-0 text-ink-muted">{payLabel({ pay: j.pay, payType: j.payType })}</span>
+            </button>
+          ))}
         </div>
       </Modal>
     </div>
