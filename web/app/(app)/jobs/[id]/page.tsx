@@ -15,6 +15,7 @@ import RatingStars from "@/components/ui/RatingStars";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+import { Textarea } from "@/components/ui/Field";
 import { payLabel } from "@/lib/format";
 
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
@@ -45,6 +46,7 @@ export default function JobDetailPage() {
 
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState("");
+  const [applicationNote, setApplicationNote] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [booking, setBooking] = useState(false);
 
@@ -70,7 +72,8 @@ export default function JobDetailPage() {
     setBooking(true);
     const slot = job.slots?.find((s) => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
-    const ok = await bookJob(job.id, selectedSlot, slot?.label, counter);
+    const note = applicationNote.trim() || null;
+    const ok = await bookJob(job.id, selectedSlot, slot?.label, counter, note);
     if (!ok) {
       // The booking didn't persist — don't award XP/challenges or claim success.
       setBooking(false);
@@ -227,6 +230,21 @@ export default function JobDetailPage() {
                 />
                 <span className="text-sm font-medium text-ink-muted">{job.payType === "hourly" ? "/ hr" : "flat"}</span>
               </div>
+            </div>
+          </Section>
+        )}
+
+        {!alreadyBooked && !isOwnJob && (
+          <Section title="Add a note to the poster (optional)">
+            <div className="rounded-2xl border border-line bg-canvas p-4">
+              <p className="mb-3 text-xs text-ink-muted">Tell the poster why you&apos;re a great fit.</p>
+              <Textarea
+                value={applicationNote}
+                onChange={(e) => setApplicationNote(e.target.value)}
+                placeholder="Why you're a great fit…"
+                maxLength={500}
+                rows={3}
+              />
             </div>
           </Section>
         )}

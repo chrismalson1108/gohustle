@@ -45,7 +45,7 @@ type Action =
   | { type: "SET_POSTER_BOOKINGS"; bookings: Booking[] }
   | { type: "SET_POSTED_IDS"; ids: string[] }
   | { type: "UPDATE_BOOKING_STATUS"; id: string; patch: Partial<Booking> }
-  | { type: "BOOK_JOB"; jobId: string; slotId: string | null; slotLabel: string | null; counterOffer: number | null; tempId: string }
+  | { type: "BOOK_JOB"; jobId: string; slotId: string | null; slotLabel: string | null; counterOffer: number | null; applicationNote: string | null; tempId: string }
   | { type: "ADD_JOB"; job: Job }
   | { type: "UPDATE_JOB"; jobId: string; patch: Partial<Job> }
   | { type: "DELETE_JOB"; jobId: string };
@@ -81,6 +81,7 @@ function reducer(state: State, action: Action): State {
             slotId: action.slotId,
             slotLabel: action.slotLabel,
             counterOffer: action.counterOffer,
+            applicationNote: action.applicationNote,
             status: "pending",
           } as Booking,
         ],
@@ -106,7 +107,7 @@ interface JobsValue extends State {
   toggleSavedJob: (jobId: string) => Promise<void>;
   bumpJob: (jobId: string) => Promise<void>;
   unreadMessages: number;
-  bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null) => Promise<boolean>;
+  bookJob: (jobId: string, slotId: string | null, slotLabel?: string | null, counterOffer?: number | null, applicationNote?: string | null) => Promise<boolean>;
   addJob: (jobData: Record<string, unknown>) => Promise<void>;
   updateJob: (jobId: string, jobData: Record<string, unknown>) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
@@ -409,7 +410,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ── Earner actions ───────────────────────────────────────────────────────--
-  const bookJob: JobsValue["bookJob"] = async (jobId, slotId, slotLabel = null, counterOffer = null) => {
+  const bookJob: JobsValue["bookJob"] = async (jobId, slotId, slotLabel = null, counterOffer = null, applicationNote = null) => {
     if (!user) return false;
     const job = state.jobs.find((j) => j.id === jobId);
     if (job?.posterId === user.id) return false;
@@ -418,7 +419,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // the escrow hold). Instant-book auto-confirm was removed — it skipped escrow,
     // so an instant-booked earner would have worked for free.
     const tempId = `temp-${Date.now()}`;
-    dispatch({ type: "BOOK_JOB", jobId, slotId, slotLabel, counterOffer, tempId });
+    dispatch({ type: "BOOK_JOB", jobId, slotId, slotLabel, counterOffer, applicationNote, tempId });
 
     const chosenSlot = job?.slots?.find((s) => s.id === slotId);
     const { error } = await supabase
@@ -430,6 +431,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         slot_label: slotLabel || null,
         starts_at: chosenSlot?.startsAt || null,
         counter_offer: counterOffer || null,
+        application_note: applicationNote || null,
         status: "pending",
       })
       .select()

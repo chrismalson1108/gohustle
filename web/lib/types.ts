@@ -94,6 +94,7 @@ export interface Booking {
   slotId: string | null;
   slotLabel: string | null;
   counterOffer: number | null;
+  applicationNote: string | null;
   status: BookingStatus;
   paymentMethod: string | null;
   earnerRating: number | null;

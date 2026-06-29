@@ -592,6 +592,11 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           </Text>
         </View>
       )}
+      {booking.applicationNote ? (
+        <View style={styles.noteQuote}>
+          <Text style={styles.noteQuoteText}>&ldquo;{booking.applicationNote}&rdquo;</Text>
+        </View>
+      ) : null}
 
       {/* In-progress + done flags */}
       {status === 'confirmed' && (
@@ -788,6 +793,10 @@ const styles = StyleSheet.create({
   metaIcon: { marginRight: 5 },
   metaText: { fontSize: 12, color: colors.textSecondary },
   counterVal: { fontWeight: '800', color: colors.primary },
+  noteQuote: {
+    marginBottom: 8, borderLeftWidth: 2, borderLeftColor: colors.border, paddingLeft: 9,
+  },
+  noteQuoteText: { fontSize: 12, fontStyle: 'italic', color: colors.textSecondary, lineHeight: 17 },
   inProgressRow: { marginBottom: 8 },
   inlineRow: { flexDirection: 'row', alignItems: 'center' },
   inProgressText: { fontSize: 12, fontWeight: '700', color: colors.success },

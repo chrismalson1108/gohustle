@@ -68,6 +68,7 @@ function transformBooking(b) {
     slotId: b.slot_id,
     slotLabel: b.slot_label,
     counterOffer: b.counter_offer ? Number(b.counter_offer) : null,
+    applicationNote: b.application_note || null,
     status: b.status || 'pending',
     paymentMethod: b.payment_method,
     earnerRating: b.earner_rating ? Number(b.earner_rating) : null,
@@ -144,6 +145,7 @@ function reducer(state, action) {
           slotId: action.slotId,
           slotLabel: action.slotLabel || null,
           counterOffer: action.counterOffer || null,
+          applicationNote: action.applicationNote || null,
           status: 'pending',
         }],
       };
@@ -394,13 +396,13 @@ export function JobsProvider({ children }) {
 
   // ── Earner actions ─────────────────────────────────────────────────────────
 
-  const bookJob = async (jobId, slotId, slotLabel, counterOffer) => {
+  const bookJob = async (jobId, slotId, slotLabel, counterOffer, applicationNote) => {
     if (!user) return false;
     const job = state.jobs.find(j => j.id === jobId);
     if (job?.posterId === user.id) return false; // can't book own gig
 
     const tempId = `temp-${Date.now()}`;
-    dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, tempId });
+    dispatch({ type: 'BOOK_JOB', jobId, slotId, slotLabel, counterOffer, applicationNote, tempId });
 
     const chosenSlot = job?.slots?.find(s => s.id === slotId);
     const { error } = await supabase.from('bookings').insert({
@@ -410,6 +412,7 @@ export function JobsProvider({ children }) {
       slot_label: slotLabel || null,
       starts_at: chosenSlot?.startsAt || null,
       counter_offer: counterOffer || null,
+      application_note: applicationNote || null,
       status: 'pending',
     }).select().single();
 

@@ -56,6 +56,7 @@ export function transformBooking(b) {
     slotId: b.slot_id,
     slotLabel: b.slot_label,
     counterOffer: b.counter_offer ? Number(b.counter_offer) : null,
+    applicationNote: b.application_note || null,
     status: b.status || 'pending',
     paymentMethod: b.payment_method,
     earnerRating: b.earner_rating ? Number(b.earner_rating) : null,
