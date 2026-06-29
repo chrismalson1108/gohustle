@@ -20,6 +20,7 @@ import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadImages } from '../lib/uploadImage';
+import { computeEarnerInsights } from '../lib/insights';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
@@ -72,6 +73,9 @@ export default function EarnScreen({ navigation }) {
   const completedCount = (bookings || []).filter(b => b.status === 'verified').length;
   const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
   const jobsPct    = Math.min(1, weeklyJobsDone / weeklyJobsGoal);
+
+  // Personal insights from this earner's own completed work (null until they have any).
+  const insights = computeEarnerInsights(bookings);
 
   // Pair each booked job with its booking, then split by segment
   const pairs = bookedJobs
@@ -219,6 +223,34 @@ export default function EarnScreen({ navigation }) {
 
       <MoneyGoalCard navigation={navigation} />
       <WorkStatusBar />
+
+      {/* Personal insights from completed work — hidden until the earner has any */}
+      {insights && insights.jobCount > 0 && (
+        <View style={styles.insightsCard}>
+          <Text style={styles.insightsTitle}>Your insights</Text>
+          <View style={styles.insightsRow}>
+            <InsightTile
+              icon="location-outline"
+              label="Top area"
+              value={insights.topArea?.label || '—'}
+            />
+            <InsightTile
+              icon="calendar-outline"
+              label="Busiest"
+              value={insights.busiestDay?.label || '—'}
+            />
+            <InsightTile
+              icon="cash-outline"
+              label="Best day"
+              value={
+                insights.mostProfitableDay
+                  ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
+                  : '—'
+              }
+            />
+          </View>
+        </View>
+      )}
 
       {/* Segmented control for my gigs */}
       <View style={styles.segment}>
@@ -588,6 +620,16 @@ function EarStat({ label, value, highlight }) {
   );
 }
 
+function InsightTile({ icon, label, value }) {
+  return (
+    <View style={styles.insightTile}>
+      <Ionicons name={icon} size={16} color={colors.primary} style={{ marginBottom: 4 }} />
+      <Text style={styles.insightLabel}>{label}</Text>
+      <Text style={styles.insightValue} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
 function GoalBar({ label, value, max, pct, color }) {
   return (
     <View>
@@ -629,6 +671,23 @@ const styles = StyleSheet.create({
   },
   streakText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   xpWrap: { flex: 1 },
+  insightsCard: {
+    marginHorizontal: 16, marginTop: 16,
+    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  insightsTitle: {
+    fontSize: 12, fontWeight: '800', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
+  },
+  insightsRow: { flexDirection: 'row', gap: 8 },
+  insightTile: {
+    flex: 1, backgroundColor: colors.surfaceAlt || colors.background,
+    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  insightLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: 2 },
+  insightValue: { fontSize: 13, fontWeight: '800', color: colors.textPrimary },
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: 14, padding: 4,

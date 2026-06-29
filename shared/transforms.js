@@ -89,6 +89,7 @@ export function transformBooking(b) {
       title: b.job.title,
       pay: Number(b.job.pay),
       payType: b.job.pay_type,
+      location: b.job.location || null,
     } : null,
   };
 }

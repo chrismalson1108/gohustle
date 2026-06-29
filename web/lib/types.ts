@@ -87,6 +87,7 @@ export interface BookingJobMini {
   title: string;
   pay: number;
   payType: PayType;
+  location: string | null;
 }
 
 export interface Booking {

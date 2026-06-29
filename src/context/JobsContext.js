@@ -101,6 +101,7 @@ function transformBooking(b) {
       title: b.job.title,
       pay: Number(b.job.pay),
       payType: b.job.pay_type,
+      location: b.job.location || null,
     } : null,
   };
 }
@@ -275,7 +276,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location)
       `)
       .eq('earner_id', user.id)
       .order('created_at', { ascending: false });

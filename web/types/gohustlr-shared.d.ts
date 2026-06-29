@@ -157,4 +157,12 @@ declare module "@gohustlr/shared" {
     window: { day: number; start: string; end: string },
   ): boolean;
   export function availabilitySummary(availability: AvailWindow[]): string;
+
+  // ── analytics (personal earner Insights) ──
+  export function computeEarnerInsights(bookings: unknown[]): {
+    topArea: { label: string; count: number } | null;
+    busiestDay: { label: string; count: number } | null;
+    mostProfitableDay: { label: string; total: number } | null;
+    jobCount: number;
+  } | null;
 }

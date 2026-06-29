@@ -294,7 +294,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     const { data, error } = await supabase
       .from("bookings")
-      .select(`*, job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`)
+      .select(`*, job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location)`)
       .eq("earner_id", user.id)
       .order("created_at", { ascending: false });
 

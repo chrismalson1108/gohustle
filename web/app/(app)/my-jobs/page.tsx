@@ -16,6 +16,7 @@ import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
 import { uploadImages } from "@/lib/uploadImage";
 import { money } from "@/lib/format";
+import { computeEarnerInsights } from "@gohustlr/shared";
 import type { Booking } from "@/lib/types";
 
 export default function MyJobsPage() {
@@ -26,6 +27,9 @@ export default function MyJobsPage() {
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
   const completedCount = bookings.filter((b) => b.status === "verified").length;
   const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
+
+  // Personal insights from this earner's own completed work (null until they have any).
+  const insights = computeEarnerInsights(bookings);
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [rating, setRating] = useState(5);
@@ -114,6 +118,31 @@ export default function MyJobsPage() {
           <MoneyGoalCard />
           <WorkStatusBar />
         </div>
+
+        {insights && insights.jobCount > 0 && (
+          <div className="mb-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Your insights</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Top area</p>
+                <p className="mt-0.5 truncate font-bold text-ink">{insights.topArea?.label ?? "—"}</p>
+              </div>
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Busiest day</p>
+                <p className="mt-0.5 truncate font-bold text-ink">{insights.busiestDay?.label ?? "—"}</p>
+              </div>
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Best day</p>
+                <p className="mt-0.5 truncate font-bold text-ink">
+                  {insights.mostProfitableDay
+                    ? `${insights.mostProfitableDay.label} (${money(insights.mostProfitableDay.total)})`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {bookings.length === 0 ? (
           <EmptyState icon={<Briefcase className="size-10" />} title="No booked gigs yet" body="Find a gig on Browse and book a slot to get started." />
         ) : (
