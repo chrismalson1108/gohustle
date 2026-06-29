@@ -48,6 +48,7 @@ export default function JobDetailScreen({ route, navigation }) {
   const job = jobs.find(j => j.id === jobId);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
+  const [applicationNote, setApplicationNote] = useState('');
   const [msgVisible, setMsgVisible] = useState(false);
   const alreadyBooked = isBooked(jobId);
   const isOwnJob = job?.posterId && user?.id && job.posterId === user.id;
@@ -86,7 +87,8 @@ export default function JobDetailScreen({ route, navigation }) {
     }
     const slot = job.slots?.find(s => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
-    const ok = await bookJob(jobId, selectedSlot, slot?.label, counter);
+    const note = applicationNote.trim() || null;
+    const ok = await bookJob(jobId, selectedSlot, slot?.label, counter, note);
     if (!ok) {
       // The booking didn't persist — don't award XP/challenges or claim success.
       haptic.error();
@@ -243,6 +245,24 @@ export default function JobDetailScreen({ route, navigation }) {
                   </Text>
                 </View>
               )}
+            </View>
+          </Section>
+        )}
+
+        {!alreadyBooked && !isOwnJob && (
+          <Section title="Add a note to the poster (optional)">
+            <View style={styles.counterCard}>
+              <Text style={styles.counterHint}>Tell the poster why you're a great fit</Text>
+              <TextInput
+                style={styles.noteInput}
+                placeholder="Why you're a great fit…"
+                placeholderTextColor={colors.textMuted}
+                value={applicationNote}
+                onChangeText={setApplicationNote}
+                multiline
+                maxLength={500}
+                textAlignVertical="top"
+              />
             </View>
           </Section>
         )}
@@ -465,6 +485,11 @@ const styles = StyleSheet.create({
   counterInfo: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
   counterBold: { fontWeight: '700', color: colors.textPrimary },
   counterHint: { fontSize: 12, color: colors.textMuted, marginBottom: 14, lineHeight: 18 },
+  noteInput: {
+    minHeight: 80, backgroundColor: colors.surface, borderRadius: 12,
+    borderWidth: 1.5, borderColor: colors.border, padding: 12,
+    fontSize: 15, color: colors.textPrimary, lineHeight: 20,
+  },
   counterInputRow: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.surface, borderRadius: 12,

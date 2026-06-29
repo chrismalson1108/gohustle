@@ -107,6 +107,12 @@ export default function HiringPage() {
                             <StatusBadge status={b.status} />
                           </div>
 
+                          {b.applicationNote && (
+                            <p className="mt-2 border-l-2 border-line pl-2.5 text-xs italic text-ink-soft">
+                              “{b.applicationNote}”
+                            </p>
+                          )}
+
                           {/* Actions */}
                           <div className="mt-2.5 flex flex-wrap gap-2">
                             {b.status === "pending" && (
