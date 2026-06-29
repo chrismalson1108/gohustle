@@ -28,7 +28,7 @@ const RECURRENCE_OPTS = [
 const INITIAL = {
   title: '', category: '', customCategory: '', pay: '', payType: 'flat',
   location: '', description: '', requirements: '', urgent: false, slots: [],
-  recurrence: 'none', tags: [],
+  recurrence: 'none', tags: [], hazards: [],
 };
 
 // Build initial form state, optionally prefilled from a job being duplicated.
@@ -48,6 +48,7 @@ function buildInitial(prefill) {
     slots: [],
     recurrence: prefill.recurrence || 'none',
     tags: prefill.tags || [],
+    hazards: prefill.hazards || [],
   };
 }
 
@@ -120,6 +121,7 @@ export default function PostJobScreen({ navigation, route }) {
       photos: photoUrls,
       recurrence: form.recurrence,
       tags: form.tags,
+      hazards: form.hazards,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -199,6 +201,10 @@ export default function PostJobScreen({ navigation, route }) {
 
           <Field label="Tags (optional)">
             <TagInput value={form.tags} onChange={v => set('tags', v)} />
+          </Field>
+
+          <Field label="Safety notes / hazards (optional)">
+            <TagInput value={form.hazards} onChange={v => set('hazards', v)} placeholder="e.g. dog on site, uneven ground, fragile items" />
           </Field>
 
           <Field label="Pay *">

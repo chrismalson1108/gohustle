@@ -5,7 +5,7 @@ import { colors } from '../theme';
 
 // Free-form tag editor: type + return (or blur) adds a chip; tap a chip to remove.
 // Used by PostJob and EditJob for jobs.tags. Tags help discovery + "For You" matching.
-export default function TagInput({ value = [], onChange, max = 6 }) {
+export default function TagInput({ value = [], onChange, max = 6, placeholder = 'e.g. lawncare, assembly' }) {
   const [draft, setDraft] = useState('');
 
   const add = () => {
@@ -33,7 +33,7 @@ export default function TagInput({ value = [], onChange, max = 6 }) {
           blurOnSubmit={false}
           returnKeyType="done"
           autoCapitalize="none"
-          placeholder={value.length ? 'Add another…' : 'e.g. lawncare, assembly'}
+          placeholder={value.length ? 'Add another…' : placeholder}
           placeholderTextColor={colors.textMuted}
         />
       )}

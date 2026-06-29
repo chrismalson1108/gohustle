@@ -28,6 +28,7 @@ export interface GigFormData {
   description: string;
   urgent: boolean;
   tags: string[];
+  hazards: string[];
   estimatedHours: number;
   requirements: string[];
   slots: Slot[];
@@ -50,6 +51,7 @@ export interface GigFormInitial {
   recurrence?: string;
   urgent?: boolean;
   tags?: string[];
+  hazards?: string[];
   slots?: Slot[];
   estimatedHours?: number;
   instantBook?: boolean;
@@ -127,6 +129,15 @@ export default function GigForm({
   };
   const removeTag = (t: string) => setTags(tags.filter((x) => x !== t));
 
+  const [hazards, setHazards] = useState<string[]>(initial?.hazards || []);
+  const [hazardDraft, setHazardDraft] = useState("");
+  const addHazard = () => {
+    const h = hazardDraft.trim().toLowerCase().slice(0, 40);
+    if (h && !hazards.includes(h) && hazards.length < 6) setHazards([...hazards, h]);
+    setHazardDraft("");
+  };
+  const removeHazard = (h: string) => setHazards(hazards.filter((x) => x !== h));
+
   const effectiveCategory = category === "other" ? customCategory : category;
   const valid = title && effectiveCategory && pay && location && description;
 
@@ -162,6 +173,7 @@ export default function GigForm({
       photos: [...keptPhotos, ...newUrls],
       recurrence,
       tags,
+      hazards,
       instantBook,
       instantBookAudience: "all",
       lat: null,
@@ -217,6 +229,30 @@ export default function GigForm({
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } }}
               onBlur={addTag}
               placeholder={tags.length ? "Add another…" : "e.g. lawncare, assembly, heavy lifting"}
+              className="min-w-[9rem] flex-1 rounded-2xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-primary"
+            />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <Label>Safety notes / hazards <span className="font-normal text-ink-muted">(optional — warn applicants of any risks)</span></Label>
+        <div className="flex flex-wrap items-center gap-2">
+          {hazards.map((h) => (
+            <span key={h} className="inline-flex items-center gap-1 rounded-full bg-urgent-light px-3 py-1.5 text-[13px] font-bold text-urgent">
+              {h}
+              <button type="button" onClick={() => removeHazard(h)} aria-label={`Remove ${h}`}>
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+          {hazards.length < 6 && (
+            <input
+              value={hazardDraft}
+              onChange={(e) => setHazardDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addHazard(); } }}
+              onBlur={addHazard}
+              placeholder={hazards.length ? "Add another…" : "e.g. dog on site, uneven ground, fragile items"}
               className="min-w-[9rem] flex-1 rounded-2xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-primary"
             />
           )}

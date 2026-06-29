@@ -50,6 +50,7 @@ export default function EditJobScreen({ route, navigation }) {
     slots: job?.slots ? job.slots.map(s => ({ ...s })) : [],
     recurrence: job?.recurrence || 'none',
     tags: job?.tags || [],
+    hazards: job?.hazards || [],
   });
   const [showCustomCat, setShowCustomCat] = useState(!isKnownCategory && !!job?.category);
   const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
@@ -119,6 +120,7 @@ export default function EditJobScreen({ route, navigation }) {
       photos: finalPhotos,
       recurrence: form.recurrence,
       tags: form.tags,
+      hazards: form.hazards,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -235,6 +237,10 @@ export default function EditJobScreen({ route, navigation }) {
 
           <Field label="Tags (optional)">
             <TagInput value={form.tags} onChange={v => set('tags', v)} />
+          </Field>
+
+          <Field label="Safety notes / hazards (optional)">
+            <TagInput value={form.hazards} onChange={v => set('hazards', v)} placeholder="e.g. dog on site, uneven ground, fragile items" />
           </Field>
 
           <Field label={`Pay *${isLocked && !canEditPay ? '  (locked)' : ''}`}>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark } from "lucide-react";
+import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle } from "lucide-react";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -148,6 +148,22 @@ export default function JobDetailPage() {
               #{t}
             </span>
           ))}
+        </div>
+      )}
+
+      {job.hazards?.length > 0 && (
+        <div className="mt-5 rounded-2xl border-2 border-urgent bg-urgent-light p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-urgent">
+            <AlertTriangle className="size-5" /> Safety notes
+          </div>
+          <ul className="space-y-1.5">
+            {job.hazards.map((h) => (
+              <li key={h} className="flex items-start gap-2 text-sm font-semibold text-ink">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-urgent" />
+                {h}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

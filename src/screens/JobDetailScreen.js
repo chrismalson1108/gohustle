@@ -167,6 +167,21 @@ export default function JobDetailScreen({ route, navigation }) {
           )}
         </Section>
 
+        {job.hazards?.length > 0 && (
+          <View style={styles.hazardCard}>
+            <View style={styles.hazardHeader}>
+              <Ionicons name="warning" size={18} color={colors.urgent} style={{ marginRight: 7 }} />
+              <Text style={styles.hazardTitle}>Safety notes</Text>
+            </View>
+            {job.hazards.map((h, i) => (
+              <View key={i} style={styles.hazardRow}>
+                <Ionicons name="alert-circle" size={14} color={colors.urgent} style={{ marginRight: 7, marginTop: 2 }} />
+                <Text style={styles.hazardText}>{h}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {job.requirements?.length > 0 && (
           <Section title="Requirements">
             {job.requirements.map((r, i) => (
@@ -418,6 +433,17 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
   tagChip: { backgroundColor: colors.background, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1, borderColor: colors.border },
   tagText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  hazardCard: {
+    backgroundColor: colors.urgentLight, borderRadius: 16, padding: 16, marginBottom: 24,
+    borderWidth: 1.5, borderColor: colors.urgent,
+  },
+  hazardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  hazardTitle: {
+    fontSize: 13, fontWeight: '800', color: colors.urgent,
+    textTransform: 'uppercase', letterSpacing: 0.6,
+  },
+  hazardRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
+  hazardText: { flex: 1, fontSize: 14, color: colors.textPrimary, lineHeight: 20, fontWeight: '600' },
   feeCard: { backgroundColor: colors.background, borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: colors.border },
   feeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
   feeLabel: { fontSize: 14, color: colors.textSecondary },
