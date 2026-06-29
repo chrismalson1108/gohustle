@@ -23,6 +23,7 @@ import GigsScreen           from './src/screens/GigsScreen';
 import PostJobScreen        from './src/screens/PostJobScreen';
 import ProfileScreen        from './src/screens/ProfileScreen';
 import JobDetailScreen      from './src/screens/JobDetailScreen';
+import MarketInsightsScreen from './src/screens/MarketInsightsScreen';
 import ManageBookingsScreen from './src/screens/ManageBookingsScreen';
 import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
@@ -77,6 +78,7 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain"  component={HomeScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );

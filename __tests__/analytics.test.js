@@ -1,4 +1,4 @@
-import { computeEarnerInsights } from '../src/lib/insights';
+import { computeEarnerInsights, computeAreaInsights } from '../src/lib/insights';
 
 // Helper to build a verified booking quickly. `date` is the completedAt timestamp.
 function vb({ location, pay, counterOffer, tipAmount, date, status = 'verified' }) {
@@ -70,5 +70,49 @@ describe('analytics.computeEarnerInsights', () => {
       vb({ location: 'Reno, NV', pay: 45, tipAmount: 5, date: '2026-06-05T10:00:00Z' }), // Fri $50
     ]);
     expect(ins.mostProfitableDay).toEqual({ label: 'Friday', total: 50 });
+  });
+});
+
+describe('analytics.computeAreaInsights', () => {
+  test('returns [] for empty / non-array input', () => {
+    expect(computeAreaInsights([])).toEqual([]);
+    expect(computeAreaInsights(null)).toEqual([]);
+    expect(computeAreaInsights(undefined)).toEqual([]);
+  });
+
+  test('aggregates per area: count, avg pay, top category — sorted by count desc', () => {
+    const jobs = [
+      { location: 'Austin, TX', pay: 50, category: 'Cleaning' },
+      { location: 'Austin, TX', pay: 100, category: 'Cleaning' },
+      { location: 'Austin, TX', pay: 60, category: 'Moving' },
+      { location: 'Dallas, TX', pay: 80, category: 'Tutoring' },
+    ];
+    const rows = computeAreaInsights(jobs);
+    expect(rows).toHaveLength(2);
+
+    // Austin first (3 gigs vs 1)
+    expect(rows[0]).toEqual({ area: 'Austin, TX', jobCount: 3, avgPay: 70, topCategory: 'Cleaning' });
+    expect(rows[1]).toEqual({ area: 'Dallas, TX', jobCount: 1, avgPay: 80, topCategory: 'Tutoring' });
+  });
+
+  test('skips blank/missing locations and is case-insensitive on area key', () => {
+    const jobs = [
+      { location: '   ', pay: 40, category: 'Cleaning' },
+      { location: null, pay: 40, category: 'Cleaning' },
+      { location: 'Reno, NV', pay: 20, category: 'Pets' },
+      { location: 'reno, nv', pay: 40, category: 'Pets' }, // same area, different casing
+    ];
+    const rows = computeAreaInsights(jobs);
+    expect(rows).toHaveLength(1);
+    // First-seen display casing is preserved; both rows merged
+    expect(rows[0]).toEqual({ area: 'Reno, NV', jobCount: 2, avgPay: 30, topCategory: 'Pets' });
+  });
+
+  test('handles missing pay / category gracefully', () => {
+    const rows = computeAreaInsights([
+      { location: 'Miami, FL' }, // no pay, no category
+      { location: 'Miami, FL', pay: 'NaN', category: '' },
+    ]);
+    expect(rows[0]).toEqual({ area: 'Miami, FL', jobCount: 2, avgPay: null, topCategory: null });
   });
 });

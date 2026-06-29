@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame } from "lucide-react";
+import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame, BarChart3 } from "lucide-react";
 import {
   CATEGORIES,
   DEFAULT_FILTERS,
@@ -155,6 +155,10 @@ export default function BrowsePage() {
                 Clear filters
               </button>
             )}
+            <Link href="/insights" className="flex items-center gap-1 text-[13px] font-bold text-primary">
+              <BarChart3 className="size-4" />
+              Insights
+            </Link>
             <button
               onClick={() => setViewMode((m) => (m === "list" ? "map" : "list"))}
               className="flex items-center gap-1 text-[13px] font-bold text-primary"

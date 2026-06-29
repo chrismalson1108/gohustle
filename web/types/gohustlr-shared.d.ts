@@ -166,6 +166,11 @@ declare module "@gohustlr/shared" {
     jobCount: number;
   } | null;
 
+  // ── analytics (Market Insights — area heat-map fallback) ──
+  export function computeAreaInsights(
+    jobs: Array<{ location?: string | null; pay?: number | null; category?: string | null }> | null | undefined,
+  ): Array<{ area: string; jobCount: number; avgPay: number | null; topCategory: string | null }>;
+
   // ── analytics (Hustlr Certified) ──
   export function computeCertifications(
     workerReviews: Array<{
