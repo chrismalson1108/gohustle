@@ -39,7 +39,8 @@ export default function EarnScreen({ navigation }) {
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
   const [msgTarget, setMsgTarget]       = useState(null);
   const [finishTarget, setFinishTarget] = useState(null); // booking being marked done
-  const [finishPhotos, setFinishPhotos] = useState([]);   // local URIs to upload
+  const [finishBeforePhotos, setFinishBeforePhotos] = useState([]); // local "before" URIs to upload
+  const [finishPhotos, setFinishPhotos] = useState([]);   // local "after" URIs to upload
   const [finishing, setFinishing]       = useState(false);
   const [rateTarget, setRateTarget]     = useState(null);
   const [posterRating, setPosterRating] = useState(5);
@@ -83,8 +84,18 @@ export default function EarnScreen({ navigation }) {
 
   // Open the finish sheet (lets the earner optionally attach proof photos)
   const handleMarkDone = (booking) => {
+    setFinishBeforePhotos([]);
     setFinishPhotos([]);
     setFinishTarget(booking);
+  };
+
+  const handleAddBeforePhotos = async () => {
+    const res = await pickImages({ multiple: true });
+    if (res.canceled) {
+      if (res.denied) showToast({ icon: '⚠️', title: 'Photos access needed', message: 'Allow photo access in Settings to attach photos.' });
+      return;
+    }
+    setFinishBeforePhotos(prev => [...prev, ...res.uris].slice(0, 6));
   };
 
   const handleAddFinishPhotos = async () => {
@@ -101,10 +112,14 @@ export default function EarnScreen({ navigation }) {
     setFinishing(true);
     try {
       let urls = null;
+      let beforeUrls = null;
+      if (finishBeforePhotos.length) {
+        beforeUrls = await uploadImages({ uris: finishBeforePhotos, bucket: 'completion-photos', userId: user.id });
+      }
       if (finishPhotos.length) {
         urls = await uploadImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
       }
-      await markEarnerDone(finishTarget.id, urls);
+      await markEarnerDone(finishTarget.id, urls, beforeUrls);
       haptic.success();
       if (finishTarget.posterDone) {
         showToast({ icon: '🎉', title: 'Job Complete!', message: 'Both parties confirmed. Waiting for the poster to verify and rate you.' });
@@ -112,6 +127,7 @@ export default function EarnScreen({ navigation }) {
         showToast({ icon: '✅', title: 'Marked Done!', message: "We've notified the poster. Waiting for them to confirm." });
       }
       setFinishTarget(null);
+      setFinishBeforePhotos([]);
       setFinishPhotos([]);
     } catch (e) {
       showToast({ icon: '⚠️', title: 'Could not finish', message: e.message || 'Please try again.' });
@@ -257,10 +273,22 @@ export default function EarnScreen({ navigation }) {
                   </View>
                 )}
 
-                {/* Completion photos you submitted */}
+                {/* Before photos you submitted */}
+                {booking.beforePhotos?.length > 0 && (
+                  <View style={styles.photoStrip}>
+                    <Text style={styles.photoStripLabel}>Before</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {booking.beforePhotos.map((u, i) => (
+                        <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* After (completion) photos you submitted */}
                 {booking.completionPhotos?.length > 0 && (
                   <View style={styles.photoStrip}>
-                    <Text style={styles.photoStripLabel}>Your completion photos</Text>
+                    <Text style={styles.photoStripLabel}>After</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                       {booking.completionPhotos.map((u, i) => (
                         <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
@@ -478,9 +506,31 @@ export default function EarnScreen({ navigation }) {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Finish this job</Text>
             <Text style={styles.modalSub}>
-              Add photos as proof of your work (optional). The poster sees these when verifying.
+              Add before & after photos of your work (optional). The poster sees these when verifying.
             </Text>
 
+            <Text style={styles.finishPhotoLabel}>Before photos (optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
+              {finishBeforePhotos.map((u, i) => (
+                <View key={i} style={styles.finishThumbWrap}>
+                  <Image source={{ uri: u }} style={styles.finishThumb} />
+                  <TouchableOpacity
+                    style={styles.finishThumbRemove}
+                    onPress={() => setFinishBeforePhotos(prev => prev.filter((_, idx) => idx !== i))}
+                  >
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {finishBeforePhotos.length < 6 && (
+                <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddBeforePhotos}>
+                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  <Text style={styles.addPhotoText}>Add</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+
+            <Text style={styles.finishPhotoLabel}>After photos (optional)</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               {finishPhotos.map((u, i) => (
                 <View key={i} style={styles.finishThumbWrap}>
@@ -505,7 +555,7 @@ export default function EarnScreen({ navigation }) {
               <LinearGradient colors={gradients.earn} style={styles.submitBtn}>
                 {finishing
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.submitBtnText}>{finishPhotos.length ? 'Submit & Mark Complete' : 'Mark Complete'}</Text>
+                  : <Text style={styles.submitBtnText}>{(finishPhotos.length || finishBeforePhotos.length) ? 'Submit & Mark Complete' : 'Mark Complete'}</Text>
                 }
               </LinearGradient>
             </TouchableOpacity>
@@ -706,6 +756,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
   modalSub: { fontSize: 14, color: colors.textSecondary, marginBottom: 20 },
+  finishPhotoLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 },
   starRow: { flexDirection: 'row', marginBottom: 8 },
   ratingLabel: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic', marginBottom: 16 },
   reviewInput: {

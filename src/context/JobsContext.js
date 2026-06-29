@@ -80,6 +80,7 @@ function transformBooking(b) {
     posterReview: b.poster_review || null,
     amendmentNote: b.amendment_note || null,
     amendmentStatus: b.amendment_status || 'none',
+    beforePhotos: b.before_photos || [],
     completionPhotos: b.completion_photos || [],
     startsAt: b.starts_at || null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
@@ -337,6 +338,7 @@ export function JobsProvider({ children }) {
           earnerRating: b.earner_rating != null ? Number(b.earner_rating) : null,
           posterRating: b.poster_rating != null ? Number(b.poster_rating) : null,
           posterReview: b.poster_review || null,
+          beforePhotos: b.before_photos || null,
           completionPhotos: b.completion_photos || null,
           paymentMethod: b.payment_method,
           amendmentStatus: b.amendment_status || 'none',
@@ -442,19 +444,22 @@ export function JobsProvider({ children }) {
   };
 
   // Earner marks their side done; if poster already done → complete.
-  // Optional completionPhotos (array of public URLs) are saved as proof of work.
-  const markEarnerDone = async (bookingId, completionPhotos = null) => {
+  // Optional completionPhotos (array of public URLs) are saved as proof of work;
+  // optional beforePhotos are the parallel "before" set (same bucket).
+  const markEarnerDone = async (bookingId, completionPhotos = null, beforePhotos = null) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     const bothDone = booking?.posterDone;
     const patch = bothDone
       ? { earner_done: true, status: 'completed', completed_at: new Date().toISOString() }
       : { earner_done: true };
     if (completionPhotos?.length) patch.completion_photos = completionPhotos;
+    if (beforePhotos?.length) patch.before_photos = beforePhotos;
     // Snapshot the fields we touch so we can undo the optimistic update on failure.
-    const prev = { earnerDone: !!booking?.earnerDone, status: booking?.status, completionPhotos: booking?.completionPhotos };
+    const prev = { earnerDone: !!booking?.earnerDone, status: booking?.status, completionPhotos: booking?.completionPhotos, beforePhotos: booking?.beforePhotos };
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: {
       earnerDone: true,
       ...(completionPhotos?.length && { completionPhotos }),
+      ...(beforePhotos?.length && { beforePhotos }),
       ...(bothDone && { status: 'completed' }),
     } });
     const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);

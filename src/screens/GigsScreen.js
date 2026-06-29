@@ -522,11 +522,11 @@ function SegmentBtn({ label, count, active, onPress }) {
   );
 }
 
-function CompletionStrip({ photos }) {
+function CompletionStrip({ photos, label = 'Completion photos' }) {
   if (!photos?.length) return null;
   return (
     <View style={styles.photoStrip}>
-      <Text style={styles.photoStripLabel}>Completion photos</Text>
+      <Text style={styles.photoStripLabel}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {photos.map((u, i) => (
           <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
@@ -586,7 +586,8 @@ function PastBookingCard({ booking, onViewEarner }) {
           ) : null}
         </View>
       )}
-      <CompletionStrip photos={booking.completionPhotos} />
+      <CompletionStrip photos={booking.beforePhotos} label="Before" />
+      <CompletionStrip photos={booking.completionPhotos} label={booking.beforePhotos?.length ? 'After' : 'Completion photos'} />
     </View>
   );
 }
@@ -657,7 +658,8 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
         </View>
       )}
 
-      <CompletionStrip photos={booking.completionPhotos} />
+      <CompletionStrip photos={booking.beforePhotos} label="Before" />
+      <CompletionStrip photos={booking.completionPhotos} label={booking.beforePhotos?.length ? 'After' : 'Completion photos'} />
 
       {/* Actions */}
       {loading ? (

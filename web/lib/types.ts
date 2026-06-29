@@ -107,6 +107,7 @@ export interface Booking {
   posterReview: string | null;
   amendmentNote: string | null;
   amendmentStatus: AmendmentStatus;
+  beforePhotos: string[];
   completionPhotos: string[];
   startsAt: string | null;
   tipAmount: number;

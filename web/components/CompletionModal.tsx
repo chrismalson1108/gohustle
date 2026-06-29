@@ -123,9 +123,21 @@ export default function CompletionModal({
         </div>
       </div>
 
+      {booking.beforePhotos?.length > 0 && (
+        <div className="mb-5">
+          <Label>Before</Label>
+          <div className="flex gap-2 overflow-x-auto">
+            {booking.beforePhotos.map((u, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={u} alt="" className="size-20 shrink-0 rounded-xl object-cover" />
+            ))}
+          </div>
+        </div>
+      )}
+
       {booking.completionPhotos?.length > 0 && (
         <div className="mb-5">
-          <Label>Completion photos</Label>
+          <Label>After</Label>
           <div className="flex gap-2 overflow-x-auto">
             {booking.completionPhotos.map((u, i) => (
               // eslint-disable-next-line @next/next/no-img-element
