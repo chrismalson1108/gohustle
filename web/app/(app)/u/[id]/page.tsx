@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban } from "lucide-react";
-import { collegeLine } from "@gohustlr/shared";
+import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban, ShieldCheck } from "lucide-react";
+import { collegeLine, computeCertifications } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -46,7 +46,7 @@ interface PubReview {
   text: string | null;
   date: string | null;
   role: string;
-  job: { title: string | null } | null;
+  job: { title: string | null; category?: string | null; tags?: string[] | null } | null;
   reviewer: { name: string | null; avatar_initial: string | null; avatar_url: string | null } | null;
 }
 
@@ -129,7 +129,7 @@ export default function PublicProfilePage() {
           .single(),
         supabase
           .from("reviews")
-          .select("id, rating, text, date, role, job:jobs(title), reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
+          .select("id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
           .eq("reviewed_user_id", id)
           .order("created_at", { ascending: false }),
         supabase
@@ -156,7 +156,9 @@ export default function PublicProfilePage() {
 
   const college = collegeLine(profile);
   const overall = reviews.length ? reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length : null;
-  const recentWork = reviews.filter((r) => r.role === "earner").slice(0, 10);
+  const earnerReviews = reviews.filter((r) => r.role === "earner");
+  const recentWork = earnerReviews.slice(0, 10);
+  const { certified, progress } = computeCertifications(earnerReviews);
 
   return (
     <div>
@@ -237,6 +239,42 @@ export default function PublicProfilePage() {
                   {s}
                   {profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ""}
                 </span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {certified.length > 0 && (
+          <>
+            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Hustlr Certified</h2>
+            <div className="mb-6 flex flex-wrap gap-2">
+              {certified.map((c) => (
+                <div
+                  key={c.label}
+                  className="flex items-center gap-2 rounded-2xl bg-success-light px-3.5 py-2.5 text-success ring-1 ring-success/20"
+                >
+                  <ShieldCheck className="size-5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-extrabold">Certified · {c.label}</p>
+                    <p className="text-xs font-semibold text-success/80">{c.count} jobs</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {isSelf && certified.length === 0 && progress.length > 0 && (
+          <>
+            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Progress to certification</h2>
+            <div className="mb-6 space-y-1.5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              {progress.map((p) => (
+                <div key={p.label} className="flex items-center justify-between text-sm">
+                  <span className="font-bold text-ink">{p.label}</span>
+                  <span className="font-semibold text-ink-muted">
+                    {p.count}/{p.needed}
+                  </span>
+                </div>
               ))}
             </div>
           </>

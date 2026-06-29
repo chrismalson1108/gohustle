@@ -9,6 +9,7 @@ import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
 import { fetchCertifications } from '../lib/certifications';
+import { computeCertifications } from '../lib/insights';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
@@ -83,7 +84,7 @@ export default function PublicProfileScreen({ route, navigation }) {
         .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
         .eq('id', userId).single(),
       supabase.from('reviews')
-        .select('id, rating, text, date, role, job:jobs(title), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
+        .select('id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
         .eq('reviewed_user_id', userId).order('created_at', { ascending: false }),
       supabase.from('jobs')
         .select('id, title, category, pay, pay_type, location, status')
@@ -108,6 +109,7 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   const workerReviews = reviews.filter(r => r.role === 'earner');
   const clientReviews = reviews.filter(r => r.role === 'poster');
+  const { certified, progress } = computeCertifications(workerReviews);
   const overall = avg(reviews);
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
@@ -219,6 +221,37 @@ export default function PublicProfileScreen({ route, navigation }) {
             {profile.skills.map(s => (
               <View key={s} style={styles.skillChip}>
                 <Text style={styles.skillText}>{s}{profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ''}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {certified.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Hustlr Certified</Text>
+          <View style={styles.certWrap}>
+            {certified.map(c => (
+              <View key={c.label} style={styles.certifiedBadge}>
+                <Ionicons name="shield-checkmark" size={18} color={colors.accent} style={{ marginRight: 8 }} />
+                <View>
+                  <Text style={styles.certifiedTitle}>Certified · {c.label}</Text>
+                  <Text style={styles.certifiedSub}>{c.count} jobs</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {isSelf && certified.length === 0 && progress.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Progress to certification</Text>
+          <View style={styles.progressCard}>
+            {progress.map(p => (
+              <View key={p.label} style={styles.progressRow}>
+                <Text style={styles.progressLabel}>{p.label}</Text>
+                <Text style={styles.progressCount}>{p.count}/{p.needed}</Text>
               </View>
             ))}
           </View>
@@ -409,6 +442,17 @@ const styles = StyleSheet.create({
   },
   certTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  certWrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  certifiedBadge: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.accentLight,
+    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginRight: 8, marginBottom: 8,
+  },
+  certifiedTitle: { fontSize: 13, fontWeight: '800', color: colors.success },
+  certifiedSub: { fontSize: 11, fontWeight: '600', color: colors.accent, marginTop: 1 },
+  progressCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
+  progressLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  progressCount: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
   jobTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   jobMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   workRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },

@@ -82,3 +82,73 @@ export function computeEarnerInsights(bookings) {
     jobCount: completed.length,
   };
 }
+
+// ── Hustlr Certified ──────────────────────────────────────────────────────────
+// A worker becomes "Certified" in a category/tag once they've completed
+// >= 50 jobs in that label at an average rating >= 4.0★. Computed purely from a
+// worker's `reviews` (role === 'earner') joined to the job's `category`/`tags`.
+// No DB migration — same data the public profile already fetches.
+
+// Title-case a label as a friendly fallback when we have no original casing.
+function titleCase(s) {
+  return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+// computeCertifications(workerReviews, opts) → { certified, progress }.
+//   workerReviews: earner-role review rows, each with { rating, job: { category, tags } }.
+//   opts: { threshold = 50, minRating = 4.0 }.
+// Returns:
+//   {
+//     certified: [{ label, count, avg }],            // count >= threshold AND avg >= minRating, sorted by count desc
+//     progress:  [{ label, count, needed }],         // top (<=3) not-yet-certified labels, sorted by count desc
+//   }
+// `label` preserves the first-seen original-cased label (or a Title-Cased fallback).
+// Defensive: non-array / missing input → empty result.
+export function computeCertifications(workerReviews, opts) {
+  const threshold = opts && Number.isFinite(opts.threshold) ? opts.threshold : 50;
+  const minRating = opts && Number.isFinite(opts.minRating) ? opts.minRating : 4.0;
+
+  const list = Array.isArray(workerReviews) ? workerReviews : [];
+
+  // key (lowercased/trimmed) → { count, ratingSum, display }
+  const tallies = new Map();
+
+  const bump = (raw, rating) => {
+    if (typeof raw !== 'string') return;
+    const display = raw.trim();
+    if (!display) return;
+    const key = display.toLowerCase();
+    let t = tallies.get(key);
+    if (!t) {
+      t = { count: 0, ratingSum: 0, display };
+      tallies.set(key, t);
+    }
+    t.count += 1;
+    t.ratingSum += Number.isFinite(Number(rating)) ? Number(rating) : 0;
+  };
+
+  for (const r of list) {
+    if (!r || !r.job) continue;
+    const rating = r.rating;
+    bump(r.job.category, rating);
+    const tags = Array.isArray(r.job.tags) ? r.job.tags : [];
+    for (const tag of tags) bump(tag, rating);
+  }
+
+  const certified = [];
+  const remaining = [];
+  for (const t of tallies.values()) {
+    const avg = t.count ? t.ratingSum / t.count : 0;
+    const label = t.display || titleCase(t.display);
+    if (t.count >= threshold && avg >= minRating) {
+      certified.push({ label, count: t.count, avg: Math.round(avg * 100) / 100 });
+    } else {
+      remaining.push({ label, count: t.count, needed: threshold });
+    }
+  }
+
+  certified.sort((a, b) => b.count - a.count);
+  remaining.sort((a, b) => b.count - a.count);
+
+  return { certified, progress: remaining.slice(0, 3) };
+}
