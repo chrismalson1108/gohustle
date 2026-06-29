@@ -165,4 +165,16 @@ declare module "@gohustlr/shared" {
     mostProfitableDay: { label: string; total: number } | null;
     jobCount: number;
   } | null;
+
+  // ── analytics (Hustlr Certified) ──
+  export function computeCertifications(
+    workerReviews: Array<{
+      rating?: number | null;
+      job?: { category?: string | null; tags?: string[] | null } | null;
+    }> | null | undefined,
+    opts?: { threshold?: number; minRating?: number },
+  ): {
+    certified: Array<{ label: string; count: number; avg: number }>;
+    progress: Array<{ label: string; count: number; needed: number }>;
+  };
 }
