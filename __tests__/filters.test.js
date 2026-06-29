@@ -1,4 +1,4 @@
-import { matchesForYou, applyJobFilters } from '../shared/filters.js';
+import { matchesForYou, applyJobFilters, skillFitScore } from '../shared/filters.js';
 
 const job = (over = {}) => ({
   status: 'open',
@@ -40,6 +40,30 @@ describe('matchesForYou', () => {
     expect(matchesForYou(job(), [])).toBe(false);
     expect(matchesForYou(job({ category: 'Moving', title: 'Move couch', description: 'heavy' }), ['tutoring'])).toBe(false);
     expect(matchesForYou(null, ['anything'])).toBe(false);
+  });
+});
+
+describe('skillFitScore', () => {
+  test('counts each matching skill (category, tag, title, description)', () => {
+    const j = job({ category: 'Tutoring', title: 'Calc II help', description: 'algebra too', tags: ['math'] });
+    // 'tutoring' matches category, 'math' matches a tag, 'calc' matches the title,
+    // 'algebra' matches the description, 'plumbing' matches nothing → 4.
+    expect(skillFitScore(j, ['tutoring', 'math', 'calc', 'algebra', 'plumbing'])).toBe(4);
+  });
+
+  test('is case-insensitive, trims, and ignores blanks', () => {
+    expect(skillFitScore(job({ category: 'Moving' }), ['  MOVING  ', ''])).toBe(1);
+  });
+
+  test('returns 0 for no skills, no match, or no job', () => {
+    expect(skillFitScore(job(), [])).toBe(0);
+    expect(skillFitScore(job({ category: 'Moving', title: 'Move couch', description: 'heavy' }), ['tutoring'])).toBe(0);
+    expect(skillFitScore(null, ['anything'])).toBe(0);
+  });
+
+  test('a better-matching applicant scores higher (drives the Fit sort)', () => {
+    const j = job({ category: 'Tutoring', title: 'Calc tutoring', tags: ['math'] });
+    expect(skillFitScore(j, ['tutoring', 'math'])).toBeGreaterThan(skillFitScore(j, ['tutoring']));
   });
 });
 

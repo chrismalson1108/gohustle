@@ -78,6 +78,7 @@ export function transformBooking(b) {
       avatarUrl: b.earner.avatar_url || null,
       rating: Number(b.earner.rating),
       reviewCount: b.earner.review_count,
+      skills: b.earner.skills || [],
       school: b.earner.school || null,
       studentVerified: b.earner.student_verified || false,
       studentStatus: b.earner.student_status || 'none',

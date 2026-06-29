@@ -76,6 +76,7 @@ export interface EarnerMini {
   avatarUrl: string | null;
   rating: number;
   reviewCount: number;
+  skills: string[];
   school: string | null;
   studentVerified: boolean;
   studentStatus: string;

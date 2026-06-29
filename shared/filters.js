@@ -89,6 +89,28 @@ export function matchesForYou(job, skills) {
   );
 }
 
+// How well an applicant's skills fit a gig: the count of their skills that relate
+// to the job. A skill counts if it relates to the gig's category, any of its tags,
+// its title, or its description — using the SAME per-skill matching rule as
+// matchesForYou (equal / contains / contained-by, lowercased + trimmed). Used to
+// sort applicants by "Job fit". Returns 0 for empty skills or no job.
+export function skillFitScore(job, skills) {
+  const sk = (skills || []).map(s => String(s).toLowerCase().trim()).filter(Boolean);
+  if (sk.length === 0 || !job) return 0;
+  const cat = String(job.category || '').toLowerCase().trim();
+  const tags = (job.tags || []).map(t => String(t).toLowerCase().trim()).filter(Boolean);
+  const title = String(job.title || '').toLowerCase();
+  const desc = String(job.description || '').toLowerCase();
+  return sk.reduce((n, s) => {
+    const hit =
+      (cat && (cat === s || cat.includes(s) || s.includes(cat))) ||
+      tags.some(t => t === s || t.includes(s) || s.includes(t)) ||
+      title.includes(s) ||
+      desc.includes(s);
+    return hit ? n + 1 : n;
+  }, 0);
+}
+
 export function matchesPay(job, payRange) {
   if (payRange === 'any') return true;
   const effective = job.payType === 'hourly'

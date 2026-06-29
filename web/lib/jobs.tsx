@@ -29,8 +29,8 @@ const BOOKINGS_CACHE = "bookings_v1";
 // "base" is the pre-migration fallback (see fetchJobs / loadPosterBookings).
 const POSTER_RICH = "name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status";
 const POSTER_BASE = "name, avatar_initial, avatar_url, rating, review_count, verified";
-const EARNER_RICH = "id, name, avatar_initial, avatar_url, rating, review_count, school, student_verified, student_status";
-const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count";
+const EARNER_RICH = "id, name, avatar_initial, avatar_url, rating, review_count, skills, school, student_verified, student_status";
+const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count, skills";
 
 interface State {
   jobs: Job[];

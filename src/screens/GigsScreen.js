@@ -16,10 +16,31 @@ import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
 import MessageSheet from '../components/MessageSheet';
 import Avatar from '../components/Avatar';
+import { skillFitScore } from '../lib/filters';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
 const PAST_STATUSES    = new Set(['verified', 'declined', 'cancelled']);
+
+// Applicant sort options for a gig's request list.
+const APPLICANT_SORTS = [
+  { id: 'newest', label: 'Newest' },
+  { id: 'wage',   label: 'Wage' },
+  { id: 'rating', label: 'Rating' },
+  { id: 'fit',    label: 'Fit' },
+];
+
+// Sort one gig's applicant bookings by the chosen key. Returns a new array; the
+// default 'newest' keeps the incoming (created-desc) order untouched.
+function sortApplicants(reqs, job, sortBy) {
+  if (sortBy === 'newest') return reqs;
+  const wage = (b) => (b.counterOffer ?? job.pay);
+  const copy = [...reqs];
+  if (sortBy === 'wage')        copy.sort((a, b) => wage(a) - wage(b)); // cheapest first
+  else if (sortBy === 'rating') copy.sort((a, b) => (b.earner?.rating ?? 0) - (a.earner?.rating ?? 0));
+  else if (sortBy === 'fit')    copy.sort((a, b) => skillFitScore(job, b.earner?.skills) - skillFitScore(job, a.earner?.skills));
+  return copy;
+}
 
 export default function GigsScreen({ navigation }) {
   const {
@@ -35,6 +56,7 @@ export default function GigsScreen({ navigation }) {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [tab, setTab]                   = useState('active'); // 'active' | 'past'
+  const [sortBy, setSortBy]             = useState('newest'); // applicant sort, shared across gigs
   const [expanded, setExpanded]         = useState({});
   const [loadingId, setLoadingId]       = useState(null);
   const [verifyTarget, setVerifyTarget] = useState(null);
@@ -287,7 +309,7 @@ export default function GigsScreen({ navigation }) {
 
         {tab === 'active' && activeJobs.map(job => {
           const allBookings = bookingsByJob[job.id] || [];
-          const jobBookings = allBookings.filter(b => ACTIVE_STATUSES.has(b.status));
+          const jobBookings = sortApplicants(allBookings.filter(b => ACTIVE_STATUSES.has(b.status)), job, sortBy);
           const isOpen      = job.status === 'open';
           const isExpanded  = expanded[job.id] ?? (jobBookings.length > 0);
           const pendingN    = jobBookings.filter(b => b.status === 'pending').length;
@@ -365,6 +387,21 @@ export default function GigsScreen({ navigation }) {
               {/* Expanded bookings */}
               {isExpanded && (
                 <View style={styles.bookingsList}>
+                  {jobBookings.length > 1 && (
+                    <View style={styles.sortRow}>
+                      <Text style={styles.sortLabel}>Sort</Text>
+                      {APPLICANT_SORTS.map(s => (
+                        <TouchableOpacity
+                          key={s.id}
+                          style={[styles.sortChip, sortBy === s.id && styles.sortChipActive]}
+                          onPress={() => { haptic.selection(); setSortBy(s.id); }}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.sortChipText, sortBy === s.id && styles.sortChipTextActive]}>{s.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                   {jobBookings.length === 0 ? (
                     <View style={styles.noApplicants}>
                       <Text style={styles.noApplicantsText}>No active applicants — your gig is live on Browse.</Text>
@@ -768,6 +805,15 @@ const styles = StyleSheet.create({
   },
   noApplicants: { padding: 16 },
   noApplicantsText: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+  sortRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginLeft: 8, marginBottom: 6 },
+  sortLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginRight: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
+  sortChip: {
+    borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, marginRight: 6, marginBottom: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  sortChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  sortChipText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  sortChipTextActive: { color: '#fff' },
   bookingRow: {
     backgroundColor: colors.surface, borderRadius: 14,
     padding: 14, marginLeft: 8, marginBottom: 8,
