@@ -59,7 +59,7 @@ export default function PayoutsPage() {
         {/* Earner payouts */}
         <div className="rounded-3xl bg-white p-5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-accent-light text-success">
+            <div className="flex size-11 items-center justify-center rounded-2xl bg-accent-light text-accent-deep">
               <Wallet className="size-6" />
             </div>
             <div>
@@ -94,7 +94,7 @@ export default function PayoutsPage() {
               <p className="text-sm text-ink-soft">A card on file lets you book and pay securely.</p>
             </div>
           </div>
-          <p className="mt-4 flex items-center gap-1.5 text-sm font-bold" style={{ color: ready.paymentMethodReady ? "#059669" : "#9CA3AF" }}>
+          <p className="mt-4 flex items-center gap-1.5 text-sm font-bold" style={{ color: ready.paymentMethodReady ? "#15803D" : "#9A93AD" }}>
             {ready.paymentMethodReady ? (
               <>
                 <CheckCircle2 className="size-4" /> Card on file

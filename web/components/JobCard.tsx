@@ -28,7 +28,7 @@ interface Props {
 
 export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
   const { savedJobIds, toggleSavedJob } = useJobs();
-  const catColor = CATEGORY_COLORS[job.category] || "#6D28D9";
+  const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";
   const pill = bookingStatus ? BOOKING_PILL[bookingStatus] : null;
   const saved = savedJobIds.has(job.id);
 
@@ -88,7 +88,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
         <p className="mt-1 line-clamp-2 text-sm text-ink-soft">{job.description}</p>
 
         <div className="mt-3 flex items-center gap-2">
-          <span className="rounded-lg bg-accent-light px-2.5 py-1 text-[13px] font-extrabold text-success">
+          <span className="rounded-lg bg-accent px-2.5 py-1 text-[13px] font-extrabold text-ink">
             {payLabel(job)}
             {job.payType === "hourly" ? "" : " flat"}
           </span>

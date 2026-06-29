@@ -159,7 +159,7 @@ export default function GigForm({
   };
 
   const coreNote = lockedCore ? (
-    <p className="mb-3 flex items-center gap-1.5 rounded-xl bg-gold-light px-3 py-2 text-xs font-semibold text-[#92400e]">
+    <p className="mb-3 flex items-center gap-1.5 rounded-xl bg-gold-light px-3 py-2 text-xs font-semibold text-accent-deep">
       <Lock className="size-3.5" /> Core terms are locked while a booking is active. Ask the earner for an amendment to change them.
     </p>
   ) : null;
@@ -279,7 +279,7 @@ export default function GigForm({
 
       <button
         onClick={() => setUrgent(!urgent)}
-        className={classNames("w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition", urgent ? "border-urgent bg-urgent-light text-urgent" : "border-[#FCA5A5] bg-white text-urgent")}
+        className={classNames("w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition", urgent ? "border-urgent bg-urgent-light text-urgent" : "border-urgent/40 bg-white text-urgent")}
       >
         {urgent ? "⚡ Marked as Urgent — Needed ASAP" : "Mark as Urgent (optional)"}
       </button>

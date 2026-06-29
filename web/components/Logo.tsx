@@ -1,19 +1,28 @@
+import Image from "next/image";
 import { classNames } from "@/lib/format";
 
-// GoHustlr wordmark. `light` renders white-on-dark (for gradient hero surfaces).
-export default function Logo({ light = false, className = "" }: { light?: boolean; className?: string }) {
+// Hustlr wordmark — a custom logo, never set in type. Served from /brand/*, which is
+// kept in sync with the single source of truth (shared/assets/brand) via `npm run brand:sync`.
+// `light` swaps to the orange wordmark for dark / Electric-Blue surfaces.
+const RATIO = 1584 / 749; // intrinsic wordmark aspect ratio
+
+export default function Logo({
+  light = false,
+  height = 32,
+  className = "",
+}: {
+  light?: boolean;
+  height?: number;
+  className?: string;
+}) {
   return (
-    <span className={classNames("inline-flex items-center text-2xl font-black tracking-tight", className)}>
-      <span className={light ? "text-white" : "text-ink"}>Go</span>
-      <span
-        className={classNames(
-          "bg-clip-text text-transparent",
-          light ? "bg-gradient-to-r from-white to-purple-200" : "bg-brand",
-        )}
-        style={!light ? { WebkitBackgroundClip: "text", backgroundImage: "var(--background-image-brand)" } : undefined}
-      >
-        Hustlr
-      </span>
-    </span>
+    <Image
+      src={light ? "/brand/wordmark-orange.png" : "/brand/wordmark-blue.png"}
+      alt="Hustlr"
+      width={Math.round(height * RATIO)}
+      height={height}
+      priority
+      className={classNames("select-none", className)}
+    />
   );
 }

@@ -18,7 +18,7 @@ export default function TaxesPage() {
         </button>
 
         <div className="rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-light text-success">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-light text-accent-deep">
             <Receipt className="size-7" />
           </div>
           <h2 className="mt-4 text-lg font-black text-ink">Your 1099 toolkit</h2>
