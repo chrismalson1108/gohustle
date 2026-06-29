@@ -83,6 +83,66 @@ export function computeEarnerInsights(bookings) {
   };
 }
 
+// ── Market Insights fallback (the Pro area heat-map) ──────────────────────────
+// computeAreaInsights(jobs) → per-area aggregates from the PUBLIC open-jobs list
+// the app already has loaded. Used as the client-side fallback when the
+// `area_market_stats` RPC errors or returns nothing. Only covers what the public
+// jobs feed can show — job density, average pay, and the most common category.
+// Tips + worker density are NOT here (they need the privileged RPC).
+//
+// Returns: [{ area, jobCount, avgPay, topCategory }, ...] for areas with
+// jobCount >= 1, sorted by jobCount desc (ties → first-seen area). Defensive:
+// non-array / empty input → []. `area` preserves the original-cased location.
+export function computeAreaInsights(jobs) {
+  const list = Array.isArray(jobs) ? jobs : [];
+
+  // key (lowercased/trimmed) → { display, count, paySum, payN, categories: Map }
+  const tallies = new Map();
+  const order = []; // first-seen key order for stable tie-breaking
+
+  for (const job of list) {
+    if (!job) continue;
+    const rawArea = job.location;
+    if (typeof rawArea !== 'string') continue;
+    const display = rawArea.trim();
+    if (!display) continue;
+
+    const key = display.toLowerCase();
+    let t = tallies.get(key);
+    if (!t) {
+      t = { display, count: 0, paySum: 0, payN: 0, categories: new Map() };
+      tallies.set(key, t);
+      order.push(key);
+    }
+    t.count += 1;
+
+    const pay = Number(job.pay);
+    if (Number.isFinite(pay)) {
+      t.paySum += pay;
+      t.payN += 1;
+    }
+
+    const cat = typeof job.category === 'string' ? job.category.trim() : '';
+    if (cat) t.categories.set(cat, (t.categories.get(cat) || 0) + 1);
+  }
+
+  const rows = order.map((key) => {
+    const t = tallies.get(key);
+    const avgPay = t.payN ? Math.round((t.paySum / t.payN) * 100) / 100 : null;
+    const top = topEntry(t.categories);
+    return {
+      area: t.display,
+      jobCount: t.count,
+      avgPay,
+      topCategory: top ? top.key : null,
+    };
+  });
+
+  // jobCount desc; preserve first-seen order for ties (stable sort in modern JS).
+  rows.sort((a, b) => b.jobCount - a.jobCount);
+  return rows;
+}
+
 // ── Hustlr Certified ──────────────────────────────────────────────────────────
 // A worker becomes "Certified" in a category/tag once they've completed
 // >= 50 jobs in that label at an average rating >= 4.0★. Computed purely from a

@@ -271,6 +271,13 @@ export default function HomeScreen({ navigation }) {
           )}
           <TouchableOpacity
             style={styles.viewToggle}
+            onPress={() => { haptic.light(); navigation.navigate('MarketInsights'); }}
+          >
+            <Ionicons name="bar-chart-outline" size={16} color={colors.primary} />
+            <Text style={styles.viewToggleText}>Insights</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.viewToggle}
             onPress={() => { haptic.light(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
           >
             <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.primary} />
