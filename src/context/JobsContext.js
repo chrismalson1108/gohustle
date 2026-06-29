@@ -752,6 +752,7 @@ export function JobsProvider({ children }) {
     if (jobData.lat !== undefined) dbPatch.lat = jobData.lat != null ? Math.round(jobData.lat * 100) / 100 : null;
     if (jobData.lng !== undefined) dbPatch.lng = jobData.lng != null ? Math.round(jobData.lng * 100) / 100 : null;
     if (jobData.recurrence !== undefined) dbPatch.recurrence = jobData.recurrence;
+    if (jobData.tags !== undefined) dbPatch.tags = jobData.tags;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
     if (error) { console.warn('Update job error:', error.message); return; }
 
@@ -811,6 +812,7 @@ export function JobsProvider({ children }) {
         lat: jobData.lat != null ? Math.round(jobData.lat * 100) / 100 : null,
         lng: jobData.lng != null ? Math.round(jobData.lng * 100) / 100 : null,
         recurrence: jobData.recurrence || 'none',
+        tags: jobData.tags || [],
         poster_id: user.id,
       })
       .select().single();

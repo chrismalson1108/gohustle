@@ -68,6 +68,13 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
         </View>
         <Text style={styles.title} numberOfLines={2}>{job.title}</Text>
         <Text style={styles.desc} numberOfLines={2}>{job.description}</Text>
+        {job.tags?.length > 0 && (
+          <View style={styles.tagRow}>
+            {job.tags.slice(0, 4).map(t => (
+              <View key={t} style={styles.tagChip}><Text style={styles.tagText}>#{t}</Text></View>
+            ))}
+          </View>
+        )}
         <View style={styles.footer}>
           <View style={styles.payBadge}>
             <Text style={styles.payText}>{estPay}</Text>
@@ -131,6 +138,9 @@ const styles = StyleSheet.create({
   time: { fontSize: 11, color: colors.textMuted },
   title: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 5, lineHeight: 22 },
   desc: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: 12 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  tagChip: { backgroundColor: colors.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border },
+  tagText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
   footer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   payBadge: {
     backgroundColor: colors.accentLight, borderRadius: 8,

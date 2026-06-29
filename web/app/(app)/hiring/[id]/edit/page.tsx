@@ -56,6 +56,7 @@ export default function EditGigPage() {
             requirements: job.requirements,
             recurrence: job.recurrence,
             urgent: job.urgent,
+            tags: job.tags,
             slots: job.slots,
             estimatedHours: job.estimatedHours,
             instantBook: job.instantBook,

@@ -27,6 +27,7 @@ export interface GigFormData {
   location: string;
   description: string;
   urgent: boolean;
+  tags: string[];
   estimatedHours: number;
   requirements: string[];
   slots: Slot[];
@@ -48,6 +49,7 @@ export interface GigFormInitial {
   requirements?: string[];
   recurrence?: string;
   urgent?: boolean;
+  tags?: string[];
   slots?: Slot[];
   estimatedHours?: number;
   instantBook?: boolean;
@@ -116,6 +118,15 @@ export default function GigForm({
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
 
+  const [tags, setTags] = useState<string[]>(initial?.tags || []);
+  const [tagDraft, setTagDraft] = useState("");
+  const addTag = () => {
+    const t = tagDraft.trim().toLowerCase().slice(0, 24);
+    if (t && !tags.includes(t) && tags.length < 6) setTags([...tags, t]);
+    setTagDraft("");
+  };
+  const removeTag = (t: string) => setTags(tags.filter((x) => x !== t));
+
   const effectiveCategory = category === "other" ? customCategory : category;
   const valid = title && effectiveCategory && pay && location && description;
 
@@ -150,6 +161,7 @@ export default function GigForm({
       slots: finalSlots,
       photos: [...keptPhotos, ...newUrls],
       recurrence,
+      tags,
       instantBook,
       instantBookAudience: "all",
       lat: null,
@@ -185,6 +197,30 @@ export default function GigForm({
           </Chip>
         </div>
         {category === "other" && <Input className="mt-2.5" value={customCategory} disabled={lockedCore} onChange={(e) => setCustomCategory(e.target.value)} placeholder="Type your category…" />}
+      </div>
+
+      <div>
+        <Label>Tags <span className="font-normal text-ink-muted">(optional — helps the right workers find your gig)</span></Label>
+        <div className="flex flex-wrap items-center gap-2">
+          {tags.map((t) => (
+            <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary-light px-3 py-1.5 text-[13px] font-bold text-primary">
+              {t}
+              <button type="button" onClick={() => removeTag(t)} aria-label={`Remove ${t}`}>
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+          {tags.length < 6 && (
+            <input
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } }}
+              onBlur={addTag}
+              placeholder={tags.length ? "Add another…" : "e.g. lawncare, assembly, heavy lifting"}
+              className="min-w-[9rem] flex-1 rounded-2xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-primary"
+            />
+          )}
+        </div>
       </div>
 
       <div>

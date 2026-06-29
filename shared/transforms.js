@@ -17,6 +17,7 @@ export function transformJob(dbJob) {
     status: dbJob.status,
     photos: dbJob.photos || [],
     recurrence: dbJob.recurrence || 'none',
+    tags: dbJob.tags || [],
     instantBook: dbJob.instant_book || false,
     instantBookAudience: dbJob.instant_book_audience || 'all',
     bumpedAt: dbJob.bumped_at || null,

@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
+import TagInput from '../components/TagInput';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { colors, gradients } from '../theme';
@@ -48,6 +49,7 @@ export default function EditJobScreen({ route, navigation }) {
     urgent: job?.urgent || false,
     slots: job?.slots ? job.slots.map(s => ({ ...s })) : [],
     recurrence: job?.recurrence || 'none',
+    tags: job?.tags || [],
   });
   const [showCustomCat, setShowCustomCat] = useState(!isKnownCategory && !!job?.category);
   const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
@@ -116,6 +118,7 @@ export default function EditJobScreen({ route, navigation }) {
       urgent: form.urgent, requirements: reqs, slots: form.slots,
       photos: finalPhotos,
       recurrence: form.recurrence,
+      tags: form.tags,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
     });
@@ -228,6 +231,10 @@ export default function EditJobScreen({ route, navigation }) {
                 placeholderTextColor={colors.textMuted} value={form.customCategory}
                 onChangeText={v => set('customCategory', v)} />
             )}
+          </Field>
+
+          <Field label="Tags (optional)">
+            <TagInput value={form.tags} onChange={v => set('tags', v)} />
           </Field>
 
           <Field label={`Pay *${isLocked && !canEditPay ? '  (locked)' : ''}`}>

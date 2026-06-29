@@ -53,6 +53,7 @@ export interface Job {
   status: string;
   photos: string[];
   recurrence: string;
+  tags: string[];
   instantBook: boolean;
   instantBookAudience: string;
   bumpedAt: string | null;

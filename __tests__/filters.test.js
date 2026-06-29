@@ -29,6 +29,13 @@ describe('matchesForYou', () => {
     expect(matchesForYou(job({ category: 'Moving' }), ['  MOVING  '])).toBe(true);
   });
 
+  test('matches a skill against a gig tag', () => {
+    const j = (tags) => job({ category: 'Odd Jobs', title: 'Help', description: 'misc', tags });
+    expect(matchesForYou(j(['lawncare']), ['lawn'])).toBe(true);
+    expect(matchesForYou(j(['assembly']), ['furniture assembly'])).toBe(true);
+    expect(matchesForYou(j(['painting']), ['plumbing'])).toBe(false);
+  });
+
   test('returns false with no skills, no match, or no job', () => {
     expect(matchesForYou(job(), [])).toBe(false);
     expect(matchesForYou(job({ category: 'Moving', title: 'Move couch', description: 'heavy' }), ['tutoring'])).toBe(false);

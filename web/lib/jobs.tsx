@@ -757,6 +757,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (d.lat !== undefined) dbPatch.lat = d.lat != null ? Math.round((d.lat as number) * 100) / 100 : null;
     if (d.lng !== undefined) dbPatch.lng = d.lng != null ? Math.round((d.lng as number) * 100) / 100 : null;
     if (d.recurrence !== undefined) dbPatch.recurrence = d.recurrence;
+    if (d.tags !== undefined) dbPatch.tags = d.tags;
     let { error } = await supabase.from("jobs").update(dbPatch).eq("id", jobId);
     if (error?.code === "42703") {
       // Pre-migration: drop the instant-book columns and retry.
@@ -827,6 +828,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       lat: d.lat != null ? Math.round((d.lat as number) * 100) / 100 : null,
       lng: d.lng != null ? Math.round((d.lng as number) * 100) / 100 : null,
       recurrence: (d.recurrence as string) || "none",
+      tags: (d.tags as string[]) || [],
       poster_id: user.id,
     };
     // Resilient: include instant_book only if that migration has run (42703 → retry).
