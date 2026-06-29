@@ -60,7 +60,7 @@ export default function AcceptPaymentModal({
       ) : loading || !clientSecret ? (
         <p className="py-4 text-sm text-ink-muted">Setting up secure payment…</p>
       ) : (
-        <Elements stripe={getStripe()} options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#6D28D9" } } }}>
+        <Elements stripe={getStripe()} options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#3F25FE" } } }}>
           <PayForm amountCents={amountCents} jobTitle={booking?.job?.title ?? "this gig"} onConfirmed={onConfirmed} />
         </Elements>
       )}

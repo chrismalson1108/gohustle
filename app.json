@@ -31,7 +31,7 @@
       "package": "com.gohustlr.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#3F25FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -65,7 +65,7 @@
       [
         "expo-notifications",
         {
-          "color": "#6D28D9"
+          "color": "#3F25FE"
         }
       ]
     ],

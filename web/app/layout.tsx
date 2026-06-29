@@ -1,12 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Sora, Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+// Hustlr type system: Sora for display/headings, Inter for body & UI.
+const sora = Sora({ variable: "--font-sora", subsets: ["latin"], display: "swap" });
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -22,11 +21,16 @@ export const metadata: Metadata = {
       "Find flexible local gigs, hire help, and get paid securely. Built for college students.",
     type: "website",
   },
-  icons: { icon: "/favicon.ico" },
+  twitter: {
+    card: "summary_large_image",
+    title: "GoHustlr — Gig work for college students",
+    description:
+      "Find flexible local gigs, hire help, and get paid securely. Built for college students.",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#6D28D9",
+  themeColor: "#3F25FE",
   width: "device-width",
   initialScale: 1,
 };
@@ -35,7 +39,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} h-full`}>
+    <html lang="en" className={`${sora.variable} ${inter.variable} h-full`}>
       <body className="min-h-full">
         <Providers>{children}</Providers>
       </body>

@@ -1,38 +1,56 @@
 @import "tailwindcss";
 
-/* ── GoHustlr brand tokens (mirror of shared/theme.js) ───────────────────────
-   Tailwind v4 reads these to generate utilities like bg-primary, text-ink, etc. */
+/* ── Hustlr brand tokens ─────────────────────────────────────────────────────
+   Hustlr Brand Guidelines v2.0:
+     Electric Blue  #3F25FE  — primary brand moments, backgrounds, buttons, links
+     Hustle Orange  #FFBC45  — highlights, key icons, wordmark, money/energy
+     Action Red     #F21A06  — offset shadows, emphasis, urgent/destructive
+     Canvas Cream   #F7F3EC  — page backgrounds, breathing room
+   Tailwind v4 reads these to generate utilities like bg-primary, text-ink, etc.
+   NOTE: Hustle Orange is a light amber — never put white text on it. Orange is a
+   fill paired with dark ink, or large display text; filled CTAs stay Electric Blue. */
 @theme {
-  --color-primary: #6d28d9;
-  --color-primary-dark: #5b21b6;
-  --color-primary-light: #ede9fe;
-  --color-secondary: #4f46e5;
-  --color-accent: #10b981;
-  --color-accent-light: #d1fae5;
-  --color-gold: #f59e0b;
-  --color-gold-light: #fef3c7;
-  --color-urgent: #ef4444;
-  --color-urgent-light: #fff1f2;
-  --color-ink: #1e1b4b;
-  --color-ink-soft: #6b7280;
-  --color-ink-muted: #9ca3af;
-  --color-line: #e5e7eb;
-  --color-canvas: #f5f3ff;
-  --color-success: #059669;
-
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-primary: #3f25fe;
+  --color-primary-dark: #2b17c2;
+  --color-primary-light: #e9e6ff;
+  --color-secondary: #5538ff;
+  --color-accent: #ffbc45;
+  --color-accent-light: #fff1d6;
+  --color-accent-deep: #9a5b00;
+  --color-gold: #ffbc45;
+  --color-gold-light: #fff1d6;
+  --color-urgent: #f21a06;
+  --color-urgent-light: #ffe7e3;
+  --color-ink: #181231;
+  --color-ink-soft: #5b5570;
+  --color-ink-muted: #9a93ad;
+  --color-line: #e8e2d5;
+  --color-canvas: #f7f3ec;
+  --color-success: #15803d;
+  --color-success-light: #e7f8ee;
 
   --radius-xl: 1rem;
   --radius-2xl: 1.25rem;
   --radius-3xl: 1.75rem;
 
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-soft: 0 4px 16px rgba(109, 40, 217, 0.1);
-  --shadow-pop: 0 10px 30px rgba(109, 40, 217, 0.18);
+  --shadow-sm: 0 1px 4px rgba(24, 18, 49, 0.06);
+  --shadow-card: 0 2px 8px rgba(24, 18, 49, 0.07);
+  --shadow-soft: 0 4px 16px rgba(63, 37, 254, 0.12);
+  --shadow-pop: 0 10px 30px rgba(63, 37, 254, 0.2);
 
-  --background-image-brand: linear-gradient(135deg, #6d28d9, #4338ca);
-  --background-image-earn: linear-gradient(135deg, #059669, #0d9488);
-  --background-image-gold: linear-gradient(135deg, #f59e0b, #dc2626);
+  /* Header/hero surfaces stay in the Electric Blue family so white text and the
+     existing white-on-dark header children remain legible. Hustle Orange lives in
+     the wordmark, pay pills, stars and hero accents instead. */
+  --background-image-brand: linear-gradient(135deg, #3f25fe, #2b17c2);
+  --background-image-earn: linear-gradient(135deg, #4733ff, #1e2a8f);
+  --background-image-gold: linear-gradient(160deg, #5538ff, #2b17c2);
+}
+
+/* Font tokens reference next/font runtime CSS variables; `@theme inline` keeps the
+   var() references live so Tailwind's font-sans / font-display utilities resolve them. */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
 html,
@@ -43,11 +61,20 @@ body {
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
-  font-family: var(--font-sans);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Brand gradient helpers used across hero/header surfaces. */
+/* Hustlr type system: Sora for display + section headings (Inter — the body
+   font — handles subheadings, body copy, and UI/buttons). */
+h1,
+h2 {
+  font-family: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Brand gradient helpers used across hero/header surfaces. All three are in the
+   Electric Blue family and carry white text. */
 .bg-brand {
   background-image: var(--background-image-brand);
 }
@@ -58,10 +85,16 @@ body {
   background-image: var(--background-image-gold);
 }
 
+/* Signature Hustlr treatment: orange mark with an Action-Red offset shadow,
+   echoing the logo's red drop. Use on the wordmark / hero display text. */
+.brand-offset {
+  text-shadow: 0.025em 0.045em 0 var(--color-urgent);
+}
+
 /* Thin, unobtrusive scrollbars to keep the app feeling native. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d6cef0 transparent;
+  scrollbar-color: #d8d0bf transparent;
 }
 
 /* Leaflet map container needs an explicit height wherever it's used. */
