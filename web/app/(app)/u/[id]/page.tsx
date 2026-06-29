@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { isFavorite, addFavorite, removeFavorite } from "@/lib/favorites";
+import { fetchCertifications, type Certification } from "@/lib/certifications";
 import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
@@ -66,6 +67,7 @@ export default function PublicProfilePage() {
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [reviews, setReviews] = useState<PubReview[]>([]);
   const [listings, setListings] = useState<PubListing[]>([]);
+  const [certs, setCerts] = useState<Certification[]>([]);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -117,7 +119,7 @@ export default function PublicProfilePage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [{ data: prof }, { data: revs }, { data: jobs }] = await Promise.all([
+      const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
         supabase
           .from("profiles")
           .select(
@@ -135,11 +137,13 @@ export default function PublicProfilePage() {
           .select("id, title, category, pay, pay_type, location")
           .eq("poster_id", id)
           .eq("status", "open"),
+        fetchCertifications(id).catch(() => [] as Certification[]),
       ]);
       if (!active) return;
       setProfile((prof as PubProfile) || null);
       setReviews((revs as unknown as PubReview[]) || []);
       setListings((jobs as PubListing[]) || []);
+      setCerts(certRows);
       setLoading(false);
     })();
     return () => {
@@ -233,6 +237,30 @@ export default function PublicProfilePage() {
                   {s}
                   {profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ""}
                 </span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {certs.length > 0 && (
+          <>
+            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Certifications</h2>
+            <div className="mb-6 space-y-2">
+              {certs.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+                  {c.image_url && (
+                    <a href={c.image_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={c.image_url} alt={c.title} className="size-12 rounded-lg object-cover" />
+                    </a>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-ink">{c.title}</p>
+                    {(c.issuer || c.year) && (
+                      <p className="truncate text-xs text-ink-muted">{[c.issuer, c.year].filter(Boolean).join(" · ")}</p>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </>

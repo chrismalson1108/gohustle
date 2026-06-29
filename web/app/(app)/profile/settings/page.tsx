@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, X } from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
+import {
+  fetchCertifications,
+  addCertification,
+  deleteCertification,
+  type Certification,
+} from "@/lib/certifications";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -47,6 +53,10 @@ export default function SettingsPage() {
   const [usernameError, setUsernameError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [certs, setCerts] = useState<Certification[]>([]);
+  const [certModalOpen, setCertModalOpen] = useState(false);
+  const [savingCert, setSavingCert] = useState(false);
+  const [cert, setCert] = useState({ title: "", issuer: "", year: "", file: null as File | null });
   const [f, setF] = useState({
     name: "", username: "", bio: "", city: "", role: "earner" as "earner" | "poster" | "both",
     skills: [] as string[], radiusMiles: 25, skillRates: {} as Record<string, string>,
@@ -71,9 +81,51 @@ export default function SettingsPage() {
           classStanding: data.class_standing || "", gradYear: data.grad_year ? String(data.grad_year) : "",
         });
       }
+      try {
+        setCerts(await fetchCertifications(user.id));
+      } catch {
+        /* non-fatal */
+      }
       setLoading(false);
     })();
   }, [user]);
+
+  const saveCert = async () => {
+    if (!user) return;
+    const title = cert.title.trim();
+    if (!title) {
+      showToast({ icon: "⚠️", title: "Title required", message: "Add the certification name." });
+      return;
+    }
+    setSavingCert(true);
+    try {
+      const created = await addCertification({
+        userId: user.id,
+        title,
+        issuer: cert.issuer.trim() || null,
+        year: cert.year ? parseInt(cert.year, 10) || null : null,
+        file: cert.file,
+      });
+      setCerts((p) => [created, ...p]);
+      setCert({ title: "", issuer: "", year: "", file: null });
+      setCertModalOpen(false);
+      showToast({ icon: "✅", title: "Certification added!", message: "It now shows on your profile." });
+    } catch (e) {
+      showToast({ icon: "❌", title: "Couldn't add", message: (e as Error)?.message || "Please try again." });
+    }
+    setSavingCert(false);
+  };
+
+  const removeCert = async (id: string) => {
+    const prev = certs;
+    setCerts((p) => p.filter((c) => c.id !== id));
+    try {
+      await deleteCertification(id);
+    } catch {
+      setCerts(prev);
+      showToast({ icon: "⚠️", title: "Couldn't remove", message: "Please try again." });
+    }
+  };
 
   const toggleSkill = (s: string) => set("skills", f.skills.includes(s) ? f.skills.filter((x) => x !== s) : [...f.skills, s]);
 
@@ -265,6 +317,51 @@ export default function SettingsPage() {
             )}
           </div>
 
+          {/* Certifications */}
+          <div className="rounded-2xl border border-line bg-canvas p-4">
+            <div className="flex items-center justify-between">
+              <Label className="mb-0">Certifications</Label>
+              <button
+                type="button"
+                onClick={() => setCertModalOpen(true)}
+                className="inline-flex items-center gap-1 rounded-xl border border-primary bg-white px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary-light/40"
+              >
+                <Plus className="size-4" /> Add
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-ink-muted">
+              Trade certs &amp; credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.
+            </p>
+            {certs.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {certs.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 rounded-xl border border-line bg-white px-3 py-2.5">
+                    {c.image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.image_url} alt={c.title} className="size-10 shrink-0 rounded-lg object-cover" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-ink">{c.title}</p>
+                      {(c.issuer || c.year) && (
+                        <p className="truncate text-xs text-ink-muted">
+                          {[c.issuer, c.year].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCert(c.id)}
+                      className="rounded-full p-1.5 text-ink-muted hover:bg-line/60 hover:text-urgent"
+                      aria-label={`Remove ${c.title}`}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
 
           {/* Danger zone */}
@@ -282,6 +379,60 @@ export default function SettingsPage() {
           </div>
         </div>
       </PageContainer>
+
+      <Modal
+        open={certModalOpen}
+        onClose={() => !savingCert && setCertModalOpen(false)}
+        title="Add certification"
+        size="sm"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" fullWidth onClick={() => setCertModalOpen(false)} disabled={savingCert}>Cancel</Button>
+            <Button fullWidth loading={savingCert} onClick={saveCert}>Add</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <Label>Title</Label>
+            <Input
+              value={cert.title}
+              onChange={(e) => setCert((p) => ({ ...p, title: e.target.value }))}
+              placeholder="e.g. EPA 608 Certification"
+              maxLength={120}
+            />
+          </div>
+          <div>
+            <Label>Issuer</Label>
+            <Input
+              value={cert.issuer}
+              onChange={(e) => setCert((p) => ({ ...p, issuer: e.target.value }))}
+              placeholder="e.g. Trade Tech"
+              maxLength={120}
+            />
+          </div>
+          <div>
+            <Label>Year</Label>
+            <Input
+              value={cert.year}
+              onChange={(e) => setCert((p) => ({ ...p, year: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) }))}
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="e.g. 2024"
+            />
+          </div>
+          <div>
+            <Label>Image (optional)</Label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setCert((p) => ({ ...p, file: e.target.files?.[0] || null }))}
+              className="block w-full text-sm text-ink-soft file:mr-3 file:rounded-xl file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-primary/90"
+            />
+            {cert.file && <p className="mt-1.5 truncate text-xs text-ink-muted">{cert.file.name}</p>}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={confirmDelete}
