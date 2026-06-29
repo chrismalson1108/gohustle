@@ -36,7 +36,7 @@ export default function JobsMap({ jobs, userCoords }: Props) {
             key={j.id}
             center={[j.lat as number, j.lng as number]}
             radius={9}
-            pathOptions={{ color: "#fff", weight: 2, fillColor: CATEGORY_COLORS[j.category] || "#6D28D9", fillOpacity: 1 }}
+            pathOptions={{ color: "#fff", weight: 2, fillColor: CATEGORY_COLORS[j.category] || "#3F25FE", fillOpacity: 1 }}
           >
             <Popup>
               <Link href={`/jobs/${j.id}`} className="font-bold text-primary">

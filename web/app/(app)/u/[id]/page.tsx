@@ -45,6 +45,7 @@ interface PubReview {
   text: string | null;
   date: string | null;
   role: string;
+  job: { title: string | null } | null;
   reviewer: { name: string | null; avatar_initial: string | null; avatar_url: string | null } | null;
 }
 
@@ -126,7 +127,7 @@ export default function PublicProfilePage() {
           .single(),
         supabase
           .from("reviews")
-          .select("id, rating, text, date, role, reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
+          .select("id, rating, text, date, role, job:jobs(title), reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
           .eq("reviewed_user_id", id)
           .order("created_at", { ascending: false }),
         supabase
@@ -151,12 +152,13 @@ export default function PublicProfilePage() {
 
   const college = collegeLine(profile);
   const overall = reviews.length ? reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length : null;
+  const recentWork = reviews.filter((r) => r.role === "earner").slice(0, 10);
 
   return (
     <div>
       <PageHeader title="" subtitle="">
         <div className="mb-3 flex items-center justify-between">
-          <Link href="/browse" className="flex items-center gap-1 text-sm font-bold text-white/80">
+          <Link href={isSelf ? "/profile" : "/browse"} className="flex items-center gap-1 text-sm font-bold text-white/80">
             <ArrowLeft className="size-4" /> Back
           </Link>
           {!isSelf && user && (
@@ -209,6 +211,12 @@ export default function PublicProfilePage() {
       </PageHeader>
 
       <PageContainer>
+        {isSelf && (
+          <div className="mb-4 flex items-center gap-2 rounded-2xl bg-primary-light px-4 py-3 text-sm font-semibold text-primary">
+            👀 This is your public profile — exactly how others see you.
+          </div>
+        )}
+
         {profile.bio && (
           <>
             <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">About</h2>
@@ -242,6 +250,24 @@ export default function PublicProfilePage() {
                   </div>
                   <span className="shrink-0 font-bold text-success">{payLabel({ pay: j.pay, payType: j.pay_type })}</span>
                 </Link>
+              ))}
+            </div>
+          </>
+        )}
+
+        {recentWork.length > 0 && (
+          <>
+            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Recent work</h2>
+            <div className="mb-6 space-y-2.5">
+              {recentWork.map((r) => (
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate font-bold text-ink">{r.job?.title || "Completed gig"}</p>
+                    <RatingStars value={r.rating} size={13} />
+                  </div>
+                  {r.text && <p className="mt-1 text-sm text-ink-soft">{r.text}</p>}
+                  {r.date && <p className="mt-1 text-xs text-ink-muted">{r.date}</p>}
+                </div>
               ))}
             </div>
           </>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye,
 } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
@@ -205,6 +205,18 @@ export default function ProfilePage() {
             </div>
             <ChevronRight className="size-5 text-ink-muted" />
           </button>
+
+          <Link
+            href={user ? `/u/${user.id}` : "/profile"}
+            className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70"
+          >
+            <Eye className="size-6 text-primary" />
+            <div className="flex-1">
+              <p className="font-bold text-ink">View my public profile</p>
+              <p className="text-xs text-ink-muted">See exactly how others see you</p>
+            </div>
+            <ChevronRight className="size-5 text-ink-muted" />
+          </Link>
         </div>
 
         {/* Badges */}

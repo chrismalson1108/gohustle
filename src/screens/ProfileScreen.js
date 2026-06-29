@@ -401,6 +401,20 @@ export default function ProfileScreen({ navigation }) {
 
       <TouchableOpacity
         style={styles.manageBtn}
+        onPress={() => { haptic.medium(); if (user) navigation.navigate('UserProfile', { userId: user.id }); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="eye-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>View My Public Profile</Text>
+            <Text style={styles.manageBtnSub}>See exactly how others see you</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.manageBtn}
         onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
       >
         <View style={styles.manageBtnLeft}>

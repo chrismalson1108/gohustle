@@ -23,6 +23,10 @@ export default function MyJobsPage() {
   const { earningsToday, earningsWeek, earningsTotal, showToast } = useUser();
   const { user } = useAuth();
 
+  // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
+  const completedCount = bookings.filter((b) => b.status === "verified").length;
+  const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
+
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
@@ -86,11 +90,12 @@ export default function MyJobsPage() {
   return (
     <div>
       <PageHeader title="My Jobs" subtitle="Gigs you've booked" variant="earn">
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { label: "Today", value: money(earningsToday) },
             { label: "This week", value: money(earningsWeek) },
             { label: "All time", value: money(earningsTotal) },
+            { label: "Avg / job", value: completedCount ? money(avgPerJob) : "—" },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl bg-white/15 px-3 py-2.5 text-center">
               <p className="text-lg font-black">{s.value}</p>

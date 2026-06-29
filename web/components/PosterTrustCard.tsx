@@ -22,7 +22,7 @@ export default function PosterTrustCard({
         <div className="flex items-center gap-2">
           <p className="truncate font-bold text-ink">{poster.name}</p>
           {poster.verified && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-accent-light px-1.5 py-0.5 text-[11px] font-bold text-success">
+            <span className="inline-flex items-center gap-1 rounded-md bg-success-light px-1.5 py-0.5 text-[11px] font-bold text-success">
               <CheckCircle2 className="size-3" /> Verified
             </span>
           )}

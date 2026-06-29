@@ -42,9 +42,7 @@ export default function LandingPage() {
             </span>
             <h1 className="mt-5 text-4xl font-black leading-[1.05] tracking-tight text-ink md:text-6xl">
               Turn spare hours into{" "}
-              <span className="bg-brand bg-clip-text text-transparent" style={{ WebkitBackgroundClip: "text", backgroundImage: "var(--background-image-brand)" }}>
-                real money.
-              </span>
+              <span className="text-accent brand-offset">real money.</span>
             </h1>
             <p className="mt-5 max-w-md text-lg text-ink-soft">
               GoHustlr connects students who need a hand with students ready to hustle. Find flexible local
@@ -86,7 +84,7 @@ export default function LandingPage() {
                       <p className="text-sm font-bold text-ink">{g.t}</p>
                       <p className="text-xs text-ink-muted">{g.c}</p>
                     </div>
-                    <span className="rounded-full bg-accent-light px-2.5 py-1 text-sm font-black text-success">
+                    <span className="rounded-full bg-accent px-2.5 py-1 text-sm font-black text-ink">
                       {g.p}
                     </span>
                   </div>

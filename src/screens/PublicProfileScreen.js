@@ -107,7 +107,6 @@ export default function PublicProfileScreen({ route, navigation }) {
   const overall = avg(reviews);
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
-  const completed = workerReviews.map(r => r.job?.title).filter(Boolean);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -188,6 +187,13 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       </View>
 
+      {isSelf && (
+        <View style={styles.selfBanner}>
+          <Ionicons name="eye-outline" size={15} color={colors.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.selfBannerText}>This is your public profile — exactly how others see you.</Text>
+        </View>
+      )}
+
       {!isSelf && user && myOpenGigs.length > 0 && (
         <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteOpen(true)} activeOpacity={0.85}>
           <Ionicons name="paper-plane-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
@@ -234,13 +240,16 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       )}
 
-      {completed.length > 0 && (
+      {workerReviews.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent work ({completed.length})</Text>
-          {completed.slice(0, 8).map((t, i) => (
-            <View key={i} style={styles.workRow}>
-              <Ionicons name="checkmark-done-circle" size={15} color={colors.success} style={{ marginRight: 8 }} />
-              <Text style={styles.workText} numberOfLines={1}>{t}</Text>
+          <Text style={styles.sectionTitle}>Recent work ({workerReviews.length})</Text>
+          {workerReviews.slice(0, 10).map((r) => (
+            <View key={r.id} style={styles.workCard}>
+              <View style={styles.workTop}>
+                <Text style={styles.workTitle} numberOfLines={1}>{r.job?.title || 'Completed gig'}</Text>
+                <RatingStars rating={r.rating} size={13} />
+              </View>
+              {r.text ? <Text style={styles.workReview} numberOfLines={2}>{r.text}</Text> : null}
             </View>
           ))}
         </View>
@@ -358,6 +367,12 @@ const styles = StyleSheet.create({
   jobMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   workRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
   workText: { fontSize: 13, color: colors.textSecondary, flex: 1 },
+  workCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  workTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  workTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  workReview: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 4 },
+  selfBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 16, backgroundColor: colors.primaryLight, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
+  selfBannerText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.primary },
   reviewCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
   reviewHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   reviewer: { fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },

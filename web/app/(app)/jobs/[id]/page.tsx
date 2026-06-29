@@ -55,7 +55,7 @@ export default function JobDetailPage() {
   const isOwnJob = job.posterId && user?.id === job.posterId;
   const currentBooking = bookings.find((b) => b.jobId === job.id);
   const jobPosterBookings = posterBookings.filter((b) => b.jobId === job.id);
-  const catColor = CATEGORY_COLORS[job.category] || "#6D28D9";
+  const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";
   const estPay =
     job.payType === "hourly" ? `$${job.pay}/hr · ~$${job.pay * job.estimatedHours} estimated` : `$${job.pay} flat rate`;
   const hasAvailableSlot = job.slots?.some((s) => !s.taken);
@@ -128,7 +128,7 @@ export default function JobDetailPage() {
       <h1 className="mt-3 text-2xl font-black leading-tight text-ink">{job.title}</h1>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent-light px-3 py-2 text-sm font-bold text-success">
+        <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-ink">
           <DollarSign className="size-4" /> {estPay}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-xl bg-canvas px-3 py-2 text-sm font-semibold text-ink-soft">
