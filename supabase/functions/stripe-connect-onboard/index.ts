@@ -11,8 +11,9 @@ const corsHeaders = {
 // Production web app. Stripe redirects the user's BROWSER here after onboarding, so
 // it must be a host that serves real text/html (Supabase Edge Functions force
 // text/plain + nosniff). Web callers pass their own origin; this is the fallback.
-// TODO: switch to https://gohustlr.com once that domain points at Vercel.
-const DEFAULT_WEB_BASE = 'https://gohustle.vercel.app';
+// Canonical public domain (exempt from Vercel deployment protection once the domain
+// is connected). Web callers pass their own origin, so this only applies to mobile.
+const DEFAULT_WEB_BASE = 'https://gohustlr.com';
 
 // Validate the caller-supplied origin against an allowlist so a forged origin can't
 // turn the Stripe return into an open redirect. Falls back to the production web app.

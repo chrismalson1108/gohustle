@@ -4,7 +4,7 @@
 // HTML served from here renders as raw source. This function remains only so that
 // Stripe sessions created BEFORE that change (whose return_url still points here)
 // land in the right place: a 302 redirects regardless of Content-Type.
-const WEB_RETURN_URL = 'https://gohustle.vercel.app/stripe/connect-return';
+const WEB_RETURN_URL = 'https://gohustlr.com/stripe/connect-return';
 
 Deno.serve(() => {
   return new Response(null, {

@@ -12,8 +12,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';
 // Stripe Connect/Identity flows open in a browser and redirect back to a hosted
 // landing page on the web app (Supabase Edge Functions can't serve browser HTML —
 // the gateway forces text/plain). Mobile has no web origin, so it passes this base.
-// TODO: switch to https://gohustlr.com once that domain points at Vercel.
-const WEB_RETURN_BASE = 'https://gohustle.vercel.app';
+// Canonical public domain (exempt from Vercel deployment protection once connected).
+const WEB_RETURN_BASE = 'https://gohustlr.com';
 
 async function callEdgeFunction(name, body = {}) {
   const { data: { session } } = await supabase.auth.getSession();
