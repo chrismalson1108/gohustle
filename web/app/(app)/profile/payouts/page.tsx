@@ -10,6 +10,7 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import AddCardModal from "@/components/AddCardModal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+import { classNames } from "@/lib/format";
 
 type Readiness = {
   payoutReady: boolean;
@@ -129,13 +130,13 @@ export default function PayoutsPage() {
   return (
     <div>
       <PageHeader title="Payouts & payments" subtitle="Get paid and manage your card" />
-      <PageContainer className="max-w-xl">
+      <PageContainer>
         <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
           <ArrowLeft className="size-4" /> Back
         </button>
 
         {/* Earner payouts */}
-        <div className="rounded-3xl bg-white p-5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-accent-light text-accent-deep">
               <Wallet className="size-6" />
@@ -167,7 +168,7 @@ export default function PayoutsPage() {
         </div>
 
         {/* Poster card */}
-        <div className="mt-4 rounded-3xl bg-white p-5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        <div className="mt-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-primary-light text-primary">
               <CreditCard className="size-6" />
@@ -177,7 +178,12 @@ export default function PayoutsPage() {
               <p className="text-sm text-ink-soft">A card on file lets you book and pay securely.</p>
             </div>
           </div>
-          <p className="mt-4 flex items-center gap-1.5 text-sm font-bold" style={{ color: ready.paymentMethodReady ? "#15803D" : "#9A93AD" }}>
+          <p
+            className={classNames(
+              "mt-4 flex items-center gap-1.5 text-sm font-bold",
+              ready.paymentMethodReady ? "text-success" : "text-ink-muted",
+            )}
+          >
             {ready.paymentMethodReady ? (
               <>
                 <CheckCircle2 className="size-4" /> {cardLabel}

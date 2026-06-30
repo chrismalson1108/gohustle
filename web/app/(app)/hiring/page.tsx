@@ -150,7 +150,7 @@ export default function HiringPage() {
                           onClick={() => setSortBy(s.id)}
                           className={
                             sortBy === s.id
-                              ? "rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white"
+                              ? "rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white shadow-[var(--shadow-soft)]"
                               : "rounded-full bg-canvas px-2.5 py-1 text-xs font-bold text-ink-soft ring-1 ring-line/70 hover:bg-primary-light/40"
                           }
                         >
@@ -181,7 +181,7 @@ export default function HiringPage() {
 
                           {b.applicationNote && (
                             <p className="mt-2 border-l-2 border-line pl-2.5 text-xs italic text-ink-soft">
-                              “{b.applicationNote}”
+                              &ldquo;{b.applicationNote}&rdquo;
                             </p>
                           )}
 
@@ -225,7 +225,7 @@ export default function HiringPage() {
                               </>
                             )}
                             {b.status === "completed" && (
-                              <Button size="sm" className="bg-success" onClick={() => setVerifyBooking(b)}>
+                              <Button size="sm" onClick={() => setVerifyBooking(b)}>
                                 <ShieldCheck className="size-4" /> Verify &amp; rate
                               </Button>
                             )}

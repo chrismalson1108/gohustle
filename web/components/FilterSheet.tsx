@@ -51,7 +51,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-ink-muted">{title}</p>
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</p>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -110,7 +110,7 @@ export default function FilterSheet({ open, filters, availableStates, mySchool, 
       </Section>
 
       <div className="mb-5">
-        <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-ink-muted">Available days</p>
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Available days</p>
         <div className="grid grid-cols-7 gap-1.5">
           {DAY_OPTIONS.map((d) => (
             <button

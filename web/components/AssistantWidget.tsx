@@ -217,7 +217,7 @@ export default function AssistantWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[80vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl ring-1 ring-line md:inset-auto md:bottom-6 md:right-6 md:h-[600px] md:w-[400px] md:rounded-3xl">
+        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[80vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-line/70 md:inset-auto md:bottom-6 md:right-6 md:h-[600px] md:w-[400px] md:rounded-3xl">
           {/* Header */}
           <div className="flex items-center gap-2.5 bg-primary px-4 py-3 text-white">
             <div className="flex size-9 items-center justify-center rounded-full bg-white/20">
@@ -284,7 +284,7 @@ export default function AssistantWidget() {
                   aria-label={listening ? "Stop voice input" : "Start voice input"}
                   className={classNames(
                     "flex size-10 shrink-0 items-center justify-center rounded-full transition",
-                    listening ? "animate-pulse bg-urgent text-white" : "bg-primary-light text-primary hover:bg-primary/15",
+                    listening ? "animate-pulse bg-urgent text-white" : "bg-primary-light text-primary hover:bg-[#dcd6ff]",
                   )}
                 >
                   {listening ? <MicOff className="size-5" /> : <Mic className="size-5" />}
@@ -302,13 +302,13 @@ export default function AssistantWidget() {
                 rows={1}
                 disabled={listening}
                 placeholder={listening ? "Listening…" : "Ask anything, or describe a gig…"}
-                className="max-h-28 min-h-10 flex-1 resize-none rounded-2xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-primary disabled:opacity-70"
+                className="max-h-28 min-h-10 flex-1 resize-none rounded-2xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-70"
               />
               <button
                 onClick={() => send(input)}
                 disabled={busy || !input.trim()}
                 aria-label="Send"
-                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white transition hover:bg-primary/90 disabled:opacity-40"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark disabled:opacity-40"
               >
                 <Send className="size-5" />
               </button>
@@ -398,7 +398,7 @@ function Bubble({ role, content }: { role: "user" | "assistant"; content: string
       <div
         className={classNames(
           "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-          isUser ? "rounded-br-md bg-primary text-white" : "rounded-bl-md bg-white text-ink ring-1 ring-line",
+          isUser ? "bg-primary text-white" : "bg-white text-ink ring-1 ring-line/70",
         )}
       >
         {renderRich(content)}

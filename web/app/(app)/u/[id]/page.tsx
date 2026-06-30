@@ -20,7 +20,7 @@ import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
-import { classNames, payLabel } from "@/lib/format";
+import { classNames, money, payLabel } from "@/lib/format";
 
 interface PubProfile {
   id: string;
@@ -215,7 +215,7 @@ export default function PublicProfilePage() {
 
   return (
     <div>
-      <PageHeader title="" subtitle="">
+      <PageHeader title="">
         <div className="mb-3 flex items-center justify-between">
           <Link href={isSelf ? "/profile" : "/browse"} className="flex items-center gap-1 text-sm font-bold text-white/80">
             <ArrowLeft className="size-4" /> Back
@@ -230,10 +230,10 @@ export default function PublicProfilePage() {
               </button>
               {menuOpen && (
                 <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-line">
-                  <button onClick={() => { setMenuOpen(false); setReportOpen(true); }} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-ink hover:bg-canvas">
+                  <button onClick={() => { setMenuOpen(false); setReportOpen(true); }} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-bold text-ink hover:bg-canvas">
                     <Flag className="size-4" /> Report
                   </button>
-                  <button onClick={doBlock} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-urgent hover:bg-canvas">
+                  <button onClick={doBlock} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-bold text-urgent hover:bg-canvas">
                     <Ban className="size-4" /> Block
                   </button>
                 </div>
@@ -269,17 +269,17 @@ export default function PublicProfilePage() {
         </div>
       </PageHeader>
 
-      <PageContainer>
+      <PageContainer className="space-y-4">
         {isSelf && (
-          <div className="mb-4 flex items-center gap-2 rounded-2xl bg-primary-light px-4 py-3 text-sm font-semibold text-primary">
+          <div className="flex items-center gap-2 rounded-2xl bg-primary-light px-4 py-3 text-sm font-semibold text-primary">
             👀 This is your public profile — exactly how others see you.
           </div>
         )}
 
         {canShowAvailability && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Availability</h2>
-            <div className="mb-6 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Availability</h2>
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
               <p className="mb-3 text-sm font-bold text-ink">{availabilitySummary(availability)}</p>
               <div className="space-y-1.5">
                 {availDays.map(({ label, day, windows }) => (
@@ -296,26 +296,26 @@ export default function PublicProfilePage() {
         )}
 
         {!isSelf && user && myOpenGigs.length > 0 && (
-          <Button fullWidth onClick={() => setInviteOpen(true)} className="mb-6">
+          <Button fullWidth onClick={() => setInviteOpen(true)}>
             Invite to a gig
           </Button>
         )}
 
         {profile.bio && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">About</h2>
-            <p className="mb-6 leading-relaxed text-ink">{profile.bio}</p>
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">About</h2>
+            <p className="leading-relaxed text-ink">{profile.bio}</p>
           </>
         )}
 
         {profile.skills && profile.skills.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Skills</h2>
-            <div className="mb-6 flex flex-wrap gap-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Skills</h2>
+            <div className="flex flex-wrap gap-2">
               {profile.skills.map((s) => (
                 <span key={s} className="rounded-full border border-line bg-white px-3 py-1.5 text-sm font-bold text-ink-soft">
                   {s}
-                  {profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ""}
+                  {profile.skill_rates?.[s] ? ` · ${money(profile.skill_rates[s])}/hr` : ""}
                 </span>
               ))}
             </div>
@@ -324,8 +324,8 @@ export default function PublicProfilePage() {
 
         {certified.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Hustlr Certified</h2>
-            <div className="mb-6 flex flex-wrap gap-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Hustlr Certified</h2>
+            <div className="flex flex-wrap gap-2">
               {certified.map((c) => (
                 <div
                   key={c.label}
@@ -344,8 +344,8 @@ export default function PublicProfilePage() {
 
         {isSelf && certified.length === 0 && progress.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Progress to certification</h2>
-            <div className="mb-6 space-y-1.5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Progress to certification</h2>
+            <div className="space-y-1.5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
               {progress.map((p) => (
                 <div key={p.label} className="flex items-center justify-between text-sm">
                   <span className="font-bold text-ink">{p.label}</span>
@@ -360,8 +360,8 @@ export default function PublicProfilePage() {
 
         {certs.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Certifications</h2>
-            <div className="mb-6 space-y-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Certifications</h2>
+            <div className="space-y-2">
               {certs.map((c) => {
                 const certImg = safeCertUrl(c.image_url);
                 return (
@@ -369,7 +369,7 @@ export default function PublicProfilePage() {
                   {certImg && (
                     <a href={certImg} target="_blank" rel="noopener noreferrer" className="shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={certImg} alt={c.title} className="size-12 rounded-lg object-cover" />
+                      <img src={certImg} alt={c.title} className="size-12 rounded-xl object-cover" />
                     </a>
                   )}
                   <div className="min-w-0">
@@ -387,8 +387,8 @@ export default function PublicProfilePage() {
 
         {listings.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Open gigs</h2>
-            <div className="mb-6 space-y-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Open gigs</h2>
+            <div className="space-y-2">
               {listings.map((j) => (
                 <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="min-w-0">
@@ -404,8 +404,8 @@ export default function PublicProfilePage() {
 
         {recentWork.length > 0 && (
           <>
-            <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Recent work</h2>
-            <div className="mb-6 space-y-2.5">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Recent work</h2>
+            <div className="space-y-2.5">
               {recentWork.map((r) => (
                 <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="flex items-center justify-between gap-2">
@@ -420,7 +420,7 @@ export default function PublicProfilePage() {
           </>
         )}
 
-        <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Reviews</h2>
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Reviews</h2>
         {reviews.length === 0 ? (
           <p className="text-sm text-ink-muted">No reviews yet.</p>
         ) : (

@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Download,
   Plus,
   Trash2,
@@ -48,7 +46,7 @@ import {
   type Expense,
   type IncomeEntry,
 } from "@/lib/expenses";
-import PageHeader, { PageContainer } from "@/components/PageHeader";
+import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { Input, Textarea, Label } from "@/components/ui/Field";
@@ -77,7 +75,6 @@ const SOURCE_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 type Tab = "expenses" | "income";
 
 export default function TaxesPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const { earningsTotal, showToast } = useUser();
   const { bookings, posterBookings } = useJobs();
@@ -300,19 +297,15 @@ export default function TaxesPage() {
         </div>
       </PageHeader>
 
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
-
+      <PageContainer className="space-y-4">
         {/* Segmented control */}
-        <div className="flex rounded-2xl border border-line bg-white p-1">
+        <div className="flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           <SegmentBtn label="Expenses" active={tab === "expenses"} onClick={() => setTab("expenses")} />
           <SegmentBtn label="Income" active={tab === "income"} onClick={() => setTab("income")} />
         </div>
 
         {/* Actions */}
-        <div className="mt-4 flex gap-3">
+        <div className="flex gap-3">
           <Button onClick={openAdd} fullWidth>
             <Plus className="size-4" /> {tab === "expenses" ? "Add Expense" : "Add Income"}
           </Button>
@@ -321,7 +314,7 @@ export default function TaxesPage() {
           </Button>
         </div>
 
-        <p className="mt-3 text-xs leading-5 text-ink-muted">
+        <p className="text-xs leading-5 text-ink-muted">
           {tab === "income"
             ? "Card payments are already counted from your platform earnings. Log cash and tips here so your income is complete."
             : "Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)"}
@@ -329,7 +322,7 @@ export default function TaxesPage() {
 
         {/* By-job expense breakdown */}
         {tab === "expenses" && jobGroups.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-line bg-white p-4 shadow-[var(--shadow-card)]">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">By job · {year}</p>
             <ul className="space-y-1.5">
               {jobGroups.map((g) => (
@@ -356,7 +349,7 @@ export default function TaxesPage() {
               body='Tap "Add Expense" to start tracking write-offs.'
             />
           ) : (
-            <ul className="mt-5 space-y-2">
+            <ul className="space-y-2">
               {expenses.map((exp) => {
                 const meta = categoryMeta(exp.category);
                 const Icon = CATEGORY_ICONS[exp.category] || MoreHorizontal;
@@ -365,7 +358,7 @@ export default function TaxesPage() {
                 return (
                   <li
                     key={exp.id}
-                    className="flex items-center gap-3 rounded-2xl border border-line bg-white p-3 shadow-[var(--shadow-card)]"
+                    className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)] ring-1 ring-line/70"
                   >
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary">
                       <Icon className="size-4" />
@@ -376,7 +369,7 @@ export default function TaxesPage() {
                       <div className="flex items-center gap-2">
                         <p className="text-[11px] text-ink-muted">{exp.date}</p>
                         {exp.booking_id && (
-                          <span className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-md bg-primary-light px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                          <span className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-bold text-primary">
                             <Briefcase className="size-2.5 shrink-0" />
                             <span className="truncate">{jobTitleFor[exp.booking_id] || "Gig"}</span>
                           </span>
@@ -385,7 +378,7 @@ export default function TaxesPage() {
                     </div>
                     {thumb && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb} alt="receipt" className="size-9 rounded-lg object-cover" />
+                      <img src={thumb} alt="receipt" className="size-9 rounded-xl object-cover" />
                     )}
                     <div className="text-right">
                       <p className="font-black text-ink">{money(exp.amount)}</p>
@@ -395,7 +388,7 @@ export default function TaxesPage() {
                     </div>
                     <button
                       onClick={() => handleDeleteExpense(exp)}
-                      className="rounded-lg p-1.5 text-urgent hover:bg-urgent/10"
+                      className="rounded-full p-1.5 text-urgent hover:bg-urgent/10"
                       aria-label="Delete expense"
                     >
                       <Trash2 className="size-4" />
@@ -412,14 +405,14 @@ export default function TaxesPage() {
             body='Tap "Add Income" to log cash payments and tips.'
           />
         ) : (
-          <ul className="mt-5 space-y-2">
+          <ul className="space-y-2">
             {income.map((inc) => {
               const meta = sourceMeta(inc.source);
               const Icon = SOURCE_ICONS[inc.source] || MoreHorizontal;
               return (
                 <li
                   key={inc.id}
-                  className="flex items-center gap-3 rounded-2xl border border-line bg-white p-3 shadow-[var(--shadow-card)]"
+                  className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)] ring-1 ring-line/70"
                 >
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-light text-accent-deep">
                     <Icon className="size-4" />
@@ -432,7 +425,7 @@ export default function TaxesPage() {
                   <p className="font-black text-accent-deep">{money(inc.amount)}</p>
                   <button
                     onClick={() => handleDeleteIncome(inc)}
-                    className="rounded-lg p-1.5 text-urgent hover:bg-urgent/10"
+                    className="rounded-full p-1.5 text-urgent hover:bg-urgent/10"
                     aria-label="Delete income"
                   >
                     <Trash2 className="size-4" />
@@ -463,7 +456,7 @@ export default function TaxesPage() {
         <div className="space-y-4">
           <div>
             <Label>Amount</Label>
-            <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-4 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+            <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-4 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
               <span className="text-xl font-black text-primary">$</span>
               <input
                 className="w-full bg-transparent py-3 text-xl font-bold text-ink outline-none placeholder:text-ink-muted"
@@ -585,7 +578,7 @@ function SegmentBtn({ label, active, onClick }: { label: string; active: boolean
       onClick={onClick}
       className={classNames(
         "flex-1 rounded-xl py-2 text-sm font-bold transition",
-        active ? "bg-primary text-white" : "text-ink-soft hover:text-ink",
+        active ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
       )}
     >
       {label}
@@ -616,12 +609,3 @@ function Chip({
   );
 }
 
-function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 py-16 text-center">
-      <div className="text-ink-muted">{icon}</div>
-      <p className="font-bold text-ink">{title}</p>
-      <p className="max-w-xs text-sm text-ink-soft">{body}</p>
-    </div>
-  );
-}

@@ -160,7 +160,7 @@ export default function ProfilePage() {
         </div>
       </PageHeader>
 
-      <PageContainer>
+      <PageContainer className="space-y-5">
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -176,7 +176,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Trust actions */}
-        <div className="mt-4 space-y-3">
+        <div className="space-y-3">
           <button
             onClick={verifyIdentity}
             disabled={idv.verified}
@@ -220,55 +220,59 @@ export default function ProfilePage() {
         </div>
 
         {/* Badges */}
-        <h2 className="mb-2 mt-6 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Badges</h2>
-        <div className="flex flex-wrap gap-3">
-          {Object.entries(BADGE_DEFS).map(([key, def]) => {
-            const unlocked = u.badges[key]?.unlocked;
-            return (
-              <div key={key} className={`flex w-20 flex-col items-center gap-1 rounded-2xl border p-3 text-center ${unlocked ? "border-gold bg-gold-light" : "border-line bg-white opacity-50"}`}>
-                <span className="text-2xl">{def.icon}</span>
-                <span className="text-[10px] font-bold leading-tight text-ink">{def.label}</span>
-              </div>
-            );
-          })}
-        </div>
+        <section>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Badges</h2>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(BADGE_DEFS).map(([key, def]) => {
+              const unlocked = u.badges[key]?.unlocked;
+              return (
+                <div key={key} className={`flex w-20 flex-col items-center gap-1 rounded-2xl p-3 text-center ${unlocked ? "bg-gold-light ring-1 ring-gold" : "bg-white ring-1 ring-line/70"}`}>
+                  <span className={`text-2xl ${unlocked ? "" : "opacity-40"}`}>{def.icon}</span>
+                  <span className={`text-[10px] font-bold leading-tight ${unlocked ? "text-ink" : "text-ink-muted"}`}>{def.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
         {/* Reviews received */}
-        <h2 className="mb-2 mt-6 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Reviews I&apos;ve received</h2>
-        {reviews.length > 0 && (
-          <div className="mb-3 flex gap-3 text-sm">
-            <span className="text-ink-soft">As a worker: <span className="font-bold text-ink">{avg(workerReviews)}★</span> ({workerReviews.length})</span>
-            <span className="text-ink-soft">As a client: <span className="font-bold text-ink">{avg(clientReviews)}★</span> ({clientReviews.length})</span>
-          </div>
-        )}
-        {reviews.length === 0 ? (
-          <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <Star className="size-7 text-gold" />
-            <p className="font-bold text-ink">No reviews yet</p>
-            <p className="text-sm text-ink-soft">Complete gigs as a worker or client to start earning reviews.</p>
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            {reviews.map((r) => (
-              <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                <div className="flex items-center gap-2.5">
-                  <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-ink">{r.reviewer?.name || "User"}</p>
-                    <RatingStars value={r.rating} size={12} />
+        <section>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Reviews I&apos;ve received</h2>
+          {reviews.length > 0 && (
+            <div className="mb-3 flex gap-3 text-sm">
+              <span className="text-ink-soft">As a worker: <span className="font-bold text-ink">{avg(workerReviews)}★</span> ({workerReviews.length})</span>
+              <span className="text-ink-soft">As a client: <span className="font-bold text-ink">{avg(clientReviews)}★</span> ({clientReviews.length})</span>
+            </div>
+          )}
+          {reviews.length === 0 ? (
+            <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              <Star className="size-7 text-gold" />
+              <p className="font-bold text-ink">No reviews yet</p>
+              <p className="text-sm text-ink-soft">Complete gigs as a worker or client to start earning reviews.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {reviews.map((r) => (
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-ink">{r.reviewer?.name || "User"}</p>
+                      <RatingStars value={r.rating} size={12} />
+                    </div>
+                    {r.date && <span className="text-xs text-ink-muted">{r.date}</span>}
                   </div>
-                  {r.date && <span className="text-xs text-ink-muted">{r.date}</span>}
+                  {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
                 </div>
-                {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Posted gigs */}
         {postedJobs.length > 0 && (
-          <>
-            <h2 className="mb-2 mt-6 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Your gigs</h2>
+          <section>
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Your gigs</h2>
             <div className="space-y-2">
               {postedJobs.map((j) => (
                 <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-2xl bg-white p-3.5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
@@ -277,11 +281,11 @@ export default function ProfilePage() {
                 </Link>
               ))}
             </div>
-          </>
+          </section>
         )}
 
         {/* Links */}
-        <div className="mt-6 divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
           {links.map((l) => {
             const Icon = l.icon;
             return (
@@ -293,11 +297,11 @@ export default function ProfilePage() {
           })}
         </div>
 
-        <button onClick={() => signOut()} className={buttonClasses("outline", "md", "mt-6 w-full text-urgent")}>
+        <button onClick={() => signOut()} className={buttonClasses("outline", "md", "w-full text-urgent hover:border-urgent hover:text-urgent")}>
           <LogOut className="size-4" /> Sign out
         </button>
 
-        <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-ink-muted">
+        <div className="flex items-center justify-center gap-1.5 text-xs text-ink-muted">
           <ShieldCheck className="size-3.5" /> Need help? <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-primary">{SUPPORT_EMAIL}</a>
         </div>
       </PageContainer>

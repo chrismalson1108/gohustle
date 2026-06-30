@@ -57,8 +57,8 @@ export default function ResetPasswordPage() {
         <Logo />
       </Link>
       <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line">
-        <div className="mb-5 flex size-12 items-center justify-center rounded-2xl bg-primary-light text-primary">
-          <KeyRound className="size-6" />
+        <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
+          <KeyRound className="size-7" />
         </div>
         <h1 className="text-2xl font-black text-ink">Set a new password</h1>
         {done ? (

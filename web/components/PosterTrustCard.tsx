@@ -16,7 +16,7 @@ export default function PosterTrustCard({
 }) {
   const college = collegeLine(poster);
   const body = (
-    <div className="flex items-center gap-3.5 rounded-2xl bg-white p-4 ring-1 ring-line shadow-[var(--shadow-sm)]">
+    <div className="flex items-center gap-3.5 rounded-2xl bg-white p-4 ring-1 ring-line/70 shadow-[var(--shadow-card)]">
       <Avatar url={poster.avatarUrl} initial={poster.avatarInitial} name={poster.name} size={52} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

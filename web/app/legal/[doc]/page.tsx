@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import Logo from "@/components/Logo";
+import { buttonClasses } from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 
 interface Doc {
@@ -58,18 +59,21 @@ export default function LegalDocPage() {
         {loading ? (
           <FullPageSpinner />
         ) : data ? (
-          <article className="rounded-3xl bg-white p-7 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <article className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <h1 className="text-2xl font-black text-ink">{data.title}</h1>
             <p className="mt-1 text-xs text-ink-muted">Version {data.version}</p>
             <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.body}</div>
           </article>
         ) : (
-          <div className="rounded-3xl bg-white p-7 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <div className="rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <h1 className="text-xl font-black text-ink">Document not available</h1>
             <p className="mt-2 text-ink-soft">
               We couldn&apos;t find that document. Questions? Email{" "}
               <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-primary">{SUPPORT_EMAIL}</a>.
             </p>
+            <Link href="/" className={buttonClasses("primary", "md", "mt-5")}>
+              Back to home
+            </Link>
           </div>
         )}
         <div className="mt-6 flex justify-center gap-5 text-sm font-medium text-ink-soft">

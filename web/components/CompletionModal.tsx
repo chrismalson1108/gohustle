@@ -99,7 +99,7 @@ export default function CompletionModal({
       onClose={onClose}
       title="Verify job completion"
       footer={
-        <Button fullWidth size="lg" loading={busy} onClick={confirm} className="bg-success">
+        <Button fullWidth size="lg" loading={busy} onClick={confirm}>
           <Check className="size-5" /> Confirm job complete
         </Button>
       }
@@ -131,7 +131,7 @@ export default function CompletionModal({
 
       {booking.beforePhotos?.length > 0 && (
         <div className="mb-5">
-          <Label>Before</Label>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Before</p>
           <div className="flex gap-2 overflow-x-auto">
             {booking.beforePhotos.map((u, i) => (
               // eslint-disable-next-line @next/next/no-img-element
@@ -143,7 +143,7 @@ export default function CompletionModal({
 
       {booking.completionPhotos?.length > 0 && (
         <div className="mb-5">
-          <Label>After</Label>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">After</p>
           <div className="flex gap-2 overflow-x-auto">
             {booking.completionPhotos.map((u, i) => (
               // eslint-disable-next-line @next/next/no-img-element
@@ -153,16 +153,16 @@ export default function CompletionModal({
         </div>
       )}
 
-      <Label>Rate {earnerName}</Label>
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Rate {earnerName}</p>
       <div className="mb-1 flex items-center gap-3">
         <RatingStars value={rating} size={32} onChange={setRating} />
         <span className="text-sm italic text-ink-muted">{RATING_TEXT[rating]}</span>
       </div>
 
-      <Label className="mt-5">Leave a review</Label>
+      <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-ink-muted">Leave a review</p>
       <Textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder={`How did ${earnerName} do?`} className="min-h-[80px]" />
 
-      <Label className="mt-5">Add a tip (optional)</Label>
+      <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-ink-muted">Add a tip (optional)</p>
       <div className="flex flex-wrap gap-2">
         {TIPS.map((c) => (
           <Chip key={c} active={tipCents === c} onClick={() => setTipCents(c)}>
@@ -173,6 +173,8 @@ export default function CompletionModal({
       {tipCents > 0 && <p className="mt-1.5 text-xs text-ink-muted">Charged to your saved card and sent to {earnerName}.</p>}
 
       <button
+        type="button"
+        aria-pressed={disputed}
         onClick={() => setDisputed((d) => !d)}
         className="mt-5 flex w-full items-center gap-2 text-left text-sm font-semibold text-ink-soft"
       >
@@ -201,8 +203,4 @@ export default function CompletionModal({
       )}
     </Modal>
   );
-}
-
-function Label({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <p className={classNames("mb-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-muted", className)}>{children}</p>;
 }

@@ -37,9 +37,9 @@ export default function SavedPeoplePage() {
         {people.length === 0 ? (
           <EmptyState icon={<Heart className="size-10" />} title="No saved people yet" body="Tap the heart on someone's profile to save them for quick rehiring." />
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {people.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-3.5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                 <Link href={`/u/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                   <Avatar url={p.avatar_url} initial={p.avatar_initial} name={p.name} size={44} />
                   <div className="min-w-0">
@@ -56,7 +56,7 @@ export default function SavedPeoplePage() {
                     await removeFavorite(user.id, p.id);
                     setPeople((prev) => prev.filter((x) => x.id !== p.id));
                   }}
-                  className="text-urgent"
+                  className="rounded-full p-1.5 text-urgent transition hover:bg-urgent/10"
                   aria-label="Remove"
                 >
                   <Heart className="size-5 fill-urgent" />

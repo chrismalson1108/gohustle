@@ -7,15 +7,15 @@ import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
 import { useJobs } from "@/lib/jobs";
-import { payLabel } from "@/lib/format";
+import { payLabel, classNames } from "@/lib/format";
 import type { Job, BookingStatus } from "@/lib/types";
 
-const BOOKING_PILL: Record<string, { label: string; Icon: typeof Clock; bg: string; text: string }> = {
-  pending: { label: "Applied — Pending", Icon: Clock, bg: "#FFF7ED", text: "#D97706" },
-  confirmed: { label: "Confirmed — In Progress", Icon: CheckCircle2, bg: "#ECFDF5", text: "#059669" },
-  completed: { label: "Awaiting Verification", Icon: RefreshCw, bg: "#EFF6FF", text: "#2563EB" },
-  verified: { label: "Completed", Icon: Heart, bg: "#F0FDF4", text: "#16A34A" },
-  declined: { label: "Declined", Icon: XCircle, bg: "#FEF2F2", text: "#DC2626" },
+const BOOKING_PILL: Record<string, { label: string; Icon: typeof Clock; className: string }> = {
+  pending: { label: "Applied — Pending", Icon: Clock, className: "bg-accent-light text-accent-deep" },
+  confirmed: { label: "Confirmed — In Progress", Icon: CheckCircle2, className: "bg-success/10 text-success" },
+  completed: { label: "Awaiting Verification", Icon: RefreshCw, className: "bg-primary-light text-primary" },
+  verified: { label: "Completed", Icon: Heart, className: "bg-success/10 text-success" },
+  declined: { label: "Declined", Icon: XCircle, className: "bg-urgent-light text-urgent" },
 };
 
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
@@ -35,7 +35,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
   return (
     <Link
       href={`/jobs/${job.id}`}
-      className="group relative flex overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
+      className="group relative flex overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
     >
       <button
         onClick={(e) => {
@@ -57,26 +57,28 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
 
         {pill && (
           <div
-            className="mb-3 flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-extrabold"
-            style={{ backgroundColor: pill.bg, color: pill.text }}
+            className={classNames(
+              "mb-3 flex items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold",
+              pill.className,
+            )}
           >
             <pill.Icon className="size-3.5" /> {pill.label}
           </div>
         )}
 
         {job.urgent && (
-          <span className="mb-2 inline-flex items-center gap-1 rounded-md bg-urgent-light px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-urgent">
+          <span className="mb-2 inline-flex items-center gap-1 rounded-full bg-urgent-light px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-urgent">
             <Zap className="size-3" /> URGENT
           </span>
         )}
 
         <div className="flex items-center justify-between gap-2 pr-8">
           <div className="flex items-center gap-1.5">
-            <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
+            <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
               {job.category}
             </span>
             {RECUR_LABEL[job.recurrence] && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
                 <Repeat className="size-3" /> {RECUR_LABEL[job.recurrence]}
               </span>
             )}
@@ -90,7 +92,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
         {job.tags?.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {job.tags.slice(0, 4).map((t) => (
-              <span key={t} className="rounded-md bg-canvas px-2 py-0.5 text-[11px] font-semibold text-ink-soft ring-1 ring-line">
+              <span key={t} className="rounded-full bg-canvas px-2 py-0.5 text-[11px] font-semibold text-ink-soft ring-1 ring-line">
                 #{t}
               </span>
             ))}
@@ -105,7 +107,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
         )}
 
         <div className="mt-3 flex items-center gap-2">
-          <span className="rounded-lg bg-accent px-2.5 py-1 text-[13px] font-extrabold text-ink">
+          <span className="rounded-full bg-accent px-2.5 py-1 text-[13px] font-extrabold text-ink">
             {payLabel(job)}
             {job.payType === "hourly" ? "" : " flat"}
           </span>

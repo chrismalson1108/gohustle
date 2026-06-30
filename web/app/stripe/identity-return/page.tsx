@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
+import { buttonClasses } from "@/components/ui/Button";
 
 export const metadata = { title: "Identity Verification • GoHustlr" };
 
@@ -19,10 +20,7 @@ export default function IdentityReturnPage() {
           Your documents were submitted. Verification usually completes within a few minutes — your Verified
           badge appears once it&apos;s confirmed.
         </p>
-        <Link
-          href="/profile"
-          className="mt-7 inline-flex w-full items-center justify-center rounded-2xl bg-primary px-6 py-3.5 font-bold text-white transition-colors hover:bg-primary-dark"
-        >
+        <Link href="/profile" className={buttonClasses("primary", "lg", "mt-7 w-full")}>
           Return to GoHustlr
         </Link>
       </div>

@@ -8,6 +8,7 @@ import { stripeEdge } from "@/lib/edge";
 import { money } from "@/lib/format";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
 import type { Booking } from "@/lib/types";
 
 type SavedCard = { id: string; brand: string | null; last4: string | null };
@@ -71,7 +72,9 @@ export default function AcceptPaymentModal({
       {error ? (
         <p className="text-sm font-medium text-urgent">{error}</p>
       ) : loading || !clientSecret ? (
-        <p className="py-4 text-sm text-ink-muted">Setting up secure payment…</p>
+        <div className="flex items-center gap-2 py-4 text-sm text-ink-muted">
+          <Spinner className="size-4" /> Setting up secure payment…
+        </div>
       ) : showSaved ? (
         <SavedCardForm
           clientSecret={clientSecret}
@@ -92,10 +95,10 @@ export default function AcceptPaymentModal({
 
 function EscrowNote({ amountCents, jobTitle }: { amountCents: number; jobTitle: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-xl bg-primary-light/50 p-3 text-sm text-ink-soft">
+    <div className="flex items-start gap-2 rounded-2xl bg-primary-light/50 p-3.5 text-sm text-ink-soft">
       <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
       <span>
-        <b className="text-ink">{money(amountCents / 100)}</b> is held securely for “{jobTitle}” and only released to the
+        <b className="text-ink">{money(amountCents, { cents: true })}</b> is held securely for “{jobTitle}” and only released to the
         earner when you verify the finished work. Cancel before then and it&apos;s refunded.
       </span>
     </div>
@@ -153,7 +156,7 @@ function SavedCardForm({
   return (
     <div className="space-y-3">
       <EscrowNote amountCents={amountCents} jobTitle={jobTitle} />
-      <div className="flex items-center gap-2.5 rounded-xl bg-canvas px-3.5 py-3 ring-1 ring-line/70">
+      <div className="flex items-center gap-2.5 rounded-2xl bg-canvas px-3.5 py-3 ring-1 ring-line/70">
         <CreditCard className="size-5 shrink-0 text-primary" />
         <span className="text-sm font-bold text-ink">
           {brand} •••• {card.last4 ?? "----"}
@@ -162,11 +165,11 @@ function SavedCardForm({
       </div>
       {err && <p className="text-sm font-semibold text-urgent">{err}</p>}
       <Button fullWidth size="lg" loading={busy} onClick={pay}>
-        Hold {money(amountCents / 100)} &amp; accept
+        Hold {money(amountCents, { cents: true })} &amp; accept
       </Button>
-      <button type="button" onClick={onUseNewCard} disabled={busy} className="w-full text-center text-sm font-semibold text-primary disabled:opacity-50">
+      <Button variant="ghost" size="sm" fullWidth onClick={onUseNewCard} disabled={busy}>
         Use a different card
-      </button>
+      </Button>
     </div>
   );
 }
@@ -215,7 +218,7 @@ function PayForm({
       <PaymentElement />
       {err && <p className="text-sm font-semibold text-urgent">{err}</p>}
       <Button fullWidth size="lg" loading={busy} onClick={pay} disabled={!stripe}>
-        Hold {money(amountCents / 100)} &amp; accept
+        Hold {money(amountCents, { cents: true })} &amp; accept
       </Button>
     </div>
   );

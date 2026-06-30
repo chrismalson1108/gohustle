@@ -7,7 +7,7 @@ import { isEduEmail } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { startStudentVerification, confirmStudentVerification } from "@/lib/student";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
-import Button from "@/components/ui/Button";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import { Input, Label, FieldError } from "@/components/ui/Field";
 
 export default function VerifyStudentPage() {
@@ -58,7 +58,7 @@ export default function VerifyStudentPage() {
     <div>
       <PageHeader title="Verified Student" subtitle="Confirm your school email" />
       <PageContainer className="max-w-md">
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
+        <button onClick={() => router.push("/profile")} className={buttonClasses("ghost", "sm", "mb-4 -ml-3")}>
           <ArrowLeft className="size-4" /> Back to profile
         </button>
 
@@ -75,7 +75,7 @@ export default function VerifyStudentPage() {
                   {studentStatus === "alumni" ? "Verified Alumni" : "You're a Verified Student"}
                 </h2>
               </div>
-              <p className="mt-2 text-ink-soft">
+              <p className="mt-2 text-sm text-ink-soft">
                 Your Verified Student badge is live across GoHustlr — on your profile and every gig you post.
               </p>
               <Button className="mt-5" fullWidth onClick={() => router.push("/profile")}>
@@ -85,7 +85,7 @@ export default function VerifyStudentPage() {
           ) : step === "email" ? (
             <div>
               <h2 className="text-xl font-black text-ink">Verify your student status</h2>
-              <p className="mt-1 text-ink-soft">
+              <p className="mt-1 text-sm text-ink-soft">
                 We&apos;ll email a code to your school address. Adds a Verified Student badge that builds trust
                 with posters and earners.
               </p>
@@ -107,7 +107,7 @@ export default function VerifyStudentPage() {
           ) : (
             <div>
               <h2 className="text-xl font-black text-ink">Enter your code</h2>
-              <p className="mt-1 text-ink-soft">We sent a 6-digit code to {email}. It expires in 15 minutes.</p>
+              <p className="mt-1 text-sm text-ink-soft">We sent a 6-digit code to {email}. It expires in 15 minutes.</p>
               <div className="mt-5">
                 <Label>Verification code</Label>
                 <Input
@@ -123,9 +123,9 @@ export default function VerifyStudentPage() {
               <Button className="mt-4" fullWidth size="lg" loading={busy} onClick={confirm}>
                 Verify
               </Button>
-              <button onClick={() => setStep("email")} className="mt-4 w-full text-sm font-semibold text-ink-muted">
+              <Button variant="ghost" size="sm" fullWidth className="mt-4" onClick={() => setStep("email")}>
                 Use a different email
-              </button>
+              </Button>
             </div>
           )}
         </div>

@@ -115,7 +115,7 @@ function LoginInner() {
           >
             {resent ? "Email re-sent ✓" : "Resend confirmation email"}
           </Button>
-          <button onClick={() => switchMode("signin")} className="mt-4 text-sm font-bold text-primary">
+          <button onClick={() => switchMode("signin")} className="mt-4 cursor-pointer text-sm font-bold text-primary">
             Back to sign in
           </button>
         </div>
@@ -207,12 +207,12 @@ function LoginInner() {
       <div className="mt-6 space-y-2 text-center text-sm">
         {mode === "signin" && (
           <>
-            <button onClick={() => switchMode("forgot")} className="block w-full font-medium text-ink-soft hover:text-primary">
+            <button onClick={() => switchMode("forgot")} className="block w-full cursor-pointer font-medium text-ink-soft hover:text-primary">
               Forgot your password?
             </button>
             <p className="text-ink-soft">
               New here?{" "}
-              <button onClick={() => switchMode("signup")} className="font-bold text-primary">
+              <button onClick={() => switchMode("signup")} className="cursor-pointer font-bold text-primary">
                 Create an account
               </button>
             </p>
@@ -221,13 +221,13 @@ function LoginInner() {
         {mode === "signup" && (
           <p className="text-ink-soft">
             Already have an account?{" "}
-            <button onClick={() => switchMode("signin")} className="font-bold text-primary">
+            <button onClick={() => switchMode("signin")} className="cursor-pointer font-bold text-primary">
               Sign in
             </button>
           </p>
         )}
         {mode === "forgot" && (
-          <button onClick={() => switchMode("signin")} className="font-bold text-primary">
+          <button onClick={() => switchMode("signin")} className="cursor-pointer font-bold text-primary">
             Back to sign in
           </button>
         )}
@@ -242,7 +242,7 @@ function Card({ children }: { children: React.ReactNode }) {
       <Link href="/" className="mb-6">
         <Logo />
       </Link>
-      <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line">{children}</div>
+      <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line/70">{children}</div>
     </div>
   );
 }

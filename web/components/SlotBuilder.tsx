@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
+import Button from "@/components/ui/Button";
+import { Input } from "@/components/ui/Field";
 import type { Slot } from "@/lib/types";
 
 // Builds concrete time slots from a datetime-local input. Produces a label like
@@ -39,20 +41,15 @@ export default function SlotBuilder({
   return (
     <div>
       <div className="flex gap-2">
-        <input
+        <Input
           type="datetime-local"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="flex-1 rounded-2xl border border-line bg-white px-3 py-2.5 text-[15px] text-ink outline-none focus:border-primary"
+          className="flex-1"
         />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!value}
-          className="flex items-center gap-1 rounded-2xl bg-primary px-4 text-sm font-bold text-white disabled:opacity-50"
-        >
+        <Button type="button" onClick={add} disabled={!value}>
           <Plus className="size-4" /> Add
-        </button>
+        </Button>
       </div>
       {slots.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">

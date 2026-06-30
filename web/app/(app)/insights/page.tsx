@@ -11,7 +11,7 @@ import { money } from "@/lib/format";
 
 const JobsMap = dynamic(() => import("@/components/JobsMap"), {
   ssr: false,
-  loading: () => <div className="h-[70vh] w-full animate-pulse rounded-3xl bg-white/60" />,
+  loading: () => <div className="h-[70vh] w-full animate-pulse rounded-3xl bg-line/60" />,
 });
 
 // One ranked area row, normalized so the RPC result and the client-side fallback
@@ -108,10 +108,10 @@ export default function InsightsPage() {
         }
       />
 
-      <PageContainer>
+      <PageContainer className="space-y-4">
         {/* Optional map of open gigs */}
         {jobs.some((j) => j.lat != null && j.lng != null) && (
-          <div className="mb-5">
+          <div>
             <JobsMap jobs={jobs} />
           </div>
         )}
@@ -119,7 +119,7 @@ export default function InsightsPage() {
         {loading && rows === null ? (
           <div className="space-y-3">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-24 w-full animate-pulse rounded-2xl bg-white/60" />
+              <div key={i} className="h-24 w-full animate-pulse rounded-2xl bg-line/60" />
             ))}
           </div>
         ) : display.length === 0 ? (
@@ -131,20 +131,20 @@ export default function InsightsPage() {
         ) : (
           <div className="space-y-3">
             {display.map((r, i) => {
-              const color = (r.topCategory && CATEGORY_COLORS[r.topCategory]) || "#6D28D9";
+              const color = (r.topCategory && CATEGORY_COLORS[r.topCategory]) || "#3F25FE";
               return (
                 <div
                   key={r.area}
-                  className="rounded-2xl border border-line bg-white p-4 shadow-sm"
+                  className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-light text-[13px] font-black text-primary">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-light text-xs font-black text-primary">
                         {i + 1}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <MapPin className="size-4 text-ink-muted" />
-                        <h2 className="text-[15px] font-extrabold text-ink">{r.area}</h2>
+                        <h2 className="text-base font-bold text-ink">{r.area}</h2>
                       </div>
                     </div>
                     <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-black text-primary">

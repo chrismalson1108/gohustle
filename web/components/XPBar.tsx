@@ -19,7 +19,7 @@ export default function XPBar({ levelInfo, xp, dark = false }: { levelInfo: Leve
       <div className={`h-2 w-full overflow-hidden rounded-full ${dark ? "bg-white/25" : "bg-line"}`}>
         <div
           className="h-full rounded-full transition-all"
-          style={{ width: `${pct}%`, backgroundColor: dark ? "#fff" : current.color }}
+          style={{ width: `${pct}%`, backgroundColor: dark ? "#ffffff" : current.color }}
         />
       </div>
     </div>

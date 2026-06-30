@@ -111,7 +111,7 @@ export default function TrackExpensesModal({
       onClick={() => setMode(id)}
       className={classNames(
         "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold transition",
-        mode === id ? "bg-white text-primary shadow-sm" : "text-ink-soft",
+        mode === id ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
       )}
     >
       {icon} {label}
@@ -120,7 +120,7 @@ export default function TrackExpensesModal({
 
   return (
     <Modal open={!!booking} onClose={onClose} title={`Track for “${jobTitle}”`}>
-      <div className="mb-4 flex gap-1 rounded-2xl bg-line/60 p-1">
+      <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
         <Tab id="mileage" icon={<Car className="size-4" />} label="Mileage" />
         <Tab id="expense" icon={<Receipt className="size-4" />} label="Expense" />
       </div>

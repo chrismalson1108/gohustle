@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Tag, Target, MapPin, Dumbbell, Rocket, ArrowRight } from "lucide-react";
+import { Sparkles, Tag, Target, MapPin, Dumbbell, Rocket, ArrowRight, Check, GraduationCap, Briefcase, Zap } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
@@ -12,9 +12,9 @@ import { Input, Textarea } from "@/components/ui/Field";
 import { classNames } from "@/lib/format";
 
 const ROLES = [
-  { id: "earner", label: "Earner", desc: "I want to find gigs and earn money", emoji: "🎓" },
-  { id: "poster", label: "Poster", desc: "I want to post jobs and hire people", emoji: "📋" },
-  { id: "both", label: "Both", desc: "I want to earn AND post jobs", emoji: "⚡" },
+  { id: "earner", label: "Earner", desc: "I want to find gigs and earn money", Icon: GraduationCap },
+  { id: "poster", label: "Poster", desc: "I want to post jobs and hire people", Icon: Briefcase },
+  { id: "both", label: "Both", desc: "I want to earn AND post jobs", Icon: Zap },
 ];
 const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
@@ -155,12 +155,12 @@ export default function OnboardingPage() {
                     role === r.id ? "border-primary bg-primary-light" : "border-line bg-white",
                   )}
                 >
-                  <span className="text-2xl">{r.emoji}</span>
+                  <r.Icon className={classNames("size-6 shrink-0", role === r.id ? "text-primary" : "text-ink-soft")} />
                   <span className="flex-1">
-                    <span className={classNames("block font-extrabold", role === r.id ? "text-primary" : "text-ink")}>{r.label}</span>
+                    <span className={classNames("block font-bold", role === r.id ? "text-primary" : "text-ink")}>{r.label}</span>
                     <span className="block text-sm text-ink-muted">{r.desc}</span>
                   </span>
-                  {role === r.id && <span className="font-black text-primary">✓</span>}
+                  {role === r.id && <Check className="size-5 text-primary" />}
                 </button>
               ))}
             </div>
@@ -185,8 +185,8 @@ export default function OnboardingPage() {
                     key={s}
                     onClick={() => toggleSkill(s)}
                     className={classNames(
-                      "rounded-full border px-3.5 py-2 text-[13px] font-bold transition",
-                      skills.includes(s) ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft",
+                      "rounded-full border px-3.5 py-2 text-sm font-bold transition",
+                      skills.includes(s) ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:bg-primary-light/40",
                     )}
                   >
                     {s}
@@ -201,7 +201,7 @@ export default function OnboardingPage() {
                     onClick={() => setRadius(r)}
                     className={classNames(
                       "rounded-xl border px-4 py-2.5 text-sm font-bold transition",
-                      radius === r ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft",
+                      radius === r ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:bg-primary-light/40",
                     )}
                   >
                     {r} mi
@@ -219,7 +219,7 @@ export default function OnboardingPage() {
 
         {step === 5 && (
           <Step icon={<Rocket className="size-14 text-primary" />} title="You're all set!" sub={`Welcome to GoHustlr, @${username || "hustler"}. Time to start hustling!`}>
-            <Button size="lg" fullWidth loading={saving} onClick={finish} className="bg-success">Enter GoHustlr</Button>
+            <Button size="lg" fullWidth loading={saving} onClick={finish}>Enter GoHustlr</Button>
             {finishError && <p className="mt-3 text-sm font-medium text-urgent">{finishError}</p>}
           </Step>
         )}
@@ -233,7 +233,7 @@ function Step({ icon, title, sub, children }: { icon: React.ReactNode; title: st
     <div className="flex flex-col items-center">
       <div className="mb-4">{icon}</div>
       <h1 className="text-2xl font-black text-ink">{title}</h1>
-      <p className="mb-7 mt-2 max-w-xs text-ink-soft">{sub}</p>
+      <p className="mb-7 mt-2 max-w-xs text-sm text-ink-soft">{sub}</p>
       <div className="w-full">{children}</div>
     </div>
   );

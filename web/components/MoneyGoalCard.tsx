@@ -8,6 +8,8 @@ import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { money, classNames } from "@/lib/format";
+import Button from "@/components/ui/Button";
+import { Input } from "@/components/ui/Field";
 
 const PACE = {
   reached: { label: "Goal reached 🎉", cls: "bg-success/15 text-success" },
@@ -91,18 +93,18 @@ export default function MoneyGoalCard() {
         {editing ? (
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-ink-soft">Monthly goal $</span>
-            <input
+            <Input
               type="number"
               inputMode="numeric"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveGoal()}
               autoFocus
-              className="w-28 rounded-xl border border-line bg-canvas px-3 py-1.5 text-sm font-bold text-ink outline-none focus:border-primary"
+              className="w-28 px-3 py-1.5 text-sm font-bold"
             />
-            <button onClick={saveGoal} className="flex size-8 items-center justify-center rounded-full bg-primary text-white">
+            <Button size="sm" onClick={saveGoal} aria-label="Save goal" className="size-9 shrink-0 px-0">
               <Check className="size-4" />
-            </button>
+            </Button>
           </div>
         ) : (
           <button onClick={() => { setDraft(String(monthlyEarningGoal || 1000)); setEditing(true); }} className="flex items-baseline gap-2">

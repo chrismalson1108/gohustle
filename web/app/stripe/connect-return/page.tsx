@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
+import { buttonClasses } from "@/components/ui/Button";
 
 export const metadata = { title: "Payout Setup • GoHustlr" };
 
@@ -18,10 +19,7 @@ export default function ConnectReturnPage() {
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">
           Your bank account is connected. Earnings are deposited automatically after a job is verified.
         </p>
-        <Link
-          href="/profile/payouts"
-          className="mt-7 inline-flex w-full items-center justify-center rounded-2xl bg-primary px-6 py-3.5 font-bold text-white transition-colors hover:bg-primary-dark"
-        >
+        <Link href="/profile/payouts" className={buttonClasses("primary", "lg", "mt-7 w-full")}>
           Return to GoHustlr
         </Link>
       </div>

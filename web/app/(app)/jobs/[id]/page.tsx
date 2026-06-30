@@ -9,6 +9,7 @@ import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
 import { REPORT_REASONS, submitReport } from "@/lib/moderation";
 import { SERVICE_FEE_PCT } from "@/lib/config";
+import { PageContainer, EmptyState } from "@/components/PageHeader";
 import PosterTrustCard from "@/components/PosterTrustCard";
 import SlotPicker from "@/components/SlotPicker";
 import RatingStars from "@/components/ui/RatingStars";
@@ -16,22 +17,22 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { Textarea } from "@/components/ui/Field";
-import { payLabel } from "@/lib/format";
+import { classNames, money, payLabel } from "@/lib/format";
 
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
 
 const STATUS_CONTENT: Record<string, { Icon: typeof Clock; title: string; desc: string; bg: string; color: string }> = {
-  pending: { Icon: Clock, title: "Application Pending", desc: "The poster hasn't reviewed your booking yet. Hang tight!", bg: "#FFF7ED", color: "#D97706" },
-  confirmed: { Icon: CheckCircle2, title: "Confirmed — You're In!", desc: "Accepted! Head to My Jobs to mark done when finished.", bg: "#ECFDF5", color: "#059669" },
-  completed: { Icon: RefreshCw, title: "Awaiting Verification", desc: "You marked done. The poster needs to verify your work.", bg: "#EFF6FF", color: "#2563EB" },
-  verified: { Icon: ShieldCheck, title: "Completed & Verified", desc: "All done! Go to My Jobs to rate the poster.", bg: "#F0FDF4", color: "#16A34A" },
-  declined: { Icon: XCircle, title: "Application Declined", desc: "The poster didn't accept your booking.", bg: "#FEF2F2", color: "#DC2626" },
+  pending: { Icon: Clock, title: "Application Pending", desc: "The poster hasn't reviewed your booking yet. Hang tight!", bg: "bg-accent-light", color: "text-accent-deep" },
+  confirmed: { Icon: CheckCircle2, title: "Confirmed — You're In!", desc: "Accepted! Head to My Jobs to mark done when finished.", bg: "bg-success-light", color: "text-success" },
+  completed: { Icon: RefreshCw, title: "Awaiting Verification", desc: "You marked done. The poster needs to verify your work.", bg: "bg-primary-light", color: "text-primary" },
+  verified: { Icon: ShieldCheck, title: "Completed & Verified", desc: "All done! Go to My Jobs to rate the poster.", bg: "bg-success-light", color: "text-success" },
+  declined: { Icon: XCircle, title: "Application Declined", desc: "The poster didn't accept your booking.", bg: "bg-urgent-light", color: "text-urgent" },
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mb-7">
-      <h2 className="mb-3 text-xs font-extrabold uppercase tracking-wide text-ink-muted">{title}</h2>
+    <section className="mb-6">
+      <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</h2>
       {children}
     </section>
   );
@@ -65,16 +66,18 @@ export default function JobDetailPage() {
   if (!job) {
     if (!waitedForJob) return <FullPageSpinner label="Loading gig…" />;
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-6 text-center">
-        <AlertTriangle className="mb-4 size-12 text-ink-muted" />
-        <h1 className="text-2xl font-black text-ink">Gig not found</h1>
-        <p className="mt-2 max-w-sm text-ink-soft">
-          This listing may have been removed, already filled, or the link is no longer valid.
-        </p>
-        <Button size="lg" className="mt-6" onClick={() => router.replace("/browse")}>
-          Browse gigs
-        </Button>
-      </div>
+      <PageContainer>
+        <EmptyState
+          icon={<AlertTriangle className="size-10" />}
+          title="Gig not found"
+          body="This listing may have been removed, already filled, or the link is no longer valid."
+        />
+        <div className="flex justify-center">
+          <Button size="lg" onClick={() => router.replace("/browse")}>
+            Browse gigs
+          </Button>
+        </div>
+      </PageContainer>
     );
   }
 
@@ -84,7 +87,9 @@ export default function JobDetailPage() {
   const jobPosterBookings = posterBookings.filter((b) => b.jobId === job.id);
   const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";
   const estPay =
-    job.payType === "hourly" ? `$${job.pay}/hr · ~$${job.pay * job.estimatedHours} estimated` : `$${job.pay} flat rate`;
+    job.payType === "hourly"
+      ? `${payLabel(job)} · ~${money(job.pay * job.estimatedHours)} estimated`
+      : `${money(job.pay)} flat rate`;
   const hasAvailableSlot = job.slots?.some((s) => !s.taken);
 
   const baseRate = counterPrice ? parseFloat(counterPrice) || job.pay : job.pay;
@@ -116,7 +121,7 @@ export default function JobDetailPage() {
     showToast({
       icon: "🎉",
       title: "Gig Booked! +25 XP",
-      message: `"${job.title}" booked${counter ? ` · counter-offer $${counter} sent` : ""}`,
+      message: `"${job.title}" booked${counter ? ` · counter-offer ${money(counter)} sent` : ""}`,
     });
     router.push("/my-jobs");
   };
@@ -136,16 +141,16 @@ export default function JobDetailPage() {
   const canMessage = !!currentBooking && ["pending", "confirmed", "completed"].includes(currentBooking.status);
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-5 py-6 pb-32">
+    <PageContainer className="pb-32">
       {job.urgent && (
-        <div className="mb-4 flex items-center justify-center gap-1.5 rounded-xl bg-urgent-light py-2.5 text-sm font-extrabold text-urgent">
+        <div className="mb-4 flex items-center justify-center gap-1.5 rounded-2xl bg-urgent-light py-2.5 text-sm font-extrabold text-urgent">
           <Zap className="size-4" /> URGENT — Needed ASAP
         </div>
       )}
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-block rounded-lg px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
+          <span className="inline-block rounded-full px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
             {job.category}
           </span>
         </div>
@@ -167,7 +172,7 @@ export default function JobDetailPage() {
           <MapPin className="size-4" /> {job.location}
         </span>
         {RECUR_LABEL[job.recurrence] && (
-          <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 px-3 py-2 text-sm font-bold text-primary">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary-light px-3 py-2 text-sm font-bold text-primary">
             <Repeat className="size-4" /> Repeats {RECUR_LABEL[job.recurrence]}
           </span>
         )}
@@ -176,7 +181,7 @@ export default function JobDetailPage() {
       {job.tags?.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {job.tags.map((t) => (
-            <span key={t} className="rounded-md bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-soft ring-1 ring-line">
+            <span key={t} className="rounded-full bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-soft ring-1 ring-line">
               #{t}
             </span>
           ))}
@@ -243,12 +248,12 @@ export default function JobDetailPage() {
 
         {!alreadyBooked && !isOwnJob && (
           <Section title="Counter-offer (optional)">
-            <div className="rounded-2xl border border-line bg-canvas p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
               <p className="text-sm text-ink-soft">
                 Listed rate: <span className="font-bold text-ink">{estPay}</span>
               </p>
               <p className="mb-3 mt-1 text-xs text-ink-muted">Propose a different rate to negotiate before booking.</p>
-              <div className="flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
                 <span className="text-lg font-bold text-primary">$</span>
                 <input
                   inputMode="decimal"
@@ -265,7 +270,7 @@ export default function JobDetailPage() {
 
         {!alreadyBooked && !isOwnJob && (
           <Section title="Add a note to the poster (optional)">
-            <div className="rounded-2xl border border-line bg-canvas p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
               <p className="mb-3 text-xs text-ink-muted">Tell the poster why you&apos;re a great fit.</p>
               <Textarea
                 value={applicationNote}
@@ -280,11 +285,11 @@ export default function JobDetailPage() {
 
         {!alreadyBooked && !isOwnJob && (
           <Section title="Payment">
-            <div className="rounded-2xl border border-line bg-canvas p-4">
-              <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={`$${gross.toFixed(2)}`} />
-              <Row label={`GoHustlr service fee (${Math.round(SERVICE_FEE_PCT * 100)}%)`} value={`−$${fee.toFixed(2)}`} />
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
+              <Row label={`GoHustlr service fee (${Math.round(SERVICE_FEE_PCT * 100)}%)`} value={`−${money(fee)}`} />
               <div className="my-2 h-px bg-line" />
-              <Row label="You receive" value={`$${net.toFixed(2)}`} bold />
+              <Row label="You receive" value={money(net)} bold />
               <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
                 Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.
               </p>
@@ -296,7 +301,7 @@ export default function JobDetailPage() {
           <Section title={`Reviews (${job.reviews.length})`}>
             <div className="space-y-2.5">
               {job.reviews.map((r) => (
-                <div key={r.id} className="rounded-2xl bg-canvas p-4">
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-ink">{r.author}</span>
                     <RatingStars value={r.rating} size={12} />
@@ -312,7 +317,7 @@ export default function JobDetailPage() {
 
       {/* Sticky action bar */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 backdrop-blur md:left-64">
-        <div className="mx-auto w-full max-w-2xl px-5 py-4 pb-6 md:pb-4">
+        <div className="mx-auto w-full max-w-3xl px-5 py-4 pb-6 md:pb-4">
           {job.status === "cancelled" ? (
             <div className="rounded-2xl bg-canvas py-4 text-center font-bold text-ink-muted">This listing has been removed</div>
           ) : isOwnJob ? (
@@ -330,10 +335,10 @@ export default function JobDetailPage() {
             </div>
           ) : alreadyBooked && status ? (
             <div>
-              <div className="flex items-start gap-3 rounded-2xl p-3.5" style={{ backgroundColor: status.bg }}>
-                <status.Icon className="mt-0.5 size-5 shrink-0" style={{ color: status.color }} />
+              <div className={classNames("flex items-start gap-3 rounded-2xl p-3.5", status.bg)}>
+                <status.Icon className={classNames("mt-0.5 size-5 shrink-0", status.color)} />
                 <div>
-                  <p className="font-extrabold" style={{ color: status.color }}>{status.title}</p>
+                  <p className={classNames("font-extrabold", status.color)}>{status.title}</p>
                   <p className="text-xs text-ink-soft">{status.desc}</p>
                 </div>
               </div>
@@ -347,7 +352,7 @@ export default function JobDetailPage() {
             <Button fullWidth size="lg" loading={booking} disabled={!selectedSlot && hasAvailableSlot} onClick={handleBook}>
               {selectedSlot || !hasAvailableSlot
                 ? counterPrice
-                  ? `Book · counter $${counterPrice}`
+                  ? `Book · counter ${money(parseFloat(counterPrice))}`
                   : "Book this gig"
                 : "Select a time slot first"}
             </Button>
@@ -362,14 +367,14 @@ export default function JobDetailPage() {
             <button
               key={reason}
               onClick={() => report(reason)}
-              className="w-full rounded-xl border border-line bg-white px-4 py-3 text-left text-sm font-semibold text-ink hover:border-urgent hover:text-urgent"
+              className="w-full rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-ink ring-1 ring-line/70 hover:text-urgent hover:ring-urgent"
             >
               {reason}
             </button>
           ))}
         </div>
       </Modal>
-    </div>
+    </PageContainer>
   );
 }
 

@@ -17,6 +17,8 @@ import { useJobs } from "@/lib/jobs";
 import JobCard from "@/components/JobCard";
 import FilterSheet, { type Filters } from "@/components/FilterSheet";
 import XPBar from "@/components/XPBar";
+import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import { classNames } from "@/lib/format";
 import type { Job } from "@/lib/types";
 
@@ -62,59 +64,57 @@ export default function BrowsePage() {
 
   return (
     <div>
-      {/* Header */}
-      <header className="bg-brand px-5 pb-6 pt-8 text-white md:rounded-b-[2rem]">
-        <div className="mx-auto w-full max-w-3xl">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-black">Hey {name}</h1>
-              <p className="text-sm text-white/70">Ready to hustle?</p>
-            </div>
-            <div className="flex flex-col items-center rounded-2xl bg-white/15 px-3.5 py-2">
-              <Flame className="size-5 text-gold" />
-              <span className="text-xl font-black leading-none">{streakDays}</span>
-              <span className="text-[10px] text-white/75">day streak</span>
-            </div>
+      <PageHeader
+        title={`Hey ${name}`}
+        subtitle="Ready to hustle?"
+        variant="brand"
+        right={
+          <div className="flex flex-col items-center rounded-2xl bg-white/15 px-3.5 py-2">
+            <Flame className="size-5 text-gold" />
+            <span className="text-xl font-black leading-none">{streakDays}</span>
+            <span className="text-[10px] text-white/75">day streak</span>
           </div>
-          <div className="mt-4">
-            <XPBar levelInfo={levelInfo} xp={xp} dark />
-          </div>
-          <div className="mt-4 flex gap-2.5">
-            <div className="flex h-11 flex-1 items-center gap-2 rounded-2xl bg-white px-3.5">
-              <Search className="size-4 text-ink-muted" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search gigs..."
-                className="h-full flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted"
-              />
-              {search && (
-                <button onClick={() => setSearch("")} aria-label="Clear">
-                  <X className="size-4 text-ink-muted" />
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => setShowFilter(true)}
-              className={classNames(
-                "relative flex size-11 items-center justify-center rounded-2xl",
-                activeFilterCount > 0 ? "bg-white text-primary" : "bg-white/20 text-white",
-              )}
-            >
-              <SlidersHorizontal className="size-5" />
-              {activeFilterCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-urgent text-[10px] font-black">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-          </div>
+        }
+      >
+        <div className="mt-4">
+          <XPBar levelInfo={levelInfo} xp={xp} dark />
         </div>
-      </header>
+        <div className="mt-4 flex gap-2.5">
+          <div className="flex h-11 flex-1 items-center gap-2 rounded-2xl bg-white px-3.5">
+            <Search className="size-4 text-ink-muted" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search gigs..."
+              className="h-full flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} aria-label="Clear">
+                <X className="size-4 text-ink-muted" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilter(true)}
+            aria-label={`Filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
+            className={classNames(
+              "relative flex size-11 items-center justify-center rounded-2xl",
+              activeFilterCount > 0 ? "bg-white text-primary" : "bg-white/20 text-white",
+            )}
+          >
+            <SlidersHorizontal className="size-5" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-urgent text-[10px] font-black">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </PageHeader>
 
-      <div className="mx-auto w-full max-w-3xl px-5">
+      <PageContainer>
         {/* Category chips */}
-        <div className="-mx-1 flex gap-2 overflow-x-auto py-4">
+        <div className="-mx-1 flex gap-2 overflow-x-auto pb-4">
           {CHIPS.map((cat) => {
             const active = selectedCat === cat.id;
             return (
@@ -153,17 +153,17 @@ export default function BrowsePage() {
           </p>
           <div className="flex items-center gap-4">
             {activeFilterCount > 0 && (
-              <button onClick={() => setFilters(DEFAULT_FILTERS)} className="text-[13px] font-bold text-primary">
+              <button onClick={() => setFilters(DEFAULT_FILTERS)} className="text-sm font-bold text-primary">
                 Clear filters
               </button>
             )}
-            <Link href="/insights" className="flex items-center gap-1 text-[13px] font-bold text-primary">
+            <Link href="/insights" className="flex items-center gap-1 text-sm font-bold text-primary">
               <BarChart3 className="size-4" />
               Insights
             </Link>
             <button
               onClick={() => setViewMode((m) => (m === "list" ? "map" : "list"))}
-              className="flex items-center gap-1 text-[13px] font-bold text-primary"
+              className="flex items-center gap-1 text-sm font-bold text-primary"
             >
               {viewMode === "list" ? <MapIcon className="size-4" /> : <List className="size-4" />}
               {viewMode === "list" ? "Map" : "List"}
@@ -177,37 +177,42 @@ export default function BrowsePage() {
             <JobsMap jobs={filtered} userCoords={userCoords} />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <Search className="size-10 text-ink-muted" />
-            <p className="text-ink-soft">
-              {forYouNoSkills
-                ? "Add skills to your profile to get gigs matched to you"
-                : selectedCat === "foryou"
-                  ? "No gigs match your skills right now"
-                  : hasNarrowed
-                    ? "No gigs match your filters"
-                    : "No gigs near you yet — check back soon, or post one to get the ball rolling."}
-            </p>
-            {forYouNoSkills ? (
-              <Link href="/profile/settings" className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary">
-                Add your skills
-              </Link>
-            ) : hasNarrowed ? (
-              <button
-                onClick={() => {
-                  setFilters(DEFAULT_FILTERS);
-                  setSearch("");
-                  setSelectedCat("all");
-                }}
-                className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary"
-              >
-                Clear search &amp; filters
-              </button>
-            ) : (
-              <Link href="/hiring/new" className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary">
-                Post a gig
-              </Link>
-            )}
+          <div>
+            <EmptyState
+              icon={<Search className="size-10" />}
+              title="No gigs found"
+              body={
+                forYouNoSkills
+                  ? "Add skills to your profile to get gigs matched to you"
+                  : selectedCat === "foryou"
+                    ? "No gigs match your skills right now"
+                    : hasNarrowed
+                      ? "No gigs match your filters"
+                      : "No gigs near you yet — check back soon, or post one to get the ball rolling."
+              }
+            />
+            <div className="-mt-8 flex justify-center pb-16">
+              {forYouNoSkills ? (
+                <Link href="/profile/settings" className={buttonClasses("secondary", "md")}>
+                  Add your skills
+                </Link>
+              ) : hasNarrowed ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setFilters(DEFAULT_FILTERS);
+                    setSearch("");
+                    setSelectedCat("all");
+                  }}
+                >
+                  Clear search &amp; filters
+                </Button>
+              ) : (
+                <Link href="/hiring/new" className={buttonClasses("secondary", "md")}>
+                  Post a gig
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 pb-8 lg:grid-cols-2">
@@ -221,7 +226,7 @@ export default function BrowsePage() {
             ))}
           </div>
         )}
-      </div>
+      </PageContainer>
 
       <FilterSheet
         open={showFilter}

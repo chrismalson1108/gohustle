@@ -13,6 +13,7 @@ import {
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
+import Spinner from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
 
 function relTime(iso: string): string {
@@ -93,14 +94,14 @@ export default function NotificationsPage() {
       />
       <PageContainer>
         {/* Inbox / Archived segmented control */}
-        <div className="mb-4 flex gap-1 rounded-2xl bg-line/60 p-1">
+        <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           {(["inbox", "archived"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={classNames(
                 "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
-                tab === t ? "bg-white text-primary shadow-sm" : "text-ink-soft",
+                tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
               )}
             >
               {t}
@@ -108,7 +109,11 @@ export default function NotificationsPage() {
           ))}
         </div>
 
-        {loading ? null : items.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Spinner className="size-8" />
+          </div>
+        ) : items.length === 0 ? (
           <EmptyState
             icon={<Bell className="size-10" />}
             title={tab === "inbox" ? "No alerts yet" : "Nothing archived"}
@@ -126,7 +131,7 @@ export default function NotificationsPage() {
                 <div
                   key={n.id}
                   className={classNames(
-                    "flex items-start gap-3 rounded-2xl p-3.5 shadow-[var(--shadow-card)] ring-1 transition",
+                    "flex items-start gap-3 rounded-2xl p-4 shadow-[var(--shadow-card)] ring-1 transition",
                     n.read || tab === "archived" ? "bg-white ring-line/70" : "bg-primary-light/40 ring-primary/30",
                   )}
                 >

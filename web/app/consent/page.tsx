@@ -49,7 +49,7 @@ export default function ConsentPage() {
       <div className="bg-brand flex flex-col items-center px-6 pb-9 pt-16 text-center text-white">
         <FileText className="mb-3 size-11" />
         <h1 className="text-2xl font-black">We&apos;ve updated our terms</h1>
-        <p className="mt-1.5 text-white/80">Please review and accept to keep using GoHustlr.</p>
+        <p className="mt-1.5 text-white/75">Please review and accept to keep using GoHustlr.</p>
       </div>
 
       <div className="mx-auto w-full max-w-md p-6">
@@ -61,10 +61,10 @@ export default function ConsentPage() {
         {docs === null ? (
           <FullPageSpinner />
         ) : (
-          <div className="divide-y divide-divider overflow-hidden rounded-2xl bg-white ring-1 ring-line/70">
+          <div className="divide-y divide-divider overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
             {ordered.map((d) => (
               <button key={d.slug} onClick={() => setOpenDoc(d)} className="flex w-full items-center justify-between px-4 py-4 text-left hover:bg-primary-light/40">
-                <span className="font-semibold text-ink">{d.title}</span>
+                <span className="font-bold text-ink">{d.title}</span>
                 <ChevronRight className="size-4 text-ink-muted" />
               </button>
             ))}
@@ -75,9 +75,9 @@ export default function ConsentPage() {
           Accept &amp; continue
         </Button>
         {error && <p className="mt-3 text-center text-sm font-medium text-urgent">{error}</p>}
-        <button onClick={() => signOut()} className="mt-4 w-full text-sm font-semibold text-ink-muted">
+        <Button variant="ghost" size="sm" fullWidth className="mt-4 text-ink-muted" onClick={() => signOut()}>
           Sign out
-        </button>
+        </Button>
       </div>
 
       <Modal open={!!openDoc} onClose={() => setOpenDoc(null)} title={openDoc?.title} size="lg">

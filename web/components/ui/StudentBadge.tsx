@@ -19,7 +19,7 @@ export default function StudentBadge({
   const label = studentTrustLabel(profile ?? null);
   if (!label) return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-primary-light px-2 py-0.5 text-[11px] font-extrabold text-primary">
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary-light px-2 py-0.5 text-[11px] font-extrabold text-primary">
       <GraduationCap className={compact ? "size-3" : "size-3.5"} />
       {compact ? "Student" : label}
     </span>

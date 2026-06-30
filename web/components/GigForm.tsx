@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, ImagePlus, Lock } from "lucide-react";
+import { X, ImagePlus, Lock, Zap } from "lucide-react";
 import { CATEGORIES, findProhibited } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
 import { uploadImages } from "@/lib/uploadImage";
@@ -189,15 +189,16 @@ export default function GigForm({
   ) : null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {coreNote}
+      <div className="space-y-5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
       <div>
         <Label>Job title *</Label>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={lockedCore} placeholder="e.g. Lawn mowing, Math tutor…" />
       </div>
 
       <div>
-        <Label>Category *</Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Category *</p>
         <div className="flex flex-wrap gap-2">
           {CATS.map((c) => (
             <Chip key={c.id} active={category === c.id} disabled={lockedCore} onClick={() => setCategory(c.id)}>
@@ -212,7 +213,7 @@ export default function GigForm({
       </div>
 
       <div>
-        <Label>Tags <span className="font-normal text-ink-muted">(optional — helps the right workers find your gig)</span></Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Tags <span className="normal-case font-semibold">(optional — helps the right workers find your gig)</span></p>
         <div className="flex flex-wrap items-center gap-2">
           {tags.map((t) => (
             <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary-light px-3 py-1.5 text-[13px] font-bold text-primary">
@@ -223,20 +224,20 @@ export default function GigForm({
             </span>
           ))}
           {tags.length < 6 && (
-            <input
+            <Input
               value={tagDraft}
               onChange={(e) => setTagDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } }}
               onBlur={addTag}
               placeholder={tags.length ? "Add another…" : "e.g. lawncare, assembly, heavy lifting"}
-              className="min-w-[9rem] flex-1 rounded-2xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-primary"
+              className="min-w-[9rem] flex-1"
             />
           )}
         </div>
       </div>
 
       <div>
-        <Label>Safety notes / hazards <span className="font-normal text-ink-muted">(optional — warn applicants of any risks)</span></Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Safety notes / hazards <span className="normal-case font-semibold">(optional — warn applicants of any risks)</span></p>
         <div className="flex flex-wrap items-center gap-2">
           {hazards.map((h) => (
             <span key={h} className="inline-flex items-center gap-1 rounded-full bg-urgent-light px-3 py-1.5 text-[13px] font-bold text-urgent">
@@ -247,13 +248,13 @@ export default function GigForm({
             </span>
           ))}
           {hazards.length < 6 && (
-            <input
+            <Input
               value={hazardDraft}
               onChange={(e) => setHazardDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addHazard(); } }}
               onBlur={addHazard}
               placeholder={hazards.length ? "Add another…" : "e.g. dog on site, uneven ground, fragile items"}
-              className="min-w-[9rem] flex-1 rounded-2xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-primary"
+              className="min-w-[9rem] flex-1"
             />
           )}
         </div>
@@ -262,9 +263,9 @@ export default function GigForm({
       <div>
         <Label>Pay *{payLocked && !lockedCore ? " (locked — backed by escrow)" : ""}</Label>
         <div className="flex gap-2">
-          <div className="flex flex-1 items-center gap-1.5 rounded-2xl border border-line bg-white px-4">
-            <span className="text-ink-soft">$</span>
-            <input value={pay} disabled={payLocked} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" inputMode="decimal" className="w-full bg-transparent py-3 text-[15px] outline-none disabled:opacity-60" />
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-soft">$</span>
+            <Input value={pay} disabled={payLocked} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" inputMode="decimal" className="pl-7" />
           </div>
           {(["flat", "hourly"] as const).map((t) => (
             <Chip key={t} active={payType === t} disabled={payLocked} onClick={() => setPayType(t)}>
@@ -299,13 +300,13 @@ export default function GigForm({
       </div>
 
       <div>
-        <Label>Photos (optional)</Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Photos (optional)</p>
         <div className="flex flex-wrap gap-3">
           {keptPhotos.map((u, i) => (
             <div key={u} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt="" className="size-20 rounded-xl object-cover" />
-              <button onClick={() => setKeptPhotos(keptPhotos.filter((_, idx) => idx !== i))} className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full border-2 border-white bg-urgent text-white">
+              <img src={u} alt="" className="size-20 rounded-xl object-cover ring-1 ring-line" />
+              <button onClick={() => setKeptPhotos(keptPhotos.filter((_, idx) => idx !== i))} aria-label="Remove photo" className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full border-2 border-white bg-urgent text-white">
                 <X className="size-3" />
               </button>
             </div>
@@ -313,8 +314,8 @@ export default function GigForm({
           {files.map((f, i) => (
             <div key={i} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(f)} alt="" className="size-20 rounded-xl object-cover" />
-              <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full border-2 border-white bg-urgent text-white">
+              <img src={URL.createObjectURL(f)} alt="" className="size-20 rounded-xl object-cover ring-1 ring-line" />
+              <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} aria-label="Remove photo" className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full border-2 border-white bg-urgent text-white">
                 <X className="size-3" />
               </button>
             </div>
@@ -335,12 +336,12 @@ export default function GigForm({
       </div>
 
       <div>
-        <Label>Available times</Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Available times</p>
         <SlotBuilder slots={slots} onChange={setSlots} />
       </div>
 
       <div>
-        <Label>Repeats</Label>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Repeats</p>
         <div className="flex flex-wrap gap-2">
           {RECURRENCE.map((o) => (
             <Chip key={o.id} active={recurrence === o.id} onClick={() => setRecurrence(o.id)}>
@@ -351,11 +352,17 @@ export default function GigForm({
       </div>
 
       <button
+        type="button"
         onClick={() => setUrgent(!urgent)}
-        className={classNames("w-full rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition", urgent ? "border-urgent bg-urgent-light text-urgent" : "border-urgent/40 bg-white text-urgent")}
+        className={classNames(
+          "flex w-full items-center justify-center gap-2 rounded-2xl border-2 py-3.5 text-center text-sm font-bold transition",
+          urgent ? "border-urgent bg-urgent-light text-urgent" : "border-line bg-white text-ink-soft hover:border-urgent/40",
+        )}
       >
-        {urgent ? "⚡ Marked as Urgent — Needed ASAP" : "Mark as Urgent (optional)"}
+        <Zap className={classNames("size-4", urgent ? "text-urgent" : "text-urgent/70")} />
+        {urgent ? "Marked as Urgent — Needed ASAP" : "Mark as Urgent (optional)"}
       </button>
+      </div>
 
       {/* Instant Book is parked: auto-confirm was removed because it skipped the
           escrow hold (the earner could end up working unpaid). It needs escrow

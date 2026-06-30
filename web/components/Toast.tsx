@@ -19,7 +19,7 @@ export default function Toast() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex justify-center px-4">
       <div
-        className="pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-[var(--shadow-pop)] ring-1 ring-line"
+        className="pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-[var(--shadow-pop)] ring-1 ring-line/70"
         role="status"
         onClick={dismissToast}
       >

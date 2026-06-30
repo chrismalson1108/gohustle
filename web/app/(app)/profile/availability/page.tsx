@@ -10,9 +10,7 @@ import { listClasses, addClass, deleteClass, type ClassRow } from "@/lib/schedul
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import WorkStatusBar from "@/components/WorkStatusBar";
 import Button from "@/components/ui/Button";
-
-const inputCls =
-  "rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-primary";
+import { Input, Select } from "@/components/ui/Field";
 
 export default function AvailabilityPage() {
   const router = useRouter();
@@ -74,7 +72,7 @@ export default function AvailabilityPage() {
 
   return (
     <div>
-      <PageHeader title="Availability" subtitle="When you can work — Hustlr AI uses this to match gigs" />
+      <PageHeader variant="earn" title="Availability" subtitle="When you can work — Hustlr AI uses this to match gigs" />
       <PageContainer>
         <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
           <ArrowLeft className="size-4" /> Back
@@ -85,7 +83,7 @@ export default function AvailabilityPage() {
 
           {/* Availability windows */}
           <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-1 flex items-center gap-2 font-black text-ink">
+            <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
               <Clock className="size-4 text-primary" /> Weekly availability
             </p>
             <p className="mb-3 text-xs text-ink-muted">Add the times you&apos;re free to work each week.</p>
@@ -108,14 +106,14 @@ export default function AvailabilityPage() {
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              <select value={day} onChange={(e) => setDay(Number(e.target.value))} className={inputCls}>
+              <Select value={day} onChange={(e) => setDay(Number(e.target.value))} className="w-auto">
                 {DAYS.map((d, i) => (
                   <option key={i} value={i}>{d}</option>
                 ))}
-              </select>
-              <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={inputCls} />
+              </Select>
+              <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-auto" />
               <span className="text-ink-muted">to</span>
-              <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={inputCls} />
+              <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="w-auto" />
               <Button size="sm" onClick={addWindow}>
                 <Plus className="size-4" /> Add
               </Button>
@@ -124,7 +122,7 @@ export default function AvailabilityPage() {
 
           {/* Class schedule */}
           <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-1 flex items-center gap-2 font-black text-ink">
+            <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
               <GraduationCap className="size-4 text-primary" /> Class schedule
             </p>
             <p className="mb-3 text-xs text-ink-muted">Your classes block the times you can&apos;t work.</p>
@@ -149,11 +147,11 @@ export default function AvailabilityPage() {
               <p className="mb-3 text-sm text-ink-muted">No classes added yet.</p>
             )}
 
-            <input
+            <Input
               value={cTitle}
               onChange={(e) => setCTitle(e.target.value)}
               placeholder="Class name (e.g. CS 101)"
-              className={`${inputCls} mb-2 w-full`}
+              className="mb-2 w-full"
             />
             <div className="mb-2 flex flex-wrap gap-1.5">
               {DAYS.map((d, i) => (
@@ -161,7 +159,7 @@ export default function AvailabilityPage() {
                   key={i}
                   onClick={() => toggleDay(i)}
                   className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
-                    cDays.includes(i) ? "bg-primary text-white" : "bg-canvas text-ink-soft"
+                    cDays.includes(i) ? "bg-primary text-white" : "bg-canvas text-ink-soft hover:bg-primary-light/50"
                   }`}
                 >
                   {d}
@@ -169,9 +167,9 @@ export default function AvailabilityPage() {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <input type="time" value={cStart} onChange={(e) => setCStart(e.target.value)} className={inputCls} />
+              <Input type="time" value={cStart} onChange={(e) => setCStart(e.target.value)} className="w-auto" />
               <span className="text-ink-muted">to</span>
-              <input type="time" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className={inputCls} />
+              <Input type="time" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className="w-auto" />
               <Button size="sm" onClick={saveClass} disabled={!cTitle.trim() || cDays.length === 0}>
                 <Plus className="size-4" /> Add class
               </Button>

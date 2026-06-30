@@ -275,7 +275,7 @@ export default function SettingsPage() {
                     {f.skills.map((s) => (
                       <div key={s} className="flex items-center justify-between gap-3">
                         <span className="text-sm font-semibold text-ink">{s}</span>
-                        <div className="flex w-28 items-center gap-1 rounded-xl border border-line bg-white px-3 py-1.5">
+                        <div className="flex w-28 items-center gap-1 rounded-2xl border border-line bg-white px-3 py-1.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
                           <span className="text-ink-soft">$</span>
                           <input
                             value={f.skillRates?.[s] || ""}
@@ -291,7 +291,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-canvas p-4">
+              <div className="flex items-center justify-between gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-ink">Show my availability on my profile</p>
                   <p className="mt-0.5 text-xs text-ink-muted">Lets signed-in clients see when you&apos;re free.</p>
@@ -318,7 +318,7 @@ export default function SettingsPage() {
           )}
 
           {/* College */}
-          <div className="rounded-2xl border border-line bg-canvas p-4">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <Label>College (optional)</Label>
             <Input value={f.school} onChange={(e) => set("school", e.target.value)} placeholder="e.g. University of Texas at Austin" />
             <p className="mt-1.5 text-xs text-ink-muted">
@@ -356,16 +356,12 @@ export default function SettingsPage() {
           </div>
 
           {/* Certifications */}
-          <div className="rounded-2xl border border-line bg-canvas p-4">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <div className="flex items-center justify-between">
               <Label className="mb-0">Certifications</Label>
-              <button
-                type="button"
-                onClick={() => setCertModalOpen(true)}
-                className="inline-flex items-center gap-1 rounded-xl border border-primary bg-white px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary-light/40"
-              >
+              <Button variant="outline" size="sm" onClick={() => setCertModalOpen(true)}>
                 <Plus className="size-4" /> Add
-              </button>
+              </Button>
             </div>
             <p className="mt-1.5 text-xs text-ink-muted">
               Trade certs &amp; credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.
@@ -373,7 +369,7 @@ export default function SettingsPage() {
             {certs.length > 0 && (
               <div className="mt-3 space-y-2">
                 {certs.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 rounded-xl border border-line bg-white px-3 py-2.5">
+                  <div key={c.id} className="flex items-center gap-3 rounded-xl bg-canvas px-3 py-2.5 ring-1 ring-line/70">
                     {c.image_url && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={c.image_url} alt={c.title} className="size-10 shrink-0 rounded-lg object-cover" />
@@ -404,16 +400,18 @@ export default function SettingsPage() {
 
           {/* Danger zone */}
           <div className="mt-8 rounded-2xl border border-urgent/30 bg-urgent/5 p-4">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-urgent">Danger zone</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-urgent">Danger zone</p>
             <p className="mt-1 text-sm text-ink-soft">
               Permanently delete your account, profile, gigs, bookings, messages, reviews, and photos. This can&apos;t be undone.
             </p>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 border-urgent text-urgent hover:bg-urgent/5 hover:text-urgent"
               onClick={() => setConfirmDelete(true)}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-urgent bg-white px-4 py-2.5 text-sm font-bold text-urgent hover:bg-urgent/5"
             >
               <Trash2 className="size-4" /> Delete account
-            </button>
+            </Button>
           </div>
         </div>
       </PageContainer>
@@ -480,7 +478,7 @@ export default function SettingsPage() {
         footer={
           <div className="flex gap-2">
             <Button variant="outline" fullWidth onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</Button>
-            <Button fullWidth loading={deleting} onClick={deleteAccount} className="bg-urgent hover:bg-urgent">Delete forever</Button>
+            <Button fullWidth loading={deleting} onClick={deleteAccount} variant="danger">Delete forever</Button>
           </div>
         }
       >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban } from "lucide-react";
+import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -167,6 +167,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
   const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -245,12 +246,14 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   };
 
   const doReport = async () => {
+    setReportBusy(true);
     try {
       await submitReport({ reporterId: userId, reportedUserId: conversation.otherId, bookingId: conversation.bookingId, reason: reportReason, details: reportDetails || null });
       showToast({ icon: "🚩", title: "Report submitted", message: "Thanks — our team will review it." });
     } catch {
       showToast({ icon: "⚠️", title: "Couldn't submit", message: "Please try again." });
     }
+    setReportBusy(false);
     setReportOpen(false);
     setReportDetails("");
   };
@@ -301,7 +304,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
               <div className={classNames("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm", mine ? "bg-primary text-white" : "bg-white text-ink ring-1 ring-line")}>
                 {m.image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.image_url} alt="" className="mb-1 max-h-48 rounded-xl" />
+                  <img src={m.image_url} alt="" className="mb-1 max-h-48 rounded-xl ring-1 ring-line" />
                 )}
                 {m.text}
               </div>
@@ -326,7 +329,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
         <button
           onClick={() => fileRef.current?.click()}
           disabled={sending}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary disabled:opacity-50"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary transition-all hover:bg-[#dcd6ff] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
           aria-label="Send a photo"
         >
           <ImagePlus className="size-5" />
@@ -336,10 +339,15 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
           placeholder="Type a message…"
-          className="flex-1 rounded-full border border-line bg-white px-4 py-2.5 text-[15px] outline-none focus:border-primary"
+          className="flex-1 rounded-full border border-line bg-white px-4 py-2.5 text-[15px] outline-none transition placeholder:text-ink-muted focus:border-primary focus:ring-2 focus:ring-primary/15"
         />
-        <button onClick={send} disabled={sending || !text.trim()} className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-white disabled:opacity-50">
-          <Send className="size-5" />
+        <button
+          onClick={send}
+          disabled={sending || !text.trim()}
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-soft)] transition-all hover:bg-primary-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          aria-label="Send message"
+        >
+          {sending ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
         </button>
       </div>
 
@@ -348,7 +356,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
         onClose={() => setReportOpen(false)}
         title={`Report ${conversation.name}`}
         size="sm"
-        footer={<Button fullWidth onClick={doReport}>Submit report</Button>}
+        footer={<Button fullWidth loading={reportBusy} onClick={doReport}>Submit report</Button>}
       >
         <div className="space-y-2">
           {REPORT_REASONS.map((r) => (
@@ -361,7 +369,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
               )}
             >
               {r}
-              {reportReason === r && <span>✓</span>}
+              {reportReason === r && <Check className="size-4" />}
             </button>
           ))}
           <Textarea

@@ -13,7 +13,7 @@ export default function SavedGigsPage() {
 
   return (
     <div>
-      <PageHeader title="Saved gigs" subtitle="Gigs you've bookmarked" />
+      <PageHeader title="Saved gigs" subtitle="Gigs you've bookmarked" variant="gold" />
       <PageContainer>
         <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
           <ArrowLeft className="size-4" /> Back
