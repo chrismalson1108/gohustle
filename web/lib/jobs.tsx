@@ -154,11 +154,16 @@ interface JobsValue extends State {
   createPaymentIntent: (bookingId: string) => Promise<{ clientSecret: string; amount: number }>;
   getPayoutOnboardingUrl: () => Promise<{ url: string }>;
   getPayoutStatus: () => Promise<{ hasAccount: boolean; onboarded: boolean }>;
-  createSetupIntent: () => Promise<{ clientSecret: string }>;
-  getPaymentMethodStatus: () => Promise<{ hasPaymentMethod: boolean }>;
-  getPaymentReadiness: () => Promise<{ payoutReady: boolean; paymentMethodReady: boolean }>;
+  createSetupIntent: () => Promise<{ setupIntentClientSecret: string; customerId?: string; ephemeralKey?: string }>;
+  getPaymentMethodStatus: () => Promise<{ hasPaymentMethod: boolean; brand?: string | null; last4?: string | null }>;
+  getPaymentReadiness: () => Promise<{
+    payoutReady: boolean;
+    paymentMethodReady: boolean;
+    cardBrand?: string | null;
+    cardLast4?: string | null;
+  }>;
   getPayoutLoginLink: () => Promise<{ url: string }>;
-  detachPaymentMethod: () => Promise<unknown>;
+  detachPaymentMethod: () => Promise<{ ok?: boolean }>;
 }
 
 interface VerifyArgs {
@@ -997,7 +1002,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
   const getPaymentReadiness = async () => {
     const [payout, pm] = await Promise.all([getPayoutStatus(), getPaymentMethodStatus()]);
-    return { payoutReady: payout.onboarded, paymentMethodReady: pm.hasPaymentMethod };
+    return {
+      payoutReady: payout.onboarded,
+      paymentMethodReady: pm.hasPaymentMethod,
+      cardBrand: pm.brand ?? null,
+      cardLast4: pm.last4 ?? null,
+    };
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────--

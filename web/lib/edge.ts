@@ -50,12 +50,19 @@ export const stripeEdge = {
     callEdgeFunction("stripe-cancel-payment", { bookingId }),
   getPayoutOnboardingUrl: () =>
     callEdgeFunction<{ url: string }>("stripe-connect-onboard"),
+  // NOTE: the edge function returns the SetupIntent secret as `setupIntentClientSecret`
+  // (see src/screens/PayoutSetupScreen.js + supabase/functions/stripe-create-setup-intent).
   createSetupIntent: () =>
-    callEdgeFunction<{ clientSecret: string }>("stripe-create-setup-intent"),
+    callEdgeFunction<{ setupIntentClientSecret: string; customerId?: string; ephemeralKey?: string }>(
+      "stripe-create-setup-intent",
+    ),
   getPaymentMethodStatus: () =>
-    callEdgeFunction<{ hasPaymentMethod: boolean }>("stripe-payment-method-status"),
+    callEdgeFunction<{ hasPaymentMethod: boolean; brand?: string | null; last4?: string | null }>(
+      "stripe-payment-method-status",
+    ),
   getPayoutLoginLink: () => callEdgeFunction<{ url: string }>("stripe-payout-login-link"),
-  detachPaymentMethod: () => callEdgeFunction("stripe-detach-payment-method"),
+  detachPaymentMethod: () =>
+    callEdgeFunction<{ ok?: boolean }>("stripe-detach-payment-method"),
   createIdentitySession: () =>
     callEdgeFunction<{ url?: string; client_secret?: string }>(
       "stripe-create-identity-session",
