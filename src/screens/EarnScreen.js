@@ -40,7 +40,12 @@ const MAX_DRIVE_MS = 4 * 60 * 60 * 1000; // auto-pause the GPS watcher after 4h 
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
 const AWAITING_STATUSES  = new Set(['pending']);                // waiting on poster
 const COMPLETED_STATUSES = new Set(['verified', 'declined', 'cancelled']); // finished / closed
-const ONGOING_STATUSES   = new Set(['pending', 'confirmed', 'completed']); // can still message
+
+// A booking is "action-needed" when the next move in the lifecycle is the EARNER's.
+const needsAction = (b) =>
+  b.amendmentStatus === 'pending' ||
+  (b.status === 'confirmed' && !b.earnerDone) ||
+  (b.status === 'verified' && !b.posterRating);
 
 export default function EarnScreen({ navigation }) {
   const {
@@ -63,6 +68,10 @@ export default function EarnScreen({ navigation }) {
   const [ratingLoading, setRatingLoading] = useState(false);
   const [refreshing, setRefreshing]     = useState(false);
   const [payoutReady, setPayoutReady]   = useState(true); // optimistic until checked
+  // Collapsible secondary sections + completed-history expansion.
+  const [showMonth, setShowMonth]       = useState(false);
+  const [showGoals, setShowGoals]       = useState(false);
+  const [expandedId, setExpandedId]     = useState(null);
 
   // ── Drive mileage tracking (foreground GPS) ────────────────────────────────
   // Only one drive can track at a time. `driveBookingId` marks which gig owns it.
@@ -227,7 +236,13 @@ export default function EarnScreen({ navigation }) {
   const activePairs    = pairs.filter(p => ACTIVE_STATUSES.has(p.booking.status));
   const awaitingPairs  = pairs.filter(p => AWAITING_STATUSES.has(p.booking.status));
   const completedPairs = pairs.filter(p => COMPLETED_STATUSES.has(p.booking.status));
-  const shownPairs     = tab === 'active' ? activePairs : tab === 'awaiting' ? awaitingPairs : completedPairs;
+  // In Active, float gigs that need the user's action to the top (stable otherwise).
+  const sortedActive   = [...activePairs].sort((a, b) => Number(needsAction(b.booking)) - Number(needsAction(a.booking)));
+  const shownPairs     = tab === 'active' ? sortedActive : tab === 'awaiting' ? awaitingPairs : completedPairs;
+
+  // Cross-segment nudges — only render when a decision is actually waiting.
+  const pendingAmendCount = (bookings || []).filter(b => b.amendmentStatus === 'pending').length;
+  const unratedCount      = (bookings || []).filter(b => b.status === 'verified' && !b.posterRating).length;
 
   // Earner taps "Start job / I'm on site" → marks the booking in progress.
   const handleStartJob = async (booking) => {
@@ -322,6 +337,303 @@ export default function EarnScreen({ navigation }) {
     showToast({ icon: '⭐', title: 'Rating Submitted!', message: 'Thanks for rating the poster.' });
   };
 
+  const openRate = (booking) => {
+    setPosterRating(5);
+    setPosterReview('');
+    setRateTarget(booking);
+  };
+
+  // Demoted, secondary "Message" affordance for a gig.
+  const messageButton = (j, booking) => (
+    <TouchableOpacity
+      style={styles.msgBtn}
+      onPress={() => setMsgTarget({
+        bookingId: booking.id,
+        jobTitle: j.title,
+        otherPerson: { id: j.posterId, name: j.poster?.name || 'Poster', avatarInitial: j.poster?.avatarInitial || 'P', avatarUrl: j.poster?.avatarUrl },
+      })}
+    >
+      <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
+      <Text style={styles.msgBtnText}>Message</Text>
+    </TouchableOpacity>
+  );
+
+  // Drive-mileage tracker — demoted to a secondary affordance beneath the primary CTA.
+  // Kept on confirmed working gigs (the drive TO the gig happens before "Start job").
+  const renderDrive = (j, booking) => (
+    <>
+      {driveBookingId === booking.id ? (
+        <View style={styles.driveTrackingBanner}>
+          <View style={styles.driveTrackingLeft}>
+            <Ionicons name="navigate" size={16} color="#fff" style={{ marginRight: 7 }} />
+            <Text style={styles.driveTrackingText}>Tracking drive · {driveMiles.toFixed(1)} mi</Text>
+          </View>
+          <TouchableOpacity style={styles.driveEndBtn} onPress={() => handleEndDrive(booking, j.title)}>
+            <Text style={styles.driveEndBtnText}>End drive</Text>
+          </TouchableOpacity>
+        </View>
+      ) : !driveBookingId ? (
+        <TouchableOpacity
+          style={styles.driveStartBtn}
+          onPress={() => handleStartDrive(booking, j.title)}
+          disabled={driveStarting}
+        >
+          {driveStarting ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <>
+              <Ionicons name="car-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.driveStartBtnText}>Start drive · auto-log mileage</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      ) : null}
+
+      {returnPrompt?.bookingId === booking.id && (
+        <View style={styles.returnPrompt}>
+          <Text style={styles.returnPromptText}>Round trip? Log the return drive ({returnPrompt.miles.toFixed(1)} mi).</Text>
+          <View style={styles.returnPromptActions}>
+            <TouchableOpacity style={styles.returnPromptBtn} onPress={() => handleLogReturnDrive(booking, returnPrompt)}>
+              <Ionicons name="repeat" size={14} color="#fff" style={{ marginRight: 5 }} />
+              <Text style={styles.returnPromptBtnText}>Log return</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.returnPromptDismiss} onPress={() => setReturnPrompt(null)}>
+              <Text style={styles.returnPromptDismissText}>No thanks</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </>
+  );
+
+  // The single, state-derived primary action + demoted secondary controls for a gig.
+  const renderActions = (j, booking) => {
+    const status = booking.status;
+
+    if (status === 'pending') {
+      return (
+        <View style={styles.secondaryRow}>
+          {messageButton(j, booking)}
+          <TouchableOpacity onPress={() => handleCancel(booking)}>
+            <Text style={styles.cancelLinkText}>Withdraw application</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (status === 'confirmed' && !booking.startedAt && !booking.earnerDone) {
+      return (
+        <>
+          <TouchableOpacity style={styles.ctaGreen} onPress={() => handleStartJob(booking)}>
+            <Ionicons name="play" size={16} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.ctaPrimaryText}>Start Job · I'm On Site</Text>
+          </TouchableOpacity>
+          <Text style={styles.helperText}>Next: tap when you arrive on site.</Text>
+          {renderDrive(j, booking)}
+          <View style={styles.secondaryRow}>
+            {messageButton(j, booking)}
+            <TouchableOpacity onPress={() => handleCancel(booking)}>
+              <Text style={styles.cancelLinkText}>Cancel booking</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
+
+    if (status === 'confirmed' && booking.startedAt && !booking.earnerDone) {
+      return (
+        <>
+          <View style={styles.inProgressBanner}>
+            <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
+            <Text style={styles.inProgressText}>In Progress</Text>
+          </View>
+          <TouchableOpacity style={styles.ctaPrimary} onPress={() => handleMarkDone(booking)}>
+            <Ionicons name="checkmark-done" size={16} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.ctaPrimaryText}>I Finished This Job</Text>
+          </TouchableOpacity>
+          <Text style={styles.helperText}>Next: mark the job done when you've finished.</Text>
+          {renderDrive(j, booking)}
+          <View style={styles.secondaryRow}>
+            {messageButton(j, booking)}
+            <Text style={styles.cancelLockedText}>Can't cancel — you've started.</Text>
+          </View>
+        </>
+      );
+    }
+
+    if (status === 'confirmed' && booking.earnerDone && !booking.posterDone) {
+      return (
+        <>
+          <View style={styles.waitingBanner}>
+            <Ionicons name="hourglass-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
+            <Text style={styles.waitingText}>Waiting for poster to confirm done…</Text>
+          </View>
+          <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
+        </>
+      );
+    }
+
+    if (status === 'completed') {
+      return (
+        <>
+          <View style={styles.waitingBanner}>
+            <Ionicons name="sync-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
+            <Text style={styles.waitingText}>Waiting for the poster to verify & pay.</Text>
+          </View>
+          <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
+        </>
+      );
+    }
+
+    return null;
+  };
+
+  // Active / Awaiting: rich JobCard + a meta block with one primary action.
+  const renderActiveCard = ({ job: j, booking }) => {
+    const status = booking.status;
+    return (
+      <View key={j.id} style={styles.bookedItem}>
+        <JobCard job={j} bookingStatus={status} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} />
+        <View style={styles.bookingMeta}>
+          <BookingStatusBadge status={status} />
+
+          {booking.slotLabel && (
+            <View style={styles.bookingRow}>
+              <Ionicons name="calendar-outline" size={13} color={colors.textMuted} style={styles.bookingIcon} />
+              <Text style={styles.bookingText}>{booking.slotLabel}</Text>
+            </View>
+          )}
+          {booking.counterOffer && (
+            <View style={styles.bookingRow}>
+              <Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} style={styles.bookingIcon} />
+              <Text style={styles.bookingText}>
+                Counter-offer: <Text style={styles.bookingBold}>
+                  ${booking.counterOffer}{j.payType === 'hourly' ? '/hr' : ' flat'}
+                </Text>
+              </Text>
+            </View>
+          )}
+
+          {/* Amendment notifications — a change request requires a decision, so it stays inline */}
+          {booking.amendmentStatus === 'pending' && (
+            <View style={styles.amendCard}>
+              <View style={styles.amendCardTitleRow}>
+                <Ionicons name="document-text-outline" size={14} color="#D97706" style={{ marginRight: 6 }} />
+                <Text style={styles.amendCardTitle}>Change Proposed by Poster</Text>
+              </View>
+              <Text style={styles.amendCardNote}>{booking.amendmentNote}</Text>
+              <View style={styles.amendCardActions}>
+                <TouchableOpacity style={styles.amendAcceptBtn}
+                  onPress={() => {
+                    respondToAmendment(booking.id, true);
+                    showToast({ icon: '✅', title: 'Amendment Accepted', message: 'The poster can now update the gig terms.' });
+                  }}>
+                  <Ionicons name="checkmark" size={15} color="#fff" style={{ marginRight: 4 }} />
+                  <Text style={styles.amendAcceptText}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.amendDeclineBtn}
+                  onPress={() => {
+                    respondToAmendment(booking.id, false);
+                    showToast({ icon: '❌', title: 'Amendment Declined', message: 'Original terms remain in effect.' });
+                  }}>
+                  <Ionicons name="close" size={15} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                  <Text style={styles.amendDeclineText}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {booking.amendmentStatus === 'accepted' && (
+            <View style={styles.amendStatusBanner}>
+              <Text style={styles.amendStatusText}>Change accepted — poster is updating the terms</Text>
+            </View>
+          )}
+          {booking.amendmentStatus === 'declined' && (
+            <View style={[styles.amendStatusBanner, { backgroundColor: '#FEF2F2' }]}>
+              <Text style={[styles.amendStatusText, { color: '#DC2626' }]}>Change declined — original terms apply</Text>
+            </View>
+          )}
+
+          {renderActions(j, booking)}
+        </View>
+      </View>
+    );
+  };
+
+  // Completed / closed: compact one-line row that expands on tap.
+  const renderCompletedRow = ({ job: j, booking }) => {
+    const status = booking.status;
+    const expanded = expandedId === booking.id;
+    const canRate = status === 'verified' && !booking.posterRating;
+    const pay = booking.counterOffer || j.pay;
+    return (
+      <View key={j.id} style={[styles.histRow, canRate && styles.histRowRate]}>
+        <View style={styles.histTop}>
+          <TouchableOpacity style={styles.histMain} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} activeOpacity={0.7}>
+            <Text style={styles.histTitle} numberOfLines={1}>{j.title}</Text>
+            <Text style={styles.histSub} numberOfLines={1}>
+              {booking.slotLabel || 'Flexible'} · ${pay}{j.payType === 'hourly' ? '/hr' : ''}
+            </Text>
+          </TouchableOpacity>
+          <BookingStatusBadge status={status} compact />
+          {canRate && (
+            <TouchableOpacity style={styles.histRateBtn} onPress={() => openRate(booking)}>
+              <Ionicons name="star" size={13} color="#fff" style={{ marginRight: 4 }} />
+              <Text style={styles.histRateText}>Rate</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.histChevron} onPress={() => setExpandedId(expanded ? null : booking.id)}>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {expanded && (
+          <View style={styles.histDetail}>
+            {status === 'verified' && booking.earnerRating ? (
+              <View style={styles.verifiedRow}>
+                <View style={styles.verifiedStarsRow}>
+                  {[1,2,3,4,5].map(s => (
+                    <Ionicons key={s} name={s <= Math.round(booking.earnerRating) ? 'star' : 'star-outline'} size={13} color={colors.success} style={{ marginRight: 1 }} />
+                  ))}
+                  <Text style={styles.verifiedText}>
+                    {'  '}{Number(booking.earnerRating).toFixed(1)} from poster
+                    {booking.paymentMethod ? ` · Paid via ${booking.paymentMethod}` : ''}
+                  </Text>
+                </View>
+                {booking.reviewText ? <Text style={styles.reviewQuote}>"{booking.reviewText}"</Text> : null}
+              </View>
+            ) : null}
+
+            {booking.posterRating ? (
+              <Text style={styles.posterRatedText}>You rated the poster {booking.posterRating} ★</Text>
+            ) : null}
+
+            {booking.beforePhotos?.length > 0 && (
+              <View style={styles.photoStrip}>
+                <Text style={styles.photoStripLabel}>Before</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {booking.beforePhotos.map((u, i) => <Image key={i} source={{ uri: u }} style={styles.photoThumb} />)}
+                </ScrollView>
+              </View>
+            )}
+            {booking.completionPhotos?.length > 0 && (
+              <View style={styles.photoStrip}>
+                <Text style={styles.photoStripLabel}>After</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {booking.completionPhotos.map((u, i) => <Image key={i} source={{ uri: u }} style={styles.photoThumb} />)}
+                </ScrollView>
+              </View>
+            )}
+
+            {status === 'verified' && !booking.earnerRating && !booking.posterRating
+              && !(booking.beforePhotos?.length) && !(booking.completionPhotos?.length) && (
+              <Text style={styles.histEmptyText}>No additional details for this gig.</Text>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -333,29 +645,23 @@ export default function EarnScreen({ navigation }) {
           <Ionicons name="briefcase" size={22} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.screenTitle}>My Jobs</Text>
         </View>
-        <LinearGradient colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']} style={styles.earningsCard}>
-          <View style={styles.earningsRow}>
-            <EarStat label="Today"     value={`$${earningsToday}`} />
-            <View style={styles.divider} />
-            <EarStat label="This Week" value={`$${earningsWeek}`} highlight />
-            <View style={styles.divider} />
-            <EarStat label="All Time"  value={`$${earningsTotal.toLocaleString()}`} />
-            <View style={styles.divider} />
-            <EarStat label="Avg/Job"   value={completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—'} />
+        <View style={styles.headerChipsRow}>
+          <View style={styles.weekChip}>
+            <Text style={styles.weekChipValue}>${earningsWeek}</Text>
+            <Text style={styles.weekChipLabel}>this week</Text>
           </View>
-        </LinearGradient>
-        <View style={styles.streakLevelRow}>
           <View style={styles.streakPill}>
             <Ionicons name="flame" size={15} color="#FB923C" style={{ marginRight: 5 }} />
             <Text style={styles.streakText}>{streakDays}-day streak</Text>
           </View>
-          <View style={styles.xpWrap}>
-            <XPBar levelInfo={levelInfo} xp={xp} dark />
+          <View style={styles.lvChip}>
+            <Ionicons name="star" size={13} color="#FCD34D" style={{ marginRight: 5 }} />
+            <Text style={styles.lvChipText}>Lv {levelInfo?.current?.level ?? 1}</Text>
           </View>
         </View>
       </GradientHeader>
 
-      {/* Payout setup banner — shown until earner connects bank */}
+      {/* Action-needed band — payout setup (blocks earning) + decision nudges */}
       {!payoutReady && (
         <TouchableOpacity
           style={styles.payoutBanner}
@@ -371,44 +677,37 @@ export default function EarnScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      <MoneyGoalCard navigation={navigation} />
-      <WorkStatusBar />
-
-      {/* Personal insights from completed work — hidden until the earner has any */}
-      {insights && insights.jobCount > 0 && (
-        <View style={styles.insightsCard}>
-          <Text style={styles.insightsTitle}>Your insights</Text>
-          <View style={styles.insightsRow}>
-            <InsightTile
-              icon="location-outline"
-              label="Top area"
-              value={insights.topArea?.label || '—'}
-            />
-            <InsightTile
-              icon="calendar-outline"
-              label="Busiest"
-              value={insights.busiestDay?.label || '—'}
-            />
-            <InsightTile
-              icon="cash-outline"
-              label="Best day"
-              value={
-                insights.mostProfitableDay
-                  ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
-                  : '—'
-              }
-            />
-          </View>
+      {(pendingAmendCount > 0 || (unratedCount > 0 && tab !== 'completed')) && (
+        <View style={styles.nudgeBand}>
+          {pendingAmendCount > 0 && (
+            <TouchableOpacity style={[styles.nudge, styles.nudgeAmend]} onPress={() => { haptic.selection(); setTab('active'); }} activeOpacity={0.85}>
+              <Ionicons name="document-text-outline" size={18} color={colors.primary} style={{ marginRight: 10 }} />
+              <Text style={[styles.nudgeText, { color: colors.primary }]}>
+                {pendingAmendCount} change {pendingAmendCount === 1 ? 'request' : 'requests'} to respond to
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          )}
+          {unratedCount > 0 && tab !== 'completed' && (
+            <TouchableOpacity style={[styles.nudge, styles.nudgeRate]} onPress={() => { haptic.selection(); setTab('completed'); }} activeOpacity={0.85}>
+              <Ionicons name="star" size={18} color="#D97706" style={{ marginRight: 10 }} />
+              <Text style={[styles.nudgeText, { color: '#D97706' }]}>
+                Rate {unratedCount} completed {unratedCount === 1 ? 'gig' : 'gigs'} to finish up
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#D97706" />
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
-      {/* Segmented control for my gigs */}
+      {/* Segmented control — the spine of the page */}
       <View style={styles.segment}>
         <SegmentBtn label="Active"    count={activePairs.length}    active={tab === 'active'}    onPress={() => { haptic.selection(); setTab('active'); }} />
         <SegmentBtn label="Awaiting"  count={awaitingPairs.length}  active={tab === 'awaiting'}  onPress={() => { haptic.selection(); setTab('awaiting'); }} />
         <SegmentBtn label="Completed" count={completedPairs.length} active={tab === 'completed'} onPress={() => { haptic.selection(); setTab('completed'); }} />
       </View>
 
+      {/* The booked-gig list — the primary content */}
       <View style={styles.section}>
         {shownPairs.length === 0 && (
           <View style={styles.noGigsCard}>
@@ -424,258 +723,71 @@ export default function EarnScreen({ navigation }) {
                 ? 'Jobs you’re actively working show up here. Browse the Home tab to book one!'
                 : tab === 'awaiting'
                   ? 'Gigs you’ve applied to — waiting on the poster to accept — appear here.'
-                  : 'Completed and declined gigs will show up here.'}
+                  : 'Completed and closed gigs will show up here.'}
             </Text>
           </View>
         )}
 
-        {shownPairs.map(({ job: j, booking }) => {
-          const status = booking.status;
-          return (
-            <View key={j.id} style={styles.bookedItem}>
-              <JobCard job={j} bookingStatus={status} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} />
-
-              <View style={styles.bookingMeta}>
-                <BookingStatusBadge status={status} />
-
-                {booking.slotLabel && (
-                  <View style={styles.bookingRow}>
-                    <Ionicons name="calendar-outline" size={13} color={colors.textMuted} style={styles.bookingIcon} />
-                    <Text style={styles.bookingText}>{booking.slotLabel}</Text>
-                  </View>
-                )}
-                {booking.counterOffer && (
-                  <View style={styles.bookingRow}>
-                    <Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} style={styles.bookingIcon} />
-                    <Text style={styles.bookingText}>
-                      Counter-offer: <Text style={styles.bookingBold}>
-                        ${booking.counterOffer}{j.payType === 'hourly' ? '/hr' : ' flat'}
-                      </Text>
-                    </Text>
-                  </View>
-                )}
-
-                {/* Before photos you submitted */}
-                {booking.beforePhotos?.length > 0 && (
-                  <View style={styles.photoStrip}>
-                    <Text style={styles.photoStripLabel}>Before</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {booking.beforePhotos.map((u, i) => (
-                        <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* After (completion) photos you submitted */}
-                {booking.completionPhotos?.length > 0 && (
-                  <View style={styles.photoStrip}>
-                    <Text style={styles.photoStripLabel}>After</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {booking.completionPhotos.map((u, i) => (
-                        <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* Amendment notifications */}
-                {booking.amendmentStatus === 'pending' && (
-                  <View style={styles.amendCard}>
-                    <View style={styles.amendCardTitleRow}>
-                      <Ionicons name="document-text-outline" size={14} color="#D97706" style={{ marginRight: 6 }} />
-                      <Text style={styles.amendCardTitle}>Change Proposed by Poster</Text>
-                    </View>
-                    <Text style={styles.amendCardNote}>{booking.amendmentNote}</Text>
-                    <View style={styles.amendCardActions}>
-                      <TouchableOpacity style={styles.amendAcceptBtn}
-                        onPress={() => {
-                          respondToAmendment(booking.id, true);
-                          showToast({ icon: '✅', title: 'Amendment Accepted', message: 'The poster can now update the gig terms.' });
-                        }}>
-                        <Ionicons name="checkmark" size={15} color="#fff" style={{ marginRight: 4 }} />
-                        <Text style={styles.amendAcceptText}>Accept</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.amendDeclineBtn}
-                        onPress={() => {
-                          respondToAmendment(booking.id, false);
-                          showToast({ icon: '❌', title: 'Amendment Declined', message: 'Original terms remain in effect.' });
-                        }}>
-                        <Ionicons name="close" size={15} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.amendDeclineText}>Decline</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-                {booking.amendmentStatus === 'accepted' && (
-                  <View style={styles.amendStatusBanner}>
-                    <Text style={styles.amendStatusText}>Change accepted — poster is updating the terms</Text>
-                  </View>
-                )}
-                {booking.amendmentStatus === 'declined' && (
-                  <View style={[styles.amendStatusBanner, { backgroundColor: '#FEF2F2' }]}>
-                    <Text style={[styles.amendStatusText, { color: '#DC2626' }]}>Change declined — original terms apply</Text>
-                  </View>
-                )}
-
-                {/* In-progress banner — only once the worker has actually started */}
-                {status === 'confirmed' && booking.startedAt && (
-                  <View style={styles.inProgressBanner}>
-                    <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
-                    <Text style={styles.inProgressText}>In Progress</Text>
-                  </View>
-                )}
-
-                {/* Drive mileage tracker — auto-logs a deductible mileage expense */}
-                {status === 'confirmed' && (
-                  driveBookingId === booking.id ? (
-                    <View style={styles.driveTrackingBanner}>
-                      <View style={styles.driveTrackingLeft}>
-                        <Ionicons name="navigate" size={16} color="#fff" style={{ marginRight: 7 }} />
-                        <Text style={styles.driveTrackingText}>Tracking drive · {driveMiles.toFixed(1)} mi</Text>
-                      </View>
-                      <TouchableOpacity style={styles.driveEndBtn} onPress={() => handleEndDrive(booking, j.title)}>
-                        <Text style={styles.driveEndBtnText}>End drive</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : !driveBookingId ? (
-                    <TouchableOpacity
-                      style={styles.driveStartBtn}
-                      onPress={() => handleStartDrive(booking, j.title)}
-                      disabled={driveStarting}
-                    >
-                      {driveStarting ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <>
-                          <Ionicons name="car-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                          <Text style={styles.driveStartBtnText}>Start drive · auto-log mileage</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  ) : null
-                )}
-
-                {/* Offer to log the return leg of a just-finished drive */}
-                {returnPrompt?.bookingId === booking.id && (
-                  <View style={styles.returnPrompt}>
-                    <Text style={styles.returnPromptText}>Round trip? Log the return drive ({returnPrompt.miles.toFixed(1)} mi).</Text>
-                    <View style={styles.returnPromptActions}>
-                      <TouchableOpacity style={styles.returnPromptBtn} onPress={() => handleLogReturnDrive(booking, returnPrompt)}>
-                        <Ionicons name="repeat" size={14} color="#fff" style={{ marginRight: 5 }} />
-                        <Text style={styles.returnPromptBtnText}>Log return</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.returnPromptDismiss} onPress={() => setReturnPrompt(null)}>
-                        <Text style={styles.returnPromptDismissText}>No thanks</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Start job — confirmed, not started yet, earner hasn't marked done */}
-                {status === 'confirmed' && !booking.startedAt && !booking.earnerDone && (
-                  <TouchableOpacity style={styles.startBtn} onPress={() => handleStartJob(booking)}>
-                    <Ionicons name="play" size={16} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={styles.startBtnText}>Start Job · I'm On Site</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Waiting indicators */}
-                {status === 'confirmed' && booking.earnerDone && !booking.posterDone && (
-                  <View style={styles.waitingBanner}>
-                    <Ionicons name="hourglass-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
-                    <Text style={styles.waitingText}>Waiting for poster to confirm done…</Text>
-                  </View>
-                )}
-
-                {/* Mark Done — show when confirmed and earner hasn't marked yet */}
-                {status === 'confirmed' && !booking.earnerDone && (
-                  <TouchableOpacity
-                    style={styles.completeBtn}
-                    onPress={() => handleMarkDone(booking)}
-                  >
-                    <Ionicons name="checkmark-done" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                    <Text style={styles.completeBtnText}>I Finished This Job</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Verified result — poster rated earner */}
-                {status === 'verified' && booking.earnerRating && (
-                  <View style={styles.verifiedRow}>
-                    <View style={styles.verifiedStarsRow}>
-                      {[1,2,3,4,5].map(s => (
-                        <Ionicons key={s} name={s <= Math.round(booking.earnerRating) ? 'star' : 'star-outline'} size={13} color={colors.success} style={{ marginRight: 1 }} />
-                      ))}
-                      <Text style={styles.verifiedText}>
-                        {'  '}{Number(booking.earnerRating).toFixed(1)} from poster
-                        {booking.paymentMethod ? ` · Paid via ${booking.paymentMethod}` : ''}
-                      </Text>
-                    </View>
-                    {booking.reviewText ? (
-                      <Text style={styles.reviewQuote}>"{booking.reviewText}"</Text>
-                    ) : null}
-                  </View>
-                )}
-
-                {/* Rate the poster — show after verified if not yet rated */}
-                {status === 'verified' && !booking.posterRating && (
-                  <TouchableOpacity
-                    style={styles.ratePosterBtn}
-                    onPress={() => { setPosterRating(5); setPosterReview(''); setRateTarget(booking); }}
-                  >
-                    <Ionicons name="star" size={15} color="#D97706" style={{ marginRight: 6 }} />
-                    <Text style={styles.ratePosterBtnText}>Rate the Poster</Text>
-                  </TouchableOpacity>
-                )}
-                {status === 'verified' && booking.posterRating && (
-                  <Text style={styles.posterRatedText}>
-                    You rated the poster {booking.posterRating} ★
-                  </Text>
-                )}
-
-                {/* Message button — any ongoing status (pending/confirmed/completed) */}
-                {ONGOING_STATUSES.has(status) && (
-                  <TouchableOpacity
-                    style={styles.msgBtn}
-                    onPress={() => setMsgTarget({
-                      bookingId: booking.id,
-                      jobTitle: j.title,
-                      otherPerson: { id: j.posterId, name: j.poster?.name || 'Poster', avatarInitial: j.poster?.avatarInitial || 'P', avatarUrl: j.poster?.avatarUrl },
-                    })}
-                  >
-                    <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
-                    <Text style={styles.msgBtnText}>Message Poster</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Cancel / withdraw — locked once the worker has started */}
-                {(status === 'pending' || status === 'confirmed') && !booking.startedAt && (
-                  <TouchableOpacity style={styles.cancelLink} onPress={() => handleCancel(booking)}>
-                    <Text style={styles.cancelLinkText}>{status === 'pending' ? 'Withdraw application' : 'Cancel booking'}</Text>
-                  </TouchableOpacity>
-                )}
-                {status === 'confirmed' && booking.startedAt && (
-                  <Text style={styles.cancelLockedText}>Can't cancel — you've started. Open a dispute if there's a problem.</Text>
-                )}
-              </View>
-            </View>
-          );
-        })}
+        {tab === 'completed'
+          ? shownPairs.map(renderCompletedRow)
+          : shownPairs.map(renderActiveCard)}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Weekly Goals</Text>
-        <View style={[styles.card, { padding: 16 }]}>
+      {/* "Your month" — earnings, goal, insights & status, demoted below the gigs */}
+      <CollapsibleSection title="Your month" open={showMonth} onToggle={() => setShowMonth(v => !v)}>
+        <MoneyGoalCard navigation={navigation} />
+
+        <View style={styles.breakdownCard}>
+          <Text style={styles.insightsTitle}>Earnings</Text>
+          <View style={styles.breakdownRow}>
+            {[
+              { label: 'Today',     value: `$${earningsToday}` },
+              { label: 'This week', value: `$${earningsWeek}` },
+              { label: 'All time',  value: `$${earningsTotal.toLocaleString()}` },
+              { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
+            ].map(s => (
+              <View key={s.label} style={styles.breakdownTile}>
+                <Text style={styles.breakdownVal}>{s.value}</Text>
+                <Text style={styles.breakdownLabel}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {insights && insights.jobCount > 0 && (
+          <View style={styles.insightsCard}>
+            <Text style={styles.insightsTitle}>Your insights</Text>
+            <View style={styles.insightsRow}>
+              <InsightTile icon="location-outline" label="Top area" value={insights.topArea?.label || '—'} />
+              <InsightTile icon="calendar-outline" label="Busiest" value={insights.busiestDay?.label || '—'} />
+              <InsightTile
+                icon="cash-outline"
+                label="Best day"
+                value={insights.mostProfitableDay
+                  ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
+                  : '—'}
+              />
+            </View>
+          </View>
+        )}
+
+        <WorkStatusBar />
+      </CollapsibleSection>
+
+      {/* "Goals & challenges" — gamification, lowest priority */}
+      <CollapsibleSection title="Goals & challenges" open={showGoals} onToggle={() => setShowGoals(v => !v)}>
+        <View style={styles.goalsXp}>
+          <XPBar levelInfo={levelInfo} xp={xp} dark={false} />
+        </View>
+        <View style={styles.goalsCard}>
           <GoalBar label="Earnings"  value={`$${earningsWeek}`}  max={`$${weeklyEarningGoal}`} pct={earningPct} color={colors.accent} />
           <View style={{ height: 14 }} />
           <GoalBar label="Jobs Done" value={`${weeklyJobsDone}`} max={`${weeklyJobsGoal} gigs`} pct={jobsPct} color={colors.primary} />
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Active Challenges</Text>
-        {challenges.map(c => <ChallengeCard key={c.id} challenge={c} />)}
-      </View>
+        <View style={styles.challengesWrap}>
+          {challenges.map(c => <ChallengeCard key={c.id} challenge={c} />)}
+        </View>
+      </CollapsibleSection>
 
       <View style={{ height: 30 }} />
 
@@ -808,6 +920,18 @@ export default function EarnScreen({ navigation }) {
   );
 }
 
+function CollapsibleSection({ title, open, onToggle, children }) {
+  return (
+    <View>
+      <TouchableOpacity style={styles.collapseHeader} onPress={onToggle} activeOpacity={0.7}>
+        <Text style={styles.collapseTitle}>{title}</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+      </TouchableOpacity>
+      {open && <View style={styles.collapseBody}>{children}</View>}
+    </View>
+  );
+}
+
 function SegmentBtn({ label, count, active, onPress }) {
   return (
     <TouchableOpacity style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress} activeOpacity={0.8}>
@@ -815,15 +939,6 @@ function SegmentBtn({ label, count, active, onPress }) {
         {label}{count > 0 ? ` (${count})` : ''}
       </Text>
     </TouchableOpacity>
-  );
-}
-
-function EarStat({ label, value, highlight }) {
-  return (
-    <View style={styles.earStat}>
-      <Text style={[styles.earValue, highlight && styles.earValueHL]}>{value}</Text>
-      <Text style={styles.earLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -855,7 +970,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   payoutBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#3F25FE',
     marginHorizontal: 16, marginTop: 12,
     borderRadius: 14, padding: 14,
   },
@@ -863,23 +978,35 @@ const styles = StyleSheet.create({
   payoutBannerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   screenTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
-  earningsCard: { borderRadius: 18, padding: 20, marginBottom: 16 },
-  earningsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  earStat: { alignItems: 'center', flex: 1 },
-  earValue: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 2 },
-  earValueHL: { fontSize: 26 },
-  earLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
-  divider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.2)' },
-  streakLevelRow: { flexDirection: 'row', alignItems: 'center' },
+  // Header chips (replaces the old 4-tile earnings wall + full XP bar)
+  headerChipsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
+  weekChip: {
+    flexDirection: 'row', alignItems: 'baseline',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9,
+  },
+  weekChipValue: { fontSize: 20, fontWeight: '900', color: '#fff' },
+  weekChipLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginLeft: 6 },
   streakPill: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 12,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7,
   },
   streakText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  xpWrap: { flex: 1 },
+  lvChip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  lvChipText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  // Action-needed nudge band
+  nudgeBand: { marginHorizontal: 16, marginTop: 12, gap: 8 },
+  nudge: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  nudgeAmend: { backgroundColor: colors.primaryLight },
+  nudgeRate: { backgroundColor: colors.goldLight },
+  nudgeText: { flex: 1, fontSize: 13, fontWeight: '800' },
   insightsCard: {
-    marginHorizontal: 16, marginTop: 16,
+    marginHorizontal: 16, marginTop: 12,
     backgroundColor: colors.surface, borderRadius: 18, padding: 16,
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
@@ -895,6 +1022,16 @@ const styles = StyleSheet.create({
   },
   insightLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: 2 },
   insightValue: { fontSize: 13, fontWeight: '800', color: colors.textPrimary },
+  // Earnings breakdown grid (moved out of the header into "Your month")
+  breakdownCard: {
+    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  breakdownRow: { flexDirection: 'row', gap: 8 },
+  breakdownTile: { flex: 1, backgroundColor: colors.background, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  breakdownVal: { fontSize: 15, fontWeight: '900', color: colors.textPrimary },
+  breakdownLabel: { fontSize: 10.5, color: colors.textMuted, marginTop: 2 },
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: 14, padding: 4,
@@ -904,12 +1041,28 @@ const styles = StyleSheet.create({
   segBtnActive: { backgroundColor: colors.primary },
   segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   segTextActive: { color: '#fff' },
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionTitle: {
-    fontSize: 13, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
+  section: { paddingHorizontal: 16, marginTop: 16 },
+  // Collapsible secondary sections
+  collapseHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginTop: 24,
+    backgroundColor: colors.surface, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderWidth: 1, borderColor: colors.border,
   },
-  card: { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  collapseTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  collapseBody: { marginTop: 2, marginBottom: 4 },
+  goalsXp: {
+    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  goalsCard: {
+    marginHorizontal: 16, marginTop: 12, padding: 16,
+    backgroundColor: colors.surface, borderRadius: 18,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  challengesWrap: { paddingHorizontal: 16, marginTop: 12 },
   goalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   goalLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   goalValue: { fontSize: 13, fontWeight: '700' },
@@ -927,6 +1080,24 @@ const styles = StyleSheet.create({
   bookingIcon: { marginRight: 6, marginTop: 2 },
   bookingText: { fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 },
   bookingBold: { fontWeight: '800', color: colors.primary },
+  // Compact completed-history rows
+  histRow: {
+    backgroundColor: colors.surface, borderRadius: 16,
+    marginBottom: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  histRowRate: { borderLeftWidth: 4, borderLeftColor: colors.gold },
+  histTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  histMain: { flex: 1, minWidth: 0 },
+  histTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  histSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
+  histRateBtn: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary,
+    borderRadius: 9, paddingVertical: 6, paddingHorizontal: 10,
+  },
+  histRateText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  histChevron: { padding: 2 },
+  histDetail: { borderTopWidth: 1, borderTopColor: colors.divider, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
+  histEmptyText: { fontSize: 13, color: colors.textMuted },
   inProgressBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#ECFDF5', borderRadius: 8,
@@ -959,14 +1130,21 @@ const styles = StyleSheet.create({
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFF7ED', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 6, marginTop: 8,
+    paddingHorizontal: 10, paddingVertical: 6, marginTop: 10, alignSelf: 'flex-start',
   },
   waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
-  startBtn: {
-    flexDirection: 'row', backgroundColor: colors.success, borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+  // One primary CTA per gig
+  ctaPrimary: {
+    flexDirection: 'row', backgroundColor: colors.primary, borderRadius: 12,
+    paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
-  startBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  ctaGreen: {
+    flexDirection: 'row', backgroundColor: colors.success, borderRadius: 12,
+    paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+  },
+  ctaPrimaryText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  helperText: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
+  secondaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10 },
   driveStartBtn: {
     flexDirection: 'row', borderRadius: 12, paddingVertical: 11, marginTop: 10,
     alignItems: 'center', justifyContent: 'center',
@@ -997,34 +1175,23 @@ const styles = StyleSheet.create({
   returnPromptBtnText: { fontSize: 12.5, fontWeight: '800', color: '#fff' },
   returnPromptDismiss: { paddingVertical: 9, paddingHorizontal: 8 },
   returnPromptDismissText: { fontSize: 12.5, fontWeight: '700', color: colors.textMuted },
-  completeBtn: {
-    flexDirection: 'row', backgroundColor: colors.primaryLight, borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
-    borderWidth: 1.5, borderColor: colors.primary,
-  },
-  completeBtnText: { fontSize: 14, fontWeight: '800', color: colors.primary },
   verifiedRow: {
-    backgroundColor: colors.accentLight, borderRadius: 10,
-    padding: 10, marginTop: 8,
+    backgroundColor: colors.successLight, borderRadius: 10,
+    padding: 10,
   },
   verifiedStarsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   verifiedText: { fontSize: 13, fontWeight: '700', color: colors.success },
   reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
-  ratePosterBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 8,
-    borderWidth: 1.5, borderColor: colors.gold, backgroundColor: '#FFFBEB',
-  },
-  ratePosterBtnText: { fontSize: 13, fontWeight: '700', color: '#D97706' },
-  posterRatedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
+  posterRatedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
   msgBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 8,
+    flexDirection: 'row', borderRadius: 12, paddingVertical: 9, paddingHorizontal: 14,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
   },
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-  cancelLink: { paddingVertical: 10, alignItems: 'center', marginTop: 4 },
   cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
-  cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 10, textAlign: 'center' },
-  photoStrip: { marginTop: 10 },
+  cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', flexShrink: 1, textAlign: 'right' },
+  photoStrip: {},
   photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
   photoThumb: { width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },
   finishThumbWrap: { marginRight: 10 },
