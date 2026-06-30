@@ -49,7 +49,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-white px-4 py-6 md:flex">
         <Link href="/browse" className="mb-8 px-2">
-          <Logo />
+          <Logo mark height={38} />
         </Link>
         <nav className="flex flex-1 flex-col gap-1">
           {NAV.map((item) => {

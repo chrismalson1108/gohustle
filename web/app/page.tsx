@@ -22,7 +22,7 @@ export default function LandingPage() {
     <div className="flex min-h-screen flex-col">
       {/* Nav */}
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
-        <Logo />
+        <Logo height={40} />
         <div className="flex items-center gap-2">
           <Link href="/login" className={buttonClasses("ghost", "sm")}>
             Log in
