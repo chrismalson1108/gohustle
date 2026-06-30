@@ -49,7 +49,10 @@ export const stripeEdge = {
   cancelPayment: (bookingId: string) =>
     callEdgeFunction("stripe-cancel-payment", { bookingId }),
   getPayoutOnboardingUrl: () =>
-    callEdgeFunction<{ url: string }>("stripe-connect-onboard"),
+    callEdgeFunction<{ url: string }>("stripe-connect-onboard", {
+      // Stripe returns the browser to <origin>/stripe/connect-return after onboarding.
+      origin: typeof window !== "undefined" ? window.location.origin : undefined,
+    }),
   // NOTE: the edge function returns the SetupIntent secret as `setupIntentClientSecret`
   // (see src/screens/PayoutSetupScreen.js + supabase/functions/stripe-create-setup-intent).
   createSetupIntent: () =>
@@ -66,5 +69,7 @@ export const stripeEdge = {
   createIdentitySession: () =>
     callEdgeFunction<{ url?: string; client_secret?: string }>(
       "stripe-create-identity-session",
+      // Stripe returns the browser to <origin>/stripe/identity-return when finished.
+      { origin: typeof window !== "undefined" ? window.location.origin : undefined },
     ),
 };
