@@ -40,8 +40,9 @@ interface PubProfile {
   grad_year: number | null;
   student_verified: boolean;
   student_status: string;
-  availability: Array<{ day: number; start: string; end: string }> | null;
 }
+
+type AvailabilityWindow = { day: number; start: string; end: string };
 
 interface PubReview {
   id: string;
@@ -69,6 +70,8 @@ export default function PublicProfilePage() {
   const { showToast, name: myName } = useUser();
   const { postedJobs } = useJobs();
   const [profile, setProfile] = useState<PubProfile | null>(null);
+  const [availability, setAvailabilityState] = useState<AvailabilityWindow[]>([]);
+  const [showAvailability, setShowAvailability] = useState(false);
   const [reviews, setReviews] = useState<PubReview[]>([]);
   const [listings, setListings] = useState<PubListing[]>([]);
   const [certs, setCerts] = useState<Certification[]>([]);
@@ -158,11 +161,30 @@ export default function PublicProfilePage() {
       setListings((jobs as PubListing[]) || []);
       setCerts(certRows);
       setLoading(false);
+
+      // Availability columns are revoked from `anon` by the profile column
+      // lockdown, so they live in a SEPARATE query that only runs for signed-in
+      // viewers. Kept out of the main select above so anonymous visitors never
+      // request ungranted columns (which would fail the whole profile query).
+      if (user) {
+        try {
+          const { data: avail } = await supabase
+            .from("profiles")
+            .select("availability, show_availability")
+            .eq("id", id)
+            .single();
+          if (!active) return;
+          setAvailabilityState(Array.isArray(avail?.availability) ? (avail!.availability as AvailabilityWindow[]) : []);
+          setShowAvailability(avail?.show_availability === true);
+        } catch {
+          /* degrade gracefully — just no availability shown */
+        }
+      }
     })();
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, user]);
 
   if (loading) return <FullPageSpinner />;
   if (!profile) return <EmptyState title="Profile not found" />;
@@ -173,10 +195,12 @@ export default function PublicProfilePage() {
   const recentWork = earnerReviews.slice(0, 10);
   const { certified, progress } = computeCertifications(earnerReviews);
 
-  const availability = Array.isArray(profile.availability) ? profile.availability : [];
   const availDays = DAYS.map((label, day) => ({ label, day, windows: windowsForDay(availability, day) })).filter(
     (d) => d.windows.length > 0,
   );
+  // Show availability only to a signed-in viewer, and only if the owner opted in
+  // (or it's the owner viewing their own profile), and there are windows to show.
+  const canShowAvailability = !!user && (showAvailability || isSelf) && availDays.length > 0;
 
   return (
     <div>
@@ -241,7 +265,7 @@ export default function PublicProfilePage() {
           </div>
         )}
 
-        {availDays.length > 0 && (
+        {canShowAvailability && (
           <>
             <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Availability</h2>
             <div className="mb-6 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">

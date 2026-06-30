@@ -44,6 +44,7 @@ export default function SettingsScreen({ navigation }) {
     name: '', username: '', bio: '',
     city: '', role: 'earner', skills: [], radiusMiles: 25, skillRates: {},
     school: '', major: '', degreeType: '', classStanding: '', gradYear: '',
+    showAvailability: false,
   });
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export default function SettingsScreen({ navigation }) {
   const loadProfile = async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year')
+      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
       .eq('id', user.id)
       .single();
     if (data) {
@@ -71,6 +72,7 @@ export default function SettingsScreen({ navigation }) {
         degreeType: data.degree_type || '',
         classStanding: data.class_standing || '',
         gradYear: data.grad_year ? String(data.grad_year) : '',
+        showAvailability: data.show_availability === true,
       });
     }
     try { setCerts(await fetchCertifications(user.id)); } catch (_) {}
@@ -136,6 +138,18 @@ export default function SettingsScreen({ navigation }) {
     set('skills', form.skills.includes(s)
       ? form.skills.filter(x => x !== s)
       : [...form.skills, s]);
+  };
+
+  const toggleShowAvailability = async (value) => {
+    haptic.selection();
+    set('showAvailability', value); // optimistic
+    const { error } = await supabase.from('profiles').update({ show_availability: value }).eq('id', user.id);
+    if (error) {
+      set('showAvailability', !value); // revert
+      showToast({ icon: '⚠️', title: "Couldn't update", message: 'Please try again.' });
+      return;
+    }
+    await refreshProfile();
   };
 
   const setSkillRate = (s, v) => {
@@ -412,6 +426,19 @@ export default function SettingsScreen({ navigation }) {
                   ))}
                 </Field>
               )}
+
+              <View style={styles.availToggleRow}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={styles.availToggleTitle}>Show my availability on my profile</Text>
+                  <Text style={styles.availToggleHint}>Lets signed-in clients see when you're free.</Text>
+                </View>
+                <Switch
+                  value={form.showAvailability}
+                  onValueChange={toggleShowAvailability}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
             </>
           )}
 
@@ -588,6 +615,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface, marginTop: 4,
   },
   certAddBtnText: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  availToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 22,
+  },
+  availToggleTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  availToggleHint: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   dangerZone: { marginTop: 36, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
