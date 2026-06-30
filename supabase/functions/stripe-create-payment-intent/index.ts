@@ -163,6 +163,16 @@ Deno.serve(async (req: Request) => {
       status: 'authorized',
     }, { onConflict: 'booking_id' });
 
+    // The poster's saved card (if any) so the web client can offer one-tap accept
+    // with the card on file instead of re-collecting it. (Mobile uses the ephemeral
+    // key + PaymentSheet, which already surfaces saved cards.)
+    let savedCard: { id: string; brand: string | null; last4: string | null } | null = null;
+    try {
+      const pms = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+      const pm = pms.data[0];
+      if (pm) savedCard = { id: pm.id, brand: pm.card?.brand ?? null, last4: pm.card?.last4 ?? null };
+    } catch (_) { /* no saved card — client falls back to card entry */ }
+
     return json({
       clientSecret: pi.client_secret,
       customerId,
@@ -170,6 +180,7 @@ Deno.serve(async (req: Request) => {
       amountCents,
       earnerAmountCents,
       feeCents,
+      savedCard,
     });
   } catch (err: any) {
     console.error('stripe-create-payment-intent:', err);

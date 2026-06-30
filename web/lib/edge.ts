@@ -35,7 +35,12 @@ export async function callEdgeFunction<T = unknown>(
 // Thin wrappers over the existing Stripe edge functions (identical to mobile).
 export const stripeEdge = {
   createPaymentIntent: (bookingId: string) =>
-    callEdgeFunction<{ clientSecret: string; amount: number }>(
+    callEdgeFunction<{
+      clientSecret: string;
+      amount?: number;
+      amountCents?: number;
+      savedCard?: { id: string; brand: string | null; last4: string | null } | null;
+    }>(
       "stripe-create-payment-intent",
       { bookingId },
     ),

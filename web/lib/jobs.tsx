@@ -151,7 +151,12 @@ interface JobsValue extends State {
   proposeAmendment: (bookingId: string, note: string) => Promise<void>;
   respondToAmendment: (bookingId: string, accepted: boolean) => Promise<void>;
   clearAmendment: (bookingId: string) => Promise<void>;
-  createPaymentIntent: (bookingId: string) => Promise<{ clientSecret: string; amount: number }>;
+  createPaymentIntent: (bookingId: string) => Promise<{
+    clientSecret: string;
+    amount?: number;
+    amountCents?: number;
+    savedCard?: { id: string; brand: string | null; last4: string | null } | null;
+  }>;
   getPayoutOnboardingUrl: () => Promise<{ url: string }>;
   getPayoutStatus: () => Promise<{ hasAccount: boolean; onboarded: boolean }>;
   createSetupIntent: () => Promise<{ setupIntentClientSecret: string; customerId?: string; ephemeralKey?: string }>;

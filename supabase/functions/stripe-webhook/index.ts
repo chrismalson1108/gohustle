@@ -18,23 +18,41 @@ Deno.serve(async (req: Request) => {
   }
 
   const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
-  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+
+  // Two destinations can point at this same URL with DIFFERENT signing secrets:
+  //   • STRIPE_WEBHOOK_SECRET         — the "Your account" destination (payments + identity)
+  //   • STRIPE_WEBHOOK_SECRET_CONNECT — an optional "Connected accounts" destination, so
+  //     connected-account account.updated events (which a "Your account" scope never
+  //     receives) reach the account.updated handler below for reactive demote/promote.
+  // We verify against whichever secret matches. The CONNECT secret is optional — if it's
+  // unset, only the main destination is accepted (no behavior change).
+  const webhookSecrets = [
+    Deno.env.get('STRIPE_WEBHOOK_SECRET'),
+    Deno.env.get('STRIPE_WEBHOOK_SECRET_CONNECT'),
+  ].filter((s): s is string => !!s);
 
   const sig = req.headers.get('stripe-signature');
   if (!sig) return new Response('Missing signature', { status: 400 });
 
   // Must use raw body string for signature verification
   const body = await req.text();
-  let event: Stripe.Event;
-  try {
-    event = await stripe.webhooks.constructEventAsync(body, sig, webhookSecret);
-  } catch (err: any) {
-    console.error('Webhook signature error:', err.message);
-    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+  let event: Stripe.Event | null = null;
+  let lastErr = 'No signing secret matched';
+  for (const secret of webhookSecrets) {
+    try {
+      event = await stripe.webhooks.constructEventAsync(body, sig, secret);
+      break;
+    } catch (err: any) {
+      lastErr = err?.message ?? lastErr;
+    }
+  }
+  if (!event) {
+    console.error('Webhook signature error:', lastErr);
+    return new Response(`Webhook Error: ${lastErr}`, { status: 400 });
   }
 
   try {
