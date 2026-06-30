@@ -652,7 +652,7 @@ export default function EarnScreen({ navigation }) {
           </View>
           <View style={styles.streakPill}>
             <Ionicons name="flame" size={15} color="#FB923C" style={{ marginRight: 5 }} />
-            <Text style={styles.streakText}>{streakDays}-day streak</Text>
+            <Text style={styles.streakText}>{streakDays}-week streak</Text>
           </View>
           <View style={styles.lvChip}>
             <Ionicons name="star" size={13} color="#FCD34D" style={{ marginRight: 5 }} />

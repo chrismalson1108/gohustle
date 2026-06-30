@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import LocationPicker from './LocationPicker';
 import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
@@ -16,8 +17,18 @@ export const DEFAULT_FILTERS = {
   urgentOnly: false,
   verifiedStudentsOnly: false, // only gigs from Verified Student posters
   campusOnly: false,           // only gigs from posters at the viewer's school
+  radius:     'any',   // 'any' | 5 | 10 | 25 | 50 — miles from the center
+  near:       null,    // { label, lat, lng } center; null = profile/device location
   sortBy:     'newest', // 'newest' | 'pay_high' | 'pay_low'
 };
+
+const RADIUS_OPTIONS = [
+  { id: 'any', label: 'Any distance' },
+  { id: 5,     label: 'Within 5 mi' },
+  { id: 10,    label: 'Within 10 mi' },
+  { id: 25,    label: 'Within 25 mi' },
+  { id: 50,    label: 'Within 50 mi' },
+];
 
 export function countActiveFilters(f) {
   let n = 0;
@@ -28,6 +39,7 @@ export function countActiveFilters(f) {
   if (f.urgentOnly)             n++;
   if (f.verifiedStudentsOnly)   n++;
   if (f.campusOnly)             n++;
+  if (f.radius     !== 'any')   n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -49,7 +61,7 @@ const SORT_OPTIONS = [
   { id: 'pay_low',  ion: 'trending-down', label: 'Pay: Low → High' },
 ];
 
-export default function FilterSheet({ visible, filters, availableStates, mySchool, onApply, onClose }) {
+export default function FilterSheet({ visible, filters, availableStates, mySchool, defaultCenterLabel, onApply, onClose }) {
   const haptic = useHaptic();
   const [local, setLocal] = useState(filters);
 
@@ -161,6 +173,35 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
                   </TouchableOpacity>
                 ))}
               </View>
+            </Section>
+
+            {/* Distance (radius from a location) */}
+            <Section title="Distance">
+              <View style={styles.chipRow}>
+                {RADIUS_OPTIONS.map(o => (
+                  <Chip
+                    key={String(o.id)}
+                    label={o.label}
+                    active={local.radius === o.id}
+                    onPress={() => { haptic.selection(); set('radius', o.id); }}
+                  />
+                ))}
+              </View>
+              {local.radius !== 'any' && (
+                <>
+                  <Text style={[styles.sectionHint, { marginTop: 12, marginBottom: 6 }]}>Center of search</Text>
+                  <LocationPicker
+                    value={local.near?.label ?? defaultCenterLabel ?? ''}
+                    onChange={(label, coords) =>
+                      set('near', label ? { label, lat: coords?.lat ?? null, lng: coords?.lng ?? null } : null)
+                    }
+                    placeholder="Your location"
+                  />
+                  <Text style={[styles.sectionHint, { marginTop: 8 }]}>
+                    Gigs within {local.radius} mi of this location. Remote gigs always show.
+                  </Text>
+                </>
+              )}
             </Section>
 
             {/* Location */}

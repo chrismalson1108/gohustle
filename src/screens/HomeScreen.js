@@ -55,8 +55,22 @@ function matchesPay(job, payRange) {
   return true;
 }
 
+// Geocode a place string → {lat,lng} via the free Photon geocoder (same source as
+// LocationPicker). Used to place the radius-filter center and any gigs that were
+// posted without stored coords.
+async function geocodeOne(q) {
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&layer=city&layer=locality&lang=en`);
+    const json = await res.json();
+    const c = json.features?.[0]?.geometry?.coordinates;
+    return Array.isArray(c) ? { lat: c[1], lng: c[0] } : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, school, skills } = useUser();
+  const { name, streakDays, school, skills, city } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
@@ -65,6 +79,8 @@ export default function HomeScreen({ navigation }) {
   const [showFilter, setShowFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [userCoords, setUserCoords] = useState(null);
+  const [profileCoords, setProfileCoords] = useState(null);
+  const [geoCache, setGeoCache] = useState({});
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
 
   // Best-effort device location for distance + "Nearest" sort (no prompt spam)
@@ -84,6 +100,33 @@ export default function HomeScreen({ navigation }) {
       } catch (_) {}
     })();
   }, []);
+
+  // Geocode the profile city → default center for the radius filter.
+  useEffect(() => {
+    if (!city) return;
+    let cancelled = false;
+    geocodeOne(city).then(c => { if (!cancelled && c) setProfileCoords(c); });
+    return () => { cancelled = true; };
+  }, [city]);
+
+  // Back-fill coords for gigs posted without stored lat/lng by geocoding their
+  // location string (cached) so the radius filter can place them.
+  useEffect(() => {
+    const needed = [...new Set(
+      jobs.filter(j => (j.lat == null || j.lng == null) && j.location && !j.location.toLowerCase().includes('remote'))
+        .map(j => j.location),
+    )].filter(loc => !(loc in geoCache));
+    if (needed.length === 0) return;
+    let cancelled = false;
+    needed.forEach(loc => geocodeOne(loc).then(c => { if (!cancelled && c) setGeoCache(p => ({ ...p, [loc]: c })); }));
+    return () => { cancelled = true; };
+  }, [jobs, geoCache]);
+
+  // Radius-filter center: explicitly chosen location wins, else the geocoded
+  // profile city, else the device location.
+  const center = (filters.near && filters.near.lat != null)
+    ? { lat: filters.near.lat, lng: filters.near.lng }
+    : (profileCoords || userCoords);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -142,6 +185,14 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
+      // Distance radius — remote gigs always show; in-person gigs need coords
+      // (stored or geocoded) within the radius of the center.
+      if (filters.radius !== 'any' && center && center.lat != null && !(j.location || '').toLowerCase().includes('remote')) {
+        const coords = (j.lat != null && j.lng != null) ? { lat: j.lat, lng: j.lng } : geoCache[j.location];
+        if (!coords) return false;
+        if (haversineMiles(center, coords) > filters.radius) return false;
+      }
+
       // Days availability
       if (filters.days.length > 0) {
         const slotDays = getSlotDays(j.slots);
@@ -184,7 +235,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, school, skills]);
+  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, center, geoCache, school, skills]);
 
   const activeFilterCount = countActiveFilters(filters);
   const forYouNoSkills = selectedCat === 'foryou' && (skills?.length || 0) === 0;
@@ -201,7 +252,7 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="flame" size={20} color="#F59E0B" />
             <View style={{ height: 2 }} />
             <Text style={styles.streakNum}>{streakDays}</Text>
-            <Text style={styles.streakLabel}>day streak</Text>
+            <Text style={styles.streakLabel}>week streak</Text>
           </View>
         </View>
         <View style={styles.searchRow}>
@@ -298,6 +349,7 @@ export default function HomeScreen({ navigation }) {
           filters={filters}
           availableStates={availableStates}
           mySchool={school}
+          defaultCenterLabel={city}
           onApply={(f) => { setFilters(f); setShowFilter(false); }}
           onClose={() => setShowFilter(false)}
         />
@@ -351,6 +403,8 @@ export default function HomeScreen({ navigation }) {
         visible={showFilter}
         filters={filters}
         availableStates={availableStates}
+        mySchool={school}
+        defaultCenterLabel={city}
         onApply={(f) => { setFilters(f); setShowFilter(false); }}
         onClose={() => setShowFilter(false)}
       />
