@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Car, Receipt } from "lucide-react";
+import { Car, Receipt, Paperclip, X } from "lucide-react";
 import { IRS_MILEAGE_RATE } from "@gohustlr/shared";
-import { addExpense, EXPENSE_CATEGORIES } from "@/lib/expenses";
+import { addExpense, uploadReceipt, EXPENSE_CATEGORIES } from "@/lib/expenses";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { money, classNames } from "@/lib/format";
@@ -20,9 +20,11 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 export default function TrackExpensesModal({
   booking,
   onClose,
+  onSaved,
 }: {
   booking: Booking | null;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const { user } = useAuth();
   const { showToast } = useUser();
@@ -35,6 +37,7 @@ export default function TrackExpensesModal({
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("supplies");
   const [desc, setDesc] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   const [busy, setBusy] = useState(false);
 
@@ -46,6 +49,7 @@ export default function TrackExpensesModal({
       setAmount("");
       setCategory("supplies");
       setDesc("");
+      setReceiptFile(null);
     }
   }, [booking]);
 
@@ -70,6 +74,7 @@ export default function TrackExpensesModal({
         miles: totalMiles,
       });
       showToast({ icon: "🚗", title: `Logged ${totalMiles.toFixed(1)} mi`, message: `${money(mileageAmount)} deduction saved to your Tax Center.` });
+      onSaved?.();
       onClose();
     } catch (e) {
       showToast({ icon: "⚠️", title: "Couldn't save", message: (e as Error).message || "Please try again." });
@@ -81,14 +86,18 @@ export default function TrackExpensesModal({
     if (!user || !Number.isFinite(expenseAmount) || expenseAmount <= 0) return;
     setBusy(true);
     try {
+      let receiptUrl: string | null = null;
+      if (receiptFile) receiptUrl = await uploadReceipt(receiptFile, user.id);
       await addExpense(user.id, {
         amount: expenseAmount,
         category,
         description: desc.trim() || undefined,
         date: todayISO(),
         bookingId: booking.id,
+        receiptUrl,
       });
       showToast({ icon: "🧾", title: "Expense logged", message: `${money(expenseAmount)} saved to your Tax Center.` });
+      onSaved?.();
       onClose();
     } catch (e) {
       showToast({ icon: "⚠️", title: "Couldn't save", message: (e as Error).message || "Please try again." });
@@ -151,6 +160,22 @@ export default function TrackExpensesModal({
           </Field>
           <Field label="Note (optional)">
             <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="e.g. parking, supplies, gas" maxLength={120} />
+          </Field>
+          <Field label="Receipt photo (optional)">
+            {receiptFile ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-3 py-2.5 text-sm">
+                <Paperclip className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1 truncate text-ink">{receiptFile.name}</span>
+                <button type="button" onClick={() => setReceiptFile(null)} aria-label="Remove receipt" className="shrink-0 text-ink-muted hover:text-urgent">
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-dashed border-line bg-white px-3 py-2.5 text-sm font-semibold text-ink-soft transition hover:border-primary hover:text-primary">
+                <Paperclip className="size-4 text-primary" /> Attach a photo of the receipt
+                <input type="file" accept="image/*" hidden onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+              </label>
+            )}
           </Field>
           <Button fullWidth size="lg" loading={busy} disabled={!(expenseAmount > 0)} onClick={saveExpense}>
             Log expense

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
@@ -19,6 +19,7 @@ import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
 import TrackExpensesModal from "@/components/TrackExpensesModal";
 import { uploadImages } from "@/lib/uploadImage";
+import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
 import { computeEarnerInsights } from "@gohustlr/shared";
 import type { Booking, BookingStatus } from "@/lib/types";
@@ -66,6 +67,25 @@ export default function MyJobsPage() {
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [trackBooking, setTrackBooking] = useState<Booking | null>(null);
+
+  // Per-gig logged total (mileage + expenses) for the "$X tracked" chip.
+  const [trackedByBooking, setTrackedByBooking] = useState<Record<string, number>>({});
+  const loadTracked = useCallback(async () => {
+    if (!user) return;
+    try {
+      const exps = await fetchExpenses(user.id);
+      const map: Record<string, number> = {};
+      exps.forEach((e) => {
+        if (e.booking_id) map[e.booking_id] = (map[e.booking_id] || 0) + Number(e.amount || 0);
+      });
+      setTrackedByBooking(map);
+    } catch {
+      /* non-blocking — the chip just won't show */
+    }
+  }, [user]);
+  useEffect(() => {
+    loadTracked();
+  }, [loadTracked]);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -116,11 +136,14 @@ export default function MyJobsPage() {
 
   const submitFinish = async () => {
     if (!finishBooking) return;
+    const fb = finishBooking;
     setBusy(true);
     await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
     setBusy(false);
     setFinishBooking(null);
     showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
+    // Nudge: log the drive & any expenses while it's fresh.
+    setTrackBooking(fb);
   };
 
   const handleStart = async (b: Booking) => {
@@ -166,6 +189,30 @@ export default function MyJobsPage() {
       <MessageCircle className="size-4" /> Message
     </Link>
   );
+
+  // "Track miles & expenses" action + a "$X tracked" chip (→ Tax Center) once anything
+  // has been logged for this gig.
+  const TrackRow = ({ b }: { b: Booking }) => {
+    const tracked = trackedByBooking[b.id] || 0;
+    return (
+      <div className="mt-2.5 flex items-center gap-3">
+        <button
+          onClick={() => setTrackBooking(b)}
+          className="flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
+        >
+          <Car className="size-3.5" /> Track miles &amp; expenses
+        </button>
+        {tracked > 0 && (
+          <Link
+            href="/profile/taxes"
+            className="ml-auto inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-extrabold text-success transition hover:bg-success/15"
+          >
+            {money(tracked)} tracked →
+          </Link>
+        )}
+      </div>
+    );
+  };
 
   // The single, state-derived primary action + demoted secondary controls for a gig.
   function GigActions({ b }: { b: Booking }) {
@@ -428,12 +475,7 @@ export default function MyJobsPage() {
                       {!b.posterRating && !b.earnerRating && b.beforePhotos?.length === 0 && b.completionPhotos?.length === 0 && (
                         <p className="text-sm text-ink-muted">No additional details for this gig.</p>
                       )}
-                      <button
-                        onClick={() => setTrackBooking(b)}
-                        className="flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
-                      >
-                        <Car className="size-3.5" /> Track miles &amp; expenses
-                      </button>
+                      <TrackRow b={b} />
                     </div>
                   )}
                 </div>
@@ -454,14 +496,7 @@ export default function MyJobsPage() {
                 </div>
                 <AmendmentBlock b={b} />
                 <GigActions b={b} />
-                {(b.status === "confirmed" || b.status === "completed") && (
-                  <button
-                    onClick={() => setTrackBooking(b)}
-                    className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
-                  >
-                    <Car className="size-3.5" /> Track miles &amp; expenses
-                  </button>
-                )}
+                {(b.status === "confirmed" || b.status === "completed") && <TrackRow b={b} />}
               </div>
             ))}
           </div>
@@ -530,7 +565,7 @@ export default function MyJobsPage() {
         </div>
       </PageContainer>
 
-      <TrackExpensesModal booking={trackBooking} onClose={() => setTrackBooking(null)} />
+      <TrackExpensesModal booking={trackBooking} onClose={() => setTrackBooking(null)} onSaved={loadTracked} />
 
       <Modal
         open={!!rateBooking}
