@@ -44,6 +44,8 @@ declare module "@gohustlr/shared" {
     urgentOnly: boolean;
     verifiedStudentsOnly: boolean;
     campusOnly: boolean;
+    radius: string | number;
+    near: { label: string; lat: number | null; lng: number | null } | null;
     sortBy: string;
   }
   export const DEFAULT_FILTERS: JobFilters;
@@ -51,6 +53,7 @@ declare module "@gohustlr/shared" {
   export const PAY_OPTIONS: { id: string; label: string }[];
   export const PAY_TYPE_OPTIONS: { id: string; label: string }[];
   export const SORT_OPTIONS: { id: string; label: string }[];
+  export const RADIUS_OPTIONS: { id: string | number; label: string }[];
   export function countActiveFilters(f: JobFilters): number;
   export function getState(location: string): string | null;
   export function getSlotDays(slots: Array<{ taken?: boolean; label?: string }>): Set<string>;
@@ -66,6 +69,7 @@ declare module "@gohustlr/shared" {
       filters?: JobFilters;
       blockedIds?: Set<string>;
       userCoords?: { lat: number; lng: number } | null;
+      center?: { lat: number; lng: number } | null;
       mySchool?: string | null;
       forYouSkills?: string[];
     },

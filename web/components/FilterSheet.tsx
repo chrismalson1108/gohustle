@@ -7,10 +7,12 @@ import {
   PAY_TYPE_OPTIONS,
   SORT_OPTIONS,
   DAY_OPTIONS,
+  RADIUS_OPTIONS,
   countActiveFilters,
 } from "@gohustlr/shared";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
+import LocationPicker from "./LocationPicker";
 import { classNames } from "@/lib/format";
 
 export interface Filters {
@@ -21,6 +23,8 @@ export interface Filters {
   urgentOnly: boolean;
   verifiedStudentsOnly: boolean;
   campusOnly: boolean;
+  radius: string | number;
+  near: { label: string; lat: number | null; lng: number | null } | null;
   sortBy: string;
 }
 
@@ -29,6 +33,7 @@ interface Props {
   filters: Filters;
   availableStates: string[];
   mySchool?: string | null;
+  defaultCenterLabel?: string | null;
   onApply: (f: Filters) => void;
   onClose: () => void;
 }
@@ -57,7 +62,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function FilterSheet({ open, filters, availableStates, mySchool, onApply, onClose }: Props) {
+export default function FilterSheet({ open, filters, availableStates, mySchool, defaultCenterLabel, onApply, onClose }: Props) {
   const [local, setLocal] = useState<Filters>(filters);
   useEffect(() => {
     if (open) setLocal(filters);
@@ -127,6 +132,30 @@ export default function FilterSheet({ open, filters, availableStates, mySchool, 
           ))}
         </div>
       </div>
+
+      <Section title="Distance">
+        {RADIUS_OPTIONS.map((o) => (
+          <Chip key={String(o.id)} active={local.radius === o.id} onClick={() => set("radius", o.id)}>
+            {o.label}
+          </Chip>
+        ))}
+      </Section>
+
+      {local.radius !== "any" && (
+        <div className="mb-5">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Center of search</p>
+          <LocationPicker
+            value={local.near?.label ?? defaultCenterLabel ?? ""}
+            onChange={(label, coords) =>
+              set("near", label ? { label, lat: coords?.lat ?? null, lng: coords?.lng ?? null } : null)
+            }
+            placeholder="Your location"
+          />
+          <p className="mt-1.5 text-xs text-ink-muted">
+            Showing gigs within {local.radius} mi of this location. Remote gigs always show.
+          </p>
+        </div>
+      )}
 
       <Section title="Location">
         <Chip active={local.location === "any"} onClick={() => set("location", "any")}>

@@ -29,7 +29,7 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
 const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
 
 export default function BrowsePage() {
-  const { name, streakDays, school, skills } = useUser();
+  const { name, streakDays, school, skills, city } = useUser();
   const { jobs, bookings, blockedIds } = useJobs();
 
   const [selectedCat, setSelectedCat] = useState("all");
@@ -38,6 +38,7 @@ export default function BrowsePage() {
   const [showFilter, setShowFilter] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [profileCoords, setProfileCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!("geolocation" in navigator)) return;
@@ -48,11 +49,73 @@ export default function BrowsePage() {
     );
   }, []);
 
+  // Geocode the profile city → default center for the radius filter ("within X mi
+  // of [profile location]"). Falls back to device location when the city is blank.
+  useEffect(() => {
+    if (!city) return;
+    let cancelled = false;
+    fetch(`/api/geocode?q=${encodeURIComponent(city)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const c = j.features?.[0]?.geometry?.coordinates;
+        if (!cancelled && Array.isArray(c)) setProfileCoords({ lat: c[1], lng: c[0] });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [city]);
+
+  // Back-fill coords for gigs whose location wasn't geocoded at post time (legacy
+  // data) by geocoding their location string once, cached by string, so the radius
+  // filter can place them. Remote gigs need no coords.
+  const [geoCache, setGeoCache] = useState<Record<string, { lat: number; lng: number }>>({});
+  useEffect(() => {
+    const needed = [
+      ...new Set(
+        jobs
+          .filter((j) => (j.lat == null || j.lng == null) && j.location && !j.location.toLowerCase().includes("remote"))
+          .map((j) => j.location),
+      ),
+    ].filter((loc) => !(loc in geoCache));
+    if (needed.length === 0) return;
+    let cancelled = false;
+    needed.forEach((loc) => {
+      fetch(`/api/geocode?q=${encodeURIComponent(loc)}`)
+        .then((r) => r.json())
+        .then((j) => {
+          const c = j.features?.[0]?.geometry?.coordinates;
+          if (!cancelled && Array.isArray(c)) setGeoCache((p) => ({ ...p, [loc]: { lat: c[1], lng: c[0] } }));
+        })
+        .catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobs, geoCache]);
+
+  const jobsGeo = useMemo(
+    () =>
+      jobs.map((j) =>
+        (j.lat != null && j.lng != null) || !geoCache[j.location]
+          ? j
+          : { ...j, lat: geoCache[j.location].lat, lng: geoCache[j.location].lng },
+      ),
+    [jobs, geoCache],
+  );
+
   const availableStates = useMemo(() => availableStatesFrom(jobs), [jobs]);
 
+  // Radius-filter center: an explicitly chosen location wins, else the geocoded
+  // profile city, else the device location.
+  const center =
+    filters.near?.lat != null && filters.near?.lng != null
+      ? { lat: filters.near.lat, lng: filters.near.lng }
+      : profileCoords ?? userCoords;
+
   const filtered: Job[] = useMemo(
-    () => applyJobFilters(jobs, { selectedCat, search, filters, blockedIds, userCoords, mySchool: school, forYouSkills: skills }),
-    [jobs, selectedCat, search, filters, blockedIds, userCoords, school, skills],
+    () => applyJobFilters(jobsGeo, { selectedCat, search, filters, blockedIds, userCoords, center, mySchool: school, forYouSkills: skills }),
+    [jobsGeo, selectedCat, search, filters, blockedIds, userCoords, center, school, skills],
   );
 
   const forYouNoSkills = selectedCat === "foryou" && skills.length === 0;
@@ -71,7 +134,7 @@ export default function BrowsePage() {
           <div className="flex flex-col items-center rounded-2xl bg-white/15 px-3.5 py-2">
             <Flame className="size-5 text-gold" />
             <span className="text-xl font-black leading-none">{streakDays}</span>
-            <span className="text-[10px] text-white/75">day streak</span>
+            <span className="text-[10px] text-white/75">week streak</span>
           </div>
         }
       >
@@ -229,6 +292,7 @@ export default function BrowsePage() {
         filters={filters}
         availableStates={availableStates}
         mySchool={school}
+        defaultCenterLabel={city}
         onApply={(f) => {
           setFilters(f);
           setShowFilter(false);

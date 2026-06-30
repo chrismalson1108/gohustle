@@ -11,8 +11,19 @@ export const DEFAULT_FILTERS = {
   urgentOnly: false,
   verifiedStudentsOnly: false, // only gigs from Verified Student posters
   campusOnly: false,           // only gigs from posters at the viewer's school
+  radius:     'any',    // 'any' | 5 | 10 | 25 | 50 — miles from the center
+  near:       null,     // { label, lat, lng } center; null = use the viewer's profile/device location
   sortBy:     'newest', // 'newest' | 'nearest' | 'pay_high' | 'pay_low'
 };
+
+// Radius (in miles) options for the "Distance" filter — TaskRabbit/FB-style.
+export const RADIUS_OPTIONS = [
+  { id: 'any', label: 'Any distance' },
+  { id: 5,     label: 'Within 5 mi' },
+  { id: 10,    label: 'Within 10 mi' },
+  { id: 25,    label: 'Within 25 mi' },
+  { id: 50,    label: 'Within 50 mi' },
+];
 
 export const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -46,6 +57,7 @@ export function countActiveFilters(f) {
   if (f.urgentOnly)              n++;
   if (f.verifiedStudentsOnly)    n++;
   if (f.campusOnly)              n++;
+  if (f.radius     !== 'any')    n++;
   if (f.sortBy     !== 'newest') n++;
   return n;
 }
@@ -135,8 +147,12 @@ export function availableStatesFrom(jobs) {
 
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
-export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, mySchool, forYouSkills = [] } = {}) {
+export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [] } = {}) {
   const schoolKey = (mySchool || '').trim().toLowerCase();
+  // Radius filter center: an explicitly chosen location wins, else the default
+  // (profile/device location) passed by the caller.
+  const radiusCenter = (filters.near && filters.near.lat != null) ? filters.near : center;
+  const radiusOn = filters.radius && filters.radius !== 'any' && radiusCenter && radiusCenter.lat != null;
   let list = (jobs || []).filter(j => {
     if (j.status !== 'open') return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
@@ -159,6 +175,13 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
       } else if (getState(j.location) !== filters.location) {
         return false;
       }
+    }
+
+    // Distance radius — keep remote gigs (location-independent); for in-person gigs
+    // require coords within the radius of the center.
+    if (radiusOn && !(j.location || '').toLowerCase().includes('remote')) {
+      if (j.lat == null || j.lng == null) return false;
+      if (haversineMiles(radiusCenter, { lat: j.lat, lng: j.lng }) > filters.radius) return false;
     }
 
     if (filters.days.length > 0) {

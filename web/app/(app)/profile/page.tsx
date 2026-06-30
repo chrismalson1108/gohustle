@@ -170,7 +170,7 @@ export default function ProfilePage() {
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "Earned", value: money(u.earningsTotal) },
-            { label: "Streak", value: `${u.streakDays}d` },
+            { label: "Streak", value: `${u.streakDays}w` },
             { label: "Rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)}★` : "—" },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl bg-white p-4 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">

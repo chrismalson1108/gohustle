@@ -70,7 +70,7 @@ export default function LandingPage() {
                 </div>
                 <div className="rounded-xl bg-white/15 px-3 py-2 text-center">
                   <p className="text-xl font-black">🔥 7</p>
-                  <p className="text-[10px] opacity-80">day streak</p>
+                  <p className="text-[10px] opacity-80">week streak</p>
                 </div>
               </div>
               <div className="mt-4 space-y-3">

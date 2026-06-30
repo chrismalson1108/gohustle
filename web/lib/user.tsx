@@ -41,6 +41,7 @@ export interface UserState {
   workStatus: "available" | "busy" | "away" | "offline";
   workStatusNote: string | null;
   availability: Array<{ day: number; start: string; end: string }>;
+  city: string | null;
   // College identity
   school: string | null;
   schoolDomain: string | null;
@@ -76,6 +77,7 @@ const DEFAULT_STATE: UserState = {
   workStatus: "available",
   workStatusNote: null,
   availability: [],
+  city: null,
   school: null,
   schoolDomain: null,
   major: null,
@@ -146,6 +148,7 @@ function dbToState(
     availability: Array.isArray((profile as Record<string, unknown>).availability)
       ? ((profile as Record<string, unknown>).availability as UserState["availability"])
       : [],
+    city: (p.city as string) || null,
     school: (p.school as string) || null,
     schoolDomain: (p.school_domain as string) || null,
     major: (p.major as string) || null,

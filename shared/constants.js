@@ -22,7 +22,7 @@ export const CATEGORY_COLORS = {
 
 export const BADGE_DEFS = {
   firstHustle: { icon: '🌟', ion: 'sparkles', label: 'First Hustle', desc: 'Completed your first gig' },
-  onFire:      { icon: '🔥', ion: 'flame',    label: 'On Fire',      desc: '5-day hustle streak' },
+  onFire:      { icon: '🔥', ion: 'flame',    label: 'On Fire',      desc: '5-week hustle streak' },
   bigEarner:   { icon: '💰', ion: 'cash',     label: 'Big Earner',   desc: 'Earned $1,000+' },
   topRated:    { icon: '⭐', ion: 'star',     label: 'Top Rated',    desc: '10 five-star reviews' },
   speedDemon:  { icon: '⚡', ion: 'flash',    label: 'Speed Demon',  desc: 'Applied within 30min of posting' },
