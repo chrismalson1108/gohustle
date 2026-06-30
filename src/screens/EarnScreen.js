@@ -34,7 +34,7 @@ export default function EarnScreen({ navigation }) {
     streakDays, levelInfo, xp, challenges,
     weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
   } = useUser();
-  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
+  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
   const haptic = useHaptic();
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
@@ -85,6 +85,13 @@ export default function EarnScreen({ navigation }) {
   const awaitingPairs  = pairs.filter(p => AWAITING_STATUSES.has(p.booking.status));
   const completedPairs = pairs.filter(p => COMPLETED_STATUSES.has(p.booking.status));
   const shownPairs     = tab === 'active' ? activePairs : tab === 'awaiting' ? awaitingPairs : completedPairs;
+
+  // Earner taps "Start job / I'm on site" → marks the booking in progress.
+  const handleStartJob = async (booking) => {
+    haptic.medium();
+    const ok = await startJob(booking.id);
+    if (ok) showToast({ icon: '🚀', title: "You're on the clock", message: 'The poster has been notified that you started.' });
+  };
 
   // Open the finish sheet (lets the earner optionally attach proof photos)
   const handleMarkDone = (booking) => {
@@ -368,12 +375,20 @@ export default function EarnScreen({ navigation }) {
                   </View>
                 )}
 
-                {/* In-progress banner */}
-                {status === 'confirmed' && (
+                {/* In-progress banner — only once the worker has actually started */}
+                {status === 'confirmed' && booking.startedAt && (
                   <View style={styles.inProgressBanner}>
                     <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
                     <Text style={styles.inProgressText}>In Progress</Text>
                   </View>
+                )}
+
+                {/* Start job — confirmed, not started yet, earner hasn't marked done */}
+                {status === 'confirmed' && !booking.startedAt && !booking.earnerDone && (
+                  <TouchableOpacity style={styles.startBtn} onPress={() => handleStartJob(booking)}>
+                    <Ionicons name="play" size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.startBtnText}>Start Job · I'm On Site</Text>
+                  </TouchableOpacity>
                 )}
 
                 {/* Waiting indicators */}
@@ -444,11 +459,14 @@ export default function EarnScreen({ navigation }) {
                   </TouchableOpacity>
                 )}
 
-                {/* Cancel / withdraw */}
-                {(status === 'pending' || status === 'confirmed') && (
+                {/* Cancel / withdraw — locked once the worker has started */}
+                {(status === 'pending' || status === 'confirmed') && !booking.startedAt && (
                   <TouchableOpacity style={styles.cancelLink} onPress={() => handleCancel(booking)}>
                     <Text style={styles.cancelLinkText}>{status === 'pending' ? 'Withdraw application' : 'Cancel booking'}</Text>
                   </TouchableOpacity>
+                )}
+                {status === 'confirmed' && booking.startedAt && (
+                  <Text style={styles.cancelLockedText}>Can't cancel — you've started. Open a dispute if there's a problem.</Text>
                 )}
               </View>
             </View>
@@ -755,6 +773,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, marginTop: 8,
   },
   waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
+  startBtn: {
+    flexDirection: 'row', backgroundColor: colors.success, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+  },
+  startBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
   completeBtn: {
     flexDirection: 'row', backgroundColor: colors.primaryLight, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
@@ -781,6 +804,7 @@ const styles = StyleSheet.create({
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   cancelLink: { paddingVertical: 10, alignItems: 'center', marginTop: 4 },
   cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
+  cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 10, textAlign: 'center' },
   photoStrip: { marginTop: 10 },
   photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
   photoThumb: { width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },

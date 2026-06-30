@@ -83,6 +83,8 @@ function transformBooking(b) {
     beforePhotos: b.before_photos || [],
     completionPhotos: b.completion_photos || [],
     startsAt: b.starts_at || null,
+    startedAt: b.started_at || null,
+    cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
     earner: b.earner ? {
       id: b.earner.id,
@@ -104,6 +106,23 @@ function transformBooking(b) {
       location: b.job.location || null,
     } : null,
   };
+}
+
+// ─── Cancellation-fee policy (record/display only — NO money moves) ──────────
+// 15% of the booking's effective pay (counterOffer ?? job pay; hourly is multiplied
+// by estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
+// transformJob row from state.jobs (carries payType + estimatedHours); booking.job
+// is a thin embed and may lack estimatedHours.
+export function computeEffectivePay(booking, fullJob) {
+  const payType = fullJob?.payType ?? booking?.job?.payType;
+  const basePay = booking?.counterOffer ?? Number(fullJob?.pay ?? booking?.job?.pay) ?? 0;
+  const hours = Number(fullJob?.estimatedHours) || 1;
+  const effective = payType === 'hourly' ? basePay * hours : basePay;
+  return Number.isFinite(effective) ? effective : 0;
+}
+
+export function computeCancellationFeeAmount(effectivePay) {
+  return Math.max(5, Math.round(effectivePay * 0.15));
 }
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
@@ -345,6 +364,8 @@ export function JobsProvider({ children }) {
           amendmentStatus: b.amendment_status || 'none',
           amendmentNote: b.amendment_note || null,
           tipAmount: b.tip_amount || 0,
+          startedAt: b.started_at || null,
+          cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
         } });
         if (b.status === 'confirmed') {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
@@ -441,6 +462,34 @@ export function JobsProvider({ children }) {
       notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
     }
     track('booking_created', { jobId, counterOffer: !!counterOffer });
+    return true;
+  };
+
+  // Earner marks a confirmed booking as started ("I'm on site"). Sets started_at,
+  // which puts the booking in an "in progress" state and blocks cancellation
+  // (belt-and-suspenders with the DB guard). RLS already lets the earner update
+  // their own booking. No money moves here.
+  const startJob = async (bookingId) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    if (!booking) return false;
+    if (booking.startedAt) return false;          // already started
+    if (booking.status !== 'confirmed') {
+      showToast({ icon: '⚠️', title: "Can't start", message: 'This booking must be confirmed before you can start.' });
+      return false;
+    }
+    const startedAt = new Date().toISOString();
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { startedAt } });
+    const { error } = await supabase.from('bookings').update({ started_at: startedAt }).eq('id', bookingId);
+    if (error) {
+      console.warn('Start job error:', error.message);
+      dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { startedAt: null } }); // roll back
+      showToast({ icon: '⚠️', title: "Couldn't start", message: 'Something went wrong — please try again.' });
+      return false;
+    }
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (posterId) {
+      notify(posterId, 'Job started', `The worker has started "${booking.job?.title || 'a gig'}".`, { tab: 'GigsTab' });
+    }
     return true;
   };
 
@@ -617,15 +666,33 @@ export function JobsProvider({ children }) {
       showToast({ icon: '⚠️', title: "Can't cancel", message: 'This booking can no longer be cancelled.' });
       return;
     }
+    // Once the worker has started, the booking is locked — open a dispute instead
+    // (belt-and-suspenders with the DB guard trg_guard_started_booking_cancel).
+    if (booking?.startedAt) {
+      showToast({ icon: '⚠️', title: "Can't cancel", message: 'The worker has started — open a dispute if there\'s a problem.' });
+      return;
+    }
+
+    // Cancellation-fee POLICY (record + display only — NO money moves). A poster
+    // who cancels a CONFIRMED (held) booking owes the worker a fee; pending bookings
+    // have no hold yet, so no fee. computeCancellationFee mirrors the effective pay.
+    const fullJob = state.jobs.find(j => j.id === booking?.jobId);
+    const posterId = fullJob?.posterId;
+    const isPoster = posterId && user?.id === posterId;
+    let cancellationFee = null;
+    if (isPoster && booking?.status === 'confirmed') {
+      cancellationFee = computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
+    }
+
     try { await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment */ }
-    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'cancelled' } });
-    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'cancelled', ...(cancellationFee != null && { cancellationFee }) } });
+    const updatePatch = { status: 'cancelled' };
+    if (cancellationFee != null) updatePatch.cancellation_fee = cancellationFee;
+    const { error } = await supabase.from('bookings').update(updatePatch).eq('id', bookingId);
     if (error) { console.warn('Cancel error:', error.message); return; }
     if (booking?.slotId) supabase.from('job_slots').update({ taken: false }).eq('id', booking.slotId);
 
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     const title = booking?.job?.title || 'a gig';
-    const isPoster = posterId && user?.id === posterId;
     if (isPoster && booking?.earner?.id) {
       notify(booking.earner.id, 'Booking cancelled', `The poster cancelled "${title}".`, { tab: 'EarnTab' });
     } else if (posterId) {
@@ -864,6 +931,17 @@ export function JobsProvider({ children }) {
     fetchJobs();
   };
 
+  // Cancellation fee (display only) a POSTER would owe the worker for cancelling
+  // this confirmed booking now. Returns 0 when no fee applies (pending / not the
+  // poster / already started). Used by the UI to populate the confirm dialog.
+  const cancellationFeeFor = (bookingId) => {
+    const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    if (!booking || booking.status !== 'confirmed' || booking.startedAt) return 0;
+    const fullJob = state.jobs.find(j => j.id === booking.jobId);
+    if (!fullJob || fullJob.posterId !== user?.id) return 0;
+    return computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
+  };
+
   // ── Derived state ──────────────────────────────────────────────────────────
   const isBooked       = (jobId) => state.bookings.some(b => b.jobId === jobId);
   const bookedJobIds   = state.bookings.map(b => b.jobId);
@@ -961,6 +1039,8 @@ export function JobsProvider({ children }) {
       acceptBooking,
       declineBooking,
       cancelBooking,
+      cancellationFeeFor,
+      startJob,
       blockedIds,
       blockUser,
       unreadMessages,

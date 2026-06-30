@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, MessageCircle, Check, Camera, X, FileText } from "lucide-react";
+import { Briefcase, MessageCircle, Check, Camera, X, FileText, Play } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -20,7 +20,7 @@ import { computeEarnerInsights } from "@gohustlr/shared";
 import type { Booking } from "@/lib/types";
 
 export default function MyJobsPage() {
-  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment } = useJobs();
+  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob } = useJobs();
   const { earningsToday, earningsWeek, earningsTotal, showToast } = useUser();
   const { user } = useAuth();
 
@@ -70,6 +70,11 @@ export default function MyJobsPage() {
     setBusy(false);
     setFinishBooking(null);
     showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
+  };
+
+  const handleStart = async (b: Booking) => {
+    const ok = await startJob(b.id);
+    if (ok) showToast({ icon: "🚀", title: "You're on the clock", message: "The poster has been notified that you started." });
   };
 
   const respondAmend = async (b: Booking, accept: boolean) => {
@@ -171,6 +176,16 @@ export default function MyJobsPage() {
                     )}
                     {b.status === "confirmed" && (
                       <>
+                        {!b.startedAt && !b.earnerDone && (
+                          <Button size="sm" onClick={() => handleStart(b)}>
+                            <Play className="size-4" /> Start job · I&apos;m on site
+                          </Button>
+                        )}
+                        {b.startedAt && !b.earnerDone && (
+                          <span className="inline-flex items-center gap-1.5 self-center text-xs font-bold text-success">
+                            <span className="size-2 rounded-full bg-success" /> In progress
+                          </span>
+                        )}
                         {!b.earnerDone ? (
                           <Button size="sm" onClick={() => openFinish(b)}>
                             <Check className="size-4" /> Mark done
@@ -181,9 +196,15 @@ export default function MyJobsPage() {
                         <Link href="/messages" className={buttonClasses("secondary", "sm")}>
                           <MessageCircle className="size-4" /> Message
                         </Link>
-                        <Button size="sm" variant="ghost" className="text-urgent" onClick={() => cancelBooking(b.id)}>
-                          Cancel
-                        </Button>
+                        {!b.startedAt ? (
+                          <Button size="sm" variant="ghost" className="text-urgent" onClick={() => cancelBooking(b.id)}>
+                            Cancel
+                          </Button>
+                        ) : (
+                          <span className="self-center text-xs italic text-ink-muted">
+                            Can&apos;t cancel — you&apos;ve started. Open a dispute if there&apos;s a problem.
+                          </span>
+                        )}
                       </>
                     )}
                     {b.status === "completed" && (

@@ -111,6 +111,8 @@ export interface Booking {
   beforePhotos: string[];
   completionPhotos: string[];
   startsAt: string | null;
+  startedAt: string | null;
+  cancellationFee: number | null;
   tipAmount: number;
   earner: EarnerMini | null;
   job: BookingJobMini | null;

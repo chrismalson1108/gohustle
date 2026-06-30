@@ -45,7 +45,7 @@ function sortApplicants(reqs, job, sortBy) {
 export default function GigsScreen({ navigation }) {
   const {
     postedJobs, posterBookings,
-    acceptBooking, declineBooking, cancelBooking,
+    acceptBooking, declineBooking, cancelBooking, cancellationFeeFor,
     markPosterDone, verifyAndRate, deleteJob,
     refreshJobs, refreshPosterBookings,
     proposeAmendment, createPaymentIntent, getPaymentMethodStatus,
@@ -198,9 +198,14 @@ export default function GigsScreen({ navigation }) {
   };
 
   const handleCancel = (booking) => {
+    // Cancellation-fee POLICY (display + record only — no money is charged here).
+    const fee = cancellationFeeFor ? cancellationFeeFor(booking.id) : 0;
+    const message = fee > 0
+      ? `Cancelling now applies a cancellation fee of $${fee} to the worker. This releases the payment hold and notifies them.`
+      : 'This cancels the confirmed gig and releases the payment hold. The earner will be notified.';
     Alert.alert(
       'Cancel this booking?',
-      'This cancels the confirmed gig and releases the payment hold. The earner will be notified.',
+      message,
       [
         { text: 'Keep', style: 'cancel' },
         {
@@ -210,7 +215,7 @@ export default function GigsScreen({ navigation }) {
             setLoadingId(booking.id);
             await cancelBooking(booking.id);
             setLoadingId(null);
-            showToast({ icon: '❌', title: 'Booking cancelled', message: 'The payment hold was released.' });
+            showToast({ icon: '❌', title: 'Booking cancelled', message: fee > 0 ? `A $${fee} cancellation fee was recorded.` : 'The payment hold was released.' });
           },
         },
       ]
@@ -640,8 +645,10 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
       {status === 'confirmed' && (
         <View style={styles.inProgressRow}>
           <View style={styles.inlineRow}>
-            <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
-            <Text style={styles.inProgressText}>In Progress</Text>
+            <Ionicons name="ellipse" size={9} color={booking.startedAt ? colors.success : colors.textMuted} style={{ marginRight: 5 }} />
+            <Text style={[styles.inProgressText, !booking.startedAt && { color: colors.textMuted }]}>
+              {booking.startedAt ? 'In Progress · Worker on site' : 'Confirmed · Not started yet'}
+            </Text>
           </View>
           {(booking.earnerDone || booking.posterDone) && (
             <View style={styles.doneFlags}>
@@ -725,10 +732,13 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
               <Text style={styles.amendDeclinedText}>Change declined — original terms remain</Text>
             </View>
           )}
-          {status === 'confirmed' && onCancel && (
+          {status === 'confirmed' && onCancel && !booking.startedAt && (
             <TouchableOpacity style={styles.cancelLink} onPress={onCancel}>
               <Text style={styles.cancelLinkText}>Cancel booking</Text>
             </TouchableOpacity>
+          )}
+          {status === 'confirmed' && booking.startedAt && (
+            <Text style={styles.cancelLockedText}>Can't cancel — the worker has started. Open a dispute if there's a problem.</Text>
           )}
         </View>
       )}
@@ -899,6 +909,7 @@ const styles = StyleSheet.create({
   changeBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   cancelLink: { paddingVertical: 9, alignItems: 'center', marginTop: 6 },
   cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
+  cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
   amendPendingBanner: { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 9, marginTop: 6 },
   amendPendingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
   amendAcceptedBanner: { backgroundColor: '#ECFDF5', borderRadius: 8, padding: 9, marginTop: 6 },

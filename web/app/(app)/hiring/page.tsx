@@ -40,7 +40,7 @@ function sortApplicants(reqs: Booking[], job: Job, sortBy: ApplicantSort): Booki
 }
 
 export default function HiringPage() {
-  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, markPosterDone, verifyAndRate, bumpJob, proposeAmendment } = useJobs();
+  const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, cancellationFeeFor, markPosterDone, verifyAndRate, bumpJob, proposeAmendment } = useJobs();
   const { showToast } = useUser();
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
@@ -48,6 +48,24 @@ export default function HiringPage() {
   const [amendTarget, setAmendTarget] = useState<Booking | null>(null);
   const [amendNote, setAmendNote] = useState("");
   const [amendBusy, setAmendBusy] = useState(false);
+  // Cancellation-fee confirm (display/record only — no money moves).
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const cancelFee = cancelTarget ? cancellationFeeFor(cancelTarget.id) : 0;
+
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelBusy(true);
+    const fee = cancelFee;
+    await cancelBooking(cancelTarget.id);
+    setCancelBusy(false);
+    setCancelTarget(null);
+    showToast(
+      fee > 0
+        ? { icon: "❌", title: "Booking cancelled", message: `A $${fee} cancellation fee was recorded.` }
+        : { icon: "❌", title: "Booking cancelled", message: "The payment hold was released." },
+    );
+  };
 
   const onVerify = async (args: VerifyArgs) => {
     if (!verifyBooking) return;
@@ -169,6 +187,11 @@ export default function HiringPage() {
                             )}
                             {b.status === "confirmed" && (
                               <>
+                                {b.startedAt && (
+                                  <span className="inline-flex items-center gap-1.5 self-center text-xs font-bold text-success">
+                                    <span className="size-2 rounded-full bg-success" /> In progress
+                                  </span>
+                                )}
                                 {!b.posterDone && (
                                   <Button size="sm" onClick={() => markPosterDone(b.id)}>
                                     Mark done
@@ -177,9 +200,15 @@ export default function HiringPage() {
                                 <Link href="/messages" className={buttonClasses("secondary", "sm")}>
                                   <MessageCircle className="size-4" /> Message
                                 </Link>
-                                <Button size="sm" variant="ghost" className="text-urgent" onClick={() => cancelBooking(b.id)}>
-                                  Cancel
-                                </Button>
+                                {!b.startedAt ? (
+                                  <Button size="sm" variant="ghost" className="text-urgent" onClick={() => setCancelTarget(b)}>
+                                    Cancel
+                                  </Button>
+                                ) : (
+                                  <span className="self-center text-xs italic text-ink-muted">
+                                    Can&apos;t cancel — the worker has started. Open a dispute if there&apos;s a problem.
+                                  </span>
+                                )}
                                 {b.earnerDone && <span className="self-center text-xs font-bold text-success">Earner marked done ✓</span>}
                               </>
                             )}
@@ -253,6 +282,24 @@ export default function HiringPage() {
           placeholder="e.g. Move the start time to 3pm, or raise the pay to $80."
           className="min-h-[96px]"
         />
+      </Modal>
+
+      <Modal
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        title="Cancel this booking?"
+        size="sm"
+        footer={
+          <Button fullWidth size="lg" variant="ghost" className="text-urgent" loading={cancelBusy} onClick={confirmCancel}>
+            Cancel gig
+          </Button>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          {cancelFee > 0
+            ? `Cancelling now applies a cancellation fee of $${cancelFee} to the worker. This releases the payment hold and notifies them.`
+            : "This cancels the gig and releases any payment hold. The earner will be notified."}
+        </p>
       </Modal>
 
       <CompletionModal open={!!verifyBooking} booking={verifyBooking} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
