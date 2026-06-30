@@ -17,6 +17,7 @@ import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { Input, Textarea, Label } from "@/components/ui/Field";
+import LocationPicker from "@/components/LocationPicker";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
 
@@ -247,7 +248,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <Label>Location</Label>
-            <Input value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="Your city or 'Remote'" />
+            <LocationPicker value={f.city} onChange={(label) => set("city", label)} placeholder="Your city or 'Remote'" />
           </div>
 
           {showEarnerFields && (

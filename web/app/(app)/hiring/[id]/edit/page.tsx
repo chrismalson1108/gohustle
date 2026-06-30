@@ -52,6 +52,8 @@ export default function EditGigPage() {
             pay: job.pay,
             payType: job.payType,
             location: job.location,
+            lat: job.lat,
+            lng: job.lng,
             description: job.description,
             requirements: job.requirements,
             recurrence: job.recurrence,

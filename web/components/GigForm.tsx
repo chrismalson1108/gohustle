@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { uploadImages } from "@/lib/uploadImage";
 import Button from "@/components/ui/Button";
 import { Input, Textarea, Label } from "@/components/ui/Field";
+import LocationPicker, { type Coords } from "@/components/LocationPicker";
 import SlotBuilder from "@/components/SlotBuilder";
 import { classNames } from "@/lib/format";
 import type { Slot } from "@/lib/types";
@@ -46,6 +47,8 @@ export interface GigFormInitial {
   pay?: number | string;
   payType?: "flat" | "hourly";
   location?: string;
+  lat?: number | null;
+  lng?: number | null;
   description?: string;
   requirements?: string[];
   recurrence?: string;
@@ -107,6 +110,9 @@ export default function GigForm({
   const [pay, setPay] = useState(initial?.pay != null ? String(initial.pay) : "");
   const [payType, setPayType] = useState<"flat" | "hourly">(initial?.payType || "flat");
   const [location, setLocation] = useState(initial?.location || "");
+  const [coords, setCoords] = useState<Coords | null>(
+    initial?.lat != null && initial?.lng != null ? { lat: initial.lat, lng: initial.lng } : null,
+  );
   const [description, setDescription] = useState(initial?.description || "");
   const [requirements, setRequirements] = useState((initial?.requirements || []).join("\n"));
   const [slots, setSlots] = useState<Slot[]>(initial?.slots || []);
@@ -176,8 +182,8 @@ export default function GigForm({
       hazards,
       instantBook,
       instantBookAudience: "all",
-      lat: null,
-      lng: null,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
     });
     setBusy(false);
   };
@@ -291,7 +297,12 @@ export default function GigForm({
 
       <div>
         <Label>Location *</Label>
-        <Input value={location} disabled={lockedCore} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Austin, TX or Remote" />
+        <LocationPicker
+          value={location}
+          disabled={lockedCore}
+          onChange={(label, c) => { setLocation(label); setCoords(c); }}
+          placeholder="e.g. Austin, TX or Remote"
+        />
       </div>
 
       <div>

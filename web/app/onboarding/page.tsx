@@ -9,6 +9,7 @@ import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
 import { getReferralCode, recordReferral } from "@/lib/referrals";
 import Button from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Field";
+import LocationPicker from "@/components/LocationPicker";
 import { classNames } from "@/lib/format";
 
 const ROLES = [
@@ -170,7 +171,9 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <Step icon={<MapPin className="size-14 text-primary" />} title="Where are you based?" sub="Used to surface nearby gigs for you.">
-            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Austin, TX" />
+            <div className="text-left">
+              <LocationPicker value={city} onChange={(label) => setCity(label)} placeholder="e.g. Austin, TX" />
+            </div>
             <Button size="lg" fullWidth className="mt-5" disabled={!city} onClick={next}>Continue <ArrowRight className="size-5" /></Button>
             <button onClick={next} className="mt-4 text-sm font-semibold text-ink-muted">Skip for now</button>
           </Step>
