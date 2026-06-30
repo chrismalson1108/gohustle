@@ -7,8 +7,9 @@ function round2(n) {
 
 // IRS standard mileage rate for business use, in dollars per mile.
 // Used to value an auto-logged gig drive as a deductible expense
-// (miles × rate). Update annually when the IRS publishes the new rate.
-export const IRS_MILEAGE_RATE = 0.67;
+// (miles × rate). Update annually when the IRS publishes the new rate
+// (0.70 = 2025 rate; confirm the current-year figure each January).
+export const IRS_MILEAGE_RATE = 0.70;
 
 // Sensible per-hour starting rates when we have no other signal.
 export const CATEGORY_BASE_RATES = {

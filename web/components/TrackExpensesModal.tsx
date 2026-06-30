@@ -173,7 +173,20 @@ export default function TrackExpensesModal({
             ) : (
               <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-dashed border-line bg-white px-3 py-2.5 text-sm font-semibold text-ink-soft transition hover:border-primary hover:text-primary">
                 <Paperclip className="size-4 text-primary" /> Attach a photo of the receipt
-                <input type="file" accept="image/*" hidden onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (f && f.size > 10 * 1024 * 1024) {
+                      showToast({ icon: "⚠️", title: "Receipt too large", message: "Please use a photo under 10 MB." });
+                      e.target.value = "";
+                      return;
+                    }
+                    setReceiptFile(f);
+                  }}
+                />
               </label>
             )}
           </Field>

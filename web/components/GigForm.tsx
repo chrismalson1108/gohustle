@@ -276,9 +276,10 @@ export default function GigForm({
 
       {payType === "hourly" && (
         <div>
-          <Label>Estimated hours</Label>
+          <Label>Estimated hours{payLocked && !lockedCore ? " (locked — backed by escrow)" : ""}</Label>
           <Input
             value={estimatedHours}
+            disabled={payLocked}
             onChange={(e) => setEstimatedHours(e.target.value.replace(/[^0-9.]/g, ""))}
             inputMode="decimal"
             placeholder="2"
