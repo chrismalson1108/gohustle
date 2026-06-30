@@ -26,14 +26,29 @@ export function sourceMeta(id) {
   return INCOME_SOURCES.find(s => s.id === id) || INCOME_SOURCES[INCOME_SOURCES.length - 1];
 }
 
+// Neutralize CSV/formula injection: a cell whose first char is = + - @ (or a tab/CR
+// control char) is executed as a formula by Excel / Google Sheets / Numbers. Prefix
+// any such value with a single quote, then wrap the cell in quotes and double any
+// internal quotes. Used for every user-controlled cell so a description like
+// `=HYPERLINK(...)` can't run when the exported file is opened.
+export function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 // Build a spreadsheet-ready CSV for the given expenses.
 export function buildCSV(expenses) {
   const header = 'Date,Category,Description,Amount,Receipt';
-  const rows = expenses.map(e => {
-    const desc = (e.description || '').replace(/"/g, '""');
-    const cat = categoryMeta(e.category).label;
-    return `${e.date},"${cat}","${desc}",${Number(e.amount).toFixed(2)},${e.receipt_url || ''}`;
-  });
+  const rows = expenses.map(e =>
+    [
+      csvCell(e.date),
+      csvCell(categoryMeta(e.category).label),
+      csvCell(e.description || ''),
+      Number(e.amount).toFixed(2),
+      csvCell(e.receipt_url || ''),
+    ].join(',')
+  );
   return [header, ...rows].join('\n');
 }
 
@@ -49,16 +64,14 @@ export function buildTaxSummaryCSV({ year, stripeIncome, income, expenses }) {
   lines.push('Date,Source,Description,Amount');
   lines.push(`,Platform (card via Stripe),,${Number(stripeIncome || 0).toFixed(2)}`);
   income.forEach(e => {
-    const desc = (e.description || '').replace(/"/g, '""');
-    lines.push(`${e.date},"${sourceMeta(e.source).label}","${desc}",${Number(e.amount).toFixed(2)}`);
+    lines.push([csvCell(e.date), csvCell(sourceMeta(e.source).label), csvCell(e.description || ''), Number(e.amount).toFixed(2)].join(','));
   });
   lines.push(`,,Gross income,${grossIncome.toFixed(2)}`);
   lines.push('');
   lines.push('EXPENSES');
   lines.push('Date,Category,Description,Amount,Receipt');
   expenses.forEach(e => {
-    const desc = (e.description || '').replace(/"/g, '""');
-    lines.push(`${e.date},"${categoryMeta(e.category).label}","${desc}",${Number(e.amount).toFixed(2)},${e.receipt_url || ''}`);
+    lines.push([csvCell(e.date), csvCell(categoryMeta(e.category).label), csvCell(e.description || ''), Number(e.amount).toFixed(2), csvCell(e.receipt_url || '')].join(','));
   });
   lines.push(`,,Total expenses,${expTotal.toFixed(2)}`);
   lines.push('');

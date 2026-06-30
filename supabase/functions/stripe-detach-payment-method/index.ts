@@ -24,6 +24,11 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
+    // Optional: keep one card (the one just added in a "replace" flow) and detach the
+    // rest, so "Replace card" doesn't leave the previous card orphaned on the customer.
+    // Omitted → detach every card ("Remove card").
+    const { exceptPaymentMethodId } = await req.json().catch(() => ({}));
+
     const { data: cust } = await supabase
       .from('stripe_customers')
       .select('customer_id')
@@ -33,11 +38,14 @@ Deno.serve(async (req: Request) => {
     if (!cust) return json({ success: true, removed: 0 });
 
     const methods = await stripe.paymentMethods.list({ customer: cust.customer_id, type: 'card' });
+    let removed = 0;
     for (const pm of methods.data) {
+      if (exceptPaymentMethodId && pm.id === exceptPaymentMethodId) continue;
       await stripe.paymentMethods.detach(pm.id);
+      removed++;
     }
 
-    return json({ success: true, removed: methods.data.length });
+    return json({ success: true, removed });
   } catch (err: any) {
     console.error('stripe-detach-payment-method:', err);
     return json({ error: 'Something went wrong. Please try again.' }, 500);

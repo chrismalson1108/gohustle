@@ -32,6 +32,11 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const round1 = (n) => Math.round(n * 10) / 10;
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Sanity bounds for auto-tracked drive mileage (it feeds a tax record, so guard it).
+const DRIVE_NOISE_FLOOR_MI = 0.2;     // below this is GPS drift, not a real trip → don't log
+const DRIVE_SANITY_MAX_MI  = 250;     // above this a tracker was almost certainly left running
+const MAX_DRIVE_MS = 4 * 60 * 60 * 1000; // auto-pause the GPS watcher after 4h (battery safety)
+
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
 const AWAITING_STATUSES  = new Set(['pending']);                // waiting on poster
 const COMPLETED_STATUSES = new Set(['verified', 'declined', 'cancelled']); // finished / closed
@@ -69,6 +74,7 @@ export default function EarnScreen({ navigation }) {
   const driveSubRef  = useRef(null);   // Location.watchPositionAsync subscription
   const driveLastRef = useRef(null);   // last GPS point {lat, lng}
   const driveMilesRef = useRef(0);     // authoritative accumulator (avoids stale closure)
+  const driveTimeoutRef = useRef(null); // safety auto-pause timer
 
   useEffect(() => {
     getPayoutStatus().then(s => setPayoutReady(s.onboarded));
@@ -79,6 +85,10 @@ export default function EarnScreen({ navigation }) {
     if (driveSubRef.current) {
       driveSubRef.current.remove();
       driveSubRef.current = null;
+    }
+    if (driveTimeoutRef.current) {
+      clearTimeout(driveTimeoutRef.current);
+      driveTimeoutRef.current = null;
     }
     driveLastRef.current = null;
   }, []);
@@ -115,6 +125,13 @@ export default function EarnScreen({ navigation }) {
           driveLastRef.current = pt;
         }
       );
+      // Safety: auto-pause an abandoned tracker so it can't run (and drain battery /
+      // over-count) indefinitely if the earner forgets to tap "End drive". The
+      // accumulated miles are preserved so they can still tap End drive to log them.
+      driveTimeoutRef.current = setTimeout(() => {
+        stopDriveTracking();
+        showToast({ icon: '🚗', title: 'Mileage tracking paused', message: 'Your drive ran for a while — tap End drive to log the distance so far.' });
+      }, MAX_DRIVE_MS);
     } catch (e) {
       stopDriveTracking();
       setDriveBookingId(null);
@@ -145,8 +162,16 @@ export default function EarnScreen({ navigation }) {
     setDriveBookingId(null);
     setDriveMiles(0);
     driveMilesRef.current = 0;
-    if (!(tracked > 0)) {
-      showToast({ icon: '🚗', title: 'Drive ended', message: 'No distance tracked, so nothing was logged.' });
+    if (!(tracked >= DRIVE_NOISE_FLOOR_MI)) {
+      // Below the noise floor it's GPS drift, not a real trip — don't pollute the tax record.
+      showToast({ icon: '🚗', title: 'Drive ended', message: 'Too little distance to log.' });
+      return;
+    }
+    if (tracked > DRIVE_SANITY_MAX_MI) {
+      // Implausibly long for a single foreground session — almost certainly a tracker
+      // left running. Don't auto-write a bogus figure into the deduction record; let
+      // the earner enter the real distance themselves.
+      showToast({ icon: '🚗', title: 'That drive looks unusually long', message: `Tracked ${Math.round(tracked)} mi — add the real distance manually in the Tax Center.` });
       return;
     }
     try {

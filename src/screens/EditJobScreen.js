@@ -82,6 +82,22 @@ export default function EditJobScreen({ route, navigation }) {
   // and let the earner re-book at the new rate.
   const canEditPay = !isLocked;
 
+  // Hazards are the safety disclosure a worker relied on when booking. Once a booking
+  // is locked (and no amendment was accepted) the poster may ADD hazards (more
+  // disclosure is always safe) but may not silently REMOVE one. guard_jobs_write
+  // enforces the same rule server-side.
+  const onHazardsChange = (v) => {
+    if (isLocked && !amendmentAccepted) {
+      const removed = (form.hazards || []).some(h => !v.includes(h));
+      if (removed) {
+        haptic.error();
+        showToast({ icon: '⚠️', title: 'Safety notes are locked', message: 'A worker already booked — you can add hazards but not remove them.' });
+        return;
+      }
+    }
+    set('hazards', v);
+  };
+
   if (!job) return null;
 
   const handleSave = async () => {
@@ -90,7 +106,7 @@ export default function EditJobScreen({ route, navigation }) {
       haptic.error();
       return;
     }
-    if (findProhibited(`${form.title} ${form.description}`)) {
+    if (findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '))) {
       haptic.error();
       showToast({ icon: '⚠️', title: 'Check your wording', message: "This gig contains content that isn't allowed. Please edit it." });
       return;
@@ -240,7 +256,7 @@ export default function EditJobScreen({ route, navigation }) {
           </Field>
 
           <Field label="Safety notes / hazards (optional)">
-            <TagInput value={form.hazards} onChange={v => set('hazards', v)} placeholder="e.g. dog on site, uneven ground, fragile items" />
+            <TagInput value={form.hazards} onChange={onHazardsChange} placeholder="e.g. dog on site, uneven ground, fragile items" />
           </Field>
 
           <Field label={`Pay *${isLocked && !canEditPay ? '  (locked)' : ''}`}>

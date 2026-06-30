@@ -2,6 +2,7 @@
 // owner-only writes. Mirrors src/lib/certifications.js.
 import { supabase } from "./supabaseClient";
 import { uploadToBucket } from "./uploadImage";
+import { findProhibited } from "@gohustlr/shared";
 
 export interface Certification {
   id: string;
@@ -37,6 +38,11 @@ export async function addCertification({
   year = null,
   file = null,
 }: AddCertificationInput): Promise<Certification> {
+  // These render on the public profile, so apply the same content filter the rest of
+  // the app uses for user-visible free text.
+  if (findProhibited(`${title || ""} ${issuer || ""}`)) {
+    throw new Error("That text isn't allowed — please edit the title or issuer.");
+  }
   let image_url: string | null = null;
   if (file) image_url = await uploadToBucket(file, "certificates", userId);
 

@@ -84,7 +84,7 @@ export default function PostJobScreen({ navigation, route }) {
       haptic.error();
       return;
     }
-    if (findProhibited(`${form.title} ${form.description}`)) {
+    if (findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '))) {
       haptic.error();
       showToast({ icon: '⚠️', title: 'Check your wording', message: "Your gig contains content that isn't allowed. Please edit it." });
       return;

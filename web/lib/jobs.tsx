@@ -163,7 +163,7 @@ interface JobsValue extends State {
     cardLast4?: string | null;
   }>;
   getPayoutLoginLink: () => Promise<{ url: string }>;
-  detachPaymentMethod: () => Promise<{ ok?: boolean }>;
+  detachPaymentMethod: (exceptPaymentMethodId?: string) => Promise<{ ok?: boolean }>;
 }
 
 interface VerifyArgs {
@@ -458,7 +458,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         slot_label: slotLabel || null,
         starts_at: chosenSlot?.startsAt || null,
         counter_offer: counterOffer || null,
-        application_note: applicationNote || null,
+        application_note: applicationNote ? applicationNote.slice(0, 500) : null,
         status: "pending",
       })
       .select()
@@ -991,7 +991,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
   const createSetupIntent = () => stripeEdge.createSetupIntent();
   const getPayoutLoginLink = () => stripeEdge.getPayoutLoginLink();
-  const detachPaymentMethod = () => stripeEdge.detachPaymentMethod();
+  const detachPaymentMethod = (exceptPaymentMethodId?: string) => stripeEdge.detachPaymentMethod(exceptPaymentMethodId);
   const getPaymentMethodStatus = async () => {
     if (!user) return { hasPaymentMethod: false };
     try {
