@@ -34,7 +34,7 @@ export default function Modal({ open, onClose, title, children, footer, size = "
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
         className={classNames(
-          "relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-[var(--shadow-pop)] sm:rounded-3xl",
+          "relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-pop)] sm:rounded-3xl sm:pb-0",
           SIZES[size],
         )}
       >

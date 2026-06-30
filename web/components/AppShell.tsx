@@ -82,11 +82,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
 
-      {/* Main content */}
-      <main className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>
+      {/* Main content — leave room for the fixed mobile tab bar + the iOS home indicator. */}
+      <main className="min-w-0 flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
 
-      {/* Mobile bottom tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-line bg-white md:hidden">
+      {/* Mobile bottom tab bar — padded to clear the iOS home indicator. */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-line bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
         {NAV.map((item) => {
           const active = isActive(item.href);
           const Icon = item.icon;

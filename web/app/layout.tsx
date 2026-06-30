@@ -33,6 +33,9 @@ export const viewport: Viewport = {
   themeColor: "#3F25FE",
   width: "device-width",
   initialScale: 1,
+  // Extend under the notch / home indicator so env(safe-area-inset-*) is non-zero
+  // and fixed bottom bars can pad themselves clear of the iOS home indicator.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

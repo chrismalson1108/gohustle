@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Sparkles, Send, Mic, MicOff, X, Loader2, History, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { askAssistant, type AssistantMsg, type AssistantAction } from "@/lib/assistant";
 import { listThreads, loadThread, deleteThread, type ThreadRow } from "@/lib/assistantThreads";
@@ -31,6 +32,7 @@ type SpeechRecognitionLike = {
 };
 
 export default function AssistantWidget() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AssistantMsg[]>([]);
   const [input, setInput] = useState("");
@@ -202,14 +204,18 @@ export default function AssistantWidget() {
     }
   };
 
+  // Hide the assistant on the Messages route — its floating launcher overlaps the
+  // chat composer's send button on mobile, and the assistant is redundant mid-chat.
+  if (pathname === "/messages") return null;
+
   return (
     <>
-      {/* Floating launcher */}
+      {/* Floating launcher — sits above the mobile tab bar and clears the safe area. */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
           aria-label="Open Hustlr AI assistant"
-          className="fixed bottom-20 right-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-card)] ring-4 ring-primary/20 transition hover:scale-105 md:bottom-6 md:right-6"
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-card)] ring-4 ring-primary/20 transition hover:scale-105 md:bottom-6 md:right-6"
         >
           <Sparkles className="size-6" />
         </button>

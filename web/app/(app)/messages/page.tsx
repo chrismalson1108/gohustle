@@ -271,7 +271,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-full flex-col md:h-[calc(100vh-2rem)] md:flex-1">
+    <div className="flex h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] w-full flex-col md:h-[calc(100dvh-2rem)] md:flex-1">
       <div className="relative flex items-center gap-3 border-b border-line px-4 py-3">
         <button onClick={onBack} className="md:hidden">
           <ArrowLeft className="size-5 text-ink-soft" />

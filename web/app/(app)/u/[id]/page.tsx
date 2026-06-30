@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban, ShieldCheck } from "lucide-react";
-import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, availabilitySummary } from "@gohustlr/shared";
+import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, workStatusMeta } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -40,6 +40,7 @@ interface PubProfile {
   grad_year: number | null;
   student_verified: boolean;
   student_status: string;
+  work_status: string | null;
 }
 
 type AvailabilityWindow = { day: number; start: string; end: string };
@@ -154,7 +155,7 @@ export default function PublicProfilePage() {
         supabase
           .from("profiles")
           .select(
-            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status",
+            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status, work_status",
           )
           .eq("id", id)
           .single(),
@@ -280,7 +281,15 @@ export default function PublicProfilePage() {
           <>
             <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Availability</h2>
             <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <p className="mb-3 text-sm font-bold text-ink">{availabilitySummary(availability)}</p>
+              {profile.work_status && (() => {
+                const ws = workStatusMeta(profile.work_status);
+                return (
+                  <div className="mb-3 flex items-center gap-2 border-b border-line/70 pb-3">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                    <span className="text-sm font-bold text-ink">{ws.label}</span>
+                  </div>
+                );
+              })()}
               <div className="space-y-1.5">
                 {availDays.map(({ label, day, windows }) => (
                   <div key={day} className="flex items-center justify-between border-t border-line/70 pt-1.5 text-sm first:border-t-0 first:pt-0">
