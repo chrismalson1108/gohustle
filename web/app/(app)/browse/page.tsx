@@ -16,7 +16,6 @@ import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import JobCard from "@/components/JobCard";
 import FilterSheet, { type Filters } from "@/components/FilterSheet";
-import XPBar from "@/components/XPBar";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import { classNames } from "@/lib/format";
@@ -30,7 +29,7 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
 const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
 
 export default function BrowsePage() {
-  const { name, streakDays, levelInfo, xp, school, skills } = useUser();
+  const { name, streakDays, school, skills } = useUser();
   const { jobs, bookings, blockedIds } = useJobs();
 
   const [selectedCat, setSelectedCat] = useState("all");
@@ -76,10 +75,7 @@ export default function BrowsePage() {
           </div>
         }
       >
-        <div className="mt-4">
-          <XPBar levelInfo={levelInfo} xp={xp} dark />
-        </div>
-        <div className="mt-4 flex gap-2.5">
+        <div className="mt-5 flex gap-2.5">
           <div className="flex h-11 flex-1 items-center gap-2 rounded-2xl bg-white px-3.5">
             <Search className="size-4 text-ink-muted" />
             <input

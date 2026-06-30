@@ -110,13 +110,17 @@ export default function ProfilePage() {
   const avg = (arr: Review[]) =>
     arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length).toFixed(1) : "—";
 
+  // Single, findable account menu — the destinations users actually hunt for
+  // (money, settings, schedule, saved) grouped near the top instead of buried
+  // below badges/reviews.
   const links = [
-    { href: "/verify-student", label: u.studentVerified ? "Verified Student ✓" : "Verify student status", icon: GraduationCap },
     { href: "/profile/payouts", label: "Payouts & payments", icon: Wallet },
     { href: "/profile/taxes", label: "Tax Center", icon: Receipt },
+    { href: "/profile/availability", label: "Availability & schedule", icon: CalendarClock },
     { href: "/profile/saved", label: "Saved people", icon: Heart },
     { href: "/profile/saved-gigs", label: "Saved gigs", icon: Bookmark },
-    { href: "/profile/availability", label: "Availability & schedule", icon: CalendarClock },
+    { href: "/verify-student", label: u.studentVerified ? "Verified Student ✓" : "Verify student status", icon: GraduationCap },
+    { href: user ? `/u/${user.id}` : "/profile", label: "View my public profile", icon: Eye },
     { href: "/profile/settings", label: "Settings", icon: Settings },
     { href: "/legal/terms", label: "Legal & terms", icon: FileText },
   ];
@@ -161,12 +165,13 @@ export default function ProfilePage() {
       </PageHeader>
 
       <PageContainer className="space-y-5">
-        {/* Stats */}
+        {/* Stats — XP lives in the header level bar, so the third stat shows the
+            trust-relevant rating instead of duplicating XP. */}
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "Earned", value: money(u.earningsTotal) },
             { label: "Streak", value: `${u.streakDays}d` },
-            { label: "XP", value: String(u.xp) },
+            { label: "Rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)}★` : "—" },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl bg-white p-4 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
               <p className="text-xl font-black text-ink">{s.value}</p>
@@ -175,49 +180,50 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* Trust actions */}
-        <div className="space-y-3">
-          <button
-            onClick={verifyIdentity}
-            disabled={idv.verified}
-            className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70 disabled:opacity-100"
-          >
-            <ShieldCheck className={`size-6 ${idv.verified ? "text-success" : "text-primary"}`} />
-            <div className="flex-1">
-              <p className="font-bold text-ink">
-                {idv.verified ? "Identity verified" : idv.status === "pending" ? "Verification in progress" : "Verify your identity"}
-              </p>
-              <p className="text-xs text-ink-muted">
-                {idv.verified ? "Your profile shows a Verified badge" : "Get a Verified badge to build trust"}
-              </p>
-            </div>
-            {!idv.verified && <ChevronRight className="size-5 text-ink-muted" />}
-          </button>
+        {/* Verify identity — the primary trust action stays a prominent card. */}
+        <button
+          onClick={verifyIdentity}
+          disabled={idv.verified}
+          className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70 disabled:opacity-100"
+        >
+          <ShieldCheck className={`size-6 ${idv.verified ? "text-success" : "text-primary"}`} />
+          <div className="flex-1">
+            <p className="font-bold text-ink">
+              {idv.verified ? "Identity verified" : idv.status === "pending" ? "Verification in progress" : "Verify your identity"}
+            </p>
+            <p className="text-xs text-ink-muted">
+              {idv.verified ? "Your profile shows a Verified badge" : "Get a Verified badge to build trust"}
+            </p>
+          </div>
+          {!idv.verified && <ChevronRight className="size-5 text-ink-muted" />}
+        </button>
 
-          <button onClick={invite} className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <Gift className="size-6 text-primary" />
-            <div className="flex-1">
-              <p className="font-bold text-ink">Invite friends</p>
-              <p className="text-xs text-ink-muted">
-                {refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · ` : ""}
-                Share your code {refCode && <span className="font-bold text-primary">{refCode}</span>}
-              </p>
-            </div>
-            <ChevronRight className="size-5 text-ink-muted" />
-          </button>
-
-          <Link
-            href={user ? `/u/${user.id}` : "/profile"}
-            className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70"
-          >
-            <Eye className="size-6 text-primary" />
-            <div className="flex-1">
-              <p className="font-bold text-ink">View my public profile</p>
-              <p className="text-xs text-ink-muted">See exactly how others see you</p>
-            </div>
-            <ChevronRight className="size-5 text-ink-muted" />
-          </Link>
+        {/* Account menu — moved up so money/settings/schedule are findable at a glance. */}
+        <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          {links.map((l) => {
+            const Icon = l.icon;
+            return (
+              <Link key={l.href} href={l.href} className="flex items-center gap-3 px-4 py-3.5 hover:bg-primary-light/40">
+                <Icon className="size-5 text-primary" />
+                <span className="flex-1 font-bold text-ink">{l.label}</span>
+                <ChevronRight className="size-4 text-ink-muted" />
+              </Link>
+            );
+          })}
         </div>
+
+        {/* Invite friends — growth action. */}
+        <button onClick={invite} className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <Gift className="size-6 text-primary" />
+          <div className="flex-1">
+            <p className="font-bold text-ink">Invite friends</p>
+            <p className="text-xs text-ink-muted">
+              {refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · ` : ""}
+              Share your code {refCode && <span className="font-bold text-primary">{refCode}</span>}
+            </p>
+          </div>
+          <ChevronRight className="size-5 text-ink-muted" />
+        </button>
 
         {/* Badges */}
         <section>
@@ -283,19 +289,6 @@ export default function ProfilePage() {
             </div>
           </section>
         )}
-
-        {/* Links */}
-        <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          {links.map((l) => {
-            const Icon = l.icon;
-            return (
-              <Link key={l.href} href={l.href} className="flex items-center gap-3 px-4 py-3.5 hover:bg-primary-light/40">
-                <Icon className="size-5 text-primary" />
-                <span className="font-bold text-ink">{l.label}</span>
-              </Link>
-            );
-          })}
-        </div>
 
         <button onClick={() => signOut()} className={buttonClasses("outline", "md", "w-full text-urgent hover:border-urgent hover:text-urgent")}>
           <LogOut className="size-4" /> Sign out
