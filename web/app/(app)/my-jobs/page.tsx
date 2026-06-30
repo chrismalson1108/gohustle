@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
-  ChevronDown, Star, Clock, AlertCircle,
+  ChevronDown, Star, Clock, AlertCircle, Car,
 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -17,6 +17,7 @@ import RatingStars from "@/components/ui/RatingStars";
 import { Textarea } from "@/components/ui/Field";
 import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
+import TrackExpensesModal from "@/components/TrackExpensesModal";
 import { uploadImages } from "@/lib/uploadImage";
 import { money, classNames } from "@/lib/format";
 import { computeEarnerInsights } from "@gohustlr/shared";
@@ -64,6 +65,7 @@ export default function MyJobsPage() {
   const insights = computeEarnerInsights(bookings);
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
+  const [trackBooking, setTrackBooking] = useState<Booking | null>(null);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -426,6 +428,12 @@ export default function MyJobsPage() {
                       {!b.posterRating && !b.earnerRating && b.beforePhotos?.length === 0 && b.completionPhotos?.length === 0 && (
                         <p className="text-sm text-ink-muted">No additional details for this gig.</p>
                       )}
+                      <button
+                        onClick={() => setTrackBooking(b)}
+                        className="flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
+                      >
+                        <Car className="size-3.5" /> Track miles &amp; expenses
+                      </button>
                     </div>
                   )}
                 </div>
@@ -446,6 +454,14 @@ export default function MyJobsPage() {
                 </div>
                 <AmendmentBlock b={b} />
                 <GigActions b={b} />
+                {(b.status === "confirmed" || b.status === "completed") && (
+                  <button
+                    onClick={() => setTrackBooking(b)}
+                    className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
+                  >
+                    <Car className="size-3.5" /> Track miles &amp; expenses
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -513,6 +529,8 @@ export default function MyJobsPage() {
           )}
         </div>
       </PageContainer>
+
+      <TrackExpensesModal booking={trackBooking} onClose={() => setTrackBooking(null)} />
 
       <Modal
         open={!!rateBooking}

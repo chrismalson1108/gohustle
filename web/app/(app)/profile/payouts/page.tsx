@@ -74,7 +74,15 @@ export default function PayoutsPage() {
         alreadyOnboarded?: boolean;
       };
       if (res?.url) {
-        window.location.href = res.url;
+        if (which === "manage") {
+          // The Express dashboard is a one-way trip (no return to the app), so open it
+          // in a new tab and keep GoHustlr open here.
+          window.open(res.url, "_blank", "noopener,noreferrer");
+          setBusy(null);
+        } else {
+          // Onboarding redirects back to /stripe/connect-return — navigate in place.
+          window.location.href = res.url;
+        }
         return;
       }
       if (res?.alreadyOnboarded) {

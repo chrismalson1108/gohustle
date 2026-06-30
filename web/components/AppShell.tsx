@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search, Briefcase, Megaphone, MessageCircle, UserCircle2, Bell } from "lucide-react";
@@ -28,8 +29,16 @@ function Badge({ count }: { count: number }) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { earnBadgeCount, profileBadgeCount, unreadMessages } = useJobs();
-  const { count: alertCount } = useUnreadNotifications();
+  const { earnBadgeCount, profileBadgeCount, unreadMessages, refreshUnread } = useJobs();
+  const { count: alertCount, refresh: refreshAlerts } = useUnreadNotifications();
+
+  // Re-sync the alert + message counts on every navigation. The realtime channels
+  // can miss updates (e.g. after clearing alerts), which left the badge stale; this
+  // guarantees the badges are fresh whenever the user moves between pages.
+  useEffect(() => {
+    refreshAlerts();
+    refreshUnread();
+  }, [pathname, refreshAlerts, refreshUnread]);
 
   const badgeFor = (kind: string | null) =>
     kind === "earn"

@@ -969,8 +969,13 @@ export function JobsProvider({ children }) {
   // Derive directly from posterId so it works immediately on cache warm-up and after addJob
   const postedJobs     = user ? state.jobs.filter(j => j.posterId === user.id) : [];
 
-  // Badge counts for tab bar
-  const earnBadgeCount    = state.bookings.filter(b => b.status === 'confirmed' || b.status === 'verified').length;
+  // Badge counts for tab bar. Only gigs that actually need the EARNER to act —
+  // counting ALL confirmed/verified left the badge stuck on finished+rated gigs.
+  const earnBadgeCount    = state.bookings.filter(b =>
+    b.amendmentStatus === 'pending' ||
+    (b.status === 'confirmed' && !b.earnerDone) ||
+    (b.status === 'verified' && !b.posterRating),
+  ).length;
   const profileBadgeCount = state.posterBookings.filter(b => b.status === 'pending' || b.status === 'completed').length;
 
   // ── Payment helpers (thin wrappers so screens don't import stripeEdge directly) ──

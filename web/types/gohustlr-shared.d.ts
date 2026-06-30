@@ -118,6 +118,7 @@ declare module "@gohustlr/shared" {
 
   // ── finance ──
   export const CATEGORY_BASE_RATES: Record<string, number>;
+  export const IRS_MILEAGE_RATE: number;
   export function computeGoalPlan(args: {
     monthlyGoal: number;
     earnedThisMonth?: number;

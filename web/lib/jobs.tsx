@@ -1038,7 +1038,15 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const bookedJobIds = state.bookings.map((b) => b.jobId);
   const bookedJobs = state.jobs.filter((j) => bookedJobIds.includes(j.id));
   const postedJobs = user ? state.jobs.filter((j) => j.posterId === user.id) : [];
-  const earnBadgeCount = state.bookings.filter((b) => b.status === "confirmed" || b.status === "verified").length;
+  // Only gigs that actually need the EARNER to do something — mirrors the my-jobs
+  // `needsAction`. (Previously counted ALL confirmed/verified, so a finished+rated
+  // verified gig kept the badge at 1 forever.)
+  const earnBadgeCount = state.bookings.filter(
+    (b) =>
+      b.amendmentStatus === "pending" ||
+      (b.status === "confirmed" && !b.earnerDone) ||
+      (b.status === "verified" && !b.posterRating),
+  ).length;
   const profileBadgeCount = state.posterBookings.filter((b) => b.status === "pending" || b.status === "completed").length;
 
   return (
