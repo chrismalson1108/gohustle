@@ -8,7 +8,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RETURN_URL = 'https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-connect-return';
+// Production web app. Stripe redirects the user's BROWSER here after onboarding, so
+// it must be a host that serves real text/html (Supabase Edge Functions force
+// text/plain + nosniff). Web callers pass their own origin; this is the fallback.
+// TODO: switch to https://gohustlr.com once that domain points at Vercel.
+const DEFAULT_WEB_BASE = 'https://gohustle.vercel.app';
+
+// Validate the caller-supplied origin against an allowlist so a forged origin can't
+// turn the Stripe return into an open redirect. Falls back to the production web app.
+function resolveWebBase(origin: unknown): string {
+  if (typeof origin === 'string' && origin) {
+    try {
+      const u = new URL(origin);
+      const host = u.hostname;
+      const isLocal = host === 'localhost' || host === '127.0.0.1';
+      const allowedHost =
+        host.endsWith('.vercel.app') || host === 'gohustlr.com' || host === 'www.gohustlr.com' || isLocal;
+      if (allowedHost && (u.protocol === 'https:' || isLocal)) return u.origin;
+    } catch (_) {
+      /* malformed origin — fall through to default */
+    }
+  }
+  return DEFAULT_WEB_BASE;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -16,6 +38,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const RETURN_URL = `${resolveWebBase((body as { origin?: unknown }).origin)}/stripe/connect-return`;
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
