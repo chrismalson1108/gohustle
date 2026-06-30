@@ -16,7 +16,7 @@ export async function fetchExpenses(userId) {
   return data || [];
 }
 
-export async function addExpense(userId, { amount, category, description, date, receiptUrl, bookingId }) {
+export async function addExpense(userId, { amount, category, description, date, receiptUrl, bookingId, miles }) {
   const { data, error } = await supabase
     .from('expenses')
     .insert({
@@ -27,6 +27,7 @@ export async function addExpense(userId, { amount, category, description, date, 
       date,
       receipt_url: receiptUrl || null,
       booking_id: bookingId || null,
+      miles: miles ?? null,
     })
     .select()
     .single();

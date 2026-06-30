@@ -21,6 +21,7 @@ export interface Expense {
   date: string;
   receipt_url: string | null;
   booking_id: string | null;
+  miles: number | null;
   created_at?: string;
 }
 
@@ -55,6 +56,7 @@ export async function addExpense(
     date,
     receiptUrl,
     bookingId,
+    miles,
   }: {
     amount: number;
     category: string;
@@ -62,6 +64,7 @@ export async function addExpense(
     date: string;
     receiptUrl?: string | null;
     bookingId?: string | null;
+    miles?: number | null;
   },
 ): Promise<Expense> {
   const { data, error } = await supabase
@@ -74,6 +77,7 @@ export async function addExpense(
       date,
       receipt_url: receiptUrl || null,
       booking_id: bookingId || null,
+      miles: miles ?? null,
     })
     .select()
     .single();

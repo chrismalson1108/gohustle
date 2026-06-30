@@ -5,6 +5,11 @@ function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+// IRS standard mileage rate for business use, in dollars per mile.
+// Used to value an auto-logged gig drive as a deductible expense
+// (miles × rate). Update annually when the IRS publishes the new rate.
+export const IRS_MILEAGE_RATE = 0.67;
+
 // Sensible per-hour starting rates when we have no other signal.
 export const CATEGORY_BASE_RATES = {
   Tutoring: 25,

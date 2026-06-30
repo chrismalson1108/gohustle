@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
   Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -7,6 +7,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import GradientHeader from '../components/GradientHeader';
 import ChallengeCard from '../components/ChallengeCard';
 import JobCard from '../components/JobCard';
@@ -21,7 +22,15 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { computeEarnerInsights } from '../lib/insights';
+import { addExpense } from '../lib/expenses';
+import { haversineMiles } from '../lib/geo';
+import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { colors, gradients, shadows } from '../theme';
+
+const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const round1 = (n) => Math.round(n * 10) / 10;
+const round2 = (n) => Math.round(n * 100) / 100;
 
 const ACTIVE_STATUSES    = new Set(['confirmed', 'completed']); // in progress / needs action
 const AWAITING_STATUSES  = new Set(['pending']);                // waiting on poster
@@ -50,9 +59,118 @@ export default function EarnScreen({ navigation }) {
   const [refreshing, setRefreshing]     = useState(false);
   const [payoutReady, setPayoutReady]   = useState(true); // optimistic until checked
 
+  // ── Drive mileage tracking (foreground GPS) ────────────────────────────────
+  // Only one drive can track at a time. `driveBookingId` marks which gig owns it.
+  const [driveBookingId, setDriveBookingId] = useState(null);
+  const [driveMiles, setDriveMiles]         = useState(0);
+  const [driveStarting, setDriveStarting]   = useState(false);
+  // After a drive ends, offer a one-tap "log the return leg" for that booking.
+  const [returnPrompt, setReturnPrompt]     = useState(null); // { bookingId, jobTitle, miles } | null
+  const driveSubRef  = useRef(null);   // Location.watchPositionAsync subscription
+  const driveLastRef = useRef(null);   // last GPS point {lat, lng}
+  const driveMilesRef = useRef(0);     // authoritative accumulator (avoids stale closure)
+
   useEffect(() => {
     getPayoutStatus().then(s => setPayoutReady(s.onboarded));
   }, []);
+
+  // Stop tracking + tear down the GPS subscription. Safe to call multiple times.
+  const stopDriveTracking = useCallback(() => {
+    if (driveSubRef.current) {
+      driveSubRef.current.remove();
+      driveSubRef.current = null;
+    }
+    driveLastRef.current = null;
+  }, []);
+
+  // Always clean up the subscription on unmount.
+  useEffect(() => stopDriveTracking, [stopDriveTracking]);
+
+  const handleStartDrive = async (booking, jobTitle) => {
+    if (driveBookingId || driveStarting) return; // one drive at a time
+    setDriveStarting(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showToast({ icon: '📍', title: 'Location needed to track mileage', message: 'You can still add mileage manually in the Tax Center.' });
+        setDriveStarting(false);
+        return;
+      }
+      haptic.medium();
+      driveMilesRef.current = 0;
+      driveLastRef.current = null;
+      setDriveMiles(0);
+      setDriveBookingId(booking.id);
+      driveSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 25 },
+        (pos) => {
+          const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          if (driveLastRef.current) {
+            const seg = haversineMiles(driveLastRef.current, pt);
+            if (seg && seg > 0) {
+              driveMilesRef.current += seg;
+              setDriveMiles(driveMilesRef.current);
+            }
+          }
+          driveLastRef.current = pt;
+        }
+      );
+    } catch (e) {
+      stopDriveTracking();
+      setDriveBookingId(null);
+      showToast({ icon: '⚠️', title: 'Could not start tracking', message: e.message || 'Please try again.' });
+    }
+    setDriveStarting(false);
+  };
+
+  // Log one mileage expense for the drive (used for the trip + optional return leg).
+  const logDriveExpense = async (booking, jobTitle, miles) => {
+    const m = round1(miles);
+    const amount = round2(m * IRS_MILEAGE_RATE);
+    await addExpense(user.id, {
+      userId: user.id,
+      category: TRANSPORT_CATEGORY,
+      amount,
+      description: `Drive — ${jobTitle}`,
+      miles: m,
+      bookingId: booking.id,
+      date: todayISO(),
+    });
+    return { m, amount };
+  };
+
+  const handleEndDrive = async (booking, jobTitle) => {
+    stopDriveTracking();
+    const tracked = driveMilesRef.current;
+    setDriveBookingId(null);
+    setDriveMiles(0);
+    driveMilesRef.current = 0;
+    if (!(tracked > 0)) {
+      showToast({ icon: '🚗', title: 'Drive ended', message: 'No distance tracked, so nothing was logged.' });
+      return;
+    }
+    try {
+      const { m, amount } = await logDriveExpense(booking, jobTitle, tracked);
+      haptic.success();
+      showToast({ icon: '🚗', title: `Logged ${m.toFixed(1)} mi → $${amount.toFixed(2)}`, message: 'Saved to your Tax Center.' });
+      // Surface a one-tap option to log the round-trip return leg.
+      setReturnPrompt({ bookingId: booking.id, jobTitle, miles: m });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Could not log mileage', message: e.message || 'Add it manually in the Tax Center.' });
+    }
+  };
+
+  // Log the return leg (same distance) for the just-completed drive.
+  const handleLogReturnDrive = async (booking, prompt) => {
+    setReturnPrompt(null);
+    try {
+      const { m, amount } = await logDriveExpense(booking, prompt.jobTitle, prompt.miles);
+      haptic.success();
+      showToast({ icon: '🚗', title: `Return drive logged → $${amount.toFixed(2)}`, message: `Another ${m.toFixed(1)} mi added.` });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Could not log return', message: e.message || 'Add it manually in the Tax Center.' });
+    }
+  };
 
   // Refresh from DB every time this tab gains focus
   useFocusEffect(
@@ -380,6 +498,52 @@ export default function EarnScreen({ navigation }) {
                   <View style={styles.inProgressBanner}>
                     <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
                     <Text style={styles.inProgressText}>In Progress</Text>
+                  </View>
+                )}
+
+                {/* Drive mileage tracker — auto-logs a deductible mileage expense */}
+                {status === 'confirmed' && (
+                  driveBookingId === booking.id ? (
+                    <View style={styles.driveTrackingBanner}>
+                      <View style={styles.driveTrackingLeft}>
+                        <Ionicons name="navigate" size={16} color="#fff" style={{ marginRight: 7 }} />
+                        <Text style={styles.driveTrackingText}>Tracking drive · {driveMiles.toFixed(1)} mi</Text>
+                      </View>
+                      <TouchableOpacity style={styles.driveEndBtn} onPress={() => handleEndDrive(booking, j.title)}>
+                        <Text style={styles.driveEndBtnText}>End drive</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : !driveBookingId ? (
+                    <TouchableOpacity
+                      style={styles.driveStartBtn}
+                      onPress={() => handleStartDrive(booking, j.title)}
+                      disabled={driveStarting}
+                    >
+                      {driveStarting ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="car-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                          <Text style={styles.driveStartBtnText}>Start drive · auto-log mileage</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  ) : null
+                )}
+
+                {/* Offer to log the return leg of a just-finished drive */}
+                {returnPrompt?.bookingId === booking.id && (
+                  <View style={styles.returnPrompt}>
+                    <Text style={styles.returnPromptText}>Round trip? Log the return drive ({returnPrompt.miles.toFixed(1)} mi).</Text>
+                    <View style={styles.returnPromptActions}>
+                      <TouchableOpacity style={styles.returnPromptBtn} onPress={() => handleLogReturnDrive(booking, returnPrompt)}>
+                        <Ionicons name="repeat" size={14} color="#fff" style={{ marginRight: 5 }} />
+                        <Text style={styles.returnPromptBtnText}>Log return</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.returnPromptDismiss} onPress={() => setReturnPrompt(null)}>
+                        <Text style={styles.returnPromptDismissText}>No thanks</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
 
@@ -778,6 +942,36 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
   startBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  driveStartBtn: {
+    flexDirection: 'row', borderRadius: 12, paddingVertical: 11, marginTop: 10,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primaryLight,
+  },
+  driveStartBtnText: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  driveTrackingBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10,
+  },
+  driveTrackingLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  driveTrackingText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  driveEndBtn: {
+    backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 9,
+    paddingVertical: 6, paddingHorizontal: 12,
+  },
+  driveEndBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  returnPrompt: {
+    backgroundColor: colors.primaryLight, borderRadius: 12, padding: 12, marginTop: 10,
+    borderWidth: 1, borderColor: colors.primary + '40',
+  },
+  returnPromptText: { fontSize: 12.5, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  returnPromptActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  returnPromptBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14,
+  },
+  returnPromptBtnText: { fontSize: 12.5, fontWeight: '800', color: '#fff' },
+  returnPromptDismiss: { paddingVertical: 9, paddingHorizontal: 8 },
+  returnPromptDismissText: { fontSize: 12.5, fontWeight: '700', color: colors.textMuted },
   completeBtn: {
     flexDirection: 'row', backgroundColor: colors.primaryLight, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12,
