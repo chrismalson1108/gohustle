@@ -30,6 +30,8 @@ export default function PublicProfileScreen({ route, navigation }) {
   const haptic = useHaptic();
   const isSelf = user?.id === userId;
   const [profile, setProfile] = useState(null);
+  const [availability, setAvailabilityState] = useState([]);
+  const [showAvailability, setShowAvailability] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [listings, setListings] = useState([]);
   const [certs, setCerts] = useState([]);
@@ -97,7 +99,22 @@ export default function PublicProfileScreen({ route, navigation }) {
     setListings(jobs || []);
     setCerts(certRows || []);
     setLoading(false);
-  }, [userId]);
+
+    // Availability columns are revoked from `anon` by the profile column lockdown,
+    // so they live in a SEPARATE query that only runs for signed-in viewers. Kept
+    // out of the main select above so anonymous visitors never request ungranted
+    // columns (which would fail the whole profile query).
+    if (user) {
+      try {
+        const { data: avail } = await supabase
+          .from('profiles')
+          .select('availability, show_availability')
+          .eq('id', userId).single();
+        setAvailabilityState(Array.isArray(avail?.availability) ? avail.availability : []);
+        setShowAvailability(avail?.show_availability === true);
+      } catch (_) { /* degrade gracefully — just no availability shown */ }
+    }
+  }, [userId, user]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -115,10 +132,12 @@ export default function PublicProfileScreen({ route, navigation }) {
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
 
-  const availability = Array.isArray(profile.availability) ? profile.availability : [];
   const availDays = DAYS
     .map((label, day) => ({ label, day, windows: windowsForDay(availability, day) }))
     .filter((d) => d.windows.length > 0);
+  // Show availability only to a signed-in viewer, and only if the owner opted in
+  // (or it's the owner viewing their own profile), and there are windows to show.
+  const canShowAvailability = !!user && (showAvailability || isSelf) && availDays.length > 0;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -206,7 +225,7 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       )}
 
-      {availDays.length > 0 && (
+      {canShowAvailability && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Availability</Text>
           <View style={styles.availCard}>

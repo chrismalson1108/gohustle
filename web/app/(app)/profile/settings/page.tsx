@@ -61,6 +61,7 @@ export default function SettingsPage() {
     name: "", username: "", bio: "", city: "", role: "earner" as "earner" | "poster" | "both",
     skills: [] as string[], radiusMiles: 25, skillRates: {} as Record<string, string>,
     school: "", major: "", degreeType: "", classStanding: "", gradYear: "",
+    showAvailability: false,
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
 
@@ -69,7 +70,7 @@ export default function SettingsPage() {
     (async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year")
+        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability")
         .eq("id", user.id)
         .single();
       if (data) {
@@ -79,6 +80,7 @@ export default function SettingsPage() {
           skillRates: data.skill_rates ? Object.fromEntries(Object.entries(data.skill_rates).map(([k, v]) => [k, String(v)])) : {},
           school: data.school || "", major: data.major || "", degreeType: data.degree_type || "",
           classStanding: data.class_standing || "", gradYear: data.grad_year ? String(data.grad_year) : "",
+          showAvailability: data.show_availability === true,
         });
       }
       try {
@@ -129,6 +131,18 @@ export default function SettingsPage() {
 
   const toggleSkill = (s: string) => set("skills", f.skills.includes(s) ? f.skills.filter((x) => x !== s) : [...f.skills, s]);
 
+  const toggleShowAvailability = async (value: boolean) => {
+    if (!user) return;
+    set("showAvailability", value); // optimistic
+    const { error } = await supabase.from("profiles").update({ show_availability: value }).eq("id", user.id);
+    if (error) {
+      set("showAvailability", !value); // revert
+      showToast({ icon: "⚠️", title: "Couldn't update", message: "Please try again." });
+      return;
+    }
+    await refreshProfile();
+  };
+
   const checkUsername = async () => {
     const u = f.username.trim().toLowerCase();
     if (!u) return true;
@@ -170,6 +184,7 @@ export default function SettingsPage() {
         degree_type: f.degreeType || null,
         class_standing: f.classStanding || null,
         grad_year: f.gradYear ? parseInt(f.gradYear, 10) || null : null,
+        show_availability: f.showAvailability,
       })
       .eq("id", user.id);
     setSaving(false);
@@ -276,6 +291,29 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+              <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-canvas p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-ink">Show my availability on my profile</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">Lets signed-in clients see when you&apos;re free.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={f.showAvailability}
+                  onClick={() => toggleShowAvailability(!f.showAvailability)}
+                  className={classNames(
+                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+                    f.showAvailability ? "bg-primary" : "bg-line",
+                  )}
+                >
+                  <span
+                    className={classNames(
+                      "inline-block size-5 transform rounded-full bg-white shadow transition",
+                      f.showAvailability ? "translate-x-[22px]" : "translate-x-0.5",
+                    )}
+                  />
+                </button>
+              </div>
             </>
           )}
 
