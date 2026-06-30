@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Image,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Logo from '../../components/Logo';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCurrentDocs } from '../../lib/legal';
 import { colors, gradients, shadows } from '../../theme';
@@ -98,9 +99,8 @@ export default function AuthScreen() {
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
-        <LinearGradient colors={gradients.primary} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
-          <Ionicons name="flash" size={48} color="#fff" style={styles.heroEmoji} />
-          <Text style={styles.heroTitle}>GoHustlr</Text>
+        <LinearGradient colors={gradients.primary} style={[styles.hero, { paddingTop: insets.top + 44 }]}>
+          <Logo light height={72} style={styles.heroLogo} />
           <Text style={styles.heroSub}>Get paid to hustle. Post gigs. Earn money.</Text>
         </LinearGradient>
 
@@ -341,8 +341,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flexGrow: 1 },
   hero: { alignItems: 'center', paddingBottom: 48, paddingHorizontal: 24 },
-  heroEmoji: { fontSize: 52, marginBottom: 8 },
-  heroTitle: { fontSize: 38, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+  heroLogo: { marginBottom: 10 },
   heroSub: { fontSize: 15, color: 'rgba(255,255,255,0.75)', marginTop: 6, textAlign: 'center' },
   card: {
     backgroundColor: colors.surface, borderRadius: 28,
@@ -378,7 +377,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.background, borderRadius: 14,
+    backgroundColor: colors.surface, borderRadius: 14,
     borderWidth: 1.5, borderColor: colors.border,
     paddingHorizontal: 16, paddingVertical: 13,
     fontSize: 15, color: colors.textPrimary,
