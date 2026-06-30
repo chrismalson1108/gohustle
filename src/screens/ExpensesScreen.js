@@ -254,7 +254,10 @@ export default function ExpensesScreen() {
                     const thumb = receiptUrls[exp.id] || (exp.receipt_url?.startsWith('http') ? exp.receipt_url : null);
                     return thumb ? <Image source={{ uri: thumb }} style={styles.rowReceipt} /> : null;
                   })()}
-                  <Text style={styles.rowAmount}>{fmt(exp.amount)}</Text>
+                  <View style={styles.rowAmountWrap}>
+                    <Text style={styles.rowAmount}>{fmt(exp.amount)}</Text>
+                    {exp.miles != null ? <Text style={styles.rowMiles}>{Number(exp.miles).toFixed(1)} mi</Text> : null}
+                  </View>
                   <TouchableOpacity onPress={() => handleDeleteExpense(exp)} style={styles.rowDelete}>
                     <Ionicons name="trash-outline" size={16} color={colors.urgent} />
                   </TouchableOpacity>
@@ -453,7 +456,9 @@ const styles = StyleSheet.create({
   byJobName: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   byJobAmt: { fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginLeft: 8 },
   rowReceipt: { width: 34, height: 34, borderRadius: 8, marginRight: 10, backgroundColor: colors.border },
-  rowAmount: { fontSize: 15, fontWeight: '900', color: colors.textPrimary, marginRight: 8 },
+  rowAmountWrap: { alignItems: 'flex-end', marginRight: 8 },
+  rowAmount: { fontSize: 15, fontWeight: '900', color: colors.textPrimary },
+  rowMiles: { fontSize: 10.5, fontWeight: '700', color: colors.textMuted, marginTop: 1 },
   rowDelete: { padding: 4 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },

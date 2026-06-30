@@ -387,7 +387,12 @@ export default function TaxesPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={thumb} alt="receipt" className="size-9 rounded-lg object-cover" />
                     )}
-                    <p className="font-black text-ink">{money(exp.amount)}</p>
+                    <div className="text-right">
+                      <p className="font-black text-ink">{money(exp.amount)}</p>
+                      {exp.miles != null && (
+                        <p className="text-[10px] font-bold text-ink-muted">{exp.miles.toFixed(1)} mi</p>
+                      )}
+                    </div>
                     <button
                       onClick={() => handleDeleteExpense(exp)}
                       className="rounded-lg p-1.5 text-urgent hover:bg-urgent/10"
