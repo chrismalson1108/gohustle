@@ -70,7 +70,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
           </span>
         )}
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 pr-8">
           <div className="flex items-center gap-1.5">
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
               {job.category}

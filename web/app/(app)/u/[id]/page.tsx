@@ -136,7 +136,7 @@ export default function PublicProfilePage() {
         supabase
           .from("profiles")
           .select(
-            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status, availability",
+            "id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, school, major, grad_year, student_verified, student_status",
           )
           .eq("id", id)
           .single(),
