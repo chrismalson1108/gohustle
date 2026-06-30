@@ -1,24 +1,70 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Wallet, CreditCard, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Wallet, CreditCard, CheckCircle2, Trash2 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import AddCardModal from "@/components/AddCardModal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+
+type Readiness = {
+  payoutReady: boolean;
+  paymentMethodReady: boolean;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+};
 
 export default function PayoutsPage() {
   const router = useRouter();
-  const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink } = useJobs();
+  const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink, detachPaymentMethod } = useJobs();
   const { showToast } = useUser();
-  const [ready, setReady] = useState<{ payoutReady: boolean; paymentMethodReady: boolean } | null>(null);
+  const [ready, setReady] = useState<Readiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showAddCard, setShowAddCard] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  const refreshReadiness = useCallback(async () => {
+    const r = await getPaymentReadiness();
+    setReady(r);
+    return r;
+  }, [getPaymentReadiness]);
 
   useEffect(() => {
-    getPaymentReadiness().then(setReady).catch(() => setReady({ payoutReady: false, paymentMethodReady: false }));
-  }, [getPaymentReadiness]);
+    refreshReadiness().catch(() => setReady({ payoutReady: false, paymentMethodReady: false }));
+  }, [refreshReadiness]);
+
+  const onCardSaved = async () => {
+    setShowAddCard(false);
+    try {
+      await refreshReadiness();
+    } catch {
+      /* status will refresh on next load */
+    }
+    showToast({ icon: "✅", title: "Card saved", message: "Your card is on file and ready for booking gigs." });
+  };
+
+  const removeCard = async () => {
+    setBusy("removeCard");
+    try {
+      await detachPaymentMethod();
+      await refreshReadiness();
+      setConfirmRemove(false);
+      showToast({ icon: "🗑️", title: "Card removed", message: "Your saved card was removed." });
+    } catch (e) {
+      showToast({ icon: "⚠️", title: "Couldn't remove card", message: (e as Error).message || "Please try again." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cardLabel =
+    ready?.cardLast4
+      ? `•••• ${ready.cardLast4}${ready.cardBrand ? ` (${ready.cardBrand[0].toUpperCase()}${ready.cardBrand.slice(1)})` : ""}`
+      : "Card on file";
 
   const go = async (which: "onboard" | "manage") => {
     setBusy(which);
@@ -97,20 +143,63 @@ export default function PayoutsPage() {
           <p className="mt-4 flex items-center gap-1.5 text-sm font-bold" style={{ color: ready.paymentMethodReady ? "#15803D" : "#9A93AD" }}>
             {ready.paymentMethodReady ? (
               <>
-                <CheckCircle2 className="size-4" /> Card on file
+                <CheckCircle2 className="size-4" /> {cardLabel}
               </>
             ) : (
               "No card on file yet"
             )}
           </p>
-          <p className="mt-2 text-xs text-ink-muted">
-            Card entry on the web uses Stripe&apos;s secure form at checkout when you book a gig. You can also add or
-            change a card in the mobile app.
+
+          {ready.paymentMethodReady ? (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" fullWidth onClick={() => setShowAddCard(true)}>
+                Replace card
+              </Button>
+              <Button
+                variant="danger"
+                fullWidth
+                loading={busy === "removeCard"}
+                onClick={() => setConfirmRemove(true)}
+              >
+                Remove card
+              </Button>
+            </div>
+          ) : (
+            <Button fullWidth className="mt-4" onClick={() => setShowAddCard(true)}>
+              Add a card
+            </Button>
+          )}
+
+          <p className="mt-3 text-xs text-ink-muted">
+            Your card is saved securely with Stripe and only charged when you accept a booking — held in escrow until
+            you verify the work.
           </p>
         </div>
 
         <p className="mt-5 text-center text-xs text-ink-muted">Payments are processed securely by Stripe. GoHustlr never stores your card details.</p>
       </PageContainer>
+
+      <AddCardModal
+        open={showAddCard}
+        replacing={ready.paymentMethodReady}
+        onClose={() => setShowAddCard(false)}
+        onSaved={onCardSaved}
+      />
+
+      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} title="Remove card?" size="sm">
+        <p className="text-sm text-ink-soft">
+          We&apos;ll remove your saved card. You&apos;ll need to add one again before you can accept and pay for a
+          booking.
+        </p>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Button variant="outline" fullWidth onClick={() => setConfirmRemove(false)} disabled={busy === "removeCard"}>
+            Keep card
+          </Button>
+          <Button variant="danger" fullWidth loading={busy === "removeCard"} onClick={removeCard}>
+            <Trash2 className="size-4" /> Remove card
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
