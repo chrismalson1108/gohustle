@@ -11,7 +11,7 @@ export const SUPABASE_ANON_KEY =
 
 export const STRIPE_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
-  "pk_test_51ThvnVCx9mChh0x46xbXhjg4ejm3Ldwa0gLNMqky8eXFVjK60ZIUZwj6ujbIijxi6NdX99zyVr4gfEPg8iazMz9X00WtG1qQY8";
+  "pk_test_51ThvnME0UZFlVCOpQlxjXv3XFqLV75mP9rcKG8bPTlwTLeRKxsmpZ3HwfOWWi9q9AgCa3VHDSw0inieexGl57iPB00I1A94JvY";
 
 export const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
