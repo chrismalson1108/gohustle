@@ -8,7 +8,7 @@ import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
-import { fetchCertifications } from '../lib/certifications';
+import { fetchCertifications, safeCertUrl } from '../lib/certifications';
 import { computeCertifications } from '../lib/insights';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
@@ -299,16 +299,18 @@ export default function PublicProfileScreen({ route, navigation }) {
       {certs.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Certifications ({certs.length})</Text>
-          {certs.map(c => (
+          {certs.map(c => {
+            const certImg = safeCertUrl(c.image_url);
+            return (
             <TouchableOpacity
               key={c.id}
-              activeOpacity={c.image_url ? 0.8 : 1}
-              disabled={!c.image_url}
-              onPress={() => c.image_url && Linking.openURL(c.image_url)}
+              activeOpacity={certImg ? 0.8 : 1}
+              disabled={!certImg}
+              onPress={() => certImg && Linking.openURL(certImg)}
               style={styles.certCard}
             >
-              {c.image_url ? (
-                <Image source={{ uri: c.image_url }} style={styles.certThumb} />
+              {certImg ? (
+                <Image source={{ uri: certImg }} style={styles.certThumb} />
               ) : (
                 <View style={styles.certThumbPlaceholder}>
                   <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
@@ -320,9 +322,10 @@ export default function PublicProfileScreen({ route, navigation }) {
                   <Text style={styles.certMeta} numberOfLines={1}>{[c.issuer, c.year].filter(Boolean).join(' · ')}</Text>
                 ) : null}
               </View>
-              {c.image_url ? <Ionicons name="open-outline" size={16} color={colors.textMuted} /> : null}
+              {certImg ? <Ionicons name="open-outline" size={16} color={colors.textMuted} /> : null}
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
       )}
 

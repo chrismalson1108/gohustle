@@ -14,7 +14,7 @@ import { colors, gradients } from '../theme';
 import LocationPicker from '../components/LocationPicker';
 import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
 import { pickImage } from '../lib/uploadImage';
-import { fetchCertifications, addCertification, deleteCertification } from '../lib/certifications';
+import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -446,8 +446,8 @@ export default function SettingsScreen({ navigation }) {
             <Text style={styles.hintText}>Trade certs & credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.</Text>
             {certs.map(c => (
               <View key={c.id} style={styles.certRow}>
-                {c.image_url ? (
-                  <Image source={{ uri: c.image_url }} style={styles.certThumb} />
+                {safeCertUrl(c.image_url) ? (
+                  <Image source={{ uri: safeCertUrl(c.image_url) }} style={styles.certThumb} />
                 ) : (
                   <View style={styles.certThumbPlaceholder}>
                     <Ionicons name="ribbon-outline" size={18} color={colors.primary} />

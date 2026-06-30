@@ -684,18 +684,30 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       cancellationFee = computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
     }
 
-    try {
-      await stripeEdge.cancelPayment(bookingId);
-    } catch {
-      /* no/closed payment */
-    }
+    // Snapshot for rollback if the guarded DB write fails (e.g. the worker tapped
+    // "I'm on site" concurrently and trg_guard_started_booking_cancel rejects it).
+    const prev = { status: booking?.status, cancellationFee: booking?.cancellationFee ?? null };
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "cancelled", ...(cancellationFee != null && { cancellationFee }) } });
+
+    // Do the GUARDED booking write FIRST, before releasing any escrow hold. If the
+    // booking can no longer be cancelled (started/settled), the DB rejects this and no
+    // money has moved — roll back the optimistic state and stop. Releasing the hold
+    // before a write that can fail would void it on a still-active booking.
     const updatePatch: Record<string, unknown> = { status: "cancelled" };
     if (cancellationFee != null) updatePatch.cancellation_fee = cancellationFee;
     const { error } = await supabase.from("bookings").update(updatePatch).eq("id", bookingId);
     if (error) {
       console.warn("Cancel error:", error.message);
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: prev.status ?? "confirmed", cancellationFee: prev.cancellationFee } });
+      showToast({ icon: "⚠️", title: "Can't cancel", message: "The worker may have just started — open a dispute if there's a problem." });
       return;
+    }
+
+    // Booking is cancelled in the DB — now it's safe to release the hold and free the slot.
+    try {
+      await stripeEdge.cancelPayment(bookingId);
+    } catch {
+      /* no/closed payment */
     }
     if (booking?.slotId) await supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
 

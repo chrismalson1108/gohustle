@@ -35,3 +35,19 @@ export async function deleteCertification(id) {
   const { error } = await supabase.from('certifications').delete().eq('id', id);
   if (error) throw error;
 }
+
+// Only treat a cert image_url as safe to render/open if it's a genuine https
+// Supabase-storage public URL. image_url is attacker-controllable via a direct API
+// insert (RLS only checks ownership), so this blocks an off-platform phishing link
+// or tracking-pixel planted on a public profile. Mirrors web safeCertUrl().
+export function safeCertUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return null;
+    if (!u.pathname.includes('/storage/v1/object/public/')) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
