@@ -10,8 +10,8 @@ import { colors, shadows } from '../theme';
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
 
 const PACE = {
-  reached: { label: 'Goal reached 🎉', bg: colors.accentLight, fg: colors.success },
-  ahead:   { label: 'Ahead of pace',   bg: colors.accentLight, fg: colors.success },
+  reached: { label: 'Goal reached 🎉', bg: colors.successLight, fg: colors.success },
+  ahead:   { label: 'Ahead of pace',   bg: colors.successLight, fg: colors.success },
   onTrack: { label: 'On track',        bg: colors.primaryLight, fg: colors.primary },
   behind:  { label: 'Behind pace',     bg: colors.urgentLight,  fg: colors.urgent },
   unset:   { label: 'Set a goal',      bg: colors.divider,      fg: colors.textMuted },

@@ -271,7 +271,7 @@ export default function ExpensesScreen() {
               const meta = sourceMeta(inc.source);
               return (
                 <View key={inc.id} style={styles.row}>
-                  <View style={[styles.rowIcon, { backgroundColor: colors.accentLight }]}><Ionicons name={meta.ion} size={18} color={colors.success} /></View>
+                  <View style={[styles.rowIcon, { backgroundColor: colors.successLight }]}><Ionicons name={meta.ion} size={18} color={colors.success} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowCat}>{meta.label}</Text>
                     {inc.description ? <Text style={styles.rowDesc} numberOfLines={1}>{inc.description}</Text> : null}

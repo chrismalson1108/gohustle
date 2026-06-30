@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 5, marginRight: 10,
   },
-  payText: { color: colors.success, fontWeight: '800', fontSize: 13 },
+  payText: { color: colors.textPrimary, fontWeight: '800', fontSize: 13 },
   loc: { fontSize: 12, color: colors.textSecondary, flex: 1 },
   posterRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.divider },
   posterAvatar: {

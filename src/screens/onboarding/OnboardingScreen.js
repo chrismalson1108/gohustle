@@ -291,7 +291,7 @@ export default function OnboardingScreen({ onComplete }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={['#F5F3FF', '#EDE9FE', '#fff']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#F7F3EC', '#E9E6FF', '#fff']} style={StyleSheet.absoluteFill} />
 
       {/* Progress dots */}
       {step > 0 && step < STEPS.length - 1 && (

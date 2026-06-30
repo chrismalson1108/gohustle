@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border,
     flexDirection: 'row', justifyContent: 'center',
   },
-  flexBtnActive: { backgroundColor: colors.accentLight, borderColor: colors.success },
+  flexBtnActive: { backgroundColor: colors.successLight, borderColor: colors.success },
   flexBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
   flexBtnTextActive: { color: colors.success },
   orDivider: {
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     marginRight: 8, marginBottom: 8,
     flexDirection: 'row', alignItems: 'center',
   },
-  timeChipAdded: { backgroundColor: colors.accentLight, borderColor: colors.success },
+  timeChipAdded: { backgroundColor: colors.successLight, borderColor: colors.success },
   timeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   timeTextAdded: { color: colors.success, fontWeight: '700' },
   slotList: { marginTop: 12 },
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   slotTag: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.accentLight, borderRadius: 10,
+    backgroundColor: colors.successLight, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
   },
   slotTagLabel: { flexDirection: 'row', alignItems: 'center', flex: 1 },

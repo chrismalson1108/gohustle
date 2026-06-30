@@ -28,14 +28,14 @@ export default function ChallengeCard({ challenge }) {
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${pct}%` }, done && styles.fillDone]} />
         </View>
-        <Text style={[styles.pct, done && { color: colors.accent }]}>{pct}%</Text>
+        <Text style={[styles.pct, done && { color: colors.success }]}>{pct}%</Text>
       </View>
       <View style={styles.bottom}>
         <View style={styles.rewardRow}>
           <Ionicons name="trophy" size={12} color={colors.gold} style={{ marginRight: 4 }} />
           <Text style={styles.reward}>+{challenge.xpReward} XP</Text>
         </View>
-        <Text style={[styles.count, done && { color: colors.accent, fontWeight: '700' }]}>
+        <Text style={[styles.count, done && { color: colors.success, fontWeight: '700' }]}>
           {done ? 'Complete!' : `${challenge.progress} / ${challenge.target}`}
         </Text>
       </View>
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
-  done: { borderColor: colors.accent, backgroundColor: '#F0FDF4' },
+  done: { borderColor: colors.success, backgroundColor: '#F0FDF4' },
   top: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
   icon: { fontSize: 26, marginRight: 12, marginTop: 1 },
   info: { flex: 1 },
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider, overflow: 'hidden', marginRight: 8,
   },
   fill: { height: 8, borderRadius: 4, backgroundColor: colors.primary },
-  fillDone: { backgroundColor: colors.accent },
+  fillDone: { backgroundColor: colors.success },
   pct: { fontSize: 12, fontWeight: '700', color: colors.primary, width: 34, textAlign: 'right' },
   bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rewardRow: { flexDirection: 'row', alignItems: 'center' },

@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   forgotHeader: { alignItems: 'center', marginBottom: 20 },
   forgotTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
   forgotSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  successBox: { backgroundColor: colors.accentLight, borderRadius: 12, padding: 12, marginBottom: 16 },
+  successBox: { backgroundColor: colors.successLight, borderRadius: 12, padding: 12, marginBottom: 16 },
   successText: { fontSize: 13, color: colors.success, fontWeight: '600', lineHeight: 20 },
   errorBox: { backgroundColor: '#FFF1F2', borderRadius: 12, padding: 12, marginBottom: 16 },
   errorText: { fontSize: 13, color: colors.urgent, fontWeight: '600', lineHeight: 20 },

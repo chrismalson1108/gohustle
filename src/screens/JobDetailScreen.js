@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   bookBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
   bookBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   bookedBtn: {
-    backgroundColor: colors.accentLight, borderRadius: 16,
+    backgroundColor: colors.successLight, borderRadius: 16,
     paddingVertical: 17, alignItems: 'center',
   },
   bookedText: { color: colors.success, fontSize: 16, fontWeight: '800' },

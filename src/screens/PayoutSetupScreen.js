@@ -153,7 +153,7 @@ export default function PayoutSetupScreen({ navigation }) {
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <LinearGradient colors={['#6D28D9', '#4F46E5']} style={styles.hero}>
+      <LinearGradient colors={['#3F25FE', '#2B17C2']} style={styles.hero}>
         <View style={styles.heroIcon}>
           <Ionicons name="card" size={44} color="#fff" />
         </View>
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, flex: 1 },
   sectionDesc: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
 
-  donePill: { backgroundColor: colors.accentLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  donePill: { backgroundColor: colors.successLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   donePillText: { color: colors.success, fontSize: 12, fontWeight: '800' },
 
   successRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 14 },

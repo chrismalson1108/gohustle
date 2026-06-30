@@ -8,26 +8,26 @@ import { useUser } from '../context/UserContext';
 // render reliably (emoji can fail to render on some simulators/devices).
 const ICONS = {
   '✅': { name: 'checkmark-circle', color: '#10B981' },
-  '🎉': { name: 'trophy',           color: '#F59E0B' },
-  '⭐': { name: 'star',             color: '#F59E0B' },
-  '🌟': { name: 'star',             color: '#F59E0B' },
+  '🎉': { name: 'trophy',           color: '#FFBC45' },
+  '⭐': { name: 'star',             color: '#FFBC45' },
+  '🌟': { name: 'star',             color: '#FFBC45' },
   '🔥': { name: 'flame',            color: '#F97316' },
   '💰': { name: 'cash',             color: '#10B981' },
   '💵': { name: 'cash',             color: '#10B981' },
-  '💳': { name: 'card',             color: '#A78BFA' },
-  '⚡': { name: 'flash',            color: '#F59E0B' },
-  '⚠️': { name: 'warning',          color: '#F59E0B' },
+  '💳': { name: 'card',             color: '#5538FF' },
+  '⚡': { name: 'flash',            color: '#FFBC45' },
+  '⚠️': { name: 'warning',          color: '#FFBC45' },
   '❌': { name: 'close-circle',     color: '#EF4444' },
   '🗑️': { name: 'trash',            color: '#EF4444' },
   '💚': { name: 'checkmark-done-circle', color: '#10B981' },
   '😔': { name: 'sad',              color: '#9CA3AF' },
-  '🔔': { name: 'notifications',    color: '#F59E0B' },
-  '✏️': { name: 'create',           color: '#A78BFA' },
-  '🚀': { name: 'rocket',           color: '#A78BFA' },
-  '📝': { name: 'document-text',    color: '#A78BFA' },
-  '🔑': { name: 'key',              color: '#F59E0B' },
-  '🎯': { name: 'locate',           color: '#A78BFA' },
-  '💻': { name: 'laptop',           color: '#A78BFA' },
+  '🔔': { name: 'notifications',    color: '#FFBC45' },
+  '✏️': { name: 'create',           color: '#5538FF' },
+  '🚀': { name: 'rocket',           color: '#5538FF' },
+  '📝': { name: 'document-text',    color: '#5538FF' },
+  '🔑': { name: 'key',              color: '#FFBC45' },
+  '🎯': { name: 'locate',           color: '#5538FF' },
+  '💻': { name: 'laptop',           color: '#5538FF' },
 };
 
 export default function AchievementToast() {
@@ -53,7 +53,7 @@ export default function AchievementToast() {
 
   if (!pendingToast) return null;
 
-  const ic = ICONS[pendingToast.icon] || { name: 'notifications', color: '#F59E0B' };
+  const ic = ICONS[pendingToast.icon] || { name: 'notifications', color: '#FFBC45' };
 
   return (
     <Animated.View
@@ -73,7 +73,7 @@ export default function AchievementToast() {
 const styles = StyleSheet.create({
   toast: {
     position: 'absolute', left: 16, right: 16,
-    backgroundColor: '#1E1B4B',
+    backgroundColor: '#181231',
     borderRadius: 18, padding: 16,
     flexDirection: 'row', alignItems: 'center',
     zIndex: 9999,
@@ -87,6 +87,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   textWrap: { flex: 1 },
-  title: { fontSize: 12, fontWeight: '700', color: '#F59E0B', marginBottom: 2 },
+  title: { fontSize: 12, fontWeight: '700', color: '#FFBC45', marginBottom: 2 },
   msg: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

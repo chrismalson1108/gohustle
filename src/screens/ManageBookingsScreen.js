@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
   },
   waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
   verifiedRow: {
-    backgroundColor: colors.accentLight, borderRadius: 10,
+    backgroundColor: colors.successLight, borderRadius: 10,
     padding: 10, marginTop: 8,
   },
   verifiedText: { fontSize: 13, fontWeight: '700', color: colors.success, marginBottom: 2 },
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
   actionRow: { flexDirection: 'row', marginTop: 14 },
   acceptBtn: {
-    flex: 1, backgroundColor: colors.accentLight, borderRadius: 12,
+    flex: 1, backgroundColor: colors.successLight, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', marginRight: 8,
   },
   acceptText: { fontSize: 14, fontWeight: '800', color: colors.success },

@@ -271,7 +271,7 @@ export default function PublicProfileScreen({ route, navigation }) {
           <View style={styles.certWrap}>
             {certified.map(c => (
               <View key={c.label} style={styles.certifiedBadge}>
-                <Ionicons name="shield-checkmark" size={18} color={colors.accent} style={{ marginRight: 8 }} />
+                <Ionicons name="shield-checkmark" size={18} color={colors.success} style={{ marginRight: 8 }} />
                 <View>
                   <Text style={styles.certifiedTitle}>Certified · {c.label}</Text>
                   <Text style={styles.certifiedSub}>{c.count} jobs</Text>
@@ -490,11 +490,11 @@ const styles = StyleSheet.create({
   certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   certWrap: { flexDirection: 'row', flexWrap: 'wrap' },
   certifiedBadge: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.accentLight,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.successLight,
     borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginRight: 8, marginBottom: 8,
   },
   certifiedTitle: { fontSize: 13, fontWeight: '800', color: colors.success },
-  certifiedSub: { fontSize: 11, fontWeight: '600', color: colors.accent, marginTop: 1 },
+  certifiedSub: { fontSize: 11, fontWeight: '600', color: colors.success, marginTop: 1 },
   progressCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
   progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
   progressLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },

@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   roleHint: { fontSize: 12, color: colors.textMuted, marginRight: 10 },
   payAlert: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#3F25FE',
     marginHorizontal: 16, marginTop: 14,
     borderRadius: 14, padding: 14,
     ...shadows.sm,

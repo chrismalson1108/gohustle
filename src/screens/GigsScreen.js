@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   segTextActive: { color: '#fff' },
   payAlert: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#3F25FE',
     marginHorizontal: 16, marginTop: 14,
     borderRadius: 14, padding: 14,
     ...shadows.sm,
@@ -870,7 +870,7 @@ const styles = StyleSheet.create({
   actions: { marginTop: 4 },
   acceptBtn: {
     flexDirection: 'row', justifyContent: 'center',
-    backgroundColor: colors.accentLight, borderRadius: 10,
+    backgroundColor: colors.successLight, borderRadius: 10,
     paddingVertical: 10, alignItems: 'center', marginBottom: 6,
   },
   acceptText: { fontSize: 13, fontWeight: '800', color: colors.success },
