@@ -123,9 +123,14 @@ export default function PayoutsPage() {
               </Button>
             </div>
           ) : (
-            <Button fullWidth className="mt-4" loading={busy === "onboard"} onClick={() => go("onboard")}>
-              Set up payouts
-            </Button>
+            <>
+              <Button fullWidth className="mt-4" loading={busy === "onboard"} onClick={() => go("onboard")}>
+                Set up payouts
+              </Button>
+              <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+                No business needed — choose <span className="font-semibold">Individual</span>. Stripe just verifies it&apos;s you (name, date of birth, and a bank account) so it can send your money.
+              </p>
+            </>
           )}
         </div>
 

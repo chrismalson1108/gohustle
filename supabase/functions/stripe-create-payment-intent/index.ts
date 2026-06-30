@@ -64,7 +64,21 @@ Deno.serve(async (req: Request) => {
       .eq('user_id', booking.earner_id)
       .single();
 
-    if (!earnerAcct?.onboarded) {
+    // Self-heal: the cached onboarded flag is normally set by the account.updated
+    // webhook, but for connected accounts that needs a Connect-scoped webhook and may
+    // never fire — leaving onboarded stuck at false. If it's false, verify LIVE before
+    // blocking the booking (and sync the cache so later reads are correct).
+    let earnerOnboarded = !!earnerAcct?.onboarded;
+    if (!earnerOnboarded && earnerAcct?.account_id) {
+      try {
+        const acc = await stripe.accounts.retrieve(earnerAcct.account_id);
+        earnerOnboarded = !!(acc.details_submitted && acc.charges_enabled && acc.payouts_enabled);
+        if (earnerOnboarded) {
+          await supabase.from('stripe_accounts').update({ onboarded: true }).eq('account_id', earnerAcct.account_id);
+        }
+      } catch (_) { /* fall through to the not-onboarded response */ }
+    }
+    if (!earnerOnboarded) {
       return json({ error: 'EARNER_NO_PAYOUT', message: "The earner hasn't set up their payout account yet." }, 400);
     }
 

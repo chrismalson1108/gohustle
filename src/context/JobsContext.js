@@ -981,12 +981,18 @@ export function JobsProvider({ children }) {
 
   const getPayoutStatus = async () => {
     if (!user) return { hasAccount: false, onboarded: false };
-    const { data } = await supabase
-      .from('stripe_accounts')
-      .select('account_id, onboarded')
-      .eq('user_id', user.id)
-      .single();
-    return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
+    // Live check via the edge fn (authoritative, webhook-independent). Falls back to
+    // the cached flag if the edge call fails so the UI still has a best-effort value.
+    try {
+      return await stripeEdge.getPayoutStatus();
+    } catch (_) {
+      const { data } = await supabase
+        .from('stripe_accounts')
+        .select('account_id, onboarded')
+        .eq('user_id', user.id)
+        .single();
+      return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
+    }
   };
 
   // Poster side: do they have a saved card on file?

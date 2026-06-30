@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
@@ -41,13 +41,20 @@ const needsAction = (b: Booking) =>
   (b.status === "verified" && !b.posterRating);
 
 export default function MyJobsPage() {
-  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob } = useJobs();
+  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus } = useJobs();
   const { earningsToday, earningsWeek, earningsTotal, showToast } = useUser();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>("active");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMonth, setShowMonth] = useState(false);
+
+  // Payout readiness — earners need a Connect account before they can be paid. Show a
+  // reminder so they set it up before finishing a job (non-blocking; they can still apply).
+  const [payoutReady, setPayoutReady] = useState(true); // optimistic until checked
+  useEffect(() => {
+    getPayoutStatus().then((s) => setPayoutReady(s.onboarded)).catch(() => {});
+  }, [getPayoutStatus]);
 
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
   const completedCount = bookings.filter((b) => b.status === "verified").length;
@@ -284,6 +291,18 @@ export default function MyJobsPage() {
       </PageHeader>
 
       <PageContainer className="space-y-4">
+        {/* Payout reminder — earners must set up payouts to receive money. Non-blocking. */}
+        {!payoutReady && (
+          <Link
+            href="/profile/payouts"
+            className="flex items-center gap-2.5 rounded-2xl bg-urgent-light px-4 py-3 ring-1 ring-urgent/20 transition hover:bg-urgent-light/70"
+          >
+            <AlertCircle className="size-5 shrink-0 text-urgent" />
+            <span className="flex-1 text-sm font-bold text-urgent">Set up payouts so you can get paid for your work.</span>
+            <span className="shrink-0 text-sm font-extrabold text-urgent">Set up →</span>
+          </Link>
+        )}
+
         {/* Action-needed band — only appears when a decision is waiting. */}
         {(pendingAmendments.length > 0 || (unrated.length > 0 && tab !== "completed")) && (
           <div className="space-y-2">

@@ -53,6 +53,11 @@ export const stripeEdge = {
       // Stripe returns the browser to <origin>/stripe/connect-return after onboarding.
       origin: typeof window !== "undefined" ? window.location.origin : undefined,
     }),
+  // Live Connect status (retrieves the account from Stripe + syncs the cached flag) —
+  // does NOT depend on the account.updated webhook, which for connected accounts may
+  // never fire.
+  getPayoutStatus: () =>
+    callEdgeFunction<{ hasAccount: boolean; onboarded: boolean }>("stripe-connect-status"),
   // NOTE: the edge function returns the SetupIntent secret as `setupIntentClientSecret`
   // (see src/screens/PayoutSetupScreen.js + supabase/functions/stripe-create-setup-intent).
   createSetupIntent: () =>

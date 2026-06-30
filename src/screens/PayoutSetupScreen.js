@@ -188,7 +188,8 @@ export default function PayoutSetupScreen({ navigation }) {
           ) : (
             <>
               <Text style={styles.sectionDesc}>
-                Connect a bank account so you can receive payments after completing jobs. Takes about a minute.
+                Connect a bank account so you can receive payments after completing jobs. Takes about a minute.{'\n'}
+                No business needed — choose <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Individual</Text>. Stripe just verifies it's you (name, date of birth, and a bank account) so it can send your money.
               </Text>
               <TouchableOpacity style={styles.btn} onPress={handleConnectPayout} disabled={loadingPayout} activeOpacity={0.85}>
                 {loadingPayout ? <ActivityIndicator color="#fff" /> : (

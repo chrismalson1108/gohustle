@@ -69,6 +69,13 @@ Deno.serve(async (req: Request) => {
       const { data: profile } = await supabase
         .from('profiles').select('name').eq('id', user.id).single();
 
+      // Prefill the individual's name from their profile so the hosted onboarding
+      // doesn't re-ask for it. business_type is 'individual' — students don't need a
+      // business; Stripe collects personal KYC (required to pay anyone).
+      const nameParts = (profile?.name || '').trim().split(/\s+/).filter(Boolean);
+      const firstName = nameParts[0];
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+
       const account = await stripe.accounts.create({
         type: 'express',
         email: user.email,
@@ -78,7 +85,11 @@ Deno.serve(async (req: Request) => {
           transfers: { requested: true },
         },
         business_type: 'individual',
-        individual: { email: user.email },
+        individual: {
+          email: user.email,
+          ...(firstName && { first_name: firstName }),
+          ...(lastName && { last_name: lastName }),
+        },
         settings: {
           payouts: { schedule: { interval: 'manual' } }, // we control payout timing
         },

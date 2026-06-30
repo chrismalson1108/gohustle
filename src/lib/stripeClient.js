@@ -55,6 +55,11 @@ export const stripeEdge = {
   getPayoutOnboardingUrl: () =>
     callEdgeFunction('stripe-connect-onboard', { origin: WEB_RETURN_BASE }),
 
+  // Live Connect status (retrieves the account from Stripe + syncs the cached flag);
+  // does NOT depend on the account.updated webhook.
+  getPayoutStatus: () =>
+    callEdgeFunction('stripe-connect-status'),
+
   createSetupIntent: () =>
     callEdgeFunction('stripe-create-setup-intent'),
 
