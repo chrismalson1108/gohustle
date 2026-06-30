@@ -15,6 +15,7 @@ export default function ConsentPage() {
   const [docs, setDocs] = useState<Record<string, LegalDoc> | null>(null);
   const [saving, setSaving] = useState(false);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (session === null) router.replace("/login");
@@ -27,12 +28,15 @@ export default function ConsentPage() {
 
   const accept = async () => {
     if (!user) return;
+    setError(null);
     setSaving(true);
     try {
       await recordAcceptances(user.id, docs || {});
       markTermsAccepted();
       router.replace("/browse");
     } catch {
+      // Without feedback the auth gate just keeps bouncing the user back here.
+      setError("Couldn't save your acceptance — check your connection and try again.");
       setSaving(false);
     }
   };
@@ -70,6 +74,7 @@ export default function ConsentPage() {
         <Button size="lg" fullWidth className="mt-6" loading={saving} disabled={docs === null} onClick={accept}>
           Accept &amp; continue
         </Button>
+        {error && <p className="mt-3 text-center text-sm font-medium text-urgent">{error}</p>}
         <button onClick={() => signOut()} className="mt-4 w-full text-sm font-semibold text-ink-muted">
           Sign out
         </button>

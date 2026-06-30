@@ -44,14 +44,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // whole app on the spinner), so we time the call out and always clear loading.
     (async () => {
       try {
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("getSession timed out")), 8000),
-        );
-        const {
-          data: { session },
-        } = await Promise.race([supabase.auth.getSession(), timeout]);
-        setSession(session);
-        if (session?.user) await loadOnboarding(session.user.id);
+        // Race the WHOLE init (session read + the onboarding/profile fetch) against
+        // a timeout. loadOnboarding is a normal PostgREST call not covered by the
+        // auth-lock timeout, so if IT stalls the gate would still hang on the spinner.
+        await Promise.race([
+          (async () => {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            setSession(session);
+            if (session?.user) await loadOnboarding(session.user.id);
+          })(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("auth init timed out")), 8000),
+          ),
+        ]);
       } catch (err) {
         console.error("Auth init failed/timed out:", err);
       } finally {
@@ -78,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .from("profiles")
       .select("onboarding_done")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
     const done = data?.onboarding_done ?? false;
     setOnbDone(done);
     setNeedsTerms(done ? await checkNeedsAcceptance(userId) : false);
@@ -146,7 +153,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // immediately. Set the session so the app gate routes them to onboarding.
       setSession(data.session);
     } else {
-      // Confirmation required — show the "check your email" screen.
+      // No session → confirmation required. If the email already exists, Supabase
+      // obfuscates the response (data.user.identities comes back empty) and does
+      // NOT send a fresh confirmation — the "I signed up before but never
+      // confirmed, signed up again, and got no email" dead-end. Detect it and
+      // explicitly resend so the user actually receives a link.
+      const alreadyRegistered =
+        !data.user?.identities || data.user.identities.length === 0;
+      if (alreadyRegistered) {
+        const { error: resendErr } = await supabase.auth.resend({
+          type: "signup",
+          email,
+        });
+        if (resendErr) {
+          // Almost certainly an already-confirmed account → guide to sign in.
+          setAuthError(
+            'An account with this email already exists. Try signing in, or use "Forgot password?" to reset it.',
+          );
+          track("sign_up");
+          return false;
+        }
+      }
+      // Confirmation (re)sent — show the "check your email" screen.
       setPendingEmail(email);
     }
     track("sign_up");

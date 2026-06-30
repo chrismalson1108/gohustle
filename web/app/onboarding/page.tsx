@@ -32,6 +32,7 @@ export default function OnboardingPage() {
   const [radius, setRadius] = useState(25);
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
+  const [finishError, setFinishError] = useState("");
 
   useEffect(() => {
     if (session && onboardingDone) router.replace("/browse");
@@ -59,8 +60,9 @@ export default function OnboardingPage() {
 
   const finish = async () => {
     if (!user) return;
+    setFinishError("");
     setSaving(true);
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({
         username: username.trim().toLowerCase(),
@@ -72,6 +74,20 @@ export default function OnboardingPage() {
         onboarding_done: true,
       })
       .eq("id", user.id);
+    if (error) {
+      // Don't mark onboarded if the DB write failed — otherwise the in-memory gate
+      // says "done" but loadOnboarding reads false next login and bounces the user
+      // back here in an invisible loop.
+      setSaving(false);
+      if ((error as { code?: string }).code === "23505") {
+        // Username was claimed between the step-1 check and now.
+        setUsernameError("That username was just taken — please pick another.");
+        setStep(1);
+      } else {
+        setFinishError("Couldn't save your profile. Check your connection and try again.");
+      }
+      return;
+    }
     try {
       await recordAcceptances(user.id, await fetchCurrentDocs());
     } catch {}
@@ -204,6 +220,7 @@ export default function OnboardingPage() {
         {step === 5 && (
           <Step icon={<Rocket className="size-14 text-primary" />} title="You're all set!" sub={`Welcome to GoHustlr, @${username || "hustler"}. Time to start hustling!`}>
             <Button size="lg" fullWidth loading={saving} onClick={finish} className="bg-success">Enter GoHustlr</Button>
+            {finishError && <p className="mt-3 text-sm font-medium text-urgent">{finishError}</p>}
           </Step>
         )}
       </div>

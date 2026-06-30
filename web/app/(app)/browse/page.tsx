@@ -57,6 +57,8 @@ export default function BrowsePage() {
   const forYouNoSkills = selectedCat === "foryou" && skills.length === 0;
 
   const activeFilterCount = countActiveFilters(filters);
+  const hasNarrowed =
+    activeFilterCount > 0 || search.trim() !== "" || (selectedCat !== "all" && selectedCat !== "foryou");
 
   return (
     <div>
@@ -182,21 +184,29 @@ export default function BrowsePage() {
                 ? "Add skills to your profile to get gigs matched to you"
                 : selectedCat === "foryou"
                   ? "No gigs match your skills right now"
-                  : "No gigs match your filters"}
+                  : hasNarrowed
+                    ? "No gigs match your filters"
+                    : "No gigs near you yet — check back soon, or post one to get the ball rolling."}
             </p>
             {forYouNoSkills ? (
               <Link href="/profile/settings" className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary">
                 Add your skills
               </Link>
+            ) : hasNarrowed ? (
+              <button
+                onClick={() => {
+                  setFilters(DEFAULT_FILTERS);
+                  setSearch("");
+                  setSelectedCat("all");
+                }}
+                className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary"
+              >
+                Clear search &amp; filters
+              </button>
             ) : (
-              activeFilterCount > 0 && (
-                <button
-                  onClick={() => setFilters(DEFAULT_FILTERS)}
-                  className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary"
-                >
-                  Reset all filters
-                </button>
-              )
+              <Link href="/hiring/new" className="rounded-xl bg-primary-light px-5 py-2.5 text-sm font-bold text-primary">
+                Post a gig
+              </Link>
             )}
           </div>
         ) : (

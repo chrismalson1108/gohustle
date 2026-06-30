@@ -210,12 +210,19 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     if (!body) return;
     setSending(true);
     setText("");
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("messages")
       .insert({ booking_id: conversation.bookingId, sender_id: userId, text: body })
       .select("id, booking_id, sender_id, text, image_url, created_at")
       .single();
-    if (data) setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
+    if (error || !data) {
+      // Restore the text so the message isn't silently lost, and tell the user.
+      setText(body);
+      showToast({ icon: "⚠️", title: "Message not sent", message: "Please try again." });
+      setSending(false);
+      return;
+    }
+    setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
     pingOther(body);
     setSending(false);
   };

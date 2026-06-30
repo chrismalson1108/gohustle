@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle } from "lucide-react";
 import { CATEGORY_COLORS, findProhibited } from "@gohustlr/shared";
@@ -49,9 +49,34 @@ export default function JobDetailPage() {
   const [applicationNote, setApplicationNote] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [waitedForJob, setWaitedForJob] = useState(false);
 
   const job = jobs.find((j) => j.id === id);
-  if (!job) return <FullPageSpinner label="Loading gig…" />;
+
+  // Don't spin forever for a gig that isn't in the loaded feed — deleted/cancelled,
+  // already filled, a stale or mistyped shared link, or a failed fetch. Give the
+  // context a moment, then show a real "not found" state instead of an endless spinner.
+  useEffect(() => {
+    if (job) return;
+    const t = setTimeout(() => setWaitedForJob(true), 6000);
+    return () => clearTimeout(t);
+  }, [job]);
+
+  if (!job) {
+    if (!waitedForJob) return <FullPageSpinner label="Loading gig…" />;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-6 text-center">
+        <AlertTriangle className="mb-4 size-12 text-ink-muted" />
+        <h1 className="text-2xl font-black text-ink">Gig not found</h1>
+        <p className="mt-2 max-w-sm text-ink-soft">
+          This listing may have been removed, already filled, or the link is no longer valid.
+        </p>
+        <Button size="lg" className="mt-6" onClick={() => router.replace("/browse")}>
+          Browse gigs
+        </Button>
+      </div>
+    );
+  }
 
   const alreadyBooked = isBooked(job.id);
   const isOwnJob = job.posterId && user?.id === job.posterId;

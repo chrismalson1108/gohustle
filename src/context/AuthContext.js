@@ -15,11 +15,27 @@ export function AuthProvider({ children }) {
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) await loadOnboarding(session.user.id);
-      setLoading(false);
-    });
+    // Resolve the initial session. getSession() OR the post-session profile read
+    // can hang/reject (a corrupt or locked AsyncStorage session, a refresh-token
+    // network stall). With no timeout `loading` would stay true forever, freezing
+    // the app on the launch spinner with no recovery. Time-box the WHOLE init and
+    // always clear loading so a bad state drops the user to AuthScreen instead.
+    (async () => {
+      try {
+        await Promise.race([
+          (async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            setSession(session);
+            if (session?.user) await loadOnboarding(session.user.id);
+          })(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('auth init timed out')), 8000)),
+        ]);
+      } catch (err) {
+        console.error('Auth init failed/timed out:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
@@ -38,7 +54,7 @@ export function AuthProvider({ children }) {
       .from('profiles')
       .select('onboarding_done')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
     const done = data?.onboarding_done ?? false;
     setOnbDone(done);
     // Onboarding records acceptance itself, so only gate already-onboarded users.
@@ -79,8 +95,19 @@ export function AuthProvider({ children }) {
     });
     if (error) { setAuthError(error.message); return false; }
     setOnbDone(false);
-    // With email confirmation on, signUp returns no session — the user must
-    // confirm via the emailed link, then sign in. Surface that state.
+    // If the email already exists, Supabase obfuscates the response (empty
+    // identities) and does NOT send a fresh confirmation — the "signed up before,
+    // never confirmed, tried again, got no email" dead-end. Detect it and resend
+    // explicitly so a link actually goes out.
+    const alreadyRegistered = !data.user?.identities || data.user.identities.length === 0;
+    if (alreadyRegistered) {
+      const { error: resendErr } = await supabase.auth.resend({ type: 'signup', email });
+      if (resendErr) {
+        setAuthError('An account with this email already exists. Try signing in, or use "Forgot password".');
+        return false;
+      }
+    }
+    // Confirmation (re)sent — surface the "check your email" state.
     setPendingEmail(email);
     track('sign_up');
     return true;

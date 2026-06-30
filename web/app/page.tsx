@@ -52,7 +52,7 @@ export default function LandingPage() {
               <Link href="/login?mode=signup" className={buttonClasses("primary", "lg")}>
                 Start hustling <ArrowRight className="size-5" />
               </Link>
-              <Link href="/browse" className={buttonClasses("outline", "lg")}>
+              <Link href="/login?mode=signup" className={buttonClasses("outline", "lg")}>
                 Browse gigs
               </Link>
             </div>
