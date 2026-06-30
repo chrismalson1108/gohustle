@@ -8,6 +8,15 @@ frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic 
 
 ## 1. Deploy to Vercel
 
+> **Status (2026-06-30): already done.** The project is created and linked
+> (`go-hustlr/gohustle`, linked at the **repo root** `.vercel/`, Root Directory = `web`),
+> GitHub is connected so **every push to `master` auto-deploys to production**, and the
+> deployment-protection login wall is **off**. The current production URL is
+> **`https://gohustle-git-master-go-hustlr.vercel.app`** (until `gohustlr.com` is connected — §2).
+> CLI deploys must run **from the repo root** (`npx vercel --prod`), NOT from `web/`, or the
+> `../shared` package is excluded and the build fails. The steps below are the original setup
+> reference.
+
 1. Go to **vercel.com** → sign up / log in **with GitHub**.
 2. **Add New… → Project** → import the repo **`chrismalson1108/gohustle`**.
 3. Configure the project:
@@ -25,10 +34,11 @@ frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic 
    - `NEXT_PUBLIC_SITE_URL` = `https://gohustlr.com`
    (These are publishable/anon keys — safe. The app also ships defaults, so a deploy
    works even before you set them, but set `NEXT_PUBLIC_SITE_URL` for correct links.)
-5. **Branch:** deploy `master` (after the web branch is merged) or `feature/web-app` to
-   preview the work-in-progress. **Deploy.**
+5. **Branch:** `master` is the **production branch** (auto-deploys to production); other
+   branches deploy as previews.
 
-You'll get a live URL like `gohustle.vercel.app`. Confirm it loads, then add the domain.
+The live URL is **`https://gohustle-git-master-go-hustlr.vercel.app`** (NOT `gohustle.vercel.app`
+— that's an unrelated project). Confirm it loads, then add the domain below.
 
 ---
 
@@ -61,17 +71,19 @@ So email links and redirects land on gohustlr.com, not localhost:
 - **Supabase** → Authentication → **URL Configuration**: set **Site URL** to
   `https://gohustlr.com` and add `https://gohustlr.com/**` (and your Vercel preview URL)
   to **Redirect URLs**. This makes email-confirmation and password-reset links work on web.
-- **Stripe** (if/when using web payment flows): allowlist `https://gohustlr.com` as a
-  return URL for the Connect onboarding / Identity edge functions.
+- **Stripe** return URLs: ✅ already handled in code — the Connect/Identity edge functions
+  allowlist `gohustlr.com` (and `*.vercel.app`) and default to `https://gohustlr.com`, so once
+  DNS is live the mobile payout/ID return pages + 302 backstops resolve with no code change.
 
 ---
 
 ## What I (Claude) can vs. can't do here
 
-- ✅ I built the site, the Vercel config (`web/vercel.json`), env template, and this guide.
-- ❌ I can't deploy or edit DNS for you without your accounts — both Vercel and Domain.com
-  require **your** login, and Domain.com has no automation API I can use safely.
-- ⚡ If you create a **Vercel access token** (vercel.com → Settings → Tokens) and share it,
-  I can use the Vercel API/CLI to link the project, set env vars, deploy, and **add the
-  domain** for you — after which Vercel hands back the exact DNS records, which you paste
-  into Domain.com (or switch nameservers). The registrar step stays with you either way.
+- ✅ I built the site and can **deploy it** — the Vercel CLI is authed (`mainmail-1145`) and
+  the project is linked, so I run `npx vercel --prod` **from the repo root** when changes are
+  ready (and pushes to `master` auto-deploy anyway).
+- ⚡ I can **add the domain** in Vercel via CLI (`vercel domains add gohustlr.com`), which hands
+  back the exact DNS records to paste into Domain.com.
+- ❌ I **can't edit DNS at Domain.com** (no safe automation API — that step is yours), and by
+  policy I won't change account/security settings or enter credentials. I give exact steps and
+  verify the result after.
