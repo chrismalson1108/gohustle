@@ -37,6 +37,20 @@ export default function PayoutsPage() {
     refreshReadiness().catch(() => setReady({ payoutReady: false, paymentMethodReady: false }));
   }, [refreshReadiness]);
 
+  // When the page is restored from the back-forward cache (e.g. the user navigated to
+  // Stripe and hit Back), it comes back with whatever state it had — including a stale
+  // `busy`, which left a button stuck spinning. Clear it and re-check status on return.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        setBusy(null);
+        refreshReadiness().catch(() => {});
+      }
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, [refreshReadiness]);
+
   const onCardSaved = async () => {
     setShowAddCard(false);
     try {
@@ -67,6 +81,11 @@ export default function PayoutsPage() {
       : "Card on file";
 
   const go = async (which: "onboard" | "manage") => {
+    // "Manage" opens the Stripe Express dashboard — a one-way trip with no return to the
+    // app. Open the tab SYNCHRONOUSLY on the click (before the await) so the browser
+    // doesn't block it as a non-gesture popup, then point it at the URL once we have it.
+    // Onboarding navigates in place (it redirects back to /stripe/connect-return).
+    const dash = which === "manage" ? window.open("about:blank", "_blank") : null;
     setBusy(which);
     try {
       const res = (which === "onboard" ? await getPayoutOnboardingUrl() : await getPayoutLoginLink()) as {
@@ -75,16 +94,14 @@ export default function PayoutsPage() {
       };
       if (res?.url) {
         if (which === "manage") {
-          // The Express dashboard is a one-way trip (no return to the app), so open it
-          // in a new tab and keep GoHustlr open here.
-          window.open(res.url, "_blank", "noopener,noreferrer");
-          setBusy(null);
+          if (dash) dash.location.replace(res.url);
+          else window.open(res.url, "_blank", "noopener,noreferrer"); // popup blocked → best-effort fallback
         } else {
-          // Onboarding redirects back to /stripe/connect-return — navigate in place.
           window.location.href = res.url;
         }
         return;
       }
+      dash?.close();
       if (res?.alreadyOnboarded) {
         const r = await getPaymentReadiness();
         setReady(r);
@@ -92,11 +109,13 @@ export default function PayoutsPage() {
       } else {
         showToast({ icon: "⚠️", title: "Couldn't open payout setup", message: "No setup link was returned — please try again." });
       }
-      setBusy(null);
     } catch (e) {
       // Surface the real reason (e.g. Stripe Connect not enabled) instead of a silent no-op.
-      setBusy(null);
+      dash?.close();
       showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
+    } finally {
+      // ALWAYS clear the spinner — a returning user must never find a button stuck loading.
+      setBusy(null);
     }
   };
 
