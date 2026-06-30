@@ -9,11 +9,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import GradientHeader from '../components/GradientHeader';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import {
   EXPENSE_CATEGORIES, categoryMeta, fetchExpenses, addExpense, deleteExpense,
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
+  expensesByJob,
 } from '../lib/expenses';
 import { colors, gradients, shadows } from '../theme';
 
@@ -23,7 +25,21 @@ const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractio
 export default function ExpensesScreen() {
   const { earningsTotal } = useUser();
   const { user } = useAuth();
+  const { bookings, posterBookings } = useJobs();
   const haptic = useHaptic();
+
+  // The user's gigs available to tie an expense to: their booked work + gigs they
+  // posted. De-duped by booking id (a user can be a party on both sides).
+  const jobOptions = (() => {
+    const seen = {};
+    const out = [];
+    [...(bookings || []), ...(posterBookings || [])].forEach(b => {
+      if (b?.id && !seen[b.id]) { seen[b.id] = true; out.push({ id: b.id, title: b.job?.title || 'Gig' }); }
+    });
+    return out;
+  })();
+  const jobTitleFor = {};
+  jobOptions.forEach(o => { jobTitleFor[o.id] = o.title; });
 
   const [tab, setTab] = useState('expenses'); // 'expenses' | 'income'
   const [expenses, setExpenses] = useState([]);
@@ -39,6 +55,7 @@ export default function ExpensesScreen() {
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(todayISO());
   const [receiptUri, setReceiptUri] = useState(null);
+  const [bookingId, setBookingId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -70,8 +87,11 @@ export default function ExpensesScreen() {
   const net = grossIncome - expTotal;
   const setAside = Math.max(0, net) * 0.27;
 
+  // Per-job expense breakdown (current year), title resolved from the user's gigs.
+  const jobGroups = expensesByJob(yearExpenses, [...(bookings || []), ...(posterBookings || [])]);
+
   const resetForm = () => {
-    setAmount(''); setCategory('supplies'); setSource('cash'); setDescription(''); setDate(todayISO()); setReceiptUri(null);
+    setAmount(''); setCategory('supplies'); setSource('cash'); setDescription(''); setDate(todayISO()); setReceiptUri(null); setBookingId(null);
   };
 
   const handlePickReceipt = async () => {
@@ -89,7 +109,7 @@ export default function ExpensesScreen() {
       if (tab === 'expenses') {
         let receiptPath = null;
         if (receiptUri) receiptPath = await uploadPrivateImage({ uri: receiptUri, bucket: 'receipts', userId: user.id });
-        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl: receiptPath });
+        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl: receiptPath, bookingId });
         setExpenses(prev => [row, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1)));
         if (receiptPath) {
           const u = await getSignedUrl('receipts', receiptPath);
@@ -187,6 +207,19 @@ export default function ExpensesScreen() {
             : 'Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)'}
         </Text>
 
+        {tab === 'expenses' && jobGroups.length > 0 ? (
+          <View style={styles.byJobCard}>
+            <Text style={styles.byJobTitle}>By job · {year}</Text>
+            {jobGroups.map(g => (
+              <View key={g.bookingId} style={styles.byJobRow}>
+                <Ionicons name="briefcase-outline" size={14} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.byJobName} numberOfLines={1}>{g.title}</Text>
+                <Text style={styles.byJobAmt}>{fmt(g.total)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
         ) : list.length === 0 ? (
@@ -207,7 +240,15 @@ export default function ExpensesScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowCat}>{meta.label}</Text>
                     {exp.description ? <Text style={styles.rowDesc} numberOfLines={1}>{exp.description}</Text> : null}
-                    <Text style={styles.rowDate}>{exp.date}</Text>
+                    <View style={styles.rowMetaRow}>
+                      <Text style={styles.rowDate}>{exp.date}</Text>
+                      {exp.booking_id ? (
+                        <View style={styles.jobTag}>
+                          <Ionicons name="briefcase-outline" size={10} color={colors.primary} style={{ marginRight: 3 }} />
+                          <Text style={styles.jobTagText} numberOfLines={1}>{jobTitleFor[exp.booking_id] || 'Gig'}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
                   {(() => {
                     const thumb = receiptUrls[exp.id] || (exp.receipt_url?.startsWith('http') ? exp.receipt_url : null);
@@ -302,6 +343,28 @@ export default function ExpensesScreen() {
               <TextInput style={styles.input} placeholder={tab === 'expenses' ? 'e.g. Gas for delivery run' : 'e.g. Cash tip from client'}
                 placeholderTextColor={colors.textMuted} value={description} onChangeText={setDescription} />
 
+              {tab === 'expenses' && jobOptions.length > 0 && (
+                <>
+                  <Text style={styles.label}>Tie to a job (optional)</Text>
+                  <View style={styles.catGrid}>
+                    <TouchableOpacity style={[styles.catChip, !bookingId && styles.catChipActive]}
+                      onPress={() => { haptic.selection(); setBookingId(null); }}>
+                      <Text style={[styles.catChipText, !bookingId && styles.catChipTextActive]}>— None —</Text>
+                    </TouchableOpacity>
+                    {jobOptions.map(o => {
+                      const active = bookingId === o.id;
+                      return (
+                        <TouchableOpacity key={o.id} style={[styles.catChip, active && styles.catChipActive]}
+                          onPress={() => { haptic.selection(); setBookingId(o.id); }}>
+                          <Ionicons name="briefcase-outline" size={14} color={active ? '#fff' : colors.primary} style={{ marginRight: 5 }} />
+                          <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{o.title}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
               {tab === 'expenses' && (
                 <>
                   <Text style={styles.label}>Receipt (optional)</Text>
@@ -380,7 +443,15 @@ const styles = StyleSheet.create({
   rowIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowCat: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   rowDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
-  rowDate: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  rowMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, flexWrap: 'wrap' },
+  rowDate: { fontSize: 11, color: colors.textMuted },
+  jobTag: { flexDirection: 'row', alignItems: 'center', marginLeft: 8, maxWidth: 160, backgroundColor: colors.primaryLight, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  jobTagText: { fontSize: 10.5, fontWeight: '700', color: colors.primary, flexShrink: 1 },
+  byJobCard: { marginHorizontal: 16, marginTop: 16, backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  byJobTitle: { fontSize: 12, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  byJobRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  byJobName: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  byJobAmt: { fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginLeft: 8 },
   rowReceipt: { width: 34, height: 34, borderRadius: 8, marginRight: 10, backgroundColor: colors.border },
   rowAmount: { fontSize: 15, fontWeight: '900', color: colors.textPrimary, marginRight: 8 },
   rowDelete: { padding: 4 },

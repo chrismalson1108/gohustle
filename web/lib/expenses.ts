@@ -20,6 +20,7 @@ export interface Expense {
   description: string | null;
   date: string;
   receipt_url: string | null;
+  booking_id: string | null;
   created_at?: string;
 }
 
@@ -53,7 +54,15 @@ export async function addExpense(
     description,
     date,
     receiptUrl,
-  }: { amount: number; category: string; description?: string; date: string; receiptUrl?: string | null },
+    bookingId,
+  }: {
+    amount: number;
+    category: string;
+    description?: string;
+    date: string;
+    receiptUrl?: string | null;
+    bookingId?: string | null;
+  },
 ): Promise<Expense> {
   const { data, error } = await supabase
     .from("expenses")
@@ -64,11 +73,42 @@ export async function addExpense(
       description: description || null,
       date,
       receipt_url: receiptUrl || null,
+      booking_id: bookingId || null,
     })
     .select()
     .single();
   if (error) throw error;
   return data as Expense;
+}
+
+// Group expenses by their tied booking_id and sum amounts. `bookings` (from
+// useJobs) supplies the job title for display. Returns an array sorted by total
+// desc; expenses with no booking are skipped.
+export interface JobExpenseGroup {
+  bookingId: string;
+  title: string;
+  total: number;
+  count: number;
+}
+
+export function expensesByJob(
+  expenses: Expense[],
+  bookings: Array<{ id: string; job: { title: string } | null }>,
+): JobExpenseGroup[] {
+  const titleFor: Record<string, string> = {};
+  bookings.forEach((b) => {
+    if (b?.id) titleFor[b.id] = b.job?.title || "Untitled gig";
+  });
+  const groups: Record<string, JobExpenseGroup> = {};
+  expenses.forEach((e) => {
+    if (!e.booking_id) return;
+    if (!groups[e.booking_id]) {
+      groups[e.booking_id] = { bookingId: e.booking_id, title: titleFor[e.booking_id] || "Gig", total: 0, count: 0 };
+    }
+    groups[e.booking_id].total += Number(e.amount || 0);
+    groups[e.booking_id].count += 1;
+  });
+  return Object.values(groups).sort((a, b) => b.total - a.total);
 }
 
 export async function deleteExpense(id: string): Promise<void> {

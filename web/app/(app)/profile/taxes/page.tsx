@@ -22,6 +22,7 @@ import {
   Banknote,
   Gift,
   Loader2,
+  Briefcase,
 } from "lucide-react";
 import {
   EXPENSE_CATEGORIES,
@@ -32,6 +33,7 @@ import {
 } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
+import { useJobs } from "@/lib/jobs";
 import {
   fetchExpenses,
   addExpense,
@@ -42,6 +44,7 @@ import {
   uploadReceipt,
   getSignedUrl,
   yearSummary,
+  expensesByJob,
   type Expense,
   type IncomeEntry,
 } from "@/lib/expenses";
@@ -77,6 +80,26 @@ export default function TaxesPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { earningsTotal, showToast } = useUser();
+  const { bookings, posterBookings } = useJobs();
+
+  // The user's gigs available to tie an expense to: booked work + posted gigs,
+  // de-duped by booking id.
+  const jobOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; title: string }[] = [];
+    [...(bookings || []), ...(posterBookings || [])].forEach((b) => {
+      if (b?.id && !seen.has(b.id)) {
+        seen.add(b.id);
+        out.push({ id: b.id, title: b.job?.title || "Gig" });
+      }
+    });
+    return out;
+  }, [bookings, posterBookings]);
+  const jobTitleFor = useMemo(() => {
+    const m: Record<string, string> = {};
+    jobOptions.forEach((o) => { m[o.id] = o.title; });
+    return m;
+  }, [jobOptions]);
 
   const [tab, setTab] = useState<Tab>("expenses");
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -91,6 +114,7 @@ export default function TaxesPage() {
   const [source, setSource] = useState("cash");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(todayISO());
+  const [bookingId, setBookingId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -130,12 +154,19 @@ export default function TaxesPage() {
     [year, earningsTotal, expenses, income],
   );
 
+  // Per-job expense breakdown for the current year.
+  const jobGroups = useMemo(
+    () => expensesByJob(summary.yearExpenses, [...(bookings || []), ...(posterBookings || [])]),
+    [summary.yearExpenses, bookings, posterBookings],
+  );
+
   const resetForm = () => {
     setAmount("");
     setCategory("supplies");
     setSource("cash");
     setDescription("");
     setDate(todayISO());
+    setBookingId(null);
     setReceiptFile(null);
     if (receiptPreview) URL.revokeObjectURL(receiptPreview);
     setReceiptPreview(null);
@@ -190,6 +221,7 @@ export default function TaxesPage() {
           description,
           date,
           receiptUrl: receiptPath,
+          bookingId,
         });
         setExpenses((prev) => [row, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1)));
         if (receiptPath) {
@@ -295,6 +327,22 @@ export default function TaxesPage() {
             : "Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)"}
         </p>
 
+        {/* By-job expense breakdown */}
+        {tab === "expenses" && jobGroups.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-line bg-white p-4 shadow-[var(--shadow-card)]">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">By job · {year}</p>
+            <ul className="space-y-1.5">
+              {jobGroups.map((g) => (
+                <li key={g.bookingId} className="flex items-center gap-2">
+                  <Briefcase className="size-3.5 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{g.title}</span>
+                  <span className="font-black text-ink">{money(g.total)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* List */}
         {loading ? (
           <div className="flex justify-center py-16 text-ink-muted">
@@ -325,7 +373,15 @@ export default function TaxesPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-bold text-ink">{meta.label}</p>
                       {exp.description && <p className="truncate text-xs text-ink-soft">{exp.description}</p>}
-                      <p className="text-[11px] text-ink-muted">{exp.date}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] text-ink-muted">{exp.date}</p>
+                        {exp.booking_id && (
+                          <span className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-md bg-primary-light px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                            <Briefcase className="size-2.5 shrink-0" />
+                            <span className="truncate">{jobTitleFor[exp.booking_id] || "Gig"}</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {thumb && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -461,6 +517,22 @@ export default function TaxesPage() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+
+          {tab === "expenses" && jobOptions.length > 0 && (
+            <div>
+              <Label>Tie to a job (optional)</Label>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={!bookingId} onClick={() => setBookingId(null)}>
+                  — None —
+                </Chip>
+                {jobOptions.map((o) => (
+                  <Chip key={o.id} active={bookingId === o.id} onClick={() => setBookingId(o.id)}>
+                    <Briefcase className="size-3.5" /> <span className="max-w-[140px] truncate">{o.title}</span>
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
 
           {tab === "expenses" && (
             <div>
