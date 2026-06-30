@@ -37,9 +37,11 @@ export default function PayoutsPage() {
     refreshReadiness().catch(() => setReady({ payoutReady: false, paymentMethodReady: false }));
   }, [refreshReadiness]);
 
-  // When the page is restored from the back-forward cache (e.g. the user navigated to
-  // Stripe and hit Back), it comes back with whatever state it had — including a stale
-  // `busy`, which left a button stuck spinning. Clear it and re-check status on return.
+  // Keep the page honest when the user comes back to it:
+  //  • pageshow(persisted): restored from the back-forward cache (Stripe → Back) with a
+  //    stale `busy` that left a button stuck spinning — clear it.
+  //  • visibilitychange: returned to this tab after onboarding/managing in the new tab —
+  //    re-check payout + card status so it reflects what they just did.
   useEffect(() => {
     const onShow = (e: PageTransitionEvent) => {
       if (e.persisted) {
@@ -47,8 +49,15 @@ export default function PayoutsPage() {
         refreshReadiness().catch(() => {});
       }
     };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshReadiness().catch(() => {});
+    };
     window.addEventListener("pageshow", onShow);
-    return () => window.removeEventListener("pageshow", onShow);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("pageshow", onShow);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [refreshReadiness]);
 
   const onCardSaved = async () => {
@@ -81,11 +90,11 @@ export default function PayoutsPage() {
       : "Card on file";
 
   const go = async (which: "onboard" | "manage") => {
-    // "Manage" opens the Stripe Express dashboard — a one-way trip with no return to the
-    // app. Open the tab SYNCHRONOUSLY on the click (before the await) so the browser
-    // doesn't block it as a non-gesture popup, then point it at the URL once we have it.
-    // Onboarding navigates in place (it redirects back to /stripe/connect-return).
-    const dash = which === "manage" ? window.open("about:blank", "_blank") : null;
+    // Open BOTH Stripe flows in a NEW TAB so GoHustlr is never replaced. Open the tab
+    // SYNCHRONOUSLY on the click (before the await) so the browser doesn't block it as a
+    // non-gesture popup, then point it at the URL once we have it. Onboarding's return_url
+    // lands in that tab; this page refreshes payout status when you switch back here.
+    const dash = window.open("about:blank", "_blank");
     setBusy(which);
     try {
       const res = (which === "onboard" ? await getPayoutOnboardingUrl() : await getPayoutLoginLink()) as {
@@ -93,12 +102,8 @@ export default function PayoutsPage() {
         alreadyOnboarded?: boolean;
       };
       if (res?.url) {
-        if (which === "manage") {
-          if (dash) dash.location.replace(res.url);
-          else window.open(res.url, "_blank", "noopener,noreferrer"); // popup blocked → best-effort fallback
-        } else {
-          window.location.href = res.url;
-        }
+        if (dash) dash.location.replace(res.url);
+        else window.open(res.url, "_blank", "noopener,noreferrer"); // popup blocked → best-effort fallback
         return;
       }
       dash?.close();
