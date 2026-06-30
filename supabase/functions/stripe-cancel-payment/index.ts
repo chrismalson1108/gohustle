@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
     // Without this any signed-in user could void others' confirmed holds.
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, status, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
+      .select('id, status, started_at, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
@@ -42,6 +42,12 @@ Deno.serve(async (req: Request) => {
     // done (completed/verified) the funds belong to the earner — use a refund.
     if (['completed', 'verified'].includes(booking.status)) {
       return json({ error: 'This booking can no longer be cancelled.' }, 409);
+    }
+    // Once the worker has started ("I'm on site"), the booking is locked the same
+    // way the DB trigger trg_guard_started_booking_cancel locks the bookings row.
+    // Without this, a client-side race could void the hold on a still-active job.
+    if (booking.started_at) {
+      return json({ error: 'Work has already started; open a dispute instead.' }, 409);
     }
 
     const { data: payment, error: pErr } = await supabase

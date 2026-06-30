@@ -63,6 +63,22 @@ interface PubListing {
   location: string;
 }
 
+// Only render certificate images/links that are genuine Supabase storage public
+// URLs over https. A user can insert an arbitrary image_url via a direct API call
+// (the insert RLS only checks ownership), so block javascript:/data: schemes and
+// off-platform phishing links at render. The DB CHECK constraint is the durable guard.
+function safeCertUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return null;
+    if (!u.pathname.includes("/storage/v1/object/public/")) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -71,7 +87,6 @@ export default function PublicProfilePage() {
   const { postedJobs } = useJobs();
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [availability, setAvailabilityState] = useState<AvailabilityWindow[]>([]);
-  const [showAvailability, setShowAvailability] = useState(false);
   const [reviews, setReviews] = useState<PubReview[]>([]);
   const [listings, setListings] = useState<PubListing[]>([]);
   const [certs, setCerts] = useState<Certification[]>([]);
@@ -162,20 +177,16 @@ export default function PublicProfilePage() {
       setCerts(certRows);
       setLoading(false);
 
-      // Availability columns are revoked from `anon` by the profile column
-      // lockdown, so they live in a SEPARATE query that only runs for signed-in
-      // viewers. Kept out of the main select above so anonymous visitors never
-      // request ungranted columns (which would fail the whole profile query).
+      // Availability is private by default. It's served through the SECURITY DEFINER
+      // RPC profile_availability(), which returns windows ONLY when the owner opted in
+      // (show_availability) or the viewer is the owner — the opt-out is enforced in the
+      // DB, not just here. The raw column is revoked from `authenticated`, so only this
+      // gated RPC (execute-granted to signed-in users) can read it cross-user.
       if (user) {
         try {
-          const { data: avail } = await supabase
-            .from("profiles")
-            .select("availability, show_availability")
-            .eq("id", id)
-            .single();
+          const { data: avail } = await supabase.rpc("profile_availability", { uid: id });
           if (!active) return;
-          setAvailabilityState(Array.isArray(avail?.availability) ? (avail!.availability as AvailabilityWindow[]) : []);
-          setShowAvailability(avail?.show_availability === true);
+          setAvailabilityState(Array.isArray(avail) ? (avail as AvailabilityWindow[]) : []);
         } catch {
           /* degrade gracefully — just no availability shown */
         }
@@ -200,7 +211,7 @@ export default function PublicProfilePage() {
   );
   // Show availability only to a signed-in viewer, and only if the owner opted in
   // (or it's the owner viewing their own profile), and there are windows to show.
-  const canShowAvailability = !!user && (showAvailability || isSelf) && availDays.length > 0;
+  const canShowAvailability = !!user && availDays.length > 0;
 
   return (
     <div>
@@ -351,12 +362,14 @@ export default function PublicProfilePage() {
           <>
             <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-ink-muted">Certifications</h2>
             <div className="mb-6 space-y-2">
-              {certs.map((c) => (
+              {certs.map((c) => {
+                const certImg = safeCertUrl(c.image_url);
+                return (
                 <div key={c.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                  {c.image_url && (
-                    <a href={c.image_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                  {certImg && (
+                    <a href={certImg} target="_blank" rel="noopener noreferrer" className="shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={c.image_url} alt={c.title} className="size-12 rounded-lg object-cover" />
+                      <img src={certImg} alt={c.title} className="size-12 rounded-lg object-cover" />
                     </a>
                   )}
                   <div className="min-w-0">
@@ -366,7 +379,8 @@ export default function PublicProfilePage() {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}

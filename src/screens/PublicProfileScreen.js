@@ -31,7 +31,6 @@ export default function PublicProfileScreen({ route, navigation }) {
   const isSelf = user?.id === userId;
   const [profile, setProfile] = useState(null);
   const [availability, setAvailabilityState] = useState([]);
-  const [showAvailability, setShowAvailability] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [listings, setListings] = useState([]);
   const [certs, setCerts] = useState([]);
@@ -100,18 +99,15 @@ export default function PublicProfileScreen({ route, navigation }) {
     setCerts(certRows || []);
     setLoading(false);
 
-    // Availability columns are revoked from `anon` by the profile column lockdown,
-    // so they live in a SEPARATE query that only runs for signed-in viewers. Kept
-    // out of the main select above so anonymous visitors never request ungranted
-    // columns (which would fail the whole profile query).
+    // Availability is private by default. It's served through the SECURITY DEFINER
+    // RPC profile_availability(), which returns windows ONLY when the owner opted in
+    // (show_availability) or the viewer is the owner — the opt-out is enforced in the
+    // DB, not just here. The raw column is revoked, so anon/non-opted-in reads return
+    // nothing. Only call it for signed-in viewers (the RPC is execute-granted to them).
     if (user) {
       try {
-        const { data: avail } = await supabase
-          .from('profiles')
-          .select('availability, show_availability')
-          .eq('id', userId).single();
-        setAvailabilityState(Array.isArray(avail?.availability) ? avail.availability : []);
-        setShowAvailability(avail?.show_availability === true);
+        const { data: avail } = await supabase.rpc('profile_availability', { uid: userId });
+        setAvailabilityState(Array.isArray(avail) ? avail : []);
       } catch (_) { /* degrade gracefully — just no availability shown */ }
     }
   }, [userId, user]);
@@ -135,9 +131,9 @@ export default function PublicProfileScreen({ route, navigation }) {
   const availDays = DAYS
     .map((label, day) => ({ label, day, windows: windowsForDay(availability, day) }))
     .filter((d) => d.windows.length > 0);
-  // Show availability only to a signed-in viewer, and only if the owner opted in
-  // (or it's the owner viewing their own profile), and there are windows to show.
-  const canShowAvailability = !!user && (showAvailability || isSelf) && availDays.length > 0;
+  // Show availability only when the gated RPC returned windows (it already enforces
+  // opted-in-or-owner server-side), so any non-empty result is safe to display.
+  const canShowAvailability = !!user && availDays.length > 0;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>

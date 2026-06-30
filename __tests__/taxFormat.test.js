@@ -1,4 +1,4 @@
-import { categoryMeta, sourceMeta, buildCSV, buildTaxSummaryCSV } from '../src/lib/taxFormat';
+import { categoryMeta, sourceMeta, buildCSV, buildTaxSummaryCSV, csvCell } from '../src/lib/taxFormat';
 
 describe('taxFormat', () => {
   test('categoryMeta/sourceMeta fall back to "other"', () => {
@@ -18,6 +18,24 @@ describe('taxFormat', () => {
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain('12.50');
     expect(lines[2]).toContain('lunch ""client""'); // quote escaped
+  });
+
+  test('csvCell neutralizes formula-injection prefixes and escapes quotes', () => {
+    expect(csvCell('=HYPERLINK("http://evil")')).toBe('"\'=HYPERLINK(""http://evil"")"');
+    expect(csvCell('+1')).toBe('"\'+1"');
+    expect(csvCell('-2')).toBe('"\'-2"');
+    expect(csvCell('@cmd')).toBe('"\'@cmd"');
+    expect(csvCell('gloves')).toBe('"gloves"');   // ordinary text untouched (just quoted)
+    expect(csvCell(null)).toBe('""');
+  });
+
+  test('buildCSV neutralizes a formula-injection description', () => {
+    const csv = buildCSV([
+      { date: '2026-06-01', category: 'supplies', description: '=cmd|calc', amount: 1, receipt_url: '' },
+    ]);
+    // The dangerous cell is prefixed with a single quote so spreadsheets treat it as text.
+    expect(csv).toContain('"\'=cmd|calc"');
+    expect(csv).not.toContain(',=cmd|calc');
   });
 
   test('buildTaxSummaryCSV computes gross, expenses, and net profit', () => {

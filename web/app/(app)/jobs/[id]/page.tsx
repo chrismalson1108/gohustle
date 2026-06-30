@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle } from "lucide-react";
-import { CATEGORY_COLORS } from "@gohustlr/shared";
+import { CATEGORY_COLORS, findProhibited } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -69,10 +69,14 @@ export default function JobDetailPage() {
 
   const handleBook = async () => {
     if (!selectedSlot && hasAvailableSlot) return;
+    const note = applicationNote.trim() || null;
+    if (note && findProhibited(note)) {
+      showToast({ icon: "⚠️", title: "Check your wording", message: "Your note contains content that isn't allowed. Please edit it." });
+      return;
+    }
     setBooking(true);
     const slot = job.slots?.find((s) => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
-    const note = applicationNote.trim() || null;
     const ok = await bookJob(job.id, selectedSlot, slot?.label, counter, note);
     if (!ok) {
       // The booking didn't persist — don't award XP/challenges or claim success.

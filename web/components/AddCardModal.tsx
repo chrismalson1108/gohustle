@@ -68,6 +68,7 @@ export default function AddCardModal({
 function SaveCardForm({ replacing, onSaved }: { replacing: boolean; onSaved: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
+  const { detachPaymentMethod } = useJobs();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -86,6 +87,11 @@ function SaveCardForm({ replacing, onSaved }: { replacing: boolean; onSaved: () 
       return;
     }
     if (setupIntent && setupIntent.status === "succeeded") {
+      // On "Replace", the SetupIntent attached the NEW card — detach the previous
+      // card(s) so they don't linger on file. Keep the one we just added. Best-effort.
+      if (replacing && typeof setupIntent.payment_method === "string") {
+        try { await detachPaymentMethod(setupIntent.payment_method); } catch { /* non-fatal */ }
+      }
       onSaved();
     } else {
       setErr("The card couldn't be saved. Please try again.");

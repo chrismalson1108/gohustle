@@ -143,7 +143,7 @@ export default function GigForm({
 
   const submit = async () => {
     if (!valid || !user) return;
-    if (findProhibited(`${title} ${description}`)) {
+    if (findProhibited([title, description, ...tags, ...hazards].join(" "))) {
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;
     }

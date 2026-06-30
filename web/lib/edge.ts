@@ -64,8 +64,8 @@ export const stripeEdge = {
       "stripe-payment-method-status",
     ),
   getPayoutLoginLink: () => callEdgeFunction<{ url: string }>("stripe-payout-login-link"),
-  detachPaymentMethod: () =>
-    callEdgeFunction<{ ok?: boolean }>("stripe-detach-payment-method"),
+  detachPaymentMethod: (exceptPaymentMethodId?: string) =>
+    callEdgeFunction<{ ok?: boolean }>("stripe-detach-payment-method", { exceptPaymentMethodId }),
   createIdentitySession: () =>
     callEdgeFunction<{ url?: string; client_secret?: string }>(
       "stripe-create-identity-session",
