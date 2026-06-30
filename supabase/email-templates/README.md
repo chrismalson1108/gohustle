@@ -56,18 +56,14 @@ The header pulls the wordmark from an absolute URL (email can't use local/relati
 https://gohustlr.com/brand/wordmark-orange.png
 ```
 
-That file is already served by the web app (`web/public/brand/wordmark-orange.png`), so this
-works **once `gohustlr.com` is connected in Vercel**. Until the custom domain resolves, swap
-the URL in all files to the live Vercel host:
+`gohustlr.com` is **connected in Vercel and live (HTTPS)** as of 2026-06-30, so this URL resolves
+and the logo renders. (If you ever need the pre-domain preview host instead, it's
+`https://gohustle-git-master-go-hustlr.vercel.app/brand/wordmark-orange.png` — note `gohustle-chi`
+is a *different* project, don't use it.)
 
-```
-https://gohustle-chi.vercel.app/brand/wordmark-orange.png
-```
-
-**Graceful fallback is already built in:** the `<img>` carries a styled `alt="Hustlr"`, so if the
-image can't load (domain not connected yet, or a client blocks images) the header shows an
-on-brand orange "Hustlr" wordmark in text instead of a broken-image icon — the email never looks
-broken. For the polished PNG logo, confirm the URL loads in a browser before you go live.
+**Graceful fallback is also built in:** the `<img>` carries a styled `alt="Hustlr"`, so if a client
+blocks images the header shows an on-brand orange "Hustlr" wordmark in text instead of a
+broken-image icon — the email never looks broken.
 
 ---
 
@@ -175,13 +171,23 @@ account:
 
 ---
 
-## What needs your accounts (can't be automated)
+## Status (updated 2026-06-30)
 
-- ✅ Done here: the six branded templates, the rebranded `.edu` verification email, and this runbook.
-- 👤 You, in Resend: create the account, verify `gohustlr.com` (SPF/DKIM/DMARC DNS at Domain.com).
-- 👤 You, in Supabase: enter the Resend SMTP credentials + sender + Reply-To, raise the email rate
-  limit, set Email OTP Expiration to 3600s, and paste the six templates into the dashboard.
-- 👤 You, for the student-verify edge function: set the `STUDENT_VERIFY_FROM` secret to a verified
-  sender (e.g. `GoHustlr <mainmail@gohustlr.com>`) and redeploy — it now errors clearly instead of
-  sending from the `resend.dev` sandbox: `supabase functions deploy student-verify-start
-  --project-ref nfioebqsgmmzhbksxozc`.
+**✅ Done:**
+- The six branded templates + rebranded `.edu` verification email (this repo).
+- **Resend domain `gohustlr.com` VERIFIED** — DKIM/SPF/DMARC all green (DNS records live at Domain.com).
+- **`gohustlr.com` connected in Vercel + live over HTTPS** (apex → `216.150.1.1`).
+- **Supabase Auth → URL Configuration**: Site URL = `https://gohustlr.com`; redirect URLs now
+  `https://gohustlr.com/**`, the master-preview URL, and `gohustlr://**` (the stale
+  `gohustle-chi.vercel.app` Site URL was removed).
+
+**👤 Still yours (secrets/pastes can't be automated — all in Supabase → Auth → Emails):**
+1. **Set up custom SMTP** (the "Set up SMTP" button): create a Resend **API key**, then enter host
+   `smtp.resend.com`, port `465`, user `resend`, password = the API key; sender `mainmail@gohustlr.com`,
+   name `GoHustlr`. (Entering the API key is the step Claude is not permitted to do.)
+2. **Paste the six templates** + subjects (table in §1) into Auth → Emails → Templates, switch each
+   Body to **Source/HTML** view, paste the matching `.html`, Save.
+3. **Auth → Rate Limits**: raise the email send limit. **Auth → Email OTP Expiration**: 3600s.
+4. **Edge function**: set the `STUDENT_VERIFY_FROM` secret (e.g. `GoHustlr <mainmail@gohustlr.com>`)
+   and the `RESEND_API_KEY` secret, then redeploy: `supabase functions deploy student-verify-start
+   --project-ref nfioebqsgmmzhbksxozc`.
