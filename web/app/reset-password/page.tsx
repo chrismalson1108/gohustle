@@ -25,11 +25,30 @@ export default function ResetPasswordPage() {
     if (password.length < 8) return setError("Password must be at least 8 characters.");
     if (password !== confirm) return setError("Passwords don't match.");
     setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (error) return setError(error.message);
-    setDone(true);
-    setTimeout(() => router.replace("/browse"), 1500);
+    try {
+      // Time the call out: supabase-js auth calls share a cross-tab navigator
+      // lock and can hang forever if another open tab holds it — never leave the
+      // button spinning indefinitely.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("updateUser timed out")), 12000),
+      );
+      const { error } = await Promise.race([
+        supabase.auth.updateUser({ password }),
+        timeout,
+      ]);
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      setDone(true);
+      setTimeout(() => router.replace("/browse"), 1500);
+    } catch {
+      setError(
+        "That took too long to go through — your reset link may have expired. Close any other open GoHustlr tabs, then request a fresh reset link and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

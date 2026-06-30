@@ -36,11 +36,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) await loadOnboarding(session.user.id);
-      setLoading(false);
-    });
+    // Resolve the initial session. supabase-js serializes auth calls behind a
+    // navigator LockManager lock that is shared across every tab of the origin —
+    // if another tab is holding it (a backgrounded/stuck tab), getSession() can
+    // hang indefinitely. A confirmation/recovery `?code=` exchange can also fail.
+    // Either way we must never leave `loading` true forever (that freezes the
+    // whole app on the spinner), so we time the call out and always clear loading.
+    (async () => {
+      try {
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("getSession timed out")), 8000),
+        );
+        const {
+          data: { session },
+        } = await Promise.race([supabase.auth.getSession(), timeout]);
+        setSession(session);
+        if (session?.user) await loadOnboarding(session.user.id);
+      } catch (err) {
+        console.error("Auth init failed/timed out:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
 
     const {
       data: { subscription },
