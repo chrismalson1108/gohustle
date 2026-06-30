@@ -1,8 +1,9 @@
 // Starts .edu student verification: emails a 6-digit one-time code to the user's
 // school email. Stores only a hash of the code. Best-effort rate limiting.
 //
-// Requires the RESEND_API_KEY function secret (and optionally STUDENT_VERIFY_FROM,
-// e.g. "GoHustlr <verify@gohustlr.com>"). Until that's set the function returns a
+// Requires the RESEND_API_KEY and STUDENT_VERIFY_FROM function secrets. The FROM
+// must be a sender on a domain verified in Resend, e.g. "GoHustlr <mainmail@gohustlr.com>"
+// (never the onboarding@resend.dev sandbox). Until both are set the function returns a
 // clear `email_not_configured` error so the UI can explain what to do.
 //
 // Upgrade path: an authoritative provider (SheerID/VerifyPass) can later mark a
@@ -95,7 +96,13 @@ Deno.serve(async (req: Request) => {
         503,
       );
     }
-    const FROM = Deno.env.get('STUDENT_VERIFY_FROM') ?? 'GoHustlr <onboarding@resend.dev>';
+    const FROM = Deno.env.get('STUDENT_VERIFY_FROM');
+    if (!FROM) {
+      return json(
+        { error: 'email_not_configured', message: 'Student verification email sender is not set up yet (missing STUDENT_VERIFY_FROM).' },
+        503,
+      );
+    }
 
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -103,14 +110,47 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         from: FROM,
         to: [cleanEmail],
-        subject: 'Your GoHustlr student verification code',
+        subject: `${code} is your GoHustlr verification code`,
         html: `
-          <div style="font-family:system-ui,Arial,sans-serif;max-width:480px;margin:auto">
-            <h2 style="color:#6D28D9">Verify your student status</h2>
-            <p>Enter this code in GoHustlr to confirm your school email:</p>
-            <p style="font-size:32px;font-weight:800;letter-spacing:6px;color:#1E1B4B">${code}</p>
-            <p style="color:#6B7280;font-size:13px">This code expires in 15 minutes. If you didn't request it, you can ignore this email.</p>
-          </div>`,
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"></head>
+          <body style="margin:0; padding:0; background:#F7F3EC;">
+            <div style="display:none; max-height:0; overflow:hidden; opacity:0;">Your GoHustlr student verification code — expires in 15 minutes.</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7F3EC;">
+              <tr><td align="center" style="padding:32px 16px;">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#FFFFFF; border-radius:16px; overflow:hidden; border:1px solid #E8E2D5;">
+                  <tr><td align="center" style="background:#3F25FE; padding:30px 32px 26px;">
+                    <img src="https://gohustlr.com/brand/wordmark-orange.png" width="150" height="71" alt="Hustlr" style="display:block; width:150px; height:auto; margin:0 auto; color:#FFBC45; font-family:'Sora',Arial,sans-serif; font-size:30px; font-weight:700;">
+                  </td></tr>
+                  <tr><td style="height:4px; line-height:4px; font-size:0; background:#F21A06;">&nbsp;</td></tr>
+                  <tr><td style="padding:38px 44px 8px;">
+                    <h1 style="margin:0 0 16px; font-family:'Sora','Inter',Arial,sans-serif; font-size:27px; line-height:1.25; font-weight:700; color:#181231; letter-spacing:-0.02em;">Verify your student status</h1>
+                    <p style="margin:0; font-family:'Inter',Arial,sans-serif; font-size:16px; line-height:1.6; color:#5B5570;">Enter this code in GoHustlr to confirm your school email:</p>
+                  </td></tr>
+                  <tr><td align="center" style="padding:18px 44px 8px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7F3EC; border:1px solid #E8E2D5; border-radius:14px;">
+                      <tr><td align="center" style="padding:22px 16px; font-family:'Sora','Inter',Arial,sans-serif; font-size:40px; line-height:1.1; font-weight:700; letter-spacing:12px; text-indent:12px; color:#3F25FE;">${code}</td></tr>
+                    </table>
+                  </td></tr>
+                  <tr><td style="padding:18px 44px 6px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFF1D6; border-radius:12px;">
+                      <tr><td style="padding:14px 16px; font-family:'Inter',Arial,sans-serif; font-size:13px; line-height:1.6; color:#9A5B00;">This code expires in 15 minutes. GoHustlr will never ask you for it &mdash; don&rsquo;t share it with anyone. Didn&rsquo;t request it? You can safely ignore this email.</td></tr>
+                    </table>
+                  </td></tr>
+                  <tr><td style="padding:26px 44px 34px; border-top:1px solid #E8E2D5;">
+                    <p style="margin:0 0 8px; font-family:'Inter',Arial,sans-serif; font-size:13px; line-height:1.5;">
+                      <a href="mailto:mainmail@gohustlr.com" style="color:#3F25FE; text-decoration:none;">Help</a> &middot;
+                      <a href="https://gohustlr.com/legal/privacy" style="color:#3F25FE; text-decoration:none;">Privacy</a> &middot;
+                      <a href="https://gohustlr.com/legal/terms" style="color:#3F25FE; text-decoration:none;">Terms</a>
+                    </p>
+                    <p style="margin:0; font-family:'Inter',Arial,sans-serif; font-size:12px; line-height:1.6; color:#9A93AD;">GoHustlr &middot; The student gig marketplace<br>Questions? Email <a href="mailto:mainmail@gohustlr.com" style="color:#9A93AD; text-decoration:underline;">mainmail@gohustlr.com</a> &middot; &copy; 2026 GoHustlr</p>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body>
+          </html>`,
       }),
     });
     if (!emailRes.ok) {
