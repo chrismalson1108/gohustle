@@ -71,6 +71,8 @@ export function transformBooking(b) {
     beforePhotos: b.before_photos || [],
     completionPhotos: b.completion_photos || [],
     startsAt: b.starts_at || null,
+    startedAt: b.started_at || null,
+    cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
     earner: b.earner ? {
       id: b.earner.id,
