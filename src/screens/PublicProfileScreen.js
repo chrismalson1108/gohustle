@@ -82,7 +82,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
       supabase.from('profiles')
-        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status, availability')
+        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
         .eq('id', userId).single(),
       supabase.from('reviews')
         .select('id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
