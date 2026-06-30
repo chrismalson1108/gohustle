@@ -53,6 +53,18 @@ export default function HiringPage() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelFee = cancelTarget ? cancellationFeeFor(cancelTarget.id) : 0;
 
+  // The amount held on the poster's card for the booking being verified — mirrors the
+  // server's escrow math (counter-offer ?? listed pay, × hours for hourly). Shown in the
+  // verify modal so the poster sees exactly what's released to the earner.
+  const verifyHeldCents = (() => {
+    if (!verifyBooking) return 0;
+    const fullJob = postedJobs.find((j) => j.id === verifyBooking.jobId);
+    const baseRate = verifyBooking.counterOffer ?? Number(fullJob?.pay ?? verifyBooking.job?.pay ?? 0);
+    const isHourly = (fullJob?.payType ?? verifyBooking.job?.payType) === "hourly";
+    const hours = isHourly ? fullJob?.estimatedHours || 1 : 1;
+    return Math.round(Number(baseRate) * hours * 100);
+  })();
+
   const confirmCancel = async () => {
     if (!cancelTarget) return;
     setCancelBusy(true);
@@ -302,7 +314,7 @@ export default function HiringPage() {
         </p>
       </Modal>
 
-      <CompletionModal open={!!verifyBooking} booking={verifyBooking} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
+      <CompletionModal open={!!verifyBooking} booking={verifyBooking} heldCents={verifyHeldCents} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
       <AcceptPaymentModal
         booking={payBooking}
         onClose={() => setPayBooking(null)}

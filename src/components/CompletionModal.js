@@ -9,14 +9,6 @@ import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
 
-const PAYMENT_METHODS = [
-  { id: 'cash',   label: 'Cash',    icon: '💵',  ion: 'cash' },
-  { id: 'venmo',  label: 'Venmo',   icon: '💙',  ion: 'card' },
-  { id: 'zelle',  label: 'Zelle',   icon: '💜',  ion: 'card' },
-  { id: 'paypal', label: 'PayPal',  icon: '🅿️', ion: 'logo-paypal' },
-  { id: 'other',  label: 'Other',   icon: '💳',  ion: 'wallet' },
-];
-
 const RATING_LABELS = {
   5: { ion: 'star',           text: 'Excellent' },
   4: { ion: 'happy',          text: 'Great' },
@@ -50,7 +42,6 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const haptic = useHaptic();
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [tipCents, setTipCents] = useState(0);
   const [disputed, setDisputed] = useState(false);
   const [pct, setPct] = useState(0.5);
@@ -59,7 +50,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
 
   useEffect(() => {
     if (visible) {
-      setRating(5); setReviewText(''); setPaymentMethod('cash');
+      setRating(5); setReviewText('');
       setTipCents(0); setDisputed(false); setPct(0.5); setDisputeReason('');
     }
   }, [visible]);
@@ -76,7 +67,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
     setLoading(true);
     try {
       await onConfirm({
-        rating, reviewText, paymentMethod,
+        rating, reviewText, paymentMethod: 'card', // escrow — funds authorized to the card at accept
         tipCents: tipCents || 0,
         pct: disputed ? pct : 1,
         disputeReason: disputed ? (disputeReason || null) : null,
@@ -126,6 +117,14 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               </View>
             </View>
 
+            {/* Escrow confirmation — funds were authorized to the card at accept time */}
+            <View style={styles.escrowBox}>
+              <Ionicons name="shield-checkmark" size={16} color={colors.success} style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.escrowText}>
+                The payment you authorized is held securely on your card. Confirming releases it to {earnerName} (we keep a 10% platform fee) — no new charge.
+              </Text>
+            </View>
+
             {/* Before photos submitted by the earner */}
             {booking.beforePhotos?.length > 0 && (
               <>
@@ -170,28 +169,6 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               numberOfLines={3}
               textAlignVertical="top"
             />
-
-            {/* Payment method */}
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Payment Method</Text>
-            <View style={styles.payRow}>
-              {PAYMENT_METHODS.map(m => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.payChip, paymentMethod === m.id && styles.payChipActive]}
-                  onPress={() => { haptic.selection(); setPaymentMethod(m.id); }}
-                >
-                  <Ionicons
-                    name={m.ion}
-                    size={14}
-                    color={paymentMethod === m.id ? '#fff' : colors.textSecondary}
-                    style={styles.payIcon}
-                  />
-                  <Text style={[styles.payLabel, paymentMethod === m.id && styles.payLabelActive]}>
-                    {m.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
 
             {/* Tip */}
             <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Add a Tip (optional)</Text>
@@ -298,6 +275,12 @@ const styles = StyleSheet.create({
   earnerInitial: { color: '#fff', fontWeight: '900', fontSize: 20 },
   earnerName: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
   earnerJob: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  escrowBox: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: colors.successLight, borderRadius: 14,
+    padding: 12, marginBottom: 20,
+  },
+  escrowText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
   sectionLabel: {
     fontSize: 11, fontWeight: '800', color: colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10,

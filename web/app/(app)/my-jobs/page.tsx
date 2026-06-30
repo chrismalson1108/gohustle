@@ -157,9 +157,10 @@ export default function MyJobsPage() {
   };
   const titleOf = (b: Booking) => b.job?.title || jobs.find((j) => j.id === b.jobId)?.title || "Gig";
 
-  // A demoted, secondary "Message" affordance (jumps to the messages hub).
-  const MessageBtn = () => (
-    <Link href="/messages" className={buttonClasses("secondary", "sm")}>
+  // A demoted, secondary "Message" affordance — deep-links straight to the
+  // conversation with the poster for this booking (the messages hub auto-opens it).
+  const MessageBtn = ({ bookingId }: { bookingId: string }) => (
+    <Link href={`/messages?booking=${bookingId}`} className={buttonClasses("secondary", "sm")}>
       <MessageCircle className="size-4" /> Message
     </Link>
   );
@@ -169,7 +170,7 @@ export default function MyJobsPage() {
     if (b.status === "pending") {
       return (
         <div className="mt-3 flex items-center justify-between gap-2">
-          <MessageBtn />
+          <MessageBtn bookingId={b.id} />
           <button className="text-sm font-bold text-urgent hover:underline" onClick={() => cancelBooking(b.id)}>
             Withdraw
           </button>
@@ -185,7 +186,7 @@ export default function MyJobsPage() {
           </Button>
           <p className="mt-1.5 text-xs text-ink-muted">Next: tap when you arrive on site.</p>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <MessageBtn />
+            <MessageBtn bookingId={b.id} />
             <button className="text-sm font-bold text-urgent hover:underline" onClick={() => cancelBooking(b.id)}>
               Cancel
             </button>
@@ -205,7 +206,7 @@ export default function MyJobsPage() {
           </Button>
           <p className="mt-1.5 text-xs text-ink-muted">Next: mark the job done when you&apos;ve finished.</p>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <MessageBtn />
+            <MessageBtn bookingId={b.id} />
             <span className="text-xs italic text-ink-muted">
               Can&apos;t cancel — you&apos;ve started. Open a dispute if there&apos;s a problem.
             </span>
@@ -219,7 +220,7 @@ export default function MyJobsPage() {
       return (
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-ink-muted">You marked done — waiting for the poster to confirm.</span>
-          <MessageBtn />
+          <MessageBtn bookingId={b.id} />
         </div>
       );
     }
@@ -227,7 +228,7 @@ export default function MyJobsPage() {
       return (
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-ink-muted">Waiting for the poster to verify &amp; pay.</span>
-          <MessageBtn />
+          <MessageBtn bookingId={b.id} />
         </div>
       );
     }
@@ -275,7 +276,10 @@ export default function MyJobsPage() {
     }
     const passive =
       (b.status === "confirmed" && b.earnerDone && !b.posterDone) || b.status === "completed";
-    if (passive) return "rounded-2xl bg-canvas p-4 ring-1 ring-line/60";
+    // Passive = de-emphasized but still legible: white card, lighter ring, no shadow
+    // or accent border (vs. actionable). Previously bg-canvas, which matched the page
+    // background and made the card disappear.
+    if (passive) return "rounded-2xl bg-white p-4 ring-1 ring-line/70";
     return "rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70";
   };
 

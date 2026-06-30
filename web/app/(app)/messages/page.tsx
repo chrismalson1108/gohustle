@@ -89,6 +89,23 @@ export default function MessagesPage() {
     loadPreviews();
   }, [loadPreviews]);
 
+  // Deep-link: /messages?booking=<id> opens that conversation directly (e.g. the
+  // "Message" button on a booking). Runs once, when the matching conversation loads.
+  const openedDeepLink = useRef(false);
+  useEffect(() => {
+    if (openedDeepLink.current || !user) return;
+    const bId = new URLSearchParams(window.location.search).get("booking");
+    if (!bId) return;
+    const c = conversations.find((conv) => conv.bookingId === bId);
+    if (!c) return;
+    openedDeepLink.current = true;
+    setActive(c);
+    markConversationRead(user.id, bId).then(() => {
+      loadPreviews();
+      refreshUnread();
+    });
+  }, [conversations, user, loadPreviews, refreshUnread]);
+
   if (!user) return <FullPageSpinner />;
 
   return (

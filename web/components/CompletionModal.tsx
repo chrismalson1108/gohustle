@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ShieldCheck } from "lucide-react";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import RatingStars from "./ui/RatingStars";
 import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
-import { classNames, payLabel } from "@/lib/format";
+import { classNames, money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
 
 export interface VerifyArgs {
@@ -19,13 +19,6 @@ export interface VerifyArgs {
   disputeReason: string | null;
 }
 
-const PAYMENT_METHODS = [
-  { id: "cash", label: "💵 Cash" },
-  { id: "venmo", label: "💙 Venmo" },
-  { id: "zelle", label: "💜 Zelle" },
-  { id: "paypal", label: "🅿️ PayPal" },
-  { id: "other", label: "💳 Other" },
-];
 const TIPS = [0, 300, 500, 1000];
 const PCTS = [0.75, 0.5, 0.25];
 const RATING_TEXT: Record<number, string> = { 5: "Excellent", 4: "Great", 3: "Good", 2: "Fair", 1: "Poor" };
@@ -48,17 +41,18 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 export default function CompletionModal({
   open,
   booking,
+  heldCents = 0,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   booking: Booking | null;
+  heldCents?: number;
   onClose: () => void;
   onConfirm: (args: VerifyArgs) => Promise<void>;
 }) {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [tipCents, setTipCents] = useState(0);
   const [disputed, setDisputed] = useState(false);
   const [pct, setPct] = useState(0.5);
@@ -69,7 +63,6 @@ export default function CompletionModal({
     if (open) {
       setRating(5);
       setReviewText("");
-      setPaymentMethod("cash");
       setTipCents(0);
       setDisputed(false);
       setPct(0.5);
@@ -87,7 +80,7 @@ export default function CompletionModal({
       await onConfirm({
         rating,
         reviewText,
-        paymentMethod,
+        paymentMethod: "card", // funds were authorized to the card at accept (escrow); no method to choose
         tipCents: tipCents || 0,
         pct: disputed ? pct : 1,
         disputeReason: disputed ? disputeReason || null : null,
@@ -123,6 +116,19 @@ export default function CompletionModal({
         </div>
       </div>
 
+      {heldCents > 0 && (
+        <div className="mb-5 rounded-2xl bg-success/10 p-3.5 ring-1 ring-success/25">
+          <p className="flex items-center gap-1.5 text-sm font-extrabold text-success">
+            <ShieldCheck className="size-4" /> {money(heldCents, { cents: true })} held on your card
+          </p>
+          {!disputed && (
+            <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+              Confirming releases <b className="text-ink">{money(Math.round(heldCents * 0.9), { cents: true })}</b> to {earnerName} (we keep a 10% platform fee). No new charge — this is the amount you already authorized when you accepted.
+            </p>
+          )}
+        </div>
+      )}
+
       {booking.beforePhotos?.length > 0 && (
         <div className="mb-5">
           <Label>Before</Label>
@@ -155,15 +161,6 @@ export default function CompletionModal({
 
       <Label className="mt-5">Leave a review</Label>
       <Textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder={`How did ${earnerName} do?`} className="min-h-[80px]" />
-
-      <Label className="mt-5">Payment method</Label>
-      <div className="flex flex-wrap gap-2">
-        {PAYMENT_METHODS.map((m) => (
-          <Chip key={m.id} active={paymentMethod === m.id} onClick={() => setPaymentMethod(m.id)}>
-            {m.label}
-          </Chip>
-        ))}
-      </div>
 
       <Label className="mt-5">Add a tip (optional)</Label>
       <div className="flex flex-wrap gap-2">
