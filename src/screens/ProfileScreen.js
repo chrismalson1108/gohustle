@@ -236,64 +236,6 @@ export default function ProfileScreen({ navigation }) {
         <Stat label="Avg Rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Badges</Text>
-        <BadgeGrid badges={badges} />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Reviews I've Received</Text>
-        {myReviews.length > 0 && (() => {
-          const w = myReviews.filter(r => r.role === 'earner');
-          const c = myReviews.filter(r => r.role === 'poster');
-          const a = (arr) => arr.length ? (arr.reduce((s, r) => s + (r.rating || 0), 0) / arr.length).toFixed(1) : '—';
-          return (
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownItem}>As a worker: <Text style={styles.breakdownVal}>{a(w)}</Text> ({w.length})</Text>
-              <Text style={styles.breakdownItem}>As a client: <Text style={styles.breakdownVal}>{a(c)}</Text> ({c.length})</Text>
-            </View>
-          );
-        })()}
-        {myReviews.length === 0 ? (
-          <View style={styles.noReviewsCard}>
-            <Ionicons name="star-outline" size={30} color={colors.gold} style={styles.noReviewsIcon} />
-            <Text style={styles.noReviewsTitle}>No reviews yet</Text>
-            <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
-          </View>
-        ) : (
-          myReviews.map(r => (
-            <View key={r.id} style={styles.reviewCard}>
-              <View style={styles.reviewHeader}>
-                <Avatar
-                  url={r.reviewer?.avatar_url}
-                  initial={r.reviewer?.avatar_initial || r.author?.[0]}
-                  size={36}
-                  fontSize={14}
-                  style={{ marginRight: 10 }}
-                />
-                <View style={styles.reviewerInfo}>
-                  <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
-                  <View style={styles.reviewStarsRow}>
-                    {[1,2,3,4,5].map(s => (
-                      <Ionicons
-                        key={s}
-                        name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
-                        size={12}
-                        color={s <= Math.round(r.rating) ? colors.gold : colors.border}
-                        style={styles.reviewStar}
-                      />
-                    ))}
-                    <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
-                  </View>
-                </View>
-                {r.date && <Text style={styles.reviewDate}>{r.date}</Text>}
-              </View>
-              {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
-            </View>
-          ))
-        )}
-      </View>
-
       {/* Manage your gigs — lives in the Gigs tab now */}
       {(postedJobs.length > 0 || posterBookings?.length > 0) && (
         <TouchableOpacity
@@ -478,6 +420,64 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.settingsBtnText}>Edit Profile & Settings</Text>
         </View>
       </TouchableOpacity>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Badges</Text>
+        <BadgeGrid badges={badges} />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Reviews I've Received</Text>
+        {myReviews.length > 0 && (() => {
+          const w = myReviews.filter(r => r.role === 'earner');
+          const c = myReviews.filter(r => r.role === 'poster');
+          const a = (arr) => arr.length ? (arr.reduce((s, r) => s + (r.rating || 0), 0) / arr.length).toFixed(1) : '—';
+          return (
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownItem}>As a worker: <Text style={styles.breakdownVal}>{a(w)}</Text> ({w.length})</Text>
+              <Text style={styles.breakdownItem}>As a client: <Text style={styles.breakdownVal}>{a(c)}</Text> ({c.length})</Text>
+            </View>
+          );
+        })()}
+        {myReviews.length === 0 ? (
+          <View style={styles.noReviewsCard}>
+            <Ionicons name="star-outline" size={30} color={colors.gold} style={styles.noReviewsIcon} />
+            <Text style={styles.noReviewsTitle}>No reviews yet</Text>
+            <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
+          </View>
+        ) : (
+          myReviews.map(r => (
+            <View key={r.id} style={styles.reviewCard}>
+              <View style={styles.reviewHeader}>
+                <Avatar
+                  url={r.reviewer?.avatar_url}
+                  initial={r.reviewer?.avatar_initial || r.author?.[0]}
+                  size={36}
+                  fontSize={14}
+                  style={{ marginRight: 10 }}
+                />
+                <View style={styles.reviewerInfo}>
+                  <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
+                  <View style={styles.reviewStarsRow}>
+                    {[1,2,3,4,5].map(s => (
+                      <Ionicons
+                        key={s}
+                        name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
+                        size={12}
+                        color={s <= Math.round(r.rating) ? colors.gold : colors.border}
+                        style={styles.reviewStar}
+                      />
+                    ))}
+                    <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
+                  </View>
+                </View>
+                {r.date && <Text style={styles.reviewDate}>{r.date}</Text>}
+              </View>
+              {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
+            </View>
+          ))
+        )}
+      </View>
 
       <View style={styles.legalSection}>
         <Text style={styles.legalHeader}>Legal & Support</Text>

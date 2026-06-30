@@ -8,7 +8,6 @@ import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../components/GradientHeader';
 import JobCard from '../components/JobCard';
 import JobsMap from '../components/JobsMap';
-import XPBar from '../components/XPBar';
 import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
@@ -57,7 +56,7 @@ function matchesPay(job, payRange) {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, levelInfo, xp, school, skills } = useUser();
+  const { name, streakDays, school, skills } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [selectedCat, setSelectedCat] = useState('all');
@@ -204,9 +203,6 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.streakNum}>{streakDays}</Text>
             <Text style={styles.streakLabel}>day streak</Text>
           </View>
-        </View>
-        <View style={styles.xpWrap}>
-          <XPBar levelInfo={levelInfo} xp={xp} dark />
         </View>
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
@@ -374,8 +370,7 @@ const styles = StyleSheet.create({
   streakFire: { fontSize: 22 },
   streakNum: { fontSize: 22, fontWeight: '900', color: '#fff', lineHeight: 26 },
   streakLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
-  xpWrap: { marginBottom: 16 },
-  searchRow: { flexDirection: 'row', alignItems: 'center' },
+  searchRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 14,
