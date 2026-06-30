@@ -16,7 +16,7 @@ export async function fetchExpenses(userId) {
   return data || [];
 }
 
-export async function addExpense(userId, { amount, category, description, date, receiptUrl }) {
+export async function addExpense(userId, { amount, category, description, date, receiptUrl, bookingId }) {
   const { data, error } = await supabase
     .from('expenses')
     .insert({
@@ -26,11 +26,30 @@ export async function addExpense(userId, { amount, category, description, date, 
       description: description || null,
       date,
       receipt_url: receiptUrl || null,
+      booking_id: bookingId || null,
     })
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+// Group expenses by their tied booking_id and sum amounts. `bookings` (from
+// useJobs) supplies the job title for display. Returns an array sorted by total
+// desc; entries with no matching booking are skipped.
+export function expensesByJob(expenses, bookings) {
+  const titleFor = {};
+  (bookings || []).forEach(b => { if (b?.id) titleFor[b.id] = b.job?.title || 'Untitled gig'; });
+  const groups = {};
+  (expenses || []).forEach(e => {
+    if (!e.booking_id) return;
+    if (!groups[e.booking_id]) {
+      groups[e.booking_id] = { bookingId: e.booking_id, title: titleFor[e.booking_id] || 'Gig', total: 0, count: 0 };
+    }
+    groups[e.booking_id].total += Number(e.amount || 0);
+    groups[e.booking_id].count += 1;
+  });
+  return Object.values(groups).sort((a, b) => b.total - a.total);
 }
 
 export async function deleteExpense(id) {
