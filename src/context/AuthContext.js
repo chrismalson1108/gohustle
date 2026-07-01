@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import { unregisterPushToken } from '../lib/push';
 import { track } from '../lib/analytics';
 import { checkNeedsAcceptance } from '../lib/legal';
+
+// Dismiss any lingering auth browser session on cold start (Android edge case).
+WebBrowser.maybeCompleteAuthSession();
 
 const AuthContext = createContext(null);
 
@@ -86,6 +91,58 @@ export function AuthProvider({ children }) {
     return true;
   };
 
+  const signInWithGoogle = async () => {
+    setAuthError(null);
+    try {
+      // gohustlr://auth-callback in a dev/standalone build (the app scheme).
+      const redirectTo = Linking.createURL('auth-callback');
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true, // we open the URL ourselves via WebBrowser
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+      if (error || !data?.url) {
+        setAuthError(error?.message || 'Could not start Google sign-in.');
+        return false;
+      }
+
+      // Open Google's consent page in a secure in-app browser and wait for the
+      // redirect back to our scheme.
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success' || !result.url) {
+        // User dismissed the browser or cancelled — not an error worth surfacing.
+        return false;
+      }
+
+      // PKCE: the redirect carries a ?code we exchange for a real session.
+      const { queryParams } = Linking.parse(result.url);
+      if (queryParams?.error) {
+        setAuthError(queryParams.error_description || 'Google sign-in was cancelled.');
+        return false;
+      }
+      const code = queryParams?.code;
+      if (!code) {
+        setAuthError('Google sign-in did not return a valid response. Please try again.');
+        return false;
+      }
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) {
+        setAuthError(exchangeError.message);
+        return false;
+      }
+      // onAuthStateChange establishes the session + onboarding gate from here.
+      setPendingEmail(null);
+      track('sign_in');
+      return true;
+    } catch (err) {
+      setAuthError(err?.message || 'Google sign-in failed. Please try again.');
+      return false;
+    }
+  };
+
   const signUp = async (email, password, name, referralCode) => {
     setAuthError(null);
     const { data, error } = await supabase.auth.signUp({
@@ -157,6 +214,7 @@ export function AuthProvider({ children }) {
       needsTermsAcceptance: !!session && onboardingDone && needsTerms,
       markTermsAccepted,
       signIn,
+      signInWithGoogle,
       signUp,
       resetPassword,
       resendConfirmation,

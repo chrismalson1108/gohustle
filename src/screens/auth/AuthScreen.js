@@ -11,11 +11,47 @@ import { useAuth } from '../../context/AuthContext';
 import { fetchCurrentDocs } from '../../lib/legal';
 import { colors, gradients, shadows } from '../../theme';
 
+// Password field with a show/hide (eye) toggle. Encapsulates its own reveal state.
+function PasswordField({ label, value, onChangeText, placeholder, returnKeyType, onSubmitEditing, textContentType, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.pwWrap}>
+        <TextInput
+          style={[styles.input, styles.pwInput]}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={!show}
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType={textContentType}
+          autoComplete={autoComplete}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
+        />
+        <TouchableOpacity
+          onPress={() => setShow(s => !s)}
+          style={styles.pwEye}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel={show ? 'Hide password' : 'Show password'}
+        >
+          <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // tab: 'signin' | 'signup' | 'forgot'
 export default function AuthScreen() {
-  const { signIn, signUp, resetPassword, resendConfirmation, clearPending, pendingEmail, authError, clearError } = useAuth();
+  const { signIn, signInWithGoogle, signUp, resetPassword, resendConfirmation, clearPending, pendingEmail, authError, clearError } = useAuth();
   const insets = useSafeAreaInsets();
   const [tab, setTab]           = useState('signin');
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -79,6 +115,16 @@ export default function AuthScreen() {
       await signUp(email.trim(), password, name.trim(), referral.trim());
     }
     setLoading(false);
+  };
+
+  const handleGoogle = async () => {
+    Keyboard.dismiss();
+    setLocalError('');
+    setSuccessMsg('');
+    setGoogleLoading(true);
+    await signInWithGoogle();
+    // On success onAuthStateChange swaps this screen out; on cancel/error we stay.
+    setGoogleLoading(false);
   };
 
   const handleResend = async () => {
@@ -210,34 +256,28 @@ export default function AuthScreen() {
           </View>
 
           {tab !== 'forgot' && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={tab === 'signup' ? 'At least 6 characters' : '••••••••'}
-                placeholderTextColor={colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                returnKeyType={tab === 'signin' ? 'go' : 'next'}
-                onSubmitEditing={tab === 'signin' ? handleSubmit : undefined}
-              />
-            </View>
+            <PasswordField
+              label="Password"
+              placeholder={tab === 'signup' ? 'At least 8 characters' : '••••••••'}
+              value={password}
+              onChangeText={setPassword}
+              textContentType={tab === 'signup' ? 'newPassword' : 'password'}
+              autoComplete={tab === 'signup' ? 'password-new' : 'password'}
+              returnKeyType={tab === 'signin' ? 'go' : 'next'}
+              onSubmitEditing={tab === 'signin' ? handleSubmit : undefined}
+            />
           )}
 
           {tab === 'signup' && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Confirm Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Re-enter password"
-                placeholderTextColor={colors.textMuted}
-                value={confirmPw}
-                onChangeText={setConfirmPw}
-                secureTextEntry
-                returnKeyType="next"
-              />
-            </View>
+            <PasswordField
+              label="Confirm Password"
+              placeholder="Re-enter password"
+              value={confirmPw}
+              onChangeText={setConfirmPw}
+              textContentType="newPassword"
+              autoComplete="password-new"
+              returnKeyType="next"
+            />
           )}
 
           {tab === 'signup' && (
@@ -290,6 +330,29 @@ export default function AuthScreen() {
               }
             </LinearGradient>
           </TouchableOpacity>
+
+          {tab !== 'forgot' && (
+            <>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+              <TouchableOpacity
+                onPress={handleGoogle}
+                disabled={googleLoading || loading}
+                activeOpacity={0.85}
+                style={styles.googleBtn}
+              >
+                {googleLoading
+                  ? <ActivityIndicator color={colors.primary} />
+                  : <>
+                      <Ionicons name="logo-google" size={20} color="#4285F4" style={{ marginRight: 10 }} />
+                      <Text style={styles.googleText}>Continue with Google</Text>
+                    </>}
+              </TouchableOpacity>
+            </>
+          )}
 
           {tab === 'signin' && (
             <>
@@ -382,6 +445,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 13,
     fontSize: 15, color: colors.textPrimary,
   },
+  pwWrap: { position: 'relative', justifyContent: 'center' },
+  pwInput: { paddingRight: 48 },
+  pwEye: { position: 'absolute', right: 12, padding: 4 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: {
+    marginHorizontal: 12, fontSize: 12, fontWeight: '800',
+    color: colors.textMuted, letterSpacing: 0.6,
+  },
+  googleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 15,
+    borderWidth: 1.5, borderColor: colors.border, marginTop: 14,
+  },
+  googleText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4, marginBottom: 4 },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,

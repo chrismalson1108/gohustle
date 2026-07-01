@@ -10,6 +10,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
+    // No URL-based session detection on native — deep links are handled manually.
     detectSessionInUrl: false,
+    // PKCE so the Google OAuth redirect returns a ?code we exchange for a session
+    // (exchangeCodeForSession). Does not affect email/password sign-in.
+    flowType: 'pkce',
   },
 });

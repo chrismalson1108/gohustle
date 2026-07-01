@@ -16,6 +16,7 @@ interface AuthValue {
   needsTermsAcceptance: boolean;
   markTermsAccepted: () => void;
   signIn: (email: string, password: string) => Promise<boolean>;
+  signInWithGoogle: () => Promise<boolean>;
   signUp: (email: string, password: string, name: string, referralCode?: string) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
   resendConfirmation: (email?: string) => Promise<boolean>;
@@ -125,6 +126,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true;
   };
 
+  const signInWithGoogle: AuthValue["signInWithGoogle"] = async () => {
+    setAuthError(null);
+    // OAuth (PKCE): Supabase redirects to Google, then back to /auth/callback,
+    // where detectSessionInUrl exchanges the ?code and routes the user in.
+    const redirectTo =
+      typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        // Always show the account chooser so a wrong-account login is recoverable.
+        queryParams: { prompt: "select_account" },
+      },
+    });
+    if (error) {
+      setAuthError(error.message);
+      return false;
+    }
+    // On success the browser is already navigating to Google — nothing more to do.
+    return true;
+  };
+
   const signUp: AuthValue["signUp"] = async (email, password, name, referralCode) => {
     setAuthError(null);
     const { data, error } = await supabase.auth.signUp({
@@ -228,6 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         needsTermsAcceptance: !!session && onboardingDone && needsTerms,
         markTermsAccepted,
         signIn,
+        signInWithGoogle,
         signUp,
         resetPassword,
         resendConfirmation,

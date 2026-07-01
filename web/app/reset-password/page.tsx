@@ -7,7 +7,8 @@ import { KeyRound } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Logo from "@/components/Logo";
 import Button from "@/components/ui/Button";
-import { Input, Label, FieldError } from "@/components/ui/Field";
+import { Label, FieldError } from "@/components/ui/Field";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 // Reached via the password-reset email link. detectSessionInUrl establishes a
 // temporary recovery session; we then let the user set a new password.
@@ -67,11 +68,11 @@ export default function ResetPasswordPage() {
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <Label>New password</Label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
             </div>
             <div>
               <Label>Confirm password</Label>
-              <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" />
+              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
             </div>
             <FieldError>{error}</FieldError>
             <Button type="submit" size="lg" fullWidth loading={busy}>
