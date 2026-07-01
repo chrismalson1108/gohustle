@@ -234,7 +234,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Use 'local' scope: it clears the stored session WITHOUT the server round-trip
+    // that 'global' makes. That global call can hang during a Supabase outage and
+    // leave the sign-out button stuck forever (observed during an incident). Local
+    // scope reliably signs the user out on this device. Belt-and-suspenders: time it
+    // out and drop the in-memory session so the UI always routes back to /login.
+    try {
+      await Promise.race([
+        supabase.auth.signOut({ scope: "local" }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("signOut timed out")), 5000),
+        ),
+      ]);
+    } catch {
+      setSession(null);
+    }
   };
 
   const clearError = () => setAuthError(null);

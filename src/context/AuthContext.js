@@ -197,8 +197,25 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    if (session?.user?.id) await unregisterPushToken(session.user.id);
-    await supabase.auth.signOut();
+    // Best-effort push-token cleanup, time-boxed so a stalled network call (e.g.
+    // during a Supabase outage) can't block sign-out. Fire-and-forget.
+    if (session?.user?.id) {
+      Promise.race([
+        unregisterPushToken(session.user.id),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]).catch(() => {});
+    }
+    // 'local' scope avoids the hangable 'global' server round-trip that can freeze
+    // sign-out during an outage; it clears the stored session and fires
+    // onAuthStateChange(null). Time it out and force-clear as a last resort.
+    try {
+      await Promise.race([
+        supabase.auth.signOut({ scope: 'local' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timed out')), 5000)),
+      ]);
+    } catch {
+      setSession(null);
+    }
   };
 
   const clearError = () => setAuthError(null);
