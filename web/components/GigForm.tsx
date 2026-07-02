@@ -145,10 +145,18 @@ export default function GigForm({
   const removeHazard = (h: string) => setHazards(hazards.filter((x) => x !== h));
 
   const effectiveCategory = category === "other" ? customCategory : category;
-  const valid = title && effectiveCategory && pay && location && description;
+  // pay must parse to a positive finite number — "." or "abc" would serialize to
+  // null and fail the NOT NULL insert (previously surfaced as a false "posted").
+  const payValue = parseFloat(pay);
+  const payValid = Number.isFinite(payValue) && payValue > 0;
+  const valid = title && effectiveCategory && payValid && location && description;
 
   const submit = async () => {
-    if (!valid || !user) return;
+    if (!user) return;
+    if (!valid) {
+      onError?.(!payValid && pay ? "Enter a valid pay amount." : "Please fill in all required fields.");
+      return;
+    }
     if (findProhibited([title, description, ...tags, ...hazards].join(" "))) {
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;

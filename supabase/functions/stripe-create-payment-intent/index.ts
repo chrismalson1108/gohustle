@@ -44,17 +44,23 @@ Deno.serve(async (req: Request) => {
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
     if (booking.job.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
-    // A card hold is only created while accepting — reject settled/closed bookings
-    // so a poster can't place a fresh hold on an already-finished or cancelled gig.
-    if (!['pending', 'confirmed'].includes(booking.status)) {
-      return json({ error: 'This booking can no longer take a payment hold.' }, 409);
-    }
-    // Never destructively overwrite a payment that's already past the authorized
-    // stage (captured/cancelled/refunded) — that would orphan a settled record.
+    // Payment state on this booking, if any — drives both the status gate and the
+    // reconcile-vs-recreate logic further down.
     const { data: existingPay } = await supabase
       .from('payments').select('status, amount_cents, payment_intent_id').eq('booking_id', bookingId).maybeSingle();
-    if (existingPay && !['authorized', 'failed'].includes(existingPay.status)) {
+    // A settled payment (captured/refunded/…) can never be re-held; only an
+    // outstanding, failed, or lapsed(cancelled) hold is re-holdable.
+    if (existingPay && !['authorized', 'failed', 'cancelled'].includes(existingPay.status)) {
       return json({ error: 'This booking already has a settled payment.' }, 409);
+    }
+    // Holds are placed while accepting (pending/confirmed). Also permit a RECOVERY
+    // re-hold on a COMPLETED booking whose prior hold lapsed (cancelled/failed) —
+    // otherwise finished work whose ~7-day authorization expired could never be paid.
+    const isRecovery = ['cancelled', 'failed'].includes(existingPay?.status ?? '');
+    const canHold = ['pending', 'confirmed'].includes(booking.status)
+      || (booking.status === 'completed' && isRecovery);
+    if (!canHold) {
+      return json({ error: 'This booking can no longer take a payment hold.' }, 409);
     }
 
     // Earner must have a Connect account
@@ -122,16 +128,41 @@ Deno.serve(async (req: Request) => {
       { apiVersion: '2024-06-20' },
     );
 
-    // If a prior hold exists at a DIFFERENT amount (e.g. the poster edited pay then
-    // re-accepted), cancel it first. The new intent has a different idempotency key,
-    // so the old authorization would otherwise be orphaned on the poster's card until
-    // Stripe auto-expires it (~7 days), and the single payments row would point only
-    // at the new intent. A same-amount retry keeps the same idempotency key below, so
-    // it reuses the existing intent and this cancel is skipped.
-    if (existingPay?.payment_intent_id && existingPay.status === 'authorized'
-        && (existingPay.amount_cents ?? 0) !== amountCents) {
-      try { await stripe.paymentIntents.cancel(existingPay.payment_intent_id); }
-      catch (_) { /* already captured / cancelled / expired — ignore */ }
+    // Reconcile with any existing hold BEFORE creating a new PaymentIntent. If a real
+    // live hold (or a not-yet-confirmed PI) at the SAME amount already exists, return
+    // IT instead of creating a second PI. Creating a new one would orphan the genuine
+    // requires_capture hold — it then expires and refunds the poster while the payments
+    // row points at an empty PI, i.e. an escrow-bypass on an already-confirmed booking
+    // (the 24h idempotency key only masks this within its window). Only re-create when
+    // the amount actually changed (re-priced booking) or the old hold is truly gone.
+    if (existingPay?.payment_intent_id && existingPay.status === 'authorized') {
+      let existingPI: Stripe.PaymentIntent | null = null;
+      try { existingPI = await stripe.paymentIntents.retrieve(existingPay.payment_intent_id); }
+      catch (_) { /* not retrievable — fall through and create a fresh one */ }
+      const liveStatuses = ['requires_capture', 'requires_confirmation', 'requires_payment_method', 'requires_action', 'processing'];
+      if (existingPI && liveStatuses.includes(existingPI.status)) {
+        if ((existingPay.amount_cents ?? 0) === amountCents) {
+          // Same amount, still live → hand back the existing client secret (idempotent).
+          let savedCardExisting: { id: string; brand: string | null; last4: string | null } | null = null;
+          try {
+            const pms = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+            const pm = pms.data[0];
+            if (pm) savedCardExisting = { id: pm.id, brand: pm.card?.brand ?? null, last4: pm.card?.last4 ?? null };
+          } catch (_) { /* no saved card */ }
+          return json({
+            clientSecret: existingPI.client_secret,
+            customerId,
+            ephemeralKey: ephemeralKey.secret,
+            amountCents,
+            earnerAmountCents,
+            feeCents,
+            savedCard: savedCardExisting,
+          });
+        }
+        // Amount changed (re-priced) → cancel the stale hold before creating the new one.
+        try { await stripe.paymentIntents.cancel(existingPay.payment_intent_id); }
+        catch (_) { /* already captured / cancelled / expired — ignore */ }
+      }
     }
 
     // PaymentIntent with manual capture (funds held, not charged until capture).

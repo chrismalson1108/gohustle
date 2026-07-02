@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase, purgePersistedSession } from "./supabaseClient";
+import { supabase, purgePersistedSession, getRecoveryClient } from "./supabaseClient";
 import { cacheClearAll } from "./cache";
 import { track } from "./analytics";
 import { checkNeedsAcceptance } from "./legal";
@@ -239,7 +239,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
     const redirectTo =
       typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    // Use the implicit-flow recovery client so the emailed link isn't PKCE-bound to
+    // this browser — the user can open it on their phone / another browser and the
+    // hash token still establishes a session on /reset-password.
+    const { error } = await getRecoveryClient().auth.resetPasswordForEmail(email, { redirectTo });
     if (error) {
       setAuthError(error.message);
       return false;

@@ -905,7 +905,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }
     if (error) {
       console.warn("Update job error:", error.message);
-      return;
+      captureError(error, { op: "updateJob", jobId });
+      throw new Error(error.message || "Couldn't save your changes.");
     }
 
     const slots = d.slots as Array<{ label: string; taken?: boolean; startsAt?: string | null }> | undefined;
@@ -927,7 +928,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const deleteJob: JobsValue["deleteJob"] = async (jobId) => {
     dispatch({ type: "DELETE_JOB", jobId });
-    await supabase.from("jobs").update({ status: "cancelled" }).eq("id", jobId);
+    const { error } = await supabase.from("jobs").update({ status: "cancelled" }).eq("id", jobId);
+    if (error) {
+      // Roll the optimistic removal back so the gig doesn't vanish from the UI
+      // while still live in the DB, then surface the failure to the caller.
+      fetchJobs();
+      captureError(error, { op: "deleteJob", jobId });
+      throw new Error(error.message || "Couldn't delete the gig.");
+    }
     cacheSet(JOBS_CACHE, null);
   };
 
@@ -982,7 +990,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (error || !newJob) {
       console.warn("Job insert error:", error?.message);
       captureError(error || new Error("Job insert failed"), { op: "addJob" });
-      return;
+      throw new Error(error?.message || "Couldn't post your gig. Please try again.");
     }
     track("gig_posted", { category: d.category, payType: d.payType });
 

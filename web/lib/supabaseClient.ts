@@ -32,6 +32,29 @@ export function getSupabase(): SupabaseClient {
 
 export const supabase = getSupabase();
 
+// Password reset must NOT use PKCE: a PKCE recovery link stores a code-verifier in
+// the REQUESTING browser's localStorage, so opening the emailed link on any other
+// device/browser (phone mail app, different default browser, private window) would
+// dead-end at "Auth session missing". This implicit-flow client is used ONLY for
+// resetPasswordForEmail, so the emailed link carries a hash token any browser can
+// consume. The main client's detectSessionInUrl already handles the implicit
+// recovery callback on /reset-password regardless of its own flowType.
+let _recoveryClient: SupabaseClient | null = null;
+export function getRecoveryClient(): SupabaseClient {
+  if (!_recoveryClient) {
+    _recoveryClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        flowType: "implicit",
+        storageKey: "sb-recovery-noop", // isolated; never written (persistSession false)
+      },
+    });
+  }
+  return _recoveryClient;
+}
+
 // supabase-js persists the session under `sb-<project-ref>-auth-token` (its
 // default storageKey). Exposed so sign-out can purge it directly as a failsafe
 // when the SDK call is slow — never change this derivation or existing users

@@ -1,7 +1,8 @@
 // Stripe webhook handler — keeps DB in sync with payment events.
 // Register this URL in Stripe Dashboard → Developers → Webhooks:
 //   https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook
-// Required events: payment_intent.succeeded, payment_intent.payment_failed, account.updated,
+// Required events: payment_intent.succeeded, payment_intent.payment_failed,
+//   payment_intent.canceled, account.updated,
 //   identity.verification_session.verified, identity.verification_session.requires_input,
 //   identity.verification_session.canceled
 import Stripe from 'npm:stripe@15';
@@ -86,6 +87,35 @@ Deno.serve(async (req: Request) => {
           const { data: bk } = await supabase
             .from('bookings').select('status').eq('id', payment.booking_id).single();
           if (bk && ['pending', 'confirmed'].includes(bk.status)) {
+            await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
+          }
+        }
+        break;
+      }
+
+      case 'payment_intent.canceled': {
+        // A manual-capture authorization was canceled — most importantly, Stripe
+        // AUTO-CANCELS an uncaptured hold ~7 days after it's placed. Without this
+        // handler the payments row stayed 'authorized' forever, both UIs kept saying
+        // "funds held", and a later capture threw a generic 500 with no recovery.
+        const pi = event.data.object as Stripe.PaymentIntent;
+        // Don't clobber a row that already settled (captured) — only an outstanding
+        // authorization can lapse into canceled.
+        await supabase.from('payments')
+          .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+          .eq('payment_intent_id', pi.id)
+          .eq('status', 'authorized');
+        const { data: payment } = await supabase
+          .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
+        if (payment) {
+          // If the booking hadn't settled yet, send it back to 'pending' so the hold
+          // is no longer implied and the poster can re-accept (which places a fresh
+          // hold — stripe-create-payment-intent permits a re-hold once the prior
+          // payment is cancelled/failed). Leave completed/verified bookings alone;
+          // those surface a HOLD_EXPIRED at capture instead.
+          const { data: bk } = await supabase
+            .from('bookings').select('status').eq('id', payment.booking_id).single();
+          if (bk && bk.status === 'confirmed') {
             await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
           }
         }

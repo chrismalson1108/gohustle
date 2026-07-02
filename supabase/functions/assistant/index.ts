@@ -19,6 +19,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Content moderation — mirror of shared/contentFilter.js. Every MANUAL write path
+// (PostJob, EditJob, chat, profile) runs findProhibited; the assistant's create_gig
+// and update_profile tools must enforce the SAME guard or "ask the AI to post…"
+// becomes a moderation bypass (drugs/weapons/escort gigs, slur bios). Kept in sync
+// with shared/contentFilter.js — update both together.
+const BLOCKED_TERMS = [
+  'nigger', 'faggot', 'retard', 'kike', 'spic', 'chink',
+  'escort', 'prostitute', 'sexual favor', 'sexual favors', 'nudes', 'onlyfans',
+  'cocaine', 'meth', 'heroin', 'launder', 'money laundering', 'stolen goods',
+];
+function findProhibited(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const lower = String(text).toLowerCase();
+  for (const term of BLOCKED_TERMS) {
+    const re = new RegExp(`(^|[^a-z])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
+    if (re.test(lower)) return term;
+  }
+  return null;
+}
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 // Model routing — use the cheapest model that still nails the task (the owner
 // opted into cost-saving routing). Routine tool turns run on Sonnet; genuinely
@@ -582,6 +602,11 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
   if (!title || !category || !location || !description || !(pay > 0)) {
     return JSON.stringify({ error: 'missing_fields', message: 'Need a title, category, pay, location, and description.' });
   }
+  // Same moderation guard the manual PostJob path enforces — no bypass via the AI.
+  const badGig = findProhibited(`${title} ${description}`);
+  if (badGig) {
+    return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
+  }
   if (actions.filter((a) => a.type === 'gig_created').length >= 3) {
     return JSON.stringify({ error: 'limit_reached', message: "That's a few gigs already — let's review them before posting more." });
   }
@@ -782,6 +807,12 @@ async function updateProfile(sb: SupabaseClient, userId: string, input: Json, ac
 
   const all = { ...legacy, ...suite };
   if (Object.keys(all).length === 0) return JSON.stringify({ error: 'nothing_to_update' });
+
+  // Moderate free-text profile fields the same way the manual Settings save does.
+  const badProfile = findProhibited([legacy.bio, suite.work_status_note].filter(Boolean).join(' '));
+  if (badProfile) {
+    return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+  }
 
   // Try the full patch; if a suite column doesn't exist yet (42703), fall back to
   // the legacy fields so the tool still works before the migration is run.

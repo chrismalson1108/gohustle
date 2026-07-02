@@ -51,6 +51,16 @@ Deno.serve(async (req: Request) => {
 
     if (pErr || !payment) return json({ error: 'Payment not found' }, 404);
 
+    // The authorization can lapse before capture — Stripe auto-cancels an uncaptured
+    // hold ~7 days out, and the webhook then marks the row 'cancelled'. Surface a
+    // clear, actionable error instead of throwing a generic 500 on capture().
+    if (payment.status === 'cancelled' || payment.status === 'failed') {
+      return json({
+        error: 'HOLD_EXPIRED',
+        message: 'The card hold expired before payment could be released. Re-confirm this booking to place a new hold, then verify again.',
+      }, 409);
+    }
+
     let earnerAmountCents = payment.earner_amount_cents ?? 0;
 
     // Re-check the earner's Connect account is STILL payout-capable before we move

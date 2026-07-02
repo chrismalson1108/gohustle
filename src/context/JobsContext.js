@@ -333,13 +333,15 @@ export function JobsProvider({ children }) {
 
   const loadPosterBookings = useCallback(async () => {
     if (!user) return;
-    // Get IDs of jobs posted by this user (exclude cancelled/deleted gigs so their
-    // bookings don't keep counting toward the Hiring badge after the gig is removed).
+    // Load bookings on ALL of this poster's jobs, INCLUDING soft-cancelled/deleted
+    // ones — GigsScreen's Past tab + phantom-gig recovery need bookings on removed
+    // gigs to stay visible/actionable (mirrors web loadPosterBookings, commit 1cf3254).
+    // Badge counts filter by active booking status separately, so removed gigs with
+    // no active bookings don't inflate the Hiring badge.
     const { data: myJobs } = await supabase
       .from('jobs')
       .select('id')
-      .eq('poster_id', user.id)
-      .neq('status', 'cancelled');
+      .eq('poster_id', user.id);
 
     if (!myJobs?.length) {
       dispatch({ type: 'SET_POSTER_BOOKINGS', bookings: [] }); // clear stale (e.g. last gig deleted)
@@ -857,7 +859,10 @@ export function JobsProvider({ children }) {
         .in('status', ['pending', 'confirmed', 'completed']).limit(1);
       if (!others?.length) {
         dispatch({ type: 'UPDATE_JOB', jobId: booking.jobId, patch: { status: 'completed' } });
-        supabase.from('jobs').update({ status: 'completed' }).eq('id', booking.jobId);
+        // MUST await — a bare PostgrestBuilder never fires the request, so the gig
+        // would stay 'open' in the DB (bookable by others) forever.
+        const { error: jobDoneErr } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', booking.jobId);
+        if (jobDoneErr) captureError(jobDoneErr, { op: 'completeJob', jobId: booking.jobId });
       }
     }
 

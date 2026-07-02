@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
@@ -19,6 +19,22 @@ export default function ResetPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // null = still checking, true/false = whether a recovery session was established
+  // from the link. detectSessionInUrl consumes the hash token on mount.
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    // Give detectSessionInUrl a beat to process the recovery hash, then check.
+    const check = () => supabase.auth.getSession().then(({ data }) => {
+      if (active) setHasSession(!!data.session);
+    });
+    const t = setTimeout(check, 600);
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (active && session) setHasSession(true);
+    });
+    return () => { active = false; clearTimeout(t); sub.subscription.unsubscribe(); };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +80,12 @@ export default function ResetPasswordPage() {
         <h1 className="text-2xl font-black text-ink">Set a new password</h1>
         {done ? (
           <p className="mt-3 font-medium text-success">Password updated — taking you in…</p>
+        ) : hasSession === false ? (
+          <p className="mt-3 text-sm text-ink-soft">
+            This reset link can&apos;t be verified in this browser — it may have expired, already been
+            used, or been opened somewhere other than where you requested it. Request a fresh link and
+            open it in the same browser.
+          </p>
         ) : (
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>

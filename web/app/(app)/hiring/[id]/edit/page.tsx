@@ -75,7 +75,12 @@ export default function EditGigPage() {
           }}
           onError={(message) => showToast({ icon: "⚠️", title: "Check your gig", message })}
           onSubmit={async (data) => {
-            await updateJob(job.id, data as unknown as Record<string, unknown>);
+            try {
+              await updateJob(job.id, data as unknown as Record<string, unknown>);
+            } catch (e) {
+              showToast({ icon: "⚠️", title: "Couldn't save changes", message: (e as Error).message || "Please try again." });
+              return;
+            }
             // If this edit was unlocked by an accepted amendment, reset it so the
             // core terms re-lock afterward (mirrors mobile EditJobScreen).
             const amended = bookings.find((b) => b.amendmentStatus === "accepted");
@@ -117,7 +122,13 @@ export default function EditGigPage() {
                   showToast({ icon: "⚠️", title: "Can't delete", message: "This gig has active or unverified bookings." });
                   return;
                 }
-                await deleteJob(job.id);
+                try {
+                  await deleteJob(job.id);
+                } catch (e) {
+                  setConfirmDelete(false);
+                  showToast({ icon: "⚠️", title: "Couldn't delete", message: (e as Error).message || "Please try again." });
+                  return;
+                }
                 showToast({ icon: "🗑️", title: "Gig deleted", message: "Your gig has been removed." });
                 router.push("/hiring");
               }}
