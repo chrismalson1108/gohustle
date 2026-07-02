@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { supabase } from '../lib/supabase';
+import { supabase, purgePersistedSession } from '../lib/supabase';
 import { unregisterPushToken } from '../lib/push';
 import { track } from '../lib/analytics';
 import { checkNeedsAcceptance } from '../lib/legal';
@@ -197,25 +197,21 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    // Best-effort push-token cleanup, time-boxed so a stalled network call (e.g.
-    // during a Supabase outage) can't block sign-out. Fire-and-forget.
-    if (session?.user?.id) {
-      Promise.race([
-        unregisterPushToken(session.user.id),
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]).catch(() => {});
-    }
-    // 'local' scope avoids the hangable 'global' server round-trip that can freeze
-    // sign-out during an outage; it clears the stored session and fires
-    // onAuthStateChange(null). Time it out and force-clear as a last resort.
-    try {
-      await Promise.race([
-        supabase.auth.signOut({ scope: 'local' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timed out')), 5000)),
-      ]);
-    } catch {
-      setSession(null);
-    }
+    const userId = session?.user?.id;
+    // Optimistic sign-out — the professional pattern: flip the UI to logged-out
+    // IMMEDIATELY (RootNavigator drops to AuthScreen on the next render), then do
+    // all cleanup in the background. Sign-out must never wait on a network call.
+    setSession(null);
+    setOnbDone(true);
+    setNeedsTerms(false);
+    setPendingEmail(null);
+    // Background: push-token cleanup + refresh-token revocation ('local' scope =
+    // this device only). Fire-and-forget — failures are irrelevant to the user.
+    if (userId) unregisterPushToken(userId).catch(() => {});
+    supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    // Failsafe: if the SDK call wedges before it clears storage, purge the
+    // persisted session directly so an app relaunch can't resurrect the login.
+    setTimeout(() => { purgePersistedSession(); }, 2000);
   };
 
   const clearError = () => setAuthError(null);

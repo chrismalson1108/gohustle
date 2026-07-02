@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "./supabaseClient";
+import { supabase, purgePersistedSession } from "./supabaseClient";
 import { track } from "./analytics";
 import { checkNeedsAcceptance } from "./legal";
 
@@ -234,21 +234,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    // Use 'local' scope: it clears the stored session WITHOUT the server round-trip
-    // that 'global' makes. That global call can hang during a Supabase outage and
-    // leave the sign-out button stuck forever (observed during an incident). Local
-    // scope reliably signs the user out on this device. Belt-and-suspenders: time it
-    // out and drop the in-memory session so the UI always routes back to /login.
-    try {
-      await Promise.race([
-        supabase.auth.signOut({ scope: "local" }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("signOut timed out")), 5000),
-        ),
-      ]);
-    } catch {
-      setSession(null);
-    }
+    // Optimistic sign-out — the professional pattern: flip the UI to logged-out
+    // IMMEDIATELY (the auth gate redirects to /login on the next render), then do
+    // token revocation + storage cleanup in the background. The button must never
+    // wait on a network call — that's what made sign-out feel dead for seconds.
+    setSession(null);
+    setOnbDone(true);
+    setNeedsTerms(false);
+    setPendingEmail(null);
+    // Background: revokes this session's refresh token server-side and clears the
+    // persisted session ('local' scope = this device only). Fire-and-forget.
+    supabase.auth.signOut({ scope: "local" }).catch(() => {});
+    // Failsafe: if that SDK call wedges (held auth lock / dead network) before it
+    // clears storage, purge the persisted session directly so a page reload can't
+    // resurrect the login.
+    setTimeout(purgePersistedSession, 2000);
   };
 
   const clearError = () => setAuthError(null);

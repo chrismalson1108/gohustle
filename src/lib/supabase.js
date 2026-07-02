@@ -17,3 +17,16 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     flowType: 'pkce',
   },
 });
+
+// supabase-js persists the session under `sb-<project-ref>-auth-token` (its default
+// storageKey). Exposed so sign-out can purge it directly as a failsafe when the SDK
+// call is slow — never change this derivation or existing users would be logged out.
+const projectRef = SUPABASE_URL.replace('https://', '').split('.')[0];
+export const SESSION_STORAGE_KEY = `sb-${projectRef}-auth-token`;
+
+export function purgePersistedSession() {
+  return Promise.all([
+    AsyncStorage.removeItem(SESSION_STORAGE_KEY),
+    AsyncStorage.removeItem(`${SESSION_STORAGE_KEY}-code-verifier`),
+  ]).catch(() => {});
+}

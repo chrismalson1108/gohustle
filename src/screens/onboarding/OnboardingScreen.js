@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Dimensions, Animated, Platform, KeyboardAvoidingView, Keyboard,
+  StyleSheet, Dimensions, Animated, Platform, KeyboardAvoidingView, Keyboard, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +46,18 @@ export default function OnboardingScreen({ onComplete }) {
   });
   const [usernameError, setUsernameError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [legalDoc, setLegalDoc] = useState(null);  // 'terms'|'privacy'|'contractor'
+  const [legalDocs, setLegalDocs] = useState({});
+
+  // Email sign-ups accepted the legal terms via the signup checkbox; OAuth users
+  // (Google) never saw one, so capture explicit consent on the final step before
+  // handleFinish records their acceptance. Fail-safe: unknown provider → ask.
+  const needsConsent = (user?.app_metadata?.provider || '') !== 'email';
+
+  useEffect(() => {
+    if (needsConsent) fetchCurrentDocs().then(setLegalDocs).catch(() => {});
+  }, [needsConsent]);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -281,8 +293,28 @@ export default function OnboardingScreen({ onComplete }) {
         Welcome to GoHustlr, @{form.username || 'hustler'}.{'\n'}
         Time to start hustling!
       </Text>
-      <TouchableOpacity onPress={handleFinish} disabled={saving}>
-        <LinearGradient colors={gradients.earn} style={styles.finishBtn}>
+      {needsConsent && (
+        <View style={styles.acceptRow}>
+          <TouchableOpacity
+            onPress={() => setAccepted(a => !a)}
+            style={[styles.checkbox, accepted && styles.checkboxOn]}
+            activeOpacity={0.7}
+          >
+            {accepted && <Ionicons name="checkmark" size={14} color="#fff" />}
+          </TouchableOpacity>
+          <Text style={styles.acceptText}>
+            I confirm I'm 18 or older and agree to the{' '}
+            <Text style={styles.acceptLink} onPress={() => setLegalDoc('terms')}>Terms</Text>,{' '}
+            <Text style={styles.acceptLink} onPress={() => setLegalDoc('privacy')}>Privacy Policy</Text>, and{' '}
+            <Text style={styles.acceptLink} onPress={() => setLegalDoc('contractor')}>Independent Contractor Agreement</Text>.
+          </Text>
+        </View>
+      )}
+      <TouchableOpacity onPress={handleFinish} disabled={saving || (needsConsent && !accepted)}>
+        <LinearGradient
+          colors={(needsConsent && !accepted) ? [colors.border, colors.border] : gradients.earn}
+          style={styles.finishBtn}
+        >
           <Text style={styles.finishBtnText}>{saving ? 'Setting up...' : 'Enter GoHustlr'}</Text>
         </LinearGradient>
       </TouchableOpacity>
@@ -325,6 +357,21 @@ export default function OnboardingScreen({ onComplete }) {
           ))}
         </Animated.View>
       </KeyboardAvoidingView>
+
+      <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
+        <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.docHeader}>
+            <Text style={styles.docTitle}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
+            <TouchableOpacity onPress={() => setLegalDoc(null)} style={{ padding: 4 }}>
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+            <Text style={styles.docBody}>{legalDoc ? (legalDocs[legalDoc]?.body || 'Loading…') : ''}</Text>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -390,4 +437,20 @@ const styles = StyleSheet.create({
   radiusBtnTextActive: { color: '#fff' },
   finishBtn: { borderRadius: 18, paddingVertical: 20, paddingHorizontal: 48, alignItems: 'center', marginTop: 12 },
   finishBtnText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, paddingHorizontal: 4 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginRight: 10, marginTop: 1,
+    backgroundColor: '#fff',
+  },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  acceptText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18, textAlign: 'left' },
+  acceptLink: { color: colors.primary, fontWeight: '700' },
+  docModal: { flex: 1, backgroundColor: colors.background },
+  docHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  docTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, flex: 1 },
+  docBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
 });

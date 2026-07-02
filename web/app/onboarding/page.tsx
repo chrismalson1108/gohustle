@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Tag, Target, MapPin, Dumbbell, Rocket, ArrowRight, Check, GraduationCap, Briefcase, Zap } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -34,6 +35,13 @@ export default function OnboardingPage() {
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [finishError, setFinishError] = useState("");
+  const [agreedTerms, setAgreedTerms] = useState(false);
+
+  // Email sign-ups accepted the legal terms via the signup checkbox; OAuth users
+  // (Google) never saw one, so capture explicit consent here before finish()
+  // records their acceptance. Fail-safe: unknown provider → show the checkbox.
+  const needsConsent =
+    ((user?.app_metadata?.provider as string | undefined) ?? "") !== "email";
 
   useEffect(() => {
     if (session && onboardingDone) router.replace("/browse");
@@ -222,7 +230,23 @@ export default function OnboardingPage() {
 
         {step === 5 && (
           <Step icon={<Rocket className="size-14 text-primary" />} title="You're all set!" sub={`Welcome to GoHustlr, @${username || "hustler"}. Time to start hustling!`}>
-            <Button size="lg" fullWidth loading={saving} onClick={finish}>Enter GoHustlr</Button>
+            {needsConsent && (
+              <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-left text-sm text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={agreedTerms}
+                  onChange={(e) => setAgreedTerms(e.target.checked)}
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                />
+                <span>
+                  I confirm I&apos;m 18 or older and agree to the{" "}
+                  <Link href="/legal/terms" target="_blank" className="font-semibold text-primary hover:underline">Terms</Link>,{" "}
+                  <Link href="/legal/privacy" target="_blank" className="font-semibold text-primary hover:underline">Privacy Policy</Link>, and{" "}
+                  <Link href="/legal/contractor" target="_blank" className="font-semibold text-primary hover:underline">Independent Contractor Agreement</Link>.
+                </span>
+              </label>
+            )}
+            <Button size="lg" fullWidth loading={saving} disabled={needsConsent && !agreedTerms} onClick={finish}>Enter GoHustlr</Button>
             {finishError && <p className="mt-3 text-sm font-medium text-urgent">{finishError}</p>}
           </Step>
         )}

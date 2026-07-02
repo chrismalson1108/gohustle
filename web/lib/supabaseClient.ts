@@ -31,3 +31,19 @@ export function getSupabase(): SupabaseClient {
 }
 
 export const supabase = getSupabase();
+
+// supabase-js persists the session under `sb-<project-ref>-auth-token` (its
+// default storageKey). Exposed so sign-out can purge it directly as a failsafe
+// when the SDK call is slow — never change this derivation or existing users
+// would be logged out.
+const projectRef = new URL(SUPABASE_URL).hostname.split(".")[0];
+export const SESSION_STORAGE_KEY = `sb-${projectRef}-auth-token`;
+
+export function purgePersistedSession(): void {
+  try {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(`${SESSION_STORAGE_KEY}-code-verifier`);
+  } catch {
+    // storage unavailable (SSR/private mode) — nothing to purge
+  }
+}
