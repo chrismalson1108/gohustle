@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import { supabase, recoveryAuthClient, purgePersistedSession } from '../lib/supabase';
 import { cacheClear } from '../lib/cache';
 import { unregisterPushToken } from '../lib/push';
@@ -160,6 +162,50 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const signInWithApple = async () => {
+    setAuthError(null);
+    cancelPendingPurge();
+    try {
+      // Apple embeds sha256(rawNonce) in the identity token; Supabase re-hashes the
+      // raw nonce we pass and compares — protects against token replay.
+      const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+      if (!credential.identityToken) {
+        setAuthError('Apple sign-in didn\'t return a token. Please try again.');
+        return false;
+      }
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce,
+      });
+      if (error) { setAuthError(error.message); return false; }
+      // Apple returns the user's name ONLY on the very first authorization. Persist
+      // it so the profile isn't stuck on the email-derived default. (Subsequent
+      // sign-ins return null fullName, so a returning user's name is never clobbered.)
+      const fn = credential.fullName;
+      const name = [fn?.givenName, fn?.familyName].filter(Boolean).join(' ').trim();
+      if (name && data?.user?.id) {
+        await supabase.from('profiles').update({ name, avatar_initial: name[0].toUpperCase() }).eq('id', data.user.id).then(() => {}, () => {});
+      }
+      setPendingEmail(null);
+      track('sign_in');
+      return true;
+    } catch (e) {
+      if (e?.code === 'ERR_REQUEST_CANCELED') return false; // user tapped Cancel
+      setAuthError(e?.message || 'Apple sign-in failed. Please try again.');
+      return false;
+    }
+  };
+
   const signUp = async (email, password, name, referralCode) => {
     setAuthError(null);
     cancelPendingPurge();
@@ -256,6 +302,7 @@ export function AuthProvider({ children }) {
       markTermsAccepted,
       signIn,
       signInWithGoogle,
+      signInWithApple,
       signUp,
       resetPassword,
       resendConfirmation,

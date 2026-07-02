@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "GoHustlr needs access to your photos so you can set a profile picture and add photos to gigs, chats, and completed jobs.",

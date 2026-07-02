@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Logo from '../../components/Logo';
 import { useAuth } from '../../context/AuthContext';
@@ -48,10 +49,14 @@ function PasswordField({ label, value, onChangeText, placeholder, returnKeyType,
 
 // tab: 'signin' | 'signup' | 'forgot'
 export default function AuthScreen() {
-  const { signIn, signInWithGoogle, signUp, resetPassword, resendConfirmation, clearPending, pendingEmail, authError, clearError } = useAuth();
+  const { signIn, signInWithGoogle, signInWithApple, signUp, resetPassword, resendConfirmation, clearPending, pendingEmail, authError, clearError } = useAuth();
   const insets = useSafeAreaInsets();
   const [tab, setTab]           = useState('signin');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  // Apple Sign In is iOS 13+ only; hide the button where it isn't available.
+  useEffect(() => { AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {}); }, []);
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -125,6 +130,14 @@ export default function AuthScreen() {
     await signInWithGoogle();
     // On success onAuthStateChange swaps this screen out; on cancel/error we stay.
     setGoogleLoading(false);
+  };
+
+  const handleApple = async () => {
+    Keyboard.dismiss();
+    setLocalError('');
+    setSuccessMsg('');
+    await signInWithApple();
+    // On success onAuthStateChange swaps this screen out; on cancel/error we stay.
   };
 
   const handleResend = async () => {
@@ -338,6 +351,15 @@ export default function AuthScreen() {
                 <Text style={styles.dividerText}>OR</Text>
                 <View style={styles.dividerLine} />
               </View>
+              {appleAvailable && (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={16}
+                  style={styles.appleBtn}
+                  onPress={handleApple}
+                />
+              )}
               <TouchableOpacity
                 onPress={handleGoogle}
                 disabled={googleLoading || loading}
@@ -460,6 +482,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border, marginTop: 14,
   },
   googleText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  appleBtn: { width: '100%', height: 50, marginTop: 14 },
   acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4, marginBottom: 4 },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
