@@ -73,12 +73,17 @@ export default function MessagesPage() {
   const [last, setLast] = useState<Record<string, { text: string; unread: boolean; at: string; archived: boolean }>>({});
   const [active, setActive] = useState<Conversation | null>(null);
   const [tab, setTab] = useState<"inbox" | "archived">("inbox");
+  // Bumped on every archive toggle. A loadPreviews already in flight when the user
+  // toggles would otherwise resolve later and overwrite the optimistic archived flag.
+  const archiveSeq = useRef(0);
 
   const loadPreviews = useCallback(async () => {
     if (!user) return;
     const ids = conversations.map((c) => c.bookingId);
     if (!ids.length) return;
+    const seq = archiveSeq.current;
     const [msgs, state] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
+    if (seq !== archiveSeq.current) return; // a toggle happened mid-fetch — drop this stale snapshot
     const map: Record<string, { text: string; unread: boolean; at: string; archived: boolean }> = {};
     ids.forEach((id) => {
       const m = msgs[id];
@@ -112,6 +117,7 @@ export default function MessagesPage() {
 
   const toggleArchive = async (c: Conversation) => {
     const next = !last[c.bookingId]?.archived;
+    archiveSeq.current++; // invalidate any in-flight loadPreviews so it can't revert this
     setLast((prev) => ({
       ...prev,
       [c.bookingId]: { ...(prev[c.bookingId] || { text: "", unread: false, at: "" }), archived: next },
@@ -326,15 +332,16 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     setSending(true);
     try {
       const path = await uploadPrivateToBucket(file, "chat-photos", userId);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("messages")
         .insert({ booking_id: conversation.bookingId, sender_id: userId, image_url: path })
         .select("id, booking_id, sender_id, text, image_url, created_at")
         .single();
-      if (data) setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
+      if (error || !data) throw error || new Error("insert failed");
+      setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
       pingOther("📷 Photo");
     } catch {
-      showToast({ icon: "⚠️", title: "Upload failed", message: "Couldn't send that image. Try again." });
+      showToast({ icon: "⚠️", title: "Couldn't send image", message: "The photo didn't send. Please try again." });
     }
     setSending(false);
   };

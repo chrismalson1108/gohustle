@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator, Linking, Share,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, RefreshControl, ActivityIndicator, Linking, Share, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SUPPORT_EMAIL } from '../lib/legal';
@@ -97,32 +97,35 @@ export default function ProfileScreen({ navigation }) {
     }, [loadReviews])
   );
 
+  const startVerification = async () => {
+    try {
+      const res = await requestVerification();
+      if (res?.alreadyVerified) {
+        setIdv({ verified: true, status: 'verified' });
+        showToast({ icon: '✅', title: 'Already verified', message: 'Your identity is verified.' });
+        return;
+      }
+      if (!res?.url) throw new Error('No verification URL returned');
+      setIdv(prev => ({ ...prev, status: 'pending' }));
+      haptic.success();
+      await Linking.openURL(res.url);
+    } catch (e) {
+      showToast({ icon: '⚠️', title: 'Could not start', message: e.message || 'Please try again.' });
+    }
+  };
+
   const handleVerify = async () => {
     if (idv.verified) return;
     haptic.medium();
+    // Alert.alert's buttons are a no-op on react-native-web (Expo web build), which
+    // stranded the flow there. Start directly on web; keep the native confirm dialog.
+    if (Platform.OS === 'web') { startVerification(); return; }
     Alert.alert(
       'Verify your identity',
       "We'll confirm your government ID and a selfie through Stripe to give your profile a Verified badge. This builds trust with people you work with. Continue?",
       [
         { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Start',
-          onPress: async () => {
-            try {
-              const res = await requestVerification();
-              if (res?.alreadyVerified) {
-                setIdv({ verified: true, status: 'verified' });
-                return;
-              }
-              if (!res?.url) throw new Error('No verification URL returned');
-              setIdv(prev => ({ ...prev, status: 'pending' }));
-              haptic.success();
-              await Linking.openURL(res.url);
-            } catch (e) {
-              showToast({ icon: '⚠️', title: 'Could not start', message: e.message || 'Please try again.' });
-            }
-          },
-        },
+        { text: 'Start', onPress: startVerification },
       ]
     );
   };
@@ -167,7 +170,7 @@ export default function ProfileScreen({ navigation }) {
     setGoals(eg, jg);
     setEditGoals(false);
     haptic.success();
-    Alert.alert('Goals Updated!', 'Your weekly goals have been saved.');
+    showToast({ icon: '🎯', title: 'Goals updated!', message: 'Your weekly goals have been saved.' });
   };
 
   // Never render placeholder profile data as if it were the user's account — a
@@ -315,21 +318,23 @@ export default function ProfileScreen({ navigation }) {
       >
         <View style={styles.manageBtnLeft}>
           <Ionicons
-            name={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : 'shield-outline'}
+            name={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : idv.status === 'rejected' ? 'alert-circle-outline' : 'shield-outline'}
             size={22}
-            color={idv.verified ? colors.success : colors.primary}
+            color={idv.verified ? colors.success : idv.status === 'rejected' ? colors.urgent : colors.primary}
             style={styles.manageBtnIcon}
           />
           <View>
             <Text style={styles.manageBtnTitle}>
-              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : 'Verify Your Identity'}
+              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : idv.status === 'rejected' ? 'Verification Failed' : 'Verify Your Identity'}
             </Text>
             <Text style={styles.manageBtnSub}>
               {idv.verified
                 ? 'Your profile shows a Verified badge'
                 : idv.status === 'pending'
                   ? 'Tap to finish or resume your ID check'
-                  : 'Get a Verified badge to build trust'}
+                  : idv.status === 'rejected'
+                    ? "We couldn't verify your ID — tap to try again"
+                    : 'Get a Verified badge to build trust'}
             </Text>
           </View>
         </View>

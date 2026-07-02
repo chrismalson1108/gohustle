@@ -10,6 +10,7 @@ import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import GigForm from "@/components/GigForm";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 
 export default function EditGigPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,7 +21,8 @@ export default function EditGigPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const job = jobs.find((j) => j.id === id);
-  if (!job) return <EmptyState title="Gig not found" />;
+  // The jobs feed loads async — don't flash "not found" before it resolves.
+  if (!job) return jobs.length === 0 ? <FullPageSpinner /> : <EmptyState title="Gig not found" />;
   if (user && job.posterId !== user.id) return <EmptyState title="You can only edit your own gigs." />;
 
   // Lock core terms once a booking is confirmed/completed (unless an amendment

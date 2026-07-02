@@ -351,7 +351,7 @@ export default function JobDetailPage() {
           ) : (
             <Button fullWidth size="lg" loading={booking} disabled={!selectedSlot && hasAvailableSlot} onClick={handleBook}>
               {selectedSlot || !hasAvailableSlot
-                ? counterPrice
+                ? Number.isFinite(parseFloat(counterPrice)) && parseFloat(counterPrice) > 0
                   ? `Book · counter ${money(parseFloat(counterPrice))}`
                   : "Book this gig"
                 : "Select a time slot first"}

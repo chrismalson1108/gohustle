@@ -146,7 +146,7 @@ export default function HiringPage() {
         {/* Active / Past segmented control */}
         <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
           {(["active", "past"] as const).map((t) => {
-            const count = t === "active" ? postedJobs.length : pastBookings.length;
+            const count = t === "active" ? activeJobs.length : pastBookings.length;
             return (
               <button
                 key={t}

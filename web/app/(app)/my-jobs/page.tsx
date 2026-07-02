@@ -45,7 +45,7 @@ const needsAction = (b: Booking) =>
 
 export default function MyJobsPage() {
   const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus } = useJobs();
-  const { earningsToday, earningsWeek, earningsTotal, challenges, showToast } = useUser();
+  const { earningsToday, earningsWeek, earningsTotal, challenges, showToast, updateChallenge } = useUser();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>("active");
@@ -142,6 +142,10 @@ export default function MyJobsPage() {
     const ok = await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
     setBusy(false);
     if (!ok) return; // markEarnerDone already surfaced the failure — don't false-toast success
+    // Progress the "Earn $100 this week" challenge (c2) by the gig's value on completion.
+    const cj = fb.job as { pay?: number; payType?: string; estimatedHours?: number } | undefined;
+    const earned = cj ? (cj.payType === "hourly" ? Number(cj.pay) * (Number(cj.estimatedHours) || 1) : Number(cj.pay || 0)) : 0;
+    if (earned > 0) updateChallenge("c2", earned);
     setFinishBooking(null);
     showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
     // Nudge: log the drive & any expenses while it's fresh.

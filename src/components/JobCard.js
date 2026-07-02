@@ -138,6 +138,9 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
     alignSelf: 'stretch', marginBottom: 10, alignItems: 'center',
     flexDirection: 'row', justifyContent: 'center',
+    // Clear the absolute bookmark button in the top-right so they don't overlap
+    // when the pill is the card's top element (matches headerRow's paddingRight).
+    marginRight: 30,
   },
   bookingPillText: { fontSize: 12, fontWeight: '800' },
   urgentRow: { marginBottom: 8 },

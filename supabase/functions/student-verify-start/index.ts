@@ -22,6 +22,17 @@ function isEduEmail(email: string): boolean {
   return domain.endsWith('.edu') || domain.endsWith('.ac.uk') || /\.edu\.[a-z]{2}$/.test(domain);
 }
 
+// Canonical form for the uniqueness/dedup key: lowercase + strip any "+tag" from the
+// local part so john+a@x.edu and john+b@x.edu can't spin up multiple "verified"
+// accounts from one inbox. NOTE: we still SEND to the address the user entered (some
+// schools don't collapse plus-addresses), but store/compare the normalized form.
+function normalizeEduEmail(email: string): string {
+  const e = (email || '').trim().toLowerCase();
+  const [local, domain] = e.split('@');
+  if (!local || !domain) return e;
+  return `${local.split('+')[0]}@${domain}`;
+}
+
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -43,7 +54,8 @@ Deno.serve(async (req: Request) => {
     const { email } = await req.json();
     if (!isEduEmail(email)) return json({ error: 'invalid_email', message: 'Enter a valid school (.edu) email.' }, 400);
 
-    const cleanEmail = email.trim().toLowerCase();
+    const enteredEmail = email.trim().toLowerCase(); // address we actually email
+    const cleanEmail = normalizeEduEmail(email);     // canonical key for dedup/storage
     const domain = cleanEmail.split('@')[1];
 
     // Rate limit: max 5 codes in the last 15 minutes for this user.
@@ -67,17 +79,19 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'rate_limited', message: 'Too many attempts for that email. Try again later.' }, 429);
     }
 
-    // If this inbox already verified ANOTHER account, refuse up front (mirrors the
-    // confirm-side one-account-per-email rule) — no point emailing a dead-end code,
-    // and it stops us from being used to repeatedly message an in-use address.
+    // If this inbox already verified ANOTHER account, silently stop — don't send a
+    // dead-end code, but return the SAME neutral response as success so this endpoint
+    // can't be used as an oracle to check whether a given .edu is already registered
+    // (the confirm side still enforces the one-account-per-email rule).
     const { data: priorUse } = await supabase
       .from('student_email_verifications')
       .select('user_id').eq('email', cleanEmail).eq('consumed', true).neq('user_id', user.id).limit(1);
     if (priorUse?.length) {
-      return json({ error: 'email_in_use', message: 'That school email has already verified another account.' }, 409);
+      return json({ ok: true });
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // CSPRNG 6-digit code (not Math.random — codes gate a trust badge).
+    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
     const codeHash = await sha256(`${code}:${user.id}`);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
@@ -109,7 +123,7 @@ Deno.serve(async (req: Request) => {
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: FROM,
-        to: [cleanEmail],
+        to: [enteredEmail],
         subject: `${code} is your GoHustlr verification code`,
         html: `
           <!DOCTYPE html>

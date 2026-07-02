@@ -743,11 +743,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Booking is cancelled in the DB — now it's safe to release the hold and free the slot.
+    // Booking is cancelled in the DB — now it's safe to release the hold and free the
+    // slot. Best-effort with one retry; if it still fails the hold auto-expires (~7d)
+    // and the payment_intent.canceled webhook reconciles it.
     try {
       await stripeEdge.cancelPayment(bookingId);
     } catch {
-      /* no/closed payment */
+      try { await new Promise((r) => setTimeout(r, 1500)); await stripeEdge.cancelPayment(bookingId); } catch { /* webhook safety net */ }
     }
     if (booking?.slotId) await supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
 

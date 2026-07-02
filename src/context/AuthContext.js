@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
   const [needsTerms, setNeedsTerms]   = useState(false); // re-accept current legal docs
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
   const purgeTimer = useRef(null); // pending post-sign-out storage purge
+  const lastUserId = useRef(null); // previous session's user, to clean up on expiry
 
   // Any new auth attempt must cancel a pending sign-out purge, or the timer
   // would delete the new flow's PKCE code-verifier / freshly stored session.
@@ -40,6 +41,7 @@ export function AuthProvider({ children }) {
         await Promise.race([
           (async () => {
             const { data: { session } } = await supabase.auth.getSession();
+            lastUserId.current = session?.user?.id ?? null;
             setSession(session);
             if (session?.user) await loadOnboarding(session.user.id);
           })(),
@@ -53,9 +55,22 @@ export function AuthProvider({ children }) {
     })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const prevUserId = lastUserId.current;
+      lastUserId.current = session?.user?.id ?? null;
       setSession(session);
       if (session?.user) await loadOnboarding(session.user.id);
-      else { setOnbDone(true); setNeedsTerms(false); } // signed out → reset gates
+      else {
+        setOnbDone(true); setNeedsTerms(false); // signed out → reset gates
+        // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going
+        // through signOut(), which is the only place that cleared cache + push token.
+        // Without this, the next account on the device could briefly see the previous
+        // user's cached bookings and the device kept receiving their notifications.
+        // Only when we actually HAD a user (not a cold-start null). Idempotent with signOut().
+        if (prevUserId) {
+          cacheClear();
+          unregisterPushToken(prevUserId).catch(() => {});
+        }
+      }
     });
 
     return () => subscription.unsubscribe();

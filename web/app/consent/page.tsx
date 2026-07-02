@@ -23,9 +23,13 @@ export default function ConsentPage() {
     else if (session && !needsTermsAcceptance) router.replace("/browse");
   }, [authLoading, session, needsTermsAcceptance, router]);
 
-  useEffect(() => {
-    fetchCurrentDocs().then(setDocs).catch(() => setDocs({}));
-  }, []);
+  const loadDocs = () => {
+    setError(null);
+    fetchCurrentDocs()
+      .then(setDocs)
+      .catch(() => { setDocs({}); setError("Couldn't load the documents — check your connection and try again."); });
+  };
+  useEffect(loadDocs, []);
 
   const accept = async () => {
     if (!user) return;
@@ -72,9 +76,15 @@ export default function ConsentPage() {
           </div>
         )}
 
-        <Button size="lg" fullWidth className="mt-6" loading={saving} disabled={docs === null} onClick={accept}>
+        <Button size="lg" fullWidth className="mt-6" loading={saving} disabled={docs === null || ordered.length === 0} onClick={accept}>
           Accept &amp; continue
         </Button>
+        {/* A failed docs fetch must NOT let the user pass the gate without accepting. */}
+        {docs !== null && ordered.length === 0 && (
+          <Button variant="outline" size="sm" fullWidth className="mt-3" onClick={loadDocs}>
+            Retry loading documents
+          </Button>
+        )}
         {error && <p className="mt-3 text-center text-sm font-medium text-urgent">{error}</p>}
         <Button variant="ghost" size="sm" fullWidth className="mt-4 text-ink-muted" onClick={() => signOut()}>
           Sign out

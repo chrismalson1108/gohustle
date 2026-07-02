@@ -79,9 +79,13 @@ export default function ProfilePage() {
   const verifyIdentity = async () => {
     if (idv.verified) return;
     try {
-      const res = await requestVerification();
+      const res = (await requestVerification()) as { url?: string; alreadyVerified?: boolean };
       if (res?.url) window.location.href = res.url;
-      else setIdv((p) => ({ ...p, status: "pending" }));
+      else if (res?.alreadyVerified) {
+        setIdv((p) => ({ ...p, verified: true, status: "verified" }));
+        refreshProfile();
+        showToast({ icon: "✅", title: "Already verified", message: "Your identity is verified." });
+      } else setIdv((p) => ({ ...p, status: "pending" }));
     } catch (err) {
       showToast({ icon: "⚠️", title: "Could not start", message: (err as Error).message || "Please try again." });
     }

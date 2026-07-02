@@ -51,7 +51,7 @@ export default function EarnScreen({ navigation }) {
   const {
     earningsToday, earningsWeek, earningsTotal,
     streakDays, levelInfo, xp, challenges,
-    weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast,
+    weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast, updateChallenge,
   } = useUser();
   const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
@@ -289,6 +289,11 @@ export default function EarnScreen({ navigation }) {
         urls = await uploadImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
       }
       await markEarnerDone(finishTarget.id, urls, beforeUrls);
+      // Progress the "Earn $100 this week" challenge (c2) by the gig's value when the
+      // earner completes it — nothing fed it before, so it never moved.
+      const cj = finishTarget.job;
+      const earned = cj ? (cj.payType === 'hourly' ? Number(cj.pay) * (Number(cj.estimatedHours) || 1) : Number(cj.pay)) : 0;
+      if (earned > 0) updateChallenge('c2', earned);
       haptic.success();
       if (finishTarget.posterDone) {
         showToast({ icon: '🎉', title: 'Job Complete!', message: 'Both parties confirmed. Waiting for the poster to verify and rate you.' });

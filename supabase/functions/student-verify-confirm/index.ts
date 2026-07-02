@@ -13,6 +13,15 @@ async function sha256(s: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Must match student-verify-start's normalization (lowercase + strip "+tag") so the
+// stored, canonical email is found even if the user re-typed a plus-addressed form.
+function normalizeEduEmail(email: string): string {
+  const e = (email || '').trim().toLowerCase();
+  const [local, domain] = e.split('@');
+  if (!local || !domain) return e;
+  return `${local.split('+')[0]}@${domain}`;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -27,7 +36,7 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
     const { email, code } = await req.json();
-    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanEmail = normalizeEduEmail(email);
     if (!cleanEmail || !code) return json({ error: 'missing_fields' }, 400);
 
     // Most recent un-consumed code for this user + email.

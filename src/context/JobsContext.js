@@ -762,8 +762,14 @@ export function JobsProvider({ children }) {
       return;
     }
 
-    // Booking is cancelled in the DB — now it's safe to release the hold and free the slot.
-    try { await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment */ }
+    // Booking is cancelled in the DB — now it's safe to release the hold and free the
+    // slot. Best-effort with one retry on a transient failure; if it still fails the
+    // hold auto-expires (~7 days) and the payment_intent.canceled webhook reconciles it.
+    try {
+      await stripeEdge.cancelPayment(bookingId);
+    } catch (_) {
+      try { await new Promise(r => setTimeout(r, 1500)); await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment — webhook safety net */ }
+    }
     if (booking?.slotId) supabase.from('job_slots').update({ taken: false }).eq('id', booking.slotId);
 
     const title = booking?.job?.title || 'a gig';

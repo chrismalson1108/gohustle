@@ -14,18 +14,32 @@ export default function ConsentScreen() {
   const [docs, setDocs] = useState(null);
   const [saving, setSaving] = useState(false);
   const [openDoc, setOpenDoc] = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => { fetchCurrentDocs().then(setDocs).catch(() => setDocs({})); }, []);
+  const loadDocs = () => {
+    setError(null);
+    fetchCurrentDocs().then(setDocs).catch(() => {
+      setDocs({});
+      setError("Couldn't load the documents — check your connection and try again.");
+    });
+  };
+  useEffect(loadDocs, []);
+
+  const ordered = REQUIRED_SLUGS.map(s => docs?.[s]).filter(Boolean);
 
   const accept = async () => {
+    // A failed docs fetch must NOT let the user pass the gate without accepting.
+    if (!ordered.length) { setError('Documents not loaded yet — tap retry.'); return; }
+    setError(null);
     setSaving(true);
     try {
       await recordAcceptances(user.id, docs || {});
       markTermsAccepted();
-    } catch (_) { setSaving(false); }
+    } catch (_) {
+      setError("Couldn't save your acceptance — check your connection and try again.");
+      setSaving(false);
+    }
   };
-
-  const ordered = REQUIRED_SLUGS.map(s => docs?.[s]).filter(Boolean);
 
   return (
     <View style={styles.container}>
@@ -52,11 +66,17 @@ export default function ConsentScreen() {
           ))
         )}
 
-        <TouchableOpacity onPress={accept} disabled={saving || docs === null} activeOpacity={0.85} style={{ marginTop: 24 }}>
+        <TouchableOpacity onPress={accept} disabled={saving || docs === null || ordered.length === 0} activeOpacity={0.85} style={{ marginTop: 24, opacity: (docs === null || ordered.length === 0) ? 0.5 : 1 }}>
           <LinearGradient colors={gradients.primary} style={styles.acceptBtn}>
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.acceptText}>Accept & Continue</Text>}
           </LinearGradient>
         </TouchableOpacity>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {docs !== null && ordered.length === 0 ? (
+          <TouchableOpacity onPress={loadDocs} style={styles.signOut}>
+            <Text style={[styles.signOutText, { color: colors.primary }]}>Retry loading documents</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity onPress={signOut} style={styles.signOut}>
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>
@@ -94,6 +114,7 @@ const styles = StyleSheet.create({
   docRowText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
   acceptBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
   acceptText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  errorText: { fontSize: 13, color: colors.urgent, textAlign: 'center', marginTop: 12, fontWeight: '600' },
   signOut: { paddingVertical: 16, alignItems: 'center' },
   signOutText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
   docModal: { flex: 1, backgroundColor: colors.background },

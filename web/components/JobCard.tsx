@@ -33,21 +33,17 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
   const saved = savedJobIds.has(job.id);
 
   return (
-    <Link
-      href={`/jobs/${job.id}`}
-      className="group relative flex overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
-    >
+    // The bookmark button is a SIBLING of the Link (not nested inside the anchor —
+    // interactive-in-interactive is invalid HTML); the Link wraps the card body.
+    <div className="group relative flex overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]">
       <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleSavedJob(job.id);
-        }}
+        onClick={() => toggleSavedJob(job.id)}
         className="absolute right-3 top-3 z-10 rounded-full bg-white/90 p-1.5 text-ink-muted ring-1 ring-line backdrop-blur hover:text-primary"
         aria-label={saved ? "Unsave gig" : "Save gig"}
       >
         <Bookmark className={saved ? "size-4 fill-primary text-primary" : "size-4"} />
       </button>
+      <Link href={`/jobs/${job.id}`} className="flex min-w-0 flex-1">
       <div className="w-1.5 shrink-0" style={{ backgroundColor: catColor }} />
       <div className="min-w-0 flex-1 p-5">
         {job.photos?.length > 0 && (
@@ -132,6 +128,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
           </span>
         </div>
       </div>
-    </Link>
+      </Link>
+    </div>
   );
 }
