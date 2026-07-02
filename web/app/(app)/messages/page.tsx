@@ -10,6 +10,7 @@ import { fetchLastMessages, fetchConversationState, isUnread, previewText, markC
 import { notify } from "@/lib/push";
 import { uploadToBucket } from "@/lib/uploadImage";
 import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
+import { findProhibited } from "@gohustlr/shared";
 import PageHeader, { EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import Modal from "@/components/ui/Modal";
@@ -209,6 +210,12 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   const send = async () => {
     const body = text.trim();
     if (!body) return;
+    // Same chat moderation as mobile — block off-platform-payment solicitation and
+    // other prohibited content before it hits the DB (web previously bypassed this).
+    if (findProhibited(body)) {
+      showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
+      return;
+    }
     setSending(true);
     setText("");
     const { data, error } = await supabase

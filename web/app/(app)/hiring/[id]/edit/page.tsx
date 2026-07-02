@@ -33,6 +33,15 @@ export default function EditGigPage() {
   // even after an amendment unlocks the other core terms.
   const lockedPay = hasActive;
 
+  // Deleting soft-cancels the gig, which hides its bookings from the Hiring view.
+  // Block it while any booking is unresolved (mirrors mobile handleDelete) so a
+  // poster can never orphan a booking that still has an escrow hold — the earner
+  // would be stranded and funds stuck. Only allow delete once everything is
+  // verified/declined/cancelled.
+  const hasUnresolvedBooking = bookings.some((b) =>
+    ["pending", "confirmed", "completed"].includes(b.status),
+  );
+
   return (
     <div>
       <PageHeader title="Edit gig" subtitle={job.title} />
@@ -76,9 +85,16 @@ export default function EditGigPage() {
           }}
         />
 
-        <Button variant="ghost" fullWidth className="mt-4 text-urgent" onClick={() => setConfirmDelete(true)}>
-          <Trash2 className="size-4" /> Delete this gig
-        </Button>
+        {hasUnresolvedBooking ? (
+          <p className="mt-4 text-center text-sm text-ink-muted">
+            This gig has active or unverified bookings and can&apos;t be deleted. Decline pending
+            requests and verify any completed work first.
+          </p>
+        ) : (
+          <Button variant="ghost" fullWidth className="mt-4 text-urgent" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="size-4" /> Delete this gig
+          </Button>
+        )}
       </PageContainer>
 
       <Modal
@@ -95,6 +111,12 @@ export default function EditGigPage() {
               variant="danger"
               fullWidth
               onClick={async () => {
+                // Guard again at click time in case a booking landed while the modal was open.
+                if (hasUnresolvedBooking) {
+                  setConfirmDelete(false);
+                  showToast({ icon: "⚠️", title: "Can't delete", message: "This gig has active or unverified bookings." });
+                  return;
+                }
                 await deleteJob(job.id);
                 showToast({ icon: "🗑️", title: "Gig deleted", message: "Your gig has been removed." });
                 router.push("/hiring");

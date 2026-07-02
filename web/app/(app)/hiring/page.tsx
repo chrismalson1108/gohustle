@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine, FileText } from "lucide-react";
+import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine, FileText, Star } from "lucide-react";
 import { skillFitScore } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -165,11 +165,25 @@ export default function HiringPage() {
                       {reqs.map((b) => (
                         <div key={b.id} className="rounded-2xl bg-canvas p-3">
                           <div className="flex items-center gap-2.5">
-                            <Avatar url={b.earner?.avatarUrl} initial={b.earner?.avatarInitial} name={b.earner?.name} size={36} />
+                            <Link href={b.earner?.id ? `/u/${b.earner.id}` : "#"} className="shrink-0">
+                              <Avatar url={b.earner?.avatarUrl} initial={b.earner?.avatarInitial} name={b.earner?.name} size={36} />
+                            </Link>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
-                                <span className="truncate text-sm font-bold text-ink">{b.earner?.name || "Someone"}</span>
+                                <Link
+                                  href={b.earner?.id ? `/u/${b.earner.id}` : "#"}
+                                  className="truncate text-sm font-bold text-ink hover:text-primary hover:underline"
+                                >
+                                  {b.earner?.name || "Someone"}
+                                </Link>
                                 {b.earner?.studentVerified && <StudentBadge profile={b.earner} compact />}
+                                {b.earner?.reviewCount ? (
+                                  <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-ink-soft">
+                                    <Star className="size-3 fill-gold text-gold" /> {Number(b.earner.rating).toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-ink-muted">New</span>
+                                )}
                               </div>
                               <p className="text-xs text-ink-muted">
                                 {b.slotLabel || "Flexible"}
@@ -209,7 +223,7 @@ export default function HiringPage() {
                                     Mark done
                                   </Button>
                                 )}
-                                <Link href="/messages" className={buttonClasses("secondary", "sm")}>
+                                <Link href={`/messages?booking=${b.id}`} className={buttonClasses("secondary", "sm")}>
                                   <MessageCircle className="size-4" /> Message
                                 </Link>
                                 {!b.startedAt ? (

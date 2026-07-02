@@ -28,7 +28,7 @@ const RECURRENCE_OPTS = [
 const INITIAL = {
   title: '', category: '', customCategory: '', pay: '', payType: 'flat',
   location: '', description: '', requirements: '', urgent: false, slots: [],
-  recurrence: 'none', tags: [], hazards: [],
+  recurrence: 'none', tags: [], hazards: [], estHours: '2',
 };
 
 // Build initial form state, optionally prefilled from a job being duplicated.
@@ -49,6 +49,7 @@ function buildInitial(prefill) {
     recurrence: prefill.recurrence || 'none',
     tags: prefill.tags || [],
     hazards: prefill.hazards || [],
+    estHours: prefill.estimatedHours != null ? String(prefill.estimatedHours) : '2',
   };
 }
 
@@ -115,7 +116,10 @@ export default function PostJobScreen({ navigation, route }) {
       location: form.location,
       description: form.description,
       urgent: form.urgent,
-      estimatedHours: 2,
+      // Hourly gigs multiply pay × hours for the escrow hold (computeEffectivePay),
+      // so the poster's estimate must drive it — not a hardcoded 2. Flat gigs
+      // ignore this value.
+      estimatedHours: form.payType === 'hourly' ? Math.max(1, parseFloat(form.estHours) || 1) : 1,
       requirements: reqs,
       slots,
       photos: photoUrls,
@@ -233,6 +237,22 @@ export default function PostJobScreen({ navigation, route }) {
               ))}
             </View>
           </Field>
+
+          {form.payType === 'hourly' && (
+            <Field label="Estimated hours *">
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 3"
+                value={form.estHours}
+                onChangeText={v => set('estHours', v)}
+                keyboardType="numeric"
+                placeholderTextColor={colors.textMuted}
+              />
+              <Text style={styles.hintText}>
+                Used to hold {form.pay ? `~$${((parseFloat(form.pay) || 0) * (parseFloat(form.estHours) || 0)).toFixed(0)}` : 'the estimated total'} on the poster's card. The final charge is based on verified work.
+              </Text>
+            </Field>
+          )}
 
           <Field label="Location *">
             <LocationPicker
@@ -408,6 +428,7 @@ const styles = StyleSheet.create({
   payTypeBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   payTypeBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   payTypeBtnTextActive: { color: '#fff' },
+  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
   urgentToggle: {
     borderWidth: 1.5, borderColor: '#FCA5A5',
     borderRadius: 14, padding: 14, alignItems: 'center',
