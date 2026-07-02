@@ -48,8 +48,7 @@ declare sig text;
 begin
   foreach sig in array array[
     'credit_earnings(uuid)',
-    'claim_and_credit_tip(uuid, integer)',
-    'claim_and_credit_tip(uuid, bigint)'
+    'claim_and_credit_tip(text, uuid, uuid, integer)'
   ] loop
     begin
       execute format('revoke execute on function public.%s from public', sig);
