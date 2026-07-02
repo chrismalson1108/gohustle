@@ -64,9 +64,17 @@ Deno.serve(async (req: Request) => {
     // Real hold confirmed → mark the payment authorized (reflecting reality) and
     // confirm the booking. Service role, so guard_bookings_write exempts these writes.
     await supabase.from('payments').update({ status: 'authorized' }).eq('id', payment.id);
-    const { error: updErr } = await supabase
-      .from('bookings').update({ status: 'confirmed' }).eq('id', bookingId);
+    // Guard the confirm with a status predicate so a booking the earner concurrently
+    // withdrew (pending→cancelled) between our earlier read and here isn't silently
+    // flipped back to 'confirmed' — that would leave a confirmed booking whose hold
+    // the cancel path just released. If 0 rows update, the booking is no longer
+    // pending; surface that instead of a false success.
+    const { data: updated, error: updErr } = await supabase
+      .from('bookings').update({ status: 'confirmed' }).eq('id', bookingId).eq('status', 'pending').select('id');
     if (updErr) return json({ error: updErr.message }, 500);
+    if (!updated || updated.length === 0) {
+      return json({ error: 'BOOKING_CHANGED', message: 'This booking is no longer pending and could not be confirmed.' }, 409);
+    }
 
     return json({ ok: true });
   } catch (err) {

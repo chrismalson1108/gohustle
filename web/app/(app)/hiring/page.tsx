@@ -413,8 +413,10 @@ export default function HiringPage() {
           const b = payBooking;
           setPayBooking(null);
           if (b) {
-            await acceptBooking(b.id);
-            showToast({ icon: "✅", title: "Accepted — funds held", message: "Payment is in escrow until you verify the work." });
+            const ok = await acceptBooking(b.id);
+            // acceptBooking surfaces its own failure toast + rolls back — only
+            // confirm success when the hold was actually captured server-side.
+            if (ok) showToast({ icon: "✅", title: "Accepted — funds held", message: "Payment is in escrow until you verify the work." });
           }
         }}
       />

@@ -23,18 +23,15 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
 
   const otherName = otherPerson?.name || 'this user';
 
-  const handleReport = () => {
-    const buttons = REPORT_REASONS.map(reason => ({
-      text: reason,
-      onPress: async () => {
-        try {
-          await submitReport({ reporterId: user.id, reportedUserId: otherPerson?.id, bookingId, reason });
-          Alert.alert('Report submitted', 'Thanks — our team will review this.');
-        } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
-      },
-    }));
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert('Report ' + otherName, 'Why are you reporting this user?', buttons);
+  // Report reasons are shown in a Modal, not Alert.alert: Android caps alerts at 3
+  // buttons, so a 5-reason + Cancel list was truncated and trapped the user.
+  const handleReport = () => setReportVisible(true);
+  const submitReportReason = async (reason) => {
+    setReportVisible(false);
+    try {
+      await submitReport({ reporterId: user.id, reportedUserId: otherPerson?.id, bookingId, reason });
+      Alert.alert('Report submitted', 'Thanks — our team will review this.');
+    } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
   };
 
   const handleBlock = () => {
@@ -65,6 +62,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   // chat-photos is a private bucket — resolve each image message to a short-lived
   // signed URL (keyed by object path) instead of a permanent public URL.
   const [signedUrls, setSignedUrls] = useState({});
+  const [reportVisible, setReportVisible] = useState(false);
   const listRef = useRef(null);
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
@@ -335,11 +333,37 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Report-reason picker — a real modal so all reasons show on Android too. */}
+      <Modal visible={reportVisible} animationType="fade" transparent onRequestClose={() => setReportVisible(false)}>
+        <TouchableOpacity style={styles.reportOverlay} activeOpacity={1} onPress={() => setReportVisible(false)}>
+          <View style={styles.reportCard}>
+            <Text style={styles.reportTitle}>Report {otherName}</Text>
+            <Text style={styles.reportSub}>Why are you reporting this user?</Text>
+            {REPORT_REASONS.map((reason) => (
+              <TouchableOpacity key={reason} style={styles.reportRow} onPress={() => submitReportReason(reason)}>
+                <Text style={styles.reportRowText}>{reason}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.reportCancel} onPress={() => setReportVisible(false)}>
+              <Text style={styles.reportCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  reportOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  reportCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
+  reportTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  reportSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, marginBottom: 12 },
+  reportRow: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: colors.border },
+  reportRowText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
+  reportCancel: { marginTop: 12, paddingVertical: 14, alignItems: 'center', borderRadius: 12, backgroundColor: colors.background },
+  reportCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '700' },
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {

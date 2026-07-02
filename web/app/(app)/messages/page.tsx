@@ -227,6 +227,10 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   // chat-photos is a private bucket — resolve each image message to a short-lived
   // signed URL (keyed by object path) rather than a permanent public URL.
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  // Paths we've already tried to sign (success OR failure) — prevents a persistent
+  // signing failure from re-triggering the effect forever (setSignedUrls returns a
+  // new object each run, and signedUrls is a dep, so an uncached failure looped).
+  const signAttempted = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -259,18 +263,22 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   // Sign any image messages we haven't signed yet (private bucket).
   useEffect(() => {
     let active = true;
-    const missing = messages
+    const missing = Array.from(new Set(messages
       .map((m) => chatObjectPath(m.image_url))
-      .filter((p): p is string => !!p && !signedUrls[p]);
+      .filter((p): p is string => !!p && !signedUrls[p] && !signAttempted.current.has(p))));
     if (!missing.length) return;
+    // Mark attempted up-front so a null/failed sign result isn't retried every render.
+    missing.forEach((p) => signAttempted.current.add(p));
     (async () => {
       const entries = await Promise.all(
-        Array.from(new Set(missing)).map(async (p) => [p, await getSignedUrl("chat-photos", p)] as const),
+        missing.map(async (p) => [p, await getSignedUrl("chat-photos", p)] as const),
       );
       if (!active) return;
+      const resolved = entries.filter(([, url]) => !!url);
+      if (!resolved.length) return; // nothing to commit → don't churn state (was the loop)
       setSignedUrls((prev) => {
         const next = { ...prev };
-        for (const [p, url] of entries) if (url) next[p] = url;
+        for (const [p, url] of resolved) next[p] = url as string;
         return next;
       });
     })();

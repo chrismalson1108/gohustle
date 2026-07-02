@@ -159,7 +159,7 @@ interface JobsValue extends State {
   isBooked: (jobId: string) => boolean;
   bookedJobs: Job[];
   postedJobs: Job[];
-  acceptBooking: (bookingId: string) => Promise<void>;
+  acceptBooking: (bookingId: string) => Promise<boolean>;
   declineBooking: (bookingId: string) => Promise<void>;
   cancelBooking: (bookingId: string) => Promise<void>;
   cancellationFeeFor: (bookingId: string) => number;
@@ -662,11 +662,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       captureError(e, { op: "acceptBooking", bookingId });
       dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: prevStatus } }); // roll back
       showToast({ icon: "⚠️", title: "Couldn't accept booking", message: msg || "Please complete the payment step and try again." });
-      return;
+      return false;
     }
     if (booking?.earner?.id)
       notify(booking.earner.id, "Booking accepted!", `Your booking for "${booking.job?.title || "a gig"}" was accepted. Get ready!`, { tab: "EarnTab" });
     track("booking_accepted", { bookingId });
+    return true;
   };
 
   const declineBooking: JobsValue["declineBooking"] = async (bookingId) => {

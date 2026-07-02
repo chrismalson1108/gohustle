@@ -81,9 +81,21 @@ export default function JobDetailScreen({ route, navigation }) {
   };
 
   const handleBook = async () => {
-    const hasAvailableSlot = job.slots?.some(s => !s.taken);
-    if (!selectedSlot && hasAvailableSlot) {
+    // A slot is selectable only if it's untaken AND not in the past — mirror
+    // SlotPicker, which HIDES past slots. Counting past slots as "available" made
+    // a gig whose only slots have passed demand a selection the UI never shows,
+    // so Book just buzzed with no explanation (a dead-end).
+    const now = Date.now();
+    const selectableSlots = (job.slots || []).filter(s => !s.taken && (!s.startsAt || new Date(s.startsAt).getTime() > now));
+    const hasScheduledSlots = (job.slots || []).some(s => s.startsAt);
+    if (hasScheduledSlots && selectableSlots.length === 0) {
       haptic.error();
+      showToast({ icon: '🕒', title: 'No available times', message: "This gig's time slots have all passed. Message the poster to arrange a new time." });
+      return;
+    }
+    if (!selectedSlot && selectableSlots.length > 0) {
+      haptic.error();
+      showToast({ icon: '👆', title: 'Pick a time', message: 'Select an available time slot to book this gig.' });
       return;
     }
     const slot = job.slots?.find(s => s.id === selectedSlot);
