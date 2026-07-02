@@ -108,27 +108,34 @@ export default function PostJobScreen({ navigation, route }) {
     const reqs = form.requirements
       ? form.requirements.split('\n').filter(Boolean)
       : [];
-    addJob({
-      title: form.title,
-      category: effectiveCategory,
-      pay: parseFloat(form.pay),
-      payType: form.payType,
-      location: form.location,
-      description: form.description,
-      urgent: form.urgent,
-      // Hourly gigs multiply pay × hours for the escrow hold (computeEffectivePay),
-      // so the poster's estimate must drive it — not a hardcoded 2. Flat gigs
-      // ignore this value.
-      estimatedHours: form.payType === 'hourly' ? Math.max(1, parseFloat(form.estHours) || 1) : 1,
-      requirements: reqs,
-      slots,
-      photos: photoUrls,
-      recurrence: form.recurrence,
-      tags: form.tags,
-      hazards: form.hazards,
-      lat: coords?.lat ?? null,
-      lng: coords?.lng ?? null,
-    });
+    try {
+      await addJob({
+        title: form.title,
+        category: effectiveCategory,
+        pay: parseFloat(form.pay),
+        payType: form.payType,
+        location: form.location,
+        description: form.description,
+        urgent: form.urgent,
+        // Hourly gigs multiply pay × hours for the escrow hold (computeEffectivePay),
+        // so the poster's estimate must drive it — not a hardcoded 2. Flat gigs
+        // ignore this value.
+        estimatedHours: form.payType === 'hourly' ? Math.max(1, parseFloat(form.estHours) || 1) : 1,
+        requirements: reqs,
+        slots,
+        photos: photoUrls,
+        recurrence: form.recurrence,
+        tags: form.tags,
+        hazards: form.hazards,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+      });
+    } catch (e) {
+      // Keep the filled-in form on failure — never a false "Gig Posted!".
+      setPosting(false);
+      showToast({ icon: '⚠️', title: "Couldn't post your gig", message: e.message || 'Please try again.' });
+      return;
+    }
     setForm(INITIAL);
     setPhotos([]);
     setCoords(null);

@@ -139,8 +139,9 @@ export default function MyJobsPage() {
     if (!finishBooking) return;
     const fb = finishBooking;
     setBusy(true);
-    await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
+    const ok = await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
     setBusy(false);
+    if (!ok) return; // markEarnerDone already surfaced the failure — don't false-toast success
     setFinishBooking(null);
     showToast({ icon: "✅", title: "Marked done", message: "The poster will verify and release payment." });
     // Nudge: log the drive & any expenses while it's fresh.

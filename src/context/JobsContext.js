@@ -983,7 +983,13 @@ export function JobsProvider({ children }) {
       })
       .select().single();
 
-    if (error || !newJob) { console.warn('Job insert error:', error?.message); captureError(error || new Error('Job insert failed'), { op: 'addJob' }); return; }
+    if (error || !newJob) {
+      console.warn('Job insert error:', error?.message);
+      captureError(error || new Error('Job insert failed'), { op: 'addJob' });
+      // Throw so the caller can keep the form + show a real error instead of a
+      // false "Gig Posted!" that silently loses the composed gig.
+      throw new Error(error?.message || "Couldn't post your gig. Please try again.");
+    }
     track('gig_posted', { category: jobData.category, payType: jobData.payType });
 
     if (jobData.slots?.length) {

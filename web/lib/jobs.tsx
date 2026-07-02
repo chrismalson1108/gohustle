@@ -166,8 +166,8 @@ interface JobsValue extends State {
   startJob: (bookingId: string) => Promise<boolean>;
   blockUser: (blockedId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
-  markJobComplete: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<void>;
-  markEarnerDone: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<void>;
+  markJobComplete: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<boolean>;
+  markEarnerDone: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<boolean>;
   markPosterDone: (bookingId: string) => Promise<void>;
   ratePoster: (bookingId: string, args: { rating: number; reviewText?: string }) => Promise<void>;
   verifyAndRate: (bookingId: string, args: VerifyArgs) => Promise<void>;
@@ -563,10 +563,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       console.warn("Earner done error:", error.message);
       dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: prev }); // roll back
       showToast({ icon: "⚠️", title: "Couldn't mark done", message: "Something went wrong — please try again." });
-      return;
+      return false;
     }
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
     if (posterId) notify(posterId, "Job marked done", "The earner says the job is finished — verify and rate them.", { tab: "GigsTab" });
+    return true;
   };
 
   const markPosterDone: JobsValue["markPosterDone"] = async (bookingId) => {
