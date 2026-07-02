@@ -25,6 +25,34 @@ import type { Job, Booking } from "./types";
 const JOBS_CACHE = "jobs_v1";
 const BOOKINGS_CACHE = "bookings_v1";
 
+// Codes from accept-booking that a retry can never fix — surface them immediately.
+const ACCEPT_PERMANENT_CODES = new Set([
+  "NO_ESCROW", // hold was never started — user must redo the payment step
+  "Unauthorized",
+  "Forbidden",
+  "Booking not found",
+  "This booking can no longer be accepted.",
+]);
+
+// accept-booking with a short retry ladder. Only transient failures are retried:
+// HOLD_NOT_AUTHORIZED (Stripe can report the PI as not-yet-'requires_capture' for a
+// beat right after the client confirm) and network/5xx errors (the hold may have
+// succeeded with the confirm lost in transit). Safe because the edge fn is
+// idempotent — an already-confirmed booking returns ok instead of double-acting.
+async function acceptWithRetry(bookingId: string): Promise<void> {
+  const delays = [1500, 3500];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await stripeEdge.acceptBooking(bookingId);
+      return;
+    } catch (e) {
+      const code = (e as Error & { code?: string }).code;
+      if (attempt >= delays.length || (code && ACCEPT_PERMANENT_CODES.has(code))) throw e;
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+}
+
 // Poster/earner sub-selects. "rich" includes the student-verification columns;
 // "base" is the pre-migration fallback (see fetchJobs / loadPosterBookings).
 const POSTER_RICH = "name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status";
@@ -620,8 +648,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // Confirm via the server, which verifies a REAL escrow hold (Stripe PI is
     // requires_capture) before flipping status. A client can no longer set
     // 'confirmed' directly (the guard reverts it), so this is the only accept path.
+    // Retried on transient failures only: right after confirmCardPayment the PI can
+    // lag a beat before Stripe reports 'requires_capture' (HOLD_NOT_AUTHORIZED), and
+    // a dropped connection leaves the hold placed but the booking unconfirmed. The
+    // edge fn is idempotent (alreadyConfirmed short-circuit), so retrying is safe.
+    // Never retried: NO_ESCROW / forbidden / already-settled — those need the user.
     try {
-      await stripeEdge.acceptBooking(bookingId);
+      await acceptWithRetry(bookingId);
     } catch (e) {
       const msg = (e as Error).message;
       console.warn("Accept error:", msg);

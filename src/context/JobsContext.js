@@ -633,6 +633,32 @@ export function JobsProvider({ children }) {
 
   // ── Poster actions ─────────────────────────────────────────────────────────
 
+  // Codes from accept-booking that a retry can never fix — surface them immediately.
+  const ACCEPT_PERMANENT_CODES = new Set([
+    'NO_ESCROW', // hold was never started — user must redo the payment step
+    'Unauthorized',
+    'Forbidden',
+    'Booking not found',
+    'This booking can no longer be accepted.',
+  ]);
+
+  // accept-booking with a short retry ladder. Only transient failures are retried:
+  // HOLD_NOT_AUTHORIZED (Stripe can report the PI as not-yet-'requires_capture' for
+  // a beat right after the client confirm) and network/5xx errors (the hold may have
+  // succeeded with the confirm lost in transit). Safe because the edge fn is
+  // idempotent — an already-confirmed booking returns ok instead of double-acting.
+  const acceptWithRetry = async (bookingId) => {
+    const delays = [1500, 3500];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await stripeEdge.acceptBooking(bookingId);
+      } catch (e) {
+        if (attempt >= delays.length || (e.code && ACCEPT_PERMANENT_CODES.has(e.code))) throw e;
+        await new Promise(r => setTimeout(r, delays[attempt]));
+      }
+    }
+  };
+
   const acceptBooking = async (bookingId) => {
     const booking = state.posterBookings.find(b => b.id === bookingId);
     const prevStatus = booking?.status;
@@ -640,8 +666,9 @@ export function JobsProvider({ children }) {
     // Confirm via the server, which verifies a REAL escrow hold (Stripe PI is
     // requires_capture) before flipping status. A client can no longer set
     // 'confirmed' directly (the guard reverts it), so this is the only accept path.
+    // Transient failures retried (see acceptWithRetry); permanent ones surface.
     try {
-      await stripeEdge.acceptBooking(bookingId);
+      await acceptWithRetry(bookingId);
     } catch (e) {
       console.warn('Accept error:', e.message);
       captureError(e, { op: 'acceptBooking', bookingId });
