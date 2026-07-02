@@ -787,12 +787,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     // 'Payment not found' = a pre-Stripe booking with no hold → continue, but remember
     // no money moved so we don't record a meaningless dispute.
-    let moneyMoved = true;
     try {
-      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined);
+      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined);
     } catch (err) {
       if (!(err as Error).message?.includes("Payment not found")) throw err;
-      moneyMoved = false;
+      // no hold to capture (pre-Stripe booking) — continue to record the rating
     }
 
     const patch = {
@@ -809,14 +808,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // than believing the rating/verification was recorded.
     if (error) throw new Error(error.message);
 
-    if (partial && moneyMoved && user?.id) {
-      await supabase.from("disputes").insert({
-        booking_id: bookingId,
-        raised_by: user.id,
-        reason: disputeReason || null,
-        pct_paid: Math.round((pct as number) * 100),
-      });
-    }
+    // Dispute rows are now recorded server-side inside stripe-capture-payment (so a
+    // reduced payout always leaves an audit trail and requires a reason) — no client insert.
 
     if (booking?.earner?.id) {
       if (partial)
@@ -1042,9 +1035,16 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ── Payment helpers ──────────────────────────────────────────────────────--
-  const createPaymentIntent = (bookingId: string) => stripeEdge.createPaymentIntent(bookingId);
-  const getPayoutOnboardingUrl = () => stripeEdge.getPayoutOnboardingUrl();
-  const getPayoutStatus = async () => {
+  // These are wrapped in useCallback so their identity is STABLE across renders.
+  // Consumers key mount effects on them (e.g. AddCardModal's `[open, createSetupIntent]`
+  // effect that creates the Stripe SetupIntent); if the identity changed every render
+  // — which it did, since JobsProvider re-renders on any state/realtime change — the
+  // effect refired and reset the card element, wiping the form mid-entry and storming
+  // the edge functions. They only depend on user identity (or nothing), not on the
+  // frequently-changing jobs/bookings state.
+  const createPaymentIntent = useCallback((bookingId: string) => stripeEdge.createPaymentIntent(bookingId), []);
+  const getPayoutOnboardingUrl = useCallback(() => stripeEdge.getPayoutOnboardingUrl(), []);
+  const getPayoutStatus = useCallback(async () => {
     if (!user) return { hasAccount: false, onboarded: false };
     // Live check via the edge fn (authoritative, webhook-independent). Falls back to
     // the cached flag if the edge call fails so the UI still has a best-effort value.
@@ -1054,19 +1054,19 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from("stripe_accounts").select("account_id, onboarded").eq("user_id", user.id).single();
       return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
     }
-  };
-  const createSetupIntent = () => stripeEdge.createSetupIntent();
-  const getPayoutLoginLink = () => stripeEdge.getPayoutLoginLink();
-  const detachPaymentMethod = (exceptPaymentMethodId?: string) => stripeEdge.detachPaymentMethod(exceptPaymentMethodId);
-  const getPaymentMethodStatus = async () => {
+  }, [user]);
+  const createSetupIntent = useCallback(() => stripeEdge.createSetupIntent(), []);
+  const getPayoutLoginLink = useCallback(() => stripeEdge.getPayoutLoginLink(), []);
+  const detachPaymentMethod = useCallback((exceptPaymentMethodId?: string) => stripeEdge.detachPaymentMethod(exceptPaymentMethodId), []);
+  const getPaymentMethodStatus = useCallback(async () => {
     if (!user) return { hasPaymentMethod: false };
     try {
       return await stripeEdge.getPaymentMethodStatus();
     } catch {
       return { hasPaymentMethod: false };
     }
-  };
-  const getPaymentReadiness = async () => {
+  }, [user]);
+  const getPaymentReadiness = useCallback(async () => {
     const [payout, pm] = await Promise.all([getPayoutStatus(), getPaymentMethodStatus()]);
     return {
       payoutReady: payout.onboarded,
@@ -1074,7 +1074,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       cardBrand: pm.brand ?? null,
       cardLast4: pm.last4 ?? null,
     };
-  };
+  }, [getPayoutStatus, getPaymentMethodStatus]);
 
   // ── Derived ──────────────────────────────────────────────────────────────--
   const isBooked = (jobId: string) => state.bookings.some((b) => b.jobId === jobId);

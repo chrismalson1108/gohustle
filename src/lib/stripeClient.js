@@ -43,8 +43,8 @@ export const stripeEdge = {
   acceptBooking: (bookingId) =>
     callEdgeFunction('accept-booking', { bookingId }),
 
-  capturePayment: (bookingId, pct) =>
-    callEdgeFunction('stripe-capture-payment', { bookingId, pct }),
+  capturePayment: (bookingId, pct, disputeReason) =>
+    callEdgeFunction('stripe-capture-payment', { bookingId, pct, disputeReason }),
 
   tip: (bookingId, tipCents) =>
     callEdgeFunction('stripe-tip', { bookingId, tipCents }),

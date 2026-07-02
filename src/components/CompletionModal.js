@@ -44,14 +44,14 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const [reviewText, setReviewText] = useState('');
   const [tipCents, setTipCents] = useState(0);
   const [disputed, setDisputed] = useState(false);
-  const [pct, setPct] = useState(0.5);
+  const [pct, setPct] = useState(0.75);
   const [disputeReason, setDisputeReason] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setRating(5); setReviewText('');
-      setTipCents(0); setDisputed(false); setPct(0.5); setDisputeReason('');
+      setTipCents(0); setDisputed(false); setPct(0.75); setDisputeReason('');
     }
   }, [visible]);
 
@@ -62,7 +62,11 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const pay        = booking.job?.pay;
   const payType    = booking.job?.payType;
 
+  // A reduced payout must state a reason (recorded as the dispute audit trail).
+  const reasonMissing = disputed && !disputeReason.trim();
+
   const handleConfirm = async () => {
+    if (reasonMissing) { haptic.error(); return; } // guarded by the disabled button too
     haptic.success();
     setLoading(true);
     try {
@@ -82,7 +86,8 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   };
 
   const TIPS = [0, 300, 500, 1000]; // cents
-  const PCTS = [0.75, 0.5, 0.25];
+  // Reduced-payout tiers floored at 50% — the server rejects/relevels anything lower.
+  const PCTS = [0.9, 0.75, 0.5];
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -223,14 +228,14 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             )}
 
             {/* Confirm button */}
-            <TouchableOpacity onPress={handleConfirm} disabled={loading} activeOpacity={0.85} style={{ marginTop: 24 }}>
-              <LinearGradient colors={gradients.earn} style={styles.confirmBtn}>
+            <TouchableOpacity onPress={handleConfirm} disabled={loading || reasonMissing} activeOpacity={0.85} style={{ marginTop: 24 }}>
+              <LinearGradient colors={gradients.earn} style={[styles.confirmBtn, reasonMissing && { opacity: 0.5 }]}>
                 {loading
                   ? <ActivityIndicator color="#fff" />
                   : (
                     <View style={styles.confirmRow}>
                       <Ionicons name="checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
-                      <Text style={styles.confirmText}>Confirm Job Complete</Text>
+                      <Text style={styles.confirmText}>{reasonMissing ? 'Add a reason to continue' : 'Confirm Job Complete'}</Text>
                     </View>
                   )
                 }

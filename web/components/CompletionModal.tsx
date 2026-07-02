@@ -20,7 +20,10 @@ export interface VerifyArgs {
 }
 
 const TIPS = [0, 300, 500, 1000];
-const PCTS = [0.75, 0.5, 0.25];
+// Reduced-payout tiers, floored at 50% — the server rejects/relevels anything lower,
+// and reaching verify means the poster attested the work was done, so the worker
+// earns at least half. A true no-show should be cancelled (full refund), not verified.
+const PCTS = [0.9, 0.75, 0.5];
 const RATING_TEXT: Record<number, string> = { 5: "Excellent", 4: "Great", 3: "Good", 2: "Fair", 1: "Poor" };
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -55,7 +58,7 @@ export default function CompletionModal({
   const [reviewText, setReviewText] = useState("");
   const [tipCents, setTipCents] = useState(0);
   const [disputed, setDisputed] = useState(false);
-  const [pct, setPct] = useState(0.5);
+  const [pct, setPct] = useState(0.75);
   const [disputeReason, setDisputeReason] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -65,16 +68,20 @@ export default function CompletionModal({
       setReviewText("");
       setTipCents(0);
       setDisputed(false);
-      setPct(0.5);
+      setPct(0.75);
       setDisputeReason("");
     }
   }, [open]);
+
+  // A reduced payout must state a reason (recorded as the dispute audit trail).
+  const reasonMissing = disputed && !disputeReason.trim();
 
   if (!booking) return null;
   const earnerName = booking.earner?.name || "the earner";
   const jobTitle = booking.job?.title || "this job";
 
   const confirm = async () => {
+    if (reasonMissing) return; // guarded by the disabled button, belt-and-suspenders
     setBusy(true);
     try {
       await onConfirm({
@@ -99,7 +106,7 @@ export default function CompletionModal({
       onClose={onClose}
       title="Verify job completion"
       footer={
-        <Button fullWidth size="lg" loading={busy} onClick={confirm}>
+        <Button fullWidth size="lg" loading={busy} disabled={reasonMissing} onClick={confirm}>
           <Check className="size-5" /> Confirm job complete
         </Button>
       }

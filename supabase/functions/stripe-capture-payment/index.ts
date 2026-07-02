@@ -24,10 +24,24 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    // Optional pct (0<pct<=1): partial capture for a dispute — releases the
-    // remainder of the authorized hold back to the poster.
-    const { bookingId, pct } = await req.json();
+    // Optional pct (partial capture for a dispute) releases the remainder of the
+    // hold back to the poster. Policy: a reduced payout is allowed ONLY with a stated
+    // reason (recorded below as an audit trail) and is FLOORED at 50% — reaching the
+    // verify step requires the poster's own mark-done, so the worker earned at least
+    // half; a genuine no-show should be cancelled (full refund), not verified at ~0%.
+    // This prevents a poster from capturing completed work at a trivial amount.
+    const { bookingId, pct, disputeReason } = await req.json();
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
+
+    const wantsPartial = typeof pct === 'number' && pct < 1;
+    if (wantsPartial && (!disputeReason || !String(disputeReason).trim())) {
+      return json({
+        error: 'DISPUTE_REASON_REQUIRED',
+        message: 'To release less than the full amount, describe the problem so it can be recorded.',
+      }, 400);
+    }
+    // Hard floor at 50%; clamp to [0.5, 1]. Full capture when pct is absent/>=1.
+    const capturePctFinal = wantsPartial ? Math.min(1, Math.max(0.5, pct)) : 1;
 
     // Authorization (IDOR guard): capture releases escrow to the earner, so only
     // the poster who owns this booking's job may trigger it, and only once the
@@ -82,7 +96,7 @@ Deno.serve(async (req: Request) => {
 
     // Capture the hold if not already captured (idempotent on retry).
     if (payment.status !== 'captured') {
-      const capturePct = (typeof pct === 'number' && pct > 0 && pct < 1) ? pct : 1;
+      const capturePct = capturePctFinal; // validated + floored above
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
         const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
@@ -133,6 +147,22 @@ Deno.serve(async (req: Request) => {
     // double-credit, and a transient failure rolls back so a retry still credits.
     void earnerAmountCents; // (now read inside the RPC from the payments row)
     await supabase.rpc('credit_earnings', { p_payment_id: payment.id });
+
+    // Record the dispute server-side so a reduced payout ALWAYS has an audit trail
+    // (the client no longer inserts this). Idempotent per booking so a capture retry
+    // doesn't duplicate the row.
+    if (capturePctFinal < 1) {
+      const { data: existingDispute } = await supabase
+        .from('disputes').select('id').eq('booking_id', bookingId).maybeSingle();
+      if (!existingDispute) {
+        await supabase.from('disputes').insert({
+          booking_id: bookingId,
+          raised_by: user.id,
+          reason: String(disputeReason).trim().slice(0, 500),
+          pct_paid: Math.round(capturePctFinal * 100),
+        });
+      }
+    }
 
     return json({ success: true });
   } catch (err: any) {

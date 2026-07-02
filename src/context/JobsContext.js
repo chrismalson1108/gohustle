@@ -791,16 +791,13 @@ export function JobsProvider({ children }) {
     }
 
     // Capture escrow payment (partial if a dispute). 'Payment not found' = a
-    // pre-Stripe booking with no hold → continue without capture, but remember that
-    // no money moved so we don't record a meaningless dispute below.
-    let moneyMoved = true;
+    // pre-Stripe booking with no hold → continue without capture.
     try {
-      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined);
+      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined);
     } catch (err) {
       if (!err.message?.includes('Payment not found')) {
         throw err;
       }
-      moneyMoved = false;
     }
 
     const patch = {
@@ -818,13 +815,8 @@ export function JobsProvider({ children }) {
     // the booking unverified with money already moved.
     if (error) { console.warn('Verify error:', error.message); throw new Error(error.message); }
 
-    // Record a dispute only when the poster actually paid a reduced amount (skip it
-    // for a pre-Stripe booking where no capture happened — there's nothing to dispute).
-    if (partial && moneyMoved && user?.id) {
-      await supabase.from('disputes').insert({
-        booking_id: bookingId, raised_by: user.id, reason: disputeReason || null, pct_paid: Math.round(pct * 100),
-      });
-    }
+    // Dispute rows are recorded server-side inside stripe-capture-payment now (a
+    // reduced payout always leaves an audit trail and requires a reason there).
 
     if (booking?.earner?.id) {
       if (partial) {
