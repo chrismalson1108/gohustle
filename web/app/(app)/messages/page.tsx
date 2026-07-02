@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2 } from "lucide-react";
+import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2, Archive, ArchiveRestore } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { supabase } from "@/lib/supabaseClient";
-import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead } from "@/lib/messages";
+import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead, setConversationArchived } from "@/lib/messages";
 import { notify } from "@/lib/push";
 import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
 import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
@@ -70,18 +70,19 @@ export default function MessagesPage() {
     return list.filter((c) => (seen.has(c.bookingId) ? false : (seen.add(c.bookingId), true)));
   }, [bookings, posterBookings, jobs]);
 
-  const [last, setLast] = useState<Record<string, { text: string; unread: boolean; at: string }>>({});
+  const [last, setLast] = useState<Record<string, { text: string; unread: boolean; at: string; archived: boolean }>>({});
   const [active, setActive] = useState<Conversation | null>(null);
+  const [tab, setTab] = useState<"inbox" | "archived">("inbox");
 
   const loadPreviews = useCallback(async () => {
     if (!user) return;
     const ids = conversations.map((c) => c.bookingId);
     if (!ids.length) return;
     const [msgs, state] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
-    const map: Record<string, { text: string; unread: boolean; at: string }> = {};
+    const map: Record<string, { text: string; unread: boolean; at: string; archived: boolean }> = {};
     ids.forEach((id) => {
       const m = msgs[id];
-      map[id] = { text: previewText(m), unread: !state[id]?.archived && isUnread(m, state[id], user.id), at: m?.created_at || "" };
+      map[id] = { text: previewText(m), unread: !state[id]?.archived && isUnread(m, state[id], user.id), at: m?.created_at || "", archived: !!state[id]?.archived };
     });
     setLast(map);
   }, [conversations, user]);
@@ -109,6 +110,22 @@ export default function MessagesPage() {
 
   if (!user) return <FullPageSpinner />;
 
+  const toggleArchive = async (c: Conversation) => {
+    const next = !last[c.bookingId]?.archived;
+    setLast((prev) => ({
+      ...prev,
+      [c.bookingId]: { ...(prev[c.bookingId] || { text: "", unread: false, at: "" }), archived: next },
+    }));
+    try {
+      await setConversationArchived(user.id, c.bookingId, next);
+      refreshUnread();
+    } catch {
+      loadPreviews();
+    }
+  };
+
+  const shown = conversations.filter((c) => (tab === "archived" ? !!last[c.bookingId]?.archived : !last[c.bookingId]?.archived));
+
   return (
     <div>
       <div className={active ? "hidden md:block" : ""}>
@@ -120,32 +137,68 @@ export default function MessagesPage() {
           {conversations.length === 0 ? (
             <EmptyState icon={<MessageCircle className="size-10" />} title="No conversations yet" body="Book or accept a gig to start chatting." />
           ) : (
-            <ul>
-              {conversations
-                .slice()
-                .sort((a, b) => (last[b.bookingId]?.at || "").localeCompare(last[a.bookingId]?.at || ""))
-                .map((c) => (
-                  <li key={c.bookingId}>
-                    <button
-                      onClick={() => { setActive(c); markConversationRead(user.id, c.bookingId).then(() => { loadPreviews(); refreshUnread(); }); }}
-                      className="flex w-full items-center gap-3 border-b border-divider px-4 py-3 text-left hover:bg-primary-light/40"
-                    >
-                      <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-bold text-ink">{c.name}</span>
-                          {last[c.bookingId]?.at && <span className="shrink-0 text-[11px] text-ink-muted">{timeAgo(last[c.bookingId].at)}</span>}
-                        </div>
-                        <p className="truncate text-xs text-ink-muted">{c.jobTitle}</p>
-                        <p className={classNames("truncate text-sm", last[c.bookingId]?.unread ? "font-bold text-ink" : "text-ink-soft")}>
-                          {last[c.bookingId]?.text || "Say hi 👋"}
-                        </p>
-                      </div>
-                      {last[c.bookingId]?.unread && <span className="size-2.5 shrink-0 rounded-full bg-urgent" />}
-                    </button>
-                  </li>
+            <>
+              {/* Inbox / Archived segmented control */}
+              <div className="mx-4 mb-1 mt-3 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+                {(["inbox", "archived"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    className={classNames(
+                      "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
+                      tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                    )}
+                  >
+                    {t}
+                  </button>
                 ))}
-            </ul>
+              </div>
+
+              {shown.length === 0 ? (
+                <EmptyState
+                  icon={<MessageCircle className="size-10" />}
+                  title={tab === "archived" ? "No archived chats" : "No messages yet"}
+                  body={tab === "archived" ? "Archived conversations show up here." : "Everything is archived — check the Archived tab."}
+                />
+              ) : (
+                <ul>
+                  {shown
+                    .slice()
+                    .sort((a, b) => (last[b.bookingId]?.at || "").localeCompare(last[a.bookingId]?.at || ""))
+                    .map((c) => (
+                      <li key={c.bookingId}>
+                        <div className="flex w-full items-center gap-3 border-b border-divider px-4 py-3 hover:bg-primary-light/40">
+                          <button
+                            onClick={() => { setActive(c); markConversationRead(user.id, c.bookingId).then(() => { loadPreviews(); refreshUnread(); }); }}
+                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                          >
+                            <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate font-bold text-ink">{c.name}</span>
+                                {last[c.bookingId]?.at && <span className="shrink-0 text-[11px] text-ink-muted">{timeAgo(last[c.bookingId].at)}</span>}
+                              </div>
+                              <p className="truncate text-xs text-ink-muted">{c.jobTitle}</p>
+                              <p className={classNames("truncate text-sm", last[c.bookingId]?.unread ? "font-bold text-ink" : "text-ink-soft")}>
+                                {last[c.bookingId]?.text || "Say hi 👋"}
+                              </p>
+                            </div>
+                            {last[c.bookingId]?.unread && <span className="size-2.5 shrink-0 rounded-full bg-urgent" />}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleArchive(c); }}
+                            aria-label={tab === "inbox" ? "Archive conversation" : "Move to inbox"}
+                            title={tab === "inbox" ? "Archive conversation" : "Move to inbox"}
+                            className="shrink-0 rounded-full p-1.5 text-ink-muted hover:bg-line/60 hover:text-ink"
+                          >
+                            {tab === "inbox" ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
 

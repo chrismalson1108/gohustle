@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, ArrowUpToLine, FileText, Star } from "lucide-react";
+import { Megaphone, Plus, Check, X, MessageCircle, ShieldCheck, Pencil, Copy, ArrowUpToLine, FileText, Star, History, AlertCircle } from "lucide-react";
 import { skillFitScore } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -10,13 +10,21 @@ import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import StudentBadge from "@/components/ui/StudentBadge";
 import Avatar from "@/components/ui/Avatar";
+import RatingStars from "@/components/ui/RatingStars";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Field";
 import CompletionModal, { type VerifyArgs } from "@/components/CompletionModal";
 import AcceptPaymentModal from "@/components/AcceptPaymentModal";
-import { money, payLabel } from "@/lib/format";
+import { classNames, money, payLabel } from "@/lib/format";
 import type { Booking, Job } from "@/lib/types";
+
+const ACTIVE_STATUSES = new Set<Booking["status"]>(["pending", "confirmed", "completed"]);
+const PAST_STATUSES = new Set<Booking["status"]>(["verified", "declined", "cancelled"]);
+
+// A posted job, or a recovered stand-in for a soft-cancelled gig that still has
+// active bookings (mirrors mobile GigsScreen's "phantom" jobs).
+type HiringJob = Job & { removed?: boolean };
 
 // Applicant sort options for a gig's request list.
 const APPLICANT_SORTS = [
@@ -42,6 +50,7 @@ function sortApplicants(reqs: Booking[], job: Job, sortBy: ApplicantSort): Booki
 export default function HiringPage() {
   const { postedJobs, posterBookings, acceptBooking, declineBooking, cancelBooking, cancellationFeeFor, markPosterDone, verifyAndRate, bumpJob, proposeAmendment } = useJobs();
   const { showToast } = useUser();
+  const [tab, setTab] = useState<"active" | "past">("active");
   const [verifyBooking, setVerifyBooking] = useState<Booking | null>(null);
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
   const [sortBy, setSortBy] = useState<ApplicantSort>("newest");
@@ -64,6 +73,28 @@ export default function HiringPage() {
     const hours = isHourly ? fullJob?.estimatedHours || 1 : 1;
     return Math.round(Number(baseRate) * hours * 100);
   })();
+
+  // Past = completed/declined booking history (read-only)
+  const pastBookings = posterBookings.filter((b) => PAST_STATUSES.has(b.status));
+
+  // Active list = open listings + any gig that still has active bookings, including
+  // gigs the poster deleted but that have unresolved bookings. Without this, those
+  // bookings are invisible yet still counted in the tab badge ("ghost" count).
+  const postedById = new Set(postedJobs.map((j) => j.id));
+  const orphanIds = [...new Set(posterBookings.filter((b) => ACTIVE_STATUSES.has(b.status) && !postedById.has(b.jobId)).map((b) => b.jobId))];
+  const phantomJobs = orphanIds.map((id) => {
+    const b = posterBookings.find((x) => x.jobId === id);
+    return {
+      id,
+      title: b?.job?.title || "Removed gig",
+      pay: b?.job?.pay ?? 0,
+      payType: b?.job?.payType ?? "flat",
+      location: "Gig removed",
+      status: "cancelled",
+      removed: true,
+    } as HiringJob;
+  });
+  const activeJobs: HiringJob[] = [...postedJobs, ...phantomJobs];
 
   const confirmCancel = async () => {
     if (!cancelTarget) return;
@@ -112,33 +143,73 @@ export default function HiringPage() {
         }
       />
       <PageContainer>
-        {postedJobs.length === 0 ? (
+        {/* Active / Past segmented control */}
+        <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          {(["active", "past"] as const).map((t) => {
+            const count = t === "active" ? postedJobs.length : pastBookings.length;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={classNames(
+                  "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
+                  tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                )}
+              >
+                {t}
+                {count > 0 ? ` (${count})` : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ===== ACTIVE: posted listings + current bookings ===== */}
+        {tab === "active" && (activeJobs.length === 0 ? (
           <EmptyState icon={<Megaphone className="size-10" />} title="You haven't posted any gigs" body="Post a gig to get help from students near you." />
         ) : (
           <div className="space-y-4">
-            {postedJobs.map((job) => {
-              const reqs = sortApplicants(posterBookings.filter((b) => b.jobId === job.id), job, sortBy);
+            {activeJobs.map((job) => {
+              const reqs = sortApplicants(posterBookings.filter((b) => b.jobId === job.id && ACTIVE_STATUSES.has(b.status)), job, sortBy);
               return (
                 <div key={job.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="flex items-center justify-between gap-3">
-                    <Link href={`/jobs/${job.id}`} className="min-w-0">
-                      <p className="truncate font-bold text-ink">{job.title}</p>
-                      <p className="text-sm text-ink-soft">
-                        {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
-                      </p>
-                    </Link>
-                    <div className="flex shrink-0 gap-2">
-                      <button
-                        onClick={() => { bumpJob(job.id); showToast({ icon: "🚀", title: "Bumped!", message: "Your gig jumped to the top of Browse." }); }}
-                        className={buttonClasses("ghost", "sm")}
-                        title="Bump to top of the feed"
-                      >
-                        <ArrowUpToLine className="size-3.5" /> Bump
-                      </button>
-                      <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
-                        <Pencil className="size-3.5" /> Edit
+                    {job.removed ? (
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-ink">{job.title}</p>
+                        <p className="text-sm text-ink-soft">
+                          {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    ) : (
+                      <Link href={`/jobs/${job.id}`} className="min-w-0">
+                        <p className="truncate font-bold text-ink">{job.title}</p>
+                        <p className="text-sm text-ink-soft">
+                          {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
+                        </p>
                       </Link>
-                    </div>
+                    )}
+                    {/* Job actions — hidden for removed gigs */}
+                    {job.removed ? (
+                      <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-accent-deep">
+                        <AlertCircle className="size-3.5" /> Gig removed — resolve the bookings below.
+                      </span>
+                    ) : (
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          onClick={() => { bumpJob(job.id); showToast({ icon: "🚀", title: "Bumped!", message: "Your gig jumped to the top of Browse." }); }}
+                          className={buttonClasses("ghost", "sm")}
+                          title="Bump to top of the feed"
+                        >
+                          <ArrowUpToLine className="size-3.5" /> Bump
+                        </button>
+                        <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
+                          <Pencil className="size-3.5" /> Edit
+                        </Link>
+                        <Link href={`/hiring/new?from=${job.id}`} className={buttonClasses("outline", "sm")} title="Post a copy of this gig">
+                          <Copy className="size-3.5" /> Duplicate
+                        </Link>
+                      </div>
+                    )}
                   </div>
 
                   {reqs.length > 1 && (
@@ -243,11 +314,6 @@ export default function HiringPage() {
                                 <ShieldCheck className="size-4" /> Verify &amp; rate
                               </Button>
                             )}
-                            {b.status === "verified" && (
-                              <span className="text-xs font-bold text-success">
-                                Completed &amp; paid{b.earnerRating ? ` · ${b.earnerRating}★` : ""}
-                              </span>
-                            )}
                           </div>
 
                           {(b.status === "confirmed" || b.status === "completed") && b.amendmentStatus === "none" && (
@@ -284,7 +350,18 @@ export default function HiringPage() {
               );
             })}
           </div>
-        )}
+        ))}
+
+        {/* ===== PAST: completed / declined history (read-only) ===== */}
+        {tab === "past" && (pastBookings.length === 0 ? (
+          <EmptyState icon={<History className="size-10" />} title="No past gigs yet" body="Completed and declined bookings will show up here." />
+        ) : (
+          <div className="space-y-3">
+            {pastBookings.map((b) => (
+              <PastBookingCard key={b.id} booking={b} />
+            ))}
+          </div>
+        ))}
       </PageContainer>
 
       <Modal
@@ -341,6 +418,55 @@ export default function HiringPage() {
           }
         }}
       />
+    </div>
+  );
+}
+
+// Read-only history card for a verified/declined booking (mirrors mobile's PastBookingCard).
+function PastBookingCard({ booking }: { booking: Booking }) {
+  const earnerName = booking.earner?.name || "Someone";
+  const earnerHref = booking.earner?.id ? `/u/${booking.earner.id}` : "#";
+  const noRatings = booking.status === "declined" || booking.status === "cancelled";
+  const date = booking.completedAt ? new Date(booking.completedAt).toLocaleDateString() : null;
+
+  return (
+    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+      <div className="flex items-center gap-2.5">
+        <Link href={earnerHref} className="shrink-0">
+          <Avatar url={booking.earner?.avatarUrl} initial={booking.earner?.avatarInitial} name={earnerName} size={38} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-bold text-ink">{booking.job?.title || "Gig"}</p>
+          <Link href={earnerHref} className="text-sm text-ink-soft hover:text-primary hover:underline">
+            {earnerName}
+          </Link>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <StatusBadge status={booking.status} />
+          {date && <span className="text-[11px] text-ink-muted">{date}</span>}
+        </div>
+      </div>
+      {!noRatings && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-divider pt-2.5">
+          {booking.earnerRating ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
+              <RatingStars value={booking.earnerRating} size={13} />
+              You rated {earnerName} {Number(booking.earnerRating).toFixed(1)}
+            </span>
+          ) : (
+            <span className="text-xs text-ink-muted">Completed</span>
+          )}
+          {booking.posterRating ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
+              <RatingStars value={booking.posterRating} size={13} />
+              {earnerName} rated you {Number(booking.posterRating).toFixed(1)}
+            </span>
+          ) : null}
+        </div>
+      )}
+      {!noRatings && booking.reviewText && (
+        <p className="mt-2 border-l-2 border-line pl-2.5 text-xs italic text-ink-soft">&ldquo;{booking.reviewText}&rdquo;</p>
+      )}
     </div>
   );
 }

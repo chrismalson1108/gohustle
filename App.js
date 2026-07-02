@@ -32,6 +32,7 @@ import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
 import FavoritesScreen      from './src/screens/FavoritesScreen';
+import SavedGigsScreen      from './src/screens/SavedGigsScreen';
 import AvailabilityScreen   from './src/screens/AvailabilityScreen';
 import NotificationsScreen  from './src/screens/NotificationsScreen';
 import MessagesScreen       from './src/screens/MessagesScreen';
@@ -129,6 +130,8 @@ function ProfileStack() {
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
       <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved People' }} />
+      <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved Gigs' }} />
+      <Stack.Screen name="JobDetail"      component={JobDetailScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }

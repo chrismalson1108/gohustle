@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
+import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
 import { useAuth } from './AuthContext';
@@ -214,16 +215,40 @@ export function JobsProvider({ children }) {
   myPostedIdsRef.current = state.myPostedIds;
 
   const [blockedIds, setBlockedIds] = useState(new Set());
+  const [savedJobIds, setSavedJobIds] = useState(new Set());
 
   useEffect(() => {
-    if (user) fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
-    else setBlockedIds(new Set());
+    if (user) {
+      fetchBlockedIds(user.id).then(setBlockedIds).catch(() => {});
+      fetchSavedJobIds(user.id).then(setSavedJobIds).catch(() => {});
+    } else {
+      setBlockedIds(new Set());
+      setSavedJobIds(new Set());
+    }
   }, [user?.id]);
 
   const blockUser = async (blockedId) => {
     if (!user || !blockedId) return;
     await blockUserDb(user.id, blockedId);
     setBlockedIds(prev => new Set([...prev, blockedId]));
+  };
+
+  // Save / unsave a gig (bookmark). Optimistic — DB write happens in the background.
+  const toggleSavedJob = async (jobId) => {
+    if (!user || !jobId) return;
+    const saving = !savedJobIds.has(jobId);
+    setSavedJobIds(prev => {
+      const next = new Set(prev);
+      if (saving) next.add(jobId);
+      else next.delete(jobId);
+      return next;
+    });
+    try {
+      if (saving) await addSavedJob(user.id, jobId);
+      else await removeSavedJob(user.id, jobId);
+    } catch (_) {
+      /* ignore — local state already toggled */
+    }
   };
 
   // Unread-message count for the Messages tab badge.
@@ -881,6 +906,14 @@ export function JobsProvider({ children }) {
     cacheSet(JOBS_CACHE, null);
   };
 
+  // Poster bumps a slow gig to the top of the feed (refreshes bumped_at).
+  const bumpJob = async (jobId) => {
+    const now = new Date().toISOString();
+    dispatch({ type: 'UPDATE_JOB', jobId, patch: { bumpedAt: now } });
+    await supabase.from('jobs').update({ bumped_at: now }).eq('id', jobId);
+    cacheSet(JOBS_CACHE, null);
+  };
+
   const addJob = async (jobData) => {
     if (!user) return;
     const { data: profile } = await supabase
@@ -1064,6 +1097,7 @@ export function JobsProvider({ children }) {
       addJob,
       updateJob,
       deleteJob,
+      bumpJob,
       isBooked,
       bookedJobs,
       postedJobs,
@@ -1074,6 +1108,8 @@ export function JobsProvider({ children }) {
       startJob,
       blockedIds,
       blockUser,
+      savedJobIds,
+      toggleSavedJob,
       unreadMessages,
       refreshUnread,
       markJobComplete,

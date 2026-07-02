@@ -17,10 +17,20 @@ import {
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
   expensesByJob,
 } from '../lib/expenses';
+import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { colors, gradients, shadows } from '../theme';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
+const round1 = (n) => Math.round(n * 10) / 10;
+const round2 = (n) => Math.round(n * 100) / 100;
+// Total deductible miles for a typed one-way distance (doubled for round trips).
+const totalMilesFor = (milesText, roundTrip) => {
+  const m = parseFloat(milesText);
+  return Number.isFinite(m) && m > 0 ? round1(roundTrip ? m * 2 : m) : 0;
+};
 
 export default function ExpensesScreen() {
   const { earningsTotal } = useUser();
@@ -56,6 +66,8 @@ export default function ExpensesScreen() {
   const [date, setDate] = useState(todayISO());
   const [receiptUri, setReceiptUri] = useState(null);
   const [bookingId, setBookingId] = useState(null);
+  const [miles, setMiles] = useState('');
+  const [roundTrip, setRoundTrip] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -92,6 +104,15 @@ export default function ExpensesScreen() {
 
   const resetForm = () => {
     setAmount(''); setCategory('supplies'); setSource('cash'); setDescription(''); setDate(todayISO()); setReceiptUri(null); setBookingId(null);
+    setMiles(''); setRoundTrip(true);
+  };
+
+  // Auto-fill the amount from miles × the IRS rate. The amount stays editable, so a
+  // manual override sticks until the miles or the trip toggle change again.
+  const applyMileage = (milesText, rt) => {
+    setMiles(milesText); setRoundTrip(rt);
+    const total = totalMilesFor(milesText, rt);
+    if (total > 0) setAmount(round2(total * IRS_MILEAGE_RATE).toFixed(2));
   };
 
   const handlePickReceipt = async () => {
@@ -109,7 +130,8 @@ export default function ExpensesScreen() {
       if (tab === 'expenses') {
         let receiptPath = null;
         if (receiptUri) receiptPath = await uploadPrivateImage({ uri: receiptUri, bucket: 'receipts', userId: user.id });
-        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl: receiptPath, bookingId });
+        const totalMiles = category === TRANSPORT_CATEGORY ? totalMilesFor(miles, roundTrip) : 0;
+        const row = await addExpense(user.id, { amount: amt, category, description, date, receiptUrl: receiptPath, bookingId, miles: totalMiles > 0 ? totalMiles : null });
         setExpenses(prev => [row, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1)));
         if (receiptPath) {
           const u = await getSignedUrl('receipts', receiptPath);
@@ -319,6 +341,30 @@ export default function ExpensesScreen() {
                       );
                     })}
                   </View>
+                  {category === TRANSPORT_CATEGORY && (
+                    <>
+                      <Text style={styles.label}>Miles driven (one way)</Text>
+                      <TextInput style={styles.input} placeholder="e.g. 8.5" placeholderTextColor={colors.textMuted}
+                        value={miles} onChangeText={(t) => applyMileage(t, roundTrip)} keyboardType="decimal-pad" />
+                      <View style={[styles.catGrid, { marginTop: 8 }]}>
+                        <TouchableOpacity style={[styles.catChip, !roundTrip && styles.catChipActive]}
+                          onPress={() => { haptic.selection(); applyMileage(miles, false); }}>
+                          <Ionicons name="arrow-forward-outline" size={14} color={!roundTrip ? '#fff' : colors.primary} style={{ marginRight: 5 }} />
+                          <Text style={[styles.catChipText, !roundTrip && styles.catChipTextActive]}>One way</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.catChip, roundTrip && styles.catChipActive]}
+                          onPress={() => { haptic.selection(); applyMileage(miles, true); }}>
+                          <Ionicons name="swap-horizontal-outline" size={14} color={roundTrip ? '#fff' : colors.primary} style={{ marginRight: 5 }} />
+                          <Text style={[styles.catChipText, roundTrip && styles.catChipTextActive]}>Round trip</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {totalMilesFor(miles, roundTrip) > 0 ? (
+                        <Text style={styles.mileageHint}>
+                          {totalMilesFor(miles, roundTrip).toFixed(1)} mi × ${IRS_MILEAGE_RATE.toFixed(2)}/mi = {fmt(round2(totalMilesFor(miles, roundTrip) * IRS_MILEAGE_RATE))} deduction
+                        </Text>
+                      ) : null}
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -475,6 +521,7 @@ const styles = StyleSheet.create({
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   catChipText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   catChipTextActive: { color: '#fff' },
+  mileageHint: { fontSize: 12, fontWeight: '700', color: colors.success, marginTop: 2 },
   receiptPreviewWrap: { alignSelf: 'flex-start' },
   receiptPreview: { width: 100, height: 100, borderRadius: 12, backgroundColor: colors.border },
   receiptRemove: { position: 'absolute', top: -6, right: -6, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.urgent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },

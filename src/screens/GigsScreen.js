@@ -46,7 +46,7 @@ export default function GigsScreen({ navigation }) {
   const {
     postedJobs, posterBookings,
     acceptBooking, declineBooking, cancelBooking, cancellationFeeFor,
-    markPosterDone, verifyAndRate, deleteJob,
+    markPosterDone, verifyAndRate, deleteJob, bumpJob,
     refreshJobs, refreshPosterBookings,
     proposeAmendment, createPaymentIntent, getPaymentMethodStatus,
   } = useJobs();
@@ -364,6 +364,17 @@ export default function GigsScreen({ navigation }) {
                   </View>
                 ) : (
                   <View style={styles.jobActions}>
+                    <TouchableOpacity
+                      style={styles.editBtn}
+                      onPress={() => {
+                        haptic.light();
+                        bumpJob(job.id);
+                        showToast({ icon: '🚀', title: 'Bumped!', message: 'Your gig jumped to the top of Browse.' });
+                      }}
+                    >
+                      <Ionicons name="arrow-up-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
+                      <Text style={styles.editBtnText}>Bump</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.editBtn}
                       onPress={() => navigation.navigate('EditJob', { jobId: job.id })}

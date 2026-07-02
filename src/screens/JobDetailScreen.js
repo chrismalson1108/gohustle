@@ -41,7 +41,7 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, bookings, posterBookings, bookJob, isBooked } = useJobs();
+  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob } = useJobs();
   const { addXP, recordApply, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
@@ -128,8 +128,22 @@ export default function JobDetailScreen({ route, navigation }) {
           </View>
         )}
 
-        <View style={[styles.catBadge, { backgroundColor: catColor + '22' }]}>
-          <Text style={[styles.catText, { color: catColor }]}>{job.category}</Text>
+        <View style={styles.catRow}>
+          <View style={[styles.catBadge, { backgroundColor: catColor + '22' }]}>
+            <Text style={[styles.catText, { color: catColor }]}>{job.category}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() => { haptic.light(); toggleSavedJob(job.id); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={savedJobIds.has(job.id) ? 'Unsave gig' : 'Save gig'}
+          >
+            <Ionicons
+              name={savedJobIds.has(job.id) ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={savedJobIds.has(job.id) ? colors.primary : colors.textMuted}
+            />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.title}>{job.title}</Text>
@@ -429,9 +443,14 @@ const styles = StyleSheet.create({
     padding: 10, marginBottom: 16, alignItems: 'center',
   },
   urgentText: { color: colors.urgent, fontWeight: '800', fontSize: 13 },
+  catRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   catBadge: {
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
-    alignSelf: 'flex-start', marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  saveBtn: {
+    borderRadius: 18, padding: 7,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
   catText: { fontSize: 12, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, lineHeight: 30, marginBottom: 16 },

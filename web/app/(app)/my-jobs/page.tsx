@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
-  ChevronDown, Star, Clock, AlertCircle, Car,
+  ChevronDown, Star, Clock, AlertCircle, Car, Target, Pencil,
 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -14,8 +14,9 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import RatingStars from "@/components/ui/RatingStars";
-import { Textarea } from "@/components/ui/Field";
+import { Input, Textarea } from "@/components/ui/Field";
 import MoneyGoalCard from "@/components/MoneyGoalCard";
+import ChallengeCard from "@/components/ChallengeCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
 import TrackExpensesModal from "@/components/TrackExpensesModal";
 import { uploadImages } from "@/lib/uploadImage";
@@ -44,7 +45,7 @@ const needsAction = (b: Booking) =>
 
 export default function MyJobsPage() {
   const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus } = useJobs();
-  const { earningsToday, earningsWeek, earningsTotal, showToast } = useUser();
+  const { earningsToday, earningsWeek, earningsTotal, challenges, showToast } = useUser();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>("active");
@@ -517,6 +518,17 @@ export default function MyJobsPage() {
           {showMonth && (
             <div className="mt-3 space-y-3">
               <MoneyGoalCard />
+              <WeeklyGoalsCard />
+
+              {/* Challenges — daily/weekly progress toward XP rewards (mirror of mobile EarnScreen). */}
+              {challenges.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Challenges</p>
+                  {challenges.map((c) => (
+                    <ChallengeCard key={c.id} challenge={c} />
+                  ))}
+                </div>
+              )}
 
               <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                 <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Earnings</p>
@@ -647,6 +659,104 @@ export default function MyJobsPage() {
         >
           <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
         </button>
+      </Modal>
+    </div>
+  );
+}
+
+// Weekly goals — earnings + jobs-done progress bars with an edit modal (mirror of mobile GoalBars).
+function WeeklyGoalsCard() {
+  const { earningsWeek, weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, setGoals, showToast } = useUser();
+
+  const [editing, setEditing] = useState(false);
+  const [earningDraft, setEarningDraft] = useState(String(weeklyEarningGoal));
+  const [jobsDraft, setJobsDraft] = useState(String(weeklyJobsGoal));
+
+  const earningPct = weeklyEarningGoal > 0 ? Math.min(1, earningsWeek / weeklyEarningGoal) : 0;
+  const jobsPct = weeklyJobsGoal > 0 ? Math.min(1, weeklyJobsDone / weeklyJobsGoal) : 0;
+
+  const openEdit = () => {
+    setEarningDraft(String(weeklyEarningGoal));
+    setJobsDraft(String(weeklyJobsGoal));
+    setEditing(true);
+  };
+
+  const saveGoals = () => {
+    // Mirror of mobile ProfileScreen.saveGoals — invalid input falls back to the current goal.
+    const eg = Math.round(Number(earningDraft)) > 0 ? Math.round(Number(earningDraft)) : weeklyEarningGoal;
+    const jg = Math.round(Number(jobsDraft)) > 0 ? Math.round(Number(jobsDraft)) : weeklyJobsGoal;
+    setGoals(eg, jg);
+    setEditing(false);
+    showToast({ icon: "🎯", title: "Goals updated", message: `Aiming for ${money(eg)} and ${jg} gigs this week.` });
+  };
+
+  return (
+    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+      <div className="flex items-center gap-2">
+        <div className="flex size-9 items-center justify-center rounded-full bg-primary-light text-primary">
+          <Target className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-black text-ink">Weekly goals</p>
+          <p className="text-xs text-ink-muted">Your pace this week</p>
+        </div>
+        <button
+          onClick={openEdit}
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ink-muted transition hover:bg-line/60 hover:text-primary"
+        >
+          <Pencil className="size-3.5" /> Edit
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-3.5">
+        {[
+          { label: "Earnings", value: money(earningsWeek), max: money(weeklyEarningGoal), pct: earningPct, barCls: "bg-accent" },
+          { label: "Jobs done", value: String(weeklyJobsDone), max: `${weeklyJobsGoal} gigs`, pct: jobsPct, barCls: "bg-primary" },
+        ].map((g) => (
+          <div key={g.label}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-bold text-ink-soft">{g.label}</span>
+              <span className="text-sm font-black text-ink">
+                {g.value} <span className="font-bold text-ink-muted">of {g.max}</span>
+              </span>
+            </div>
+            <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-line">
+              <div className={classNames("h-full rounded-full transition-all", g.barCls)} style={{ width: `${Math.round(g.pct * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="Edit weekly goals"
+        size="sm"
+        footer={
+          <Button fullWidth size="lg" onClick={saveGoals}>
+            Save goals
+          </Button>
+        }
+      >
+        <label className="text-sm font-bold text-ink-soft">Earnings goal ($)</label>
+        <Input
+          type="number"
+          inputMode="numeric"
+          value={earningDraft}
+          onChange={(e) => setEarningDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveGoals()}
+          autoFocus
+          className="mt-1.5"
+        />
+        <label className="mt-4 block text-sm font-bold text-ink-soft">Jobs goal</label>
+        <Input
+          type="number"
+          inputMode="numeric"
+          value={jobsDraft}
+          onChange={(e) => setJobsDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveGoals()}
+          className="mt-1.5"
+        />
       </Modal>
     </div>
   );

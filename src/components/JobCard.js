@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import RatingStars from './RatingStars';
 import Avatar from './Avatar';
@@ -20,6 +21,8 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) {
   const haptic = useHaptic();
+  const { savedJobIds, toggleSavedJob } = useJobs();
+  const saved = savedJobIds.has(job.id);
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
     ? `$${job.pay * (job.estimatedHours || 1)}–${job.pay * (job.estimatedHours || 1) + job.pay} est.`
@@ -31,6 +34,14 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
       onPress={() => { haptic.light(); onPress(); }}
       activeOpacity={0.82}
     >
+      <TouchableOpacity
+        style={styles.saveBtn}
+        onPress={() => { haptic.light(); toggleSavedJob(job.id); }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={saved ? 'Unsave gig' : 'Save gig'}
+      >
+        <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={16} color={saved ? colors.primary : colors.textMuted} />
+      </TouchableOpacity>
       <View style={[styles.accent, { backgroundColor: catColor }]} />
       <View style={styles.body}>
         {job.photos?.length > 0 && (
@@ -116,6 +127,11 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   accent: { width: 5 },
+  saveBtn: {
+    position: 'absolute', top: 12, right: 12, zIndex: 2,
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 16, padding: 6,
+    borderWidth: 1, borderColor: colors.border,
+  },
   body: { flex: 1, padding: 16 },
   cover: { width: '100%', height: 140, borderRadius: 12, marginBottom: 12, backgroundColor: colors.border },
   bookingPill: {
@@ -131,7 +147,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
   },
   urgentText: { color: colors.urgent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingRight: 28 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   recurBadge: {
     flexDirection: 'row', alignItems: 'center',

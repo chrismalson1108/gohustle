@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SUPPORT_EMAIL } from '../lib/legal';
 import { getReferralCode, fetchReferralCount } from '../lib/referrals';
 import { fetchVerificationStatus, requestVerification } from '../lib/verification';
+import { getUnreadCount } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import GradientHeader from '../components/GradientHeader';
@@ -44,6 +45,7 @@ export default function ProfileScreen({ navigation }) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [refCount, setRefCount] = useState(0);
   const [idv, setIdv] = useState({ verified: false, status: 'none' });
+  const [alertCount, setAlertCount] = useState(0);
   const [showStudentVerify, setShowStudentVerify] = useState(false);
   const college = collegeLine({ school, major, gradYear });
 
@@ -91,6 +93,7 @@ export default function ProfileScreen({ navigation }) {
       getPaymentReadiness().then(setPayReady).catch(() => {});
       if (user) fetchReferralCount(user.id).then(setRefCount).catch(() => {});
       if (user) fetchVerificationStatus(user.id).then(setIdv).catch(() => {});
+      if (user) getUnreadCount().then(setAlertCount).catch(() => {});
     }, [loadReviews])
   );
 
@@ -402,6 +405,20 @@ export default function ProfileScreen({ navigation }) {
 
       <TouchableOpacity
         style={styles.manageBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('SavedGigs'); }}
+      >
+        <View style={styles.manageBtnLeft}>
+          <Ionicons name="bookmark-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
+          <View>
+            <Text style={styles.manageBtnTitle}>Saved Gigs</Text>
+            <Text style={styles.manageBtnSub}>Gigs you've bookmarked to book later</Text>
+          </View>
+        </View>
+        <Text style={styles.manageBtnArrow}>›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.manageBtn}
         onPress={() => { haptic.medium(); navigation.navigate('Expenses'); }}
       >
         <View style={styles.manageBtnLeft}>
@@ -439,6 +456,11 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.manageBtnSub}>Gig matches from your AI watches</Text>
           </View>
         </View>
+        {alertCount > 0 && (
+          <View style={styles.alertBadge}>
+            <Text style={styles.alertBadgeText}>{alertCount}</Text>
+          </View>
+        )}
         <Text style={styles.manageBtnArrow}>›</Text>
       </TouchableOpacity>
 
@@ -572,6 +594,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
   },
   manageBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  alertBadge: {
+    backgroundColor: colors.primary, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
+  },
+  alertBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   manageBtnArrow: { fontSize: 22, color: colors.primary, fontWeight: '700' },
   settingsBtn: {
     marginHorizontal: 16, marginTop: 16, borderRadius: 14,
