@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { supabase, purgePersistedSession } from '../lib/supabase';
+import { supabase, recoveryAuthClient, purgePersistedSession } from '../lib/supabase';
+import { cacheClear } from '../lib/cache';
 import { unregisterPushToken } from '../lib/push';
 import { track } from '../lib/analytics';
 import { checkNeedsAcceptance } from '../lib/legal';
@@ -18,6 +19,13 @@ export function AuthProvider({ children }) {
   const [onboardingDone, setOnbDone]  = useState(true);
   const [needsTerms, setNeedsTerms]   = useState(false); // re-accept current legal docs
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
+  const purgeTimer = useRef(null); // pending post-sign-out storage purge
+
+  // Any new auth attempt must cancel a pending sign-out purge, or the timer
+  // would delete the new flow's PKCE code-verifier / freshly stored session.
+  const cancelPendingPurge = () => {
+    if (purgeTimer.current) { clearTimeout(purgeTimer.current); purgeTimer.current = null; }
+  };
 
   useEffect(() => {
     // Resolve the initial session. getSession() OR the post-session profile read
@@ -75,6 +83,7 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setAuthError(null);
+    cancelPendingPurge();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       // Email confirmation required but not yet done
@@ -93,9 +102,17 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = async () => {
     setAuthError(null);
+    cancelPendingPurge();
     try {
       // gohustlr://auth-callback in a dev/standalone build (the app scheme).
       const redirectTo = Linking.createURL('auth-callback');
+      // In Expo Go the redirect is exp://… which isn't (and shouldn't be) in the
+      // Supabase allow-list — the flow would silently dead-end after Google.
+      // Surface a clear message instead.
+      if (!redirectTo.startsWith('gohustlr://')) {
+        setAuthError('Google sign-in needs the GoHustlr app build — it isn\'t available in Expo Go. Use email sign-in here.');
+        return false;
+      }
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -145,6 +162,7 @@ export function AuthProvider({ children }) {
 
   const signUp = async (email, password, name, referralCode) => {
     setAuthError(null);
+    cancelPendingPurge();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -189,7 +207,10 @@ export function AuthProvider({ children }) {
     // was a dead end on mobile. The browser flow works on every platform.
     // NOTE: https://gohustlr.com/reset-password must be in the Supabase Auth
     // "Redirect URLs" allow-list (it already is for web password resets).
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    // Uses the IMPLICIT-flow recovery client: the main client is PKCE (for Google
+    // OAuth), and a PKCE recovery link can only be exchanged by the device that
+    // requested it — the web reset page would dead-end at "Auth session missing".
+    const { error } = await recoveryAuthClient.auth.resetPasswordForEmail(email, {
       redirectTo: 'https://gohustlr.com/reset-password',
     });
     if (error) { setAuthError(error.message); return false; }
@@ -209,9 +230,16 @@ export function AuthProvider({ children }) {
     // this device only). Fire-and-forget — failures are irrelevant to the user.
     if (userId) unregisterPushToken(userId).catch(() => {});
     supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    // Drop cached profile/jobs/bookings so a shared device never shows the
+    // previous user's data.
+    cacheClear();
     // Failsafe: if the SDK call wedges before it clears storage, purge the
     // persisted session directly so an app relaunch can't resurrect the login.
-    setTimeout(() => { purgePersistedSession(); }, 2000);
+    // Tracked + cancelled by any new auth attempt: an unconditional timer would
+    // delete a freshly written PKCE code-verifier (breaking a quick account
+    // switch via Google) or a just-persisted new session.
+    if (purgeTimer.current) clearTimeout(purgeTimer.current);
+    purgeTimer.current = setTimeout(() => { purgeTimer.current = null; purgePersistedSession(); }, 2000);
   };
 
   const clearError = () => setAuthError(null);

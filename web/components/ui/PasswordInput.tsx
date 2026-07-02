@@ -24,7 +24,6 @@ export const PasswordInput = React.forwardRef<
         onClick={() => setShow((s) => !s)}
         aria-label={show ? "Hide password" : "Show password"}
         aria-pressed={show}
-        tabIndex={-1}
         className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted transition hover:text-primary"
       >
         {show ? <EyeOff className="size-5" /> : <Eye className="size-5" />}

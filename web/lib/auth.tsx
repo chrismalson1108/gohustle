@@ -1,8 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, purgePersistedSession } from "./supabaseClient";
+import { cacheClearAll } from "./cache";
 import { track } from "./analytics";
 import { checkNeedsAcceptance } from "./legal";
 
@@ -35,6 +36,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [onboardingDone, setOnbDone] = useState(true);
   const [needsTerms, setNeedsTerms] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const purgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Any new auth attempt must cancel a pending sign-out purge, or the timer
+  // would delete the new flow's PKCE code-verifier / freshly stored session.
+  const cancelPendingPurge = () => {
+    if (purgeTimer.current) {
+      clearTimeout(purgeTimer.current);
+      purgeTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     // Resolve the initial session. supabase-js serializes auth calls behind a
@@ -101,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn: AuthValue["signIn"] = async (email, password) => {
     setAuthError(null);
+    cancelPendingPurge();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       if (
@@ -128,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle: AuthValue["signInWithGoogle"] = async () => {
     setAuthError(null);
+    cancelPendingPurge();
     // OAuth (PKCE): Supabase redirects to Google, then back to /auth/callback,
     // where detectSessionInUrl exchanges the ?code and routes the user in.
     const redirectTo =
@@ -150,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp: AuthValue["signUp"] = async (email, password, name, referralCode) => {
     setAuthError(null);
+    cancelPendingPurge();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -245,10 +259,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Background: revokes this session's refresh token server-side and clears the
     // persisted session ('local' scope = this device only). Fire-and-forget.
     supabase.auth.signOut({ scope: "local" }).catch(() => {});
+    // Clear cached profile/jobs/bookings so a shared computer never shows the
+    // previous user's data.
+    cacheClearAll();
     // Failsafe: if that SDK call wedges (held auth lock / dead network) before it
     // clears storage, purge the persisted session directly so a page reload can't
-    // resurrect the login.
-    setTimeout(purgePersistedSession, 2000);
+    // resurrect the login. Tracked + cancelled by any new auth attempt so it can
+    // never delete a fresh code-verifier or a just-persisted new session.
+    if (purgeTimer.current) clearTimeout(purgeTimer.current);
+    purgeTimer.current = setTimeout(() => {
+      purgeTimer.current = null;
+      purgePersistedSession();
+    }, 2000);
   };
 
   const clearError = () => setAuthError(null);

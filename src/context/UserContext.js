@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { useAuth } from './AuthContext';
@@ -169,32 +169,76 @@ function reducer(state, action) {
 export function UserProvider({ children }) {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
+  // 'loading' until real data (cache or server) arrives; 'error' only after all
+  // retries fail with no cache. Screens must never render DEFAULT_STATE as if it
+  // were the user's data — that's how a real account looked like a blank
+  // "Hustler" account whenever one fetch failed after an OAuth redirect.
+  const [profileStatus, setProfileStatus] = useState('loading');
+  const activeUserId = useRef(null);
   const syncTimer = useRef(null);
   const pendingPatch = useRef({});
 
   useEffect(() => {
+    activeUserId.current = user?.id ?? null;
     if (!user) return;
-    loadProfile();
-  }, [user]);
+    setProfileStatus('loading');
+    loadProfile(user.id);
+  }, [user?.id]);
 
-  const loadProfile = async () => {
-    const cacheKey = `profile_${user.id}`;
+  const withTimeout = (p, ms) => Promise.race([
+    p,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('profile fetch timed out')), ms)),
+  ]);
 
-    // 1. Show cached profile instantly
-    const cached = await cacheGet(cacheKey);
-    if (cached) dispatch({ type: 'LOAD_PROFILE', profile: cached });
-
-    // 2. Fetch fresh from Supabase
-    const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
+  const fetchProfileBundle = async (userId) => {
+    const [profileRes, badgesRes, challengesRes] = await Promise.all([
       supabase.rpc('my_profile'),
-      supabase.from('badges').select('*').eq('user_id', user.id),
-      supabase.from('user_challenges').select('*').eq('user_id', user.id),
+      supabase.from('badges').select('*').eq('user_id', userId),
+      supabase.from('user_challenges').select('*').eq('user_id', userId),
     ]);
+    // Surface failures instead of silently returning null: my_profile is
+    // authenticated-only, so a fetch fired before the session token is attached
+    // (common right after an OAuth sign-in) errors or returns null jsonb.
+    if (profileRes.error) throw profileRes.error;
+    const profile = profileRes.data;
+    if (!profile || !profile.id) throw new Error('profile not available yet');
+    return { profile, badges: badgesRes.data || [], challenges: challengesRes.data || [] };
+  };
 
-    if (!profile) return;
-    const profileState = dbToState(profile, badges || [], challenges || []);
-    dispatch({ type: 'LOAD_PROFILE', profile: profileState });
-    cacheSet(cacheKey, profileState);
+  // Retry with backoff: a transient failure (post-OAuth token race, flaky
+  // network) self-heals invisibly; only a persistent failure with no cached
+  // copy surfaces an error state. Never strand the user on placeholder data.
+  const RETRY_DELAYS_MS = [0, 1500, 4000];
+  const loadProfile = async (userId) => {
+    const cacheKey = `profile_${userId}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached && activeUserId.current === userId) {
+      dispatch({ type: 'LOAD_PROFILE', profile: cached });
+      setProfileStatus('ready');
+    }
+    for (const delay of RETRY_DELAYS_MS) {
+      if (delay) await new Promise(r => setTimeout(r, delay));
+      if (activeUserId.current !== userId) return; // signed out / switched accounts
+      try {
+        const { profile, badges, challenges } = await withTimeout(fetchProfileBundle(userId), 10000);
+        if (activeUserId.current !== userId) return;
+        const profileState = dbToState(profile, badges, challenges);
+        dispatch({ type: 'LOAD_PROFILE', profile: profileState });
+        cacheSet(cacheKey, profileState);
+        setProfileStatus('ready');
+        return;
+      } catch (_) {
+        // fall through to the next retry
+      }
+    }
+    if (activeUserId.current !== userId) return;
+    setProfileStatus(cached ? 'ready' : 'error');
+  };
+
+  const retryProfile = () => {
+    if (!user) return;
+    setProfileStatus('loading');
+    loadProfile(user.id);
   };
 
   // Debounced sync to Supabase so rapid XP taps don't flood the DB. Patches are
@@ -277,16 +321,15 @@ export function UserProvider({ children }) {
 
   const refreshProfile = async () => {
     if (!user) return;
-    const cacheKey = `profile_${user.id}`;
-    const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
-      supabase.rpc('my_profile'),
-      supabase.from('badges').select('*').eq('user_id', user.id),
-      supabase.from('user_challenges').select('*').eq('user_id', user.id),
-    ]);
-    if (!profile) return;
-    const profileState = dbToState(profile, badges || [], challenges || []);
-    dispatch({ type: 'LOAD_PROFILE', profile: profileState });
-    cacheSet(cacheKey, profileState);
+    try {
+      const { profile, badges, challenges } = await withTimeout(fetchProfileBundle(user.id), 10000);
+      const profileState = dbToState(profile, badges, challenges);
+      dispatch({ type: 'LOAD_PROFILE', profile: profileState });
+      cacheSet(`profile_${user.id}`, profileState);
+      setProfileStatus('ready');
+    } catch (_) {
+      // keep showing the current data; pull-to-refresh callers surface their own errors
+    }
   };
 
   const showToast  = (toast) => dispatch({ type: 'SHOW_TOAST',   toast });
@@ -298,6 +341,8 @@ export function UserProvider({ children }) {
     <UserContext.Provider value={{
       ...state,
       levelInfo,
+      profileStatus,
+      retryProfile,
       addXP,
       updateChallenge,
       unlockBadge,

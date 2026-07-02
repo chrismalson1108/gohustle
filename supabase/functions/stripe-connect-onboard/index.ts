@@ -91,7 +91,12 @@ Deno.serve(async (req: Request) => {
           ...(lastName && { last_name: lastName }),
         },
         settings: {
-          payouts: { schedule: { interval: 'manual' } }, // we control payout timing
+          // Automatic daily payouts: once a payment is captured to the earner's
+          // connected account, Stripe pays their bank on its standard rolling
+          // schedule. 'manual' (the previous value) required us to create every
+          // payout ourselves — and no code ever did, so earnings would have sat
+          // in the Stripe balance forever.
+          payouts: { schedule: { interval: 'daily' } },
         },
       });
 

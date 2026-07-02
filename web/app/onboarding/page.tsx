@@ -23,7 +23,7 @@ const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, session, onboardingDone, markOnboardingDone } = useAuth();
+  const { user, session, loading: authLoading, onboardingDone, markOnboardingDone } = useAuth();
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -44,9 +44,10 @@ export default function OnboardingPage() {
     ((user?.app_metadata?.provider as string | undefined) ?? "") !== "email";
 
   useEffect(() => {
+    if (authLoading) return; // session unknown yet — don't redirect-pinball on refresh
     if (session && onboardingDone) router.replace("/browse");
     if (session === null) router.replace("/login");
-  }, [session, onboardingDone, router]);
+  }, [authLoading, session, onboardingDone, router]);
 
   const next = () => setStep((s) => s + 1);
   const toggleSkill = (s: string) =>

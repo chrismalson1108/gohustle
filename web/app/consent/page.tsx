@@ -11,16 +11,17 @@ import { FullPageSpinner } from "@/components/ui/Spinner";
 
 export default function ConsentPage() {
   const router = useRouter();
-  const { user, session, needsTermsAcceptance, markTermsAccepted, signOut } = useAuth();
+  const { user, session, loading: authLoading, needsTermsAcceptance, markTermsAccepted, signOut } = useAuth();
   const [docs, setDocs] = useState<Record<string, LegalDoc> | null>(null);
   const [saving, setSaving] = useState(false);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return; // session unknown yet — don't redirect-pinball on refresh
     if (session === null) router.replace("/login");
     else if (session && !needsTermsAcceptance) router.replace("/browse");
-  }, [session, needsTermsAcceptance, router]);
+  }, [authLoading, session, needsTermsAcceptance, router]);
 
   useEffect(() => {
     fetchCurrentDocs().then(setDocs).catch(() => setDocs({}));

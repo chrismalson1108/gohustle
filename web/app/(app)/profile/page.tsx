@@ -18,7 +18,8 @@ import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import XPBar from "@/components/XPBar";
 import RatingStars from "@/components/ui/RatingStars";
-import { buttonClasses } from "@/components/ui/Button";
+import Button, { buttonClasses } from "@/components/ui/Button";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 import { money } from "@/lib/format";
 
 interface Review {
@@ -109,6 +110,29 @@ export default function ProfilePage() {
   const clientReviews = reviews.filter((r) => r.role === "poster");
   const avg = (arr: Review[]) =>
     arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length).toFixed(1) : "—";
+
+  // Never render placeholder profile data as if it were the user's account — a
+  // failed load must look like a load problem, not like a blank account.
+  if (u.profileStatus !== "ready") {
+    return (
+      <div>
+        <PageHeader title="Profile" variant="gold" />
+        <PageContainer>
+          {u.profileStatus === "loading" ? (
+            <FullPageSpinner label="Loading your profile…" />
+          ) : (
+            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
+              <p className="text-lg font-bold text-ink">Couldn&apos;t load your profile</p>
+              <p className="max-w-xs text-sm text-ink-soft">
+                Check your connection and try again — your account and data are safe.
+              </p>
+              <Button className="mt-2" onClick={u.retryProfile}>Try again</Button>
+            </div>
+          )}
+        </PageContainer>
+      </div>
+    );
+  }
 
   // Single, findable account menu — the destinations users actually hunt for
   // (money, settings, schedule, saved) grouped near the top instead of buried

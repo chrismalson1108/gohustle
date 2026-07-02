@@ -46,6 +46,7 @@ export default function OnboardingScreen({ onComplete }) {
   });
   const [usernameError, setUsernameError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [finishError, setFinishError] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [legalDoc, setLegalDoc] = useState(null);  // 'terms'|'privacy'|'contractor'
   const [legalDocs, setLegalDocs] = useState({});
@@ -103,7 +104,8 @@ export default function OnboardingScreen({ onComplete }) {
   const handleFinish = async () => {
     Keyboard.dismiss();
     setSaving(true);
-    await supabase.from('profiles').update({
+    setFinishError('');
+    const { error } = await supabase.from('profiles').update({
       username: form.username.trim().toLowerCase(),
       role: form.role,
       city: form.city,
@@ -112,7 +114,22 @@ export default function OnboardingScreen({ onComplete }) {
       bio: form.bio || null,
       onboarding_done: true,
     }).eq('id', user.id);
-    // Record acceptance of the current legal docs (the signup checkbox is consent).
+    if (error) {
+      // Don't proceed as onboarded when the save failed — otherwise the user
+      // enters the app half-set-up and gets bounced back here on next launch.
+      setSaving(false);
+      if (error.code === '23505') {
+        // Username was claimed between the step-1 check and now.
+        setUsernameError('That username was just taken — please pick another.');
+        Animated.timing(slideAnim, { toValue: -1 * width, duration: 280, useNativeDriver: true }).start();
+        setStep(1);
+      } else {
+        setFinishError("Couldn't save your profile. Check your connection and try again.");
+      }
+      return;
+    }
+    // Record acceptance of the current legal docs (email signups consented at
+    // signup; OAuth signups consented via the checkbox on this screen).
     try { await recordAcceptances(user.id, await fetchCurrentDocs()); } catch (_) {}
     // Ensure a referral code exists + record who referred this user (from signup).
     try {
@@ -318,6 +335,7 @@ export default function OnboardingScreen({ onComplete }) {
           <Text style={styles.finishBtnText}>{saving ? 'Setting up...' : 'Enter GoHustlr'}</Text>
         </LinearGradient>
       </TouchableOpacity>
+      {finishError ? <Text style={[styles.errorText, { alignSelf: 'center', marginTop: 12 }]}>{finishError}</Text> : null}
     </View>,
   ];
 

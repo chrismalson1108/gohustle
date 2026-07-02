@@ -14,6 +14,15 @@ export default function AuthCallbackPage() {
   const router = useRouter();
   const { loading, session, onboardingDone } = useAuth();
   const [timedOut, setTimedOut] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  // If the provider sent us back with an error (e.g. the user cancelled on
+  // Google), say so immediately instead of spinning until the timeout.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error_description") || params.get("error");
+    if (err) setOauthError(err.replace(/\+/g, " "));
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -31,12 +40,13 @@ export default function AuthCallbackPage() {
     return () => clearTimeout(t);
   }, [session]);
 
-  if (timedOut && !session) {
+  if ((oauthError || timedOut) && !session) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-5 text-center">
         <p className="max-w-sm text-ink-soft">
-          We couldn&apos;t finish signing you in with Google. The link may have expired
-          or the request was cancelled.
+          {oauthError
+            ? "Google sign-in wasn't completed — it looks like the request was cancelled. No problem, nothing was changed."
+            : "We couldn't finish signing you in with Google. The link may have expired or the request was cancelled."}
         </p>
         <Link href="/login" className="font-bold text-primary">
           Back to sign in

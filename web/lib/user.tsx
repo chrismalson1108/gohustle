@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useReducer, useEffect, useRef } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from "react";
 import { getLevelInfo } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
@@ -210,6 +210,8 @@ function reducer(state: UserState, action: Action): UserState {
 
 interface UserValue extends UserState {
   levelInfo: ReturnType<typeof getLevelInfo>;
+  profileStatus: "loading" | "ready" | "error";
+  retryProfile: () => void;
   addXP: (amount: number) => void;
   updateChallenge: (id: string, delta: number) => void;
   unlockBadge: (key: string) => void;
@@ -229,35 +231,80 @@ const UserContext = createContext<UserValue | null>(null);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
+  // 'loading' until real data (cache or server) arrives; 'error' only after all
+  // retries fail with no cache. Screens must never render DEFAULT_STATE as if it
+  // were the user's data — that's how a real account looked like a blank
+  // "Hustler" account whenever one fetch failed after an OAuth redirect.
+  const [profileStatus, setProfileStatus] = useState<"loading" | "ready" | "error">("loading");
+  const activeUserId = useRef<string | null>(null);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPatch = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
+    activeUserId.current = user?.id ?? null;
     if (!user) return;
-    loadProfile();
+    setProfileStatus("loading");
+    loadProfile(user.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("profile fetch timed out")), ms),
+      ),
+    ]);
+
   const fetchProfileBundle = async (userId: string) => {
-    const [{ data: profile }, { data: badges }, { data: challenges }] = await Promise.all([
+    const [profileRes, badgesRes, challengesRes] = await Promise.all([
       supabase.rpc("my_profile"), // owner's full row (private columns are revoked from direct reads)
       supabase.from("badges").select("*").eq("user_id", userId),
       supabase.from("user_challenges").select("*").eq("user_id", userId),
     ]);
-    return { profile, badges, challenges };
+    // Surface failures instead of silently returning null: my_profile is
+    // authenticated-only, so a fetch fired before the session token is attached
+    // (common right after the OAuth callback) errors or returns null jsonb.
+    if (profileRes.error) throw profileRes.error;
+    const profile = profileRes.data as DbProfile | null;
+    if (!profile || !(profile as { id?: string }).id) throw new Error("profile not available yet");
+    return { profile, badges: badgesRes.data || [], challenges: challengesRes.data || [] };
   };
 
-  const loadProfile = async () => {
-    if (!user) return;
-    const cacheKey = `profile_${user.id}`;
+  // Retry with backoff: a transient failure (post-OAuth token race, flaky
+  // network) self-heals invisibly; only a persistent failure with no cached
+  // copy surfaces an error state. Never strand the user on placeholder data.
+  const RETRY_DELAYS_MS = [0, 1500, 4000];
+  const loadProfile = async (userId: string) => {
+    const cacheKey = `profile_${userId}`;
     const cached = await cacheGet<UserState>(cacheKey);
-    if (cached) dispatch({ type: "LOAD_PROFILE", profile: cached });
+    if (cached && activeUserId.current === userId) {
+      dispatch({ type: "LOAD_PROFILE", profile: cached });
+      setProfileStatus("ready");
+    }
+    for (const delay of RETRY_DELAYS_MS) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      if (activeUserId.current !== userId) return; // signed out / switched accounts
+      try {
+        const { profile, badges, challenges } = await withTimeout(fetchProfileBundle(userId), 10000);
+        if (activeUserId.current !== userId) return;
+        const profileState = dbToState(profile, badges, challenges);
+        dispatch({ type: "LOAD_PROFILE", profile: profileState });
+        cacheSet(cacheKey, profileState);
+        setProfileStatus("ready");
+        return;
+      } catch {
+        // fall through to the next retry
+      }
+    }
+    if (activeUserId.current !== userId) return;
+    setProfileStatus(cached ? "ready" : "error");
+  };
 
-    const { profile, badges, challenges } = await fetchProfileBundle(user.id);
-    if (!profile) return;
-    const profileState = dbToState(profile, badges || [], challenges || []);
-    dispatch({ type: "LOAD_PROFILE", profile: profileState });
-    cacheSet(cacheKey, profileState);
+  const retryProfile = () => {
+    if (!user) return;
+    setProfileStatus("loading");
+    loadProfile(user.id);
   };
 
   // Merge pending patches into one object so a later debounced call (e.g. earnings)
@@ -366,12 +413,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async () => {
     if (!user) return;
-    const cacheKey = `profile_${user.id}`;
-    const { profile, badges, challenges } = await fetchProfileBundle(user.id);
-    if (!profile) return;
-    const profileState = dbToState(profile, badges || [], challenges || []);
-    dispatch({ type: "LOAD_PROFILE", profile: profileState });
-    cacheSet(cacheKey, profileState);
+    try {
+      const { profile, badges, challenges } = await withTimeout(fetchProfileBundle(user.id), 10000);
+      const profileState = dbToState(profile, badges, challenges);
+      dispatch({ type: "LOAD_PROFILE", profile: profileState });
+      cacheSet(`profile_${user.id}`, profileState);
+      setProfileStatus("ready");
+    } catch {
+      // keep showing the current data; callers surface their own errors
+    }
   };
 
   const showToast = (toast: Toast) => dispatch({ type: "SHOW_TOAST", toast });
@@ -384,6 +434,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...state,
         levelInfo,
+        profileStatus,
+        retryProfile,
         addXP,
         updateChallenge,
         unlockBadge,

@@ -30,6 +30,7 @@ export default function ProfileScreen({ navigation }) {
     memberSince, levelInfo, xp, badges, earningsTotal,
     weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
     school, major, gradYear, studentVerified, studentStatus,
+    profileStatus, retryProfile,
   } = useUser();
   const { postedJobs, bookedJobs, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
@@ -165,6 +166,36 @@ export default function ProfileScreen({ navigation }) {
     haptic.success();
     Alert.alert('Goals Updated!', 'Your weekly goals have been saved.');
   };
+
+  // Never render placeholder profile data as if it were the user's account — a
+  // failed load must look like a load problem, not like a blank account.
+  if (profileStatus !== 'ready') {
+    return (
+      <View style={[styles.container, { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
+        {profileStatus === 'loading' ? (
+          <>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: 14, fontSize: 14, color: colors.textSecondary }}>Loading your profile…</Text>
+          </>
+        ) : (
+          <>
+            <Ionicons name="cloud-offline-outline" size={44} color={colors.textMuted} />
+            <Text style={{ marginTop: 12, fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>
+              Couldn't load your profile
+            </Text>
+            <Text style={{ marginTop: 6, fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+              Check your connection and try again — your account and data are safe.
+            </Text>
+            <TouchableOpacity onPress={retryProfile} style={{ marginTop: 18 }} activeOpacity={0.85}>
+              <LinearGradient colors={gradients.primary} style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32 }}>
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Try again</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    );
+  }
 
   return (
     <ScrollView

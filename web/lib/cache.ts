@@ -40,3 +40,19 @@ export async function cacheRemove(key: string): Promise<void> {
     /* ignore */
   }
 }
+
+// Drop every cache entry (profiles, jobs, bookings…). Called on sign-out so a
+// shared computer never shows the previous user's cached data.
+export function cacheClearAll(): void {
+  if (!hasStorage()) return;
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("cache:")) doomed.push(k);
+    }
+    doomed.forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    /* ignore */
+  }
+}
