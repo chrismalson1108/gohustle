@@ -8,7 +8,7 @@ import { useUser } from "@/lib/user";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead } from "@/lib/messages";
 import { notify } from "@/lib/push";
-import { uploadToBucket } from "@/lib/uploadImage";
+import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
 import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
 import { findProhibited } from "@gohustlr/shared";
 import PageHeader, { EmptyState } from "@/components/PageHeader";
@@ -171,6 +171,9 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   const [reportBusy, setReportBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // chat-photos is a private bucket — resolve each image message to a short-lived
+  // signed URL (keyed by object path) rather than a permanent public URL.
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -199,6 +202,29 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Sign any image messages we haven't signed yet (private bucket).
+  useEffect(() => {
+    let active = true;
+    const missing = messages
+      .map((m) => chatObjectPath(m.image_url))
+      .filter((p): p is string => !!p && !signedUrls[p]);
+    if (!missing.length) return;
+    (async () => {
+      const entries = await Promise.all(
+        Array.from(new Set(missing)).map(async (p) => [p, await getSignedUrl("chat-photos", p)] as const),
+      );
+      if (!active) return;
+      setSignedUrls((prev) => {
+        const next = { ...prev };
+        for (const [p, url] of entries) if (url) next[p] = url;
+        return next;
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [messages, signedUrls]);
 
   // Ping the other party's phone + drop an in-app Alert (send-push persists a notification row).
   const pingOther = (preview: string) => {
@@ -238,10 +264,10 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   const sendImage = async (file: File) => {
     setSending(true);
     try {
-      const url = await uploadToBucket(file, "chat-photos", userId);
+      const path = await uploadPrivateToBucket(file, "chat-photos", userId);
       const { data } = await supabase
         .from("messages")
-        .insert({ booking_id: conversation.bookingId, sender_id: userId, image_url: url })
+        .insert({ booking_id: conversation.bookingId, sender_id: userId, image_url: path })
         .select("id, booking_id, sender_id, text, image_url, created_at")
         .single();
       if (data) setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
@@ -306,12 +332,20 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
       <div className="flex-1 space-y-2 overflow-y-auto bg-canvas px-4 py-4" onClick={() => menuOpen && setMenuOpen(false)}>
         {messages.map((m, i) => {
           const mine = m.sender_id === userId;
+          const imgPath = chatObjectPath(m.image_url);
+          const imgSrc = imgPath ? signedUrls[imgPath] : null;
           return (
             <div key={m.id || i} className={classNames("flex", mine ? "justify-end" : "justify-start")}>
               <div className={classNames("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm", mine ? "bg-primary text-white" : "bg-white text-ink ring-1 ring-line")}>
-                {m.image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.image_url} alt="" className="mb-1 max-h-48 rounded-xl ring-1 ring-line" />
+                {imgPath && (
+                  imgSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={imgSrc} alt="" className="mb-1 max-h-48 rounded-xl ring-1 ring-line" />
+                  ) : (
+                    <div className="mb-1 flex h-24 w-32 items-center justify-center rounded-xl bg-canvas text-ink-muted ring-1 ring-line">
+                      <Loader2 className="size-4 animate-spin" />
+                    </div>
+                  )
                 )}
                 {m.text}
               </div>

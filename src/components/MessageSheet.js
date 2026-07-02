@@ -11,7 +11,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import { useJobs } from '../context/JobsContext';
 import Avatar from './Avatar';
 import { notify } from '../lib/push';
-import { pickImage, uploadImage } from '../lib/uploadImage';
+import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
 import { markConversationRead } from '../lib/messages';
@@ -62,6 +62,9 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
+  // chat-photos is a private bucket — resolve each image message to a short-lived
+  // signed URL (keyed by object path) instead of a permanent public URL.
+  const [signedUrls, setSignedUrls] = useState({});
   const listRef = useRef(null);
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
@@ -74,6 +77,33 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     const cleanup = setupRealtime();
     return cleanup;
   }, [visible, bookingId]);
+
+  // A chat image_url is a bare object path ("<uid>/<file>", new rows) or a legacy
+  // full public URL ending in "/chat-photos/<uid>/<file>". Return the object path.
+  const chatObjectPath = (stored) => {
+    if (!stored) return null;
+    const i = stored.indexOf('/chat-photos/');
+    return i >= 0 ? stored.slice(i + '/chat-photos/'.length) : stored;
+  };
+
+  // Sign any image messages we haven't signed yet.
+  useEffect(() => {
+    let active = true;
+    const paths = [...new Set(
+      messages.map(m => chatObjectPath(m.image_url)).filter(p => p && !signedUrls[p] && !p.startsWith('file:') && !p.startsWith('http'))
+    )];
+    if (!paths.length) return;
+    (async () => {
+      const entries = await Promise.all(paths.map(async p => [p, await getSignedUrl('chat-photos', p)]));
+      if (!active) return;
+      setSignedUrls(prev => {
+        const next = { ...prev };
+        for (const [p, url] of entries) if (url) next[p] = url;
+        return next;
+      });
+    })();
+    return () => { active = false; };
+  }, [messages]);
 
   const loadMessages = async () => {
     setLoading(true);
@@ -167,13 +197,16 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     setUploadingImg(true);
     haptic.light();
     try {
-      const url = await uploadImage({ uri: picked.uri, bucket: 'chat-photos', userId: user.id });
+      const path = await uploadPrivateImage({ uri: picked.uri, bucket: 'chat-photos', userId: user.id });
       const { data, error } = await supabase
         .from('messages')
-        .insert({ booking_id: bookingId, sender_id: user.id, text: '', image_url: url })
+        .insert({ booking_id: bookingId, sender_id: user.id, text: '', image_url: path })
         .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
         .single();
       if (error) throw error;
+      // Seed the signed URL so the sender sees their photo immediately (private bucket).
+      const signed = await getSignedUrl('chat-photos', path);
+      if (signed) setSignedUrls(prev => ({ ...prev, [path]: signed }));
       setMessages(prev => [...prev, data]);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', { tab: 'MessagesTab' });
@@ -199,7 +232,13 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
         )}
         <View style={[styles.msgBubble, isMine && styles.msgBubbleMine, item._pending && styles.msgBubblePending]}>
           {item.image_url ? (
-            <Image source={{ uri: item.image_url }} style={styles.msgImage} resizeMode="cover" />
+            (() => {
+              const p = chatObjectPath(item.image_url);
+              const uri = signedUrls[p] || (p && (p.startsWith('http') || p.startsWith('file:')) ? p : null);
+              return uri
+                ? <Image source={{ uri }} style={styles.msgImage} resizeMode="cover" />
+                : <View style={[styles.msgImage, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color={colors.primary} /></View>;
+            })()
           ) : null}
           {item.text ? (
             <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.text}</Text>
