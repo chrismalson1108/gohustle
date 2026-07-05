@@ -31,12 +31,17 @@ export async function setJobStatus(formData: FormData): Promise<ActionResult> {
 
     // On take-down, also purge the gig's photos from the public bucket (a
     // policy-violating image otherwise stays live at its URL). Best-effort.
+    // SECURITY: jobs.photos is attacker-controlled free text, so only ever delete
+    // objects under the POSTER's own folder and never a path containing ".." —
+    // otherwise a crafted photos entry could make the service role delete another
+    // user's (or another bucket's) file.
     let photosDeleted = 0;
     if (status === "cancelled") {
-      const { data: job } = await ctx.service.from("jobs").select("photos").eq("id", jobId).maybeSingle();
+      const { data: job } = await ctx.service.from("jobs").select("photos, poster_id").eq("id", jobId).maybeSingle();
+      const posterId = job?.poster_id as string | undefined;
       const paths = ((job?.photos as string[] | null) ?? [])
         .map((u) => pathFromPublicUrl(u, "job-photos"))
-        .filter((p): p is string => !!p);
+        .filter((p): p is string => !!p && !p.includes("..") && !!posterId && p.startsWith(`${posterId}/`));
       if (paths.length) {
         const { error: rmErr } = await ctx.service.storage.from("job-photos").remove(paths);
         if (!rmErr) {

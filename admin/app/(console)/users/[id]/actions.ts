@@ -51,9 +51,12 @@ async function run(
   try {
     if (opts.guardTarget !== false) await assertActionableTarget(ctx, targetId);
     const detail = (await fn(ctx)) ?? {};
-    await audit(ctx, action, "user", targetId, detail);
+    // An action can set __message for a custom success string; it's stripped
+    // from the audited detail.
+    const { __message, ...auditDetail } = detail as Record<string, unknown> & { __message?: string };
+    await audit(ctx, action, "user", targetId, auditDetail);
     revalidatePath(`/users/${targetId}`);
-    return { ok: true, message: "Done." };
+    return { ok: true, message: __message ?? "Done." };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, message: msg };
@@ -80,7 +83,13 @@ export async function suspendUser(formData: FormData): Promise<ActionResult> {
     const { data: revoked, error: rErr } = await ctx.service.rpc("admin_revoke_sessions", {
       target: userId,
     });
-    return { reason, sessions_revoked: rErr ? `error: ${rErr.message}` : revoked };
+    return {
+      reason,
+      sessions_revoked: rErr ? `error: ${rErr.message}` : revoked,
+      __message:
+        "Suspended. New logins are blocked immediately; if they're currently signed in, " +
+        "that session ends when its token expires (up to ~1h).",
+    };
   });
 }
 
@@ -112,7 +121,12 @@ export async function forceSignOut(formData: FormData): Promise<ActionResult> {
       target: userId,
     });
     if (error) throw new Error(`session revoke failed: ${error.message}`);
-    return { sessions_revoked: revoked };
+    return {
+      sessions_revoked: revoked,
+      __message:
+        `Revoked ${revoked ?? 0} session(s). They can't get a new token, but their ` +
+        `current one stays valid until it expires (up to ~1h) — Supabase can't kill an active JWT instantly.`,
+    };
   });
 }
 

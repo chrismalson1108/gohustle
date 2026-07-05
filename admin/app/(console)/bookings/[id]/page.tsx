@@ -42,7 +42,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const messages = await Promise.all(
     (messagesRes.data ?? []).map(async (m) => ({
       ...m,
-      signedImage: m.image_url ? await signChatImage(ctx.service, m.image_url) : null,
+      signedImage: m.image_url ? await signChatImage(ctx.service, m.image_url, m.sender_id) : null,
     })),
   );
   const completionPhotos: string[] = booking.completion_photos ?? [];
