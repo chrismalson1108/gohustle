@@ -20,3 +20,16 @@ verify_jwt = false
 
 [functions.stripe-connect-return]
 verify_jwt = false
+
+# support-submit — public website Contact form (no JWT).
+# support-reply / support-ai-draft — called by the admin console server, which
+#   authenticates with the service-role key in x-admin-secret (not a user JWT),
+#   so the gateway JWT check must be off; the functions verify the secret themselves.
+[functions.support-submit]
+verify_jwt = false
+
+[functions.support-reply]
+verify_jwt = false
+
+[functions.support-ai-draft]
+verify_jwt = false

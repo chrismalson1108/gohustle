@@ -43,6 +43,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     reportsAgainstRes,
     reviewsRes,
     notesRes,
+    loginHistoryRes,
   ] = await Promise.all([
     ctx.service.auth.admin.getUserById(id),
     ctx.service
@@ -87,9 +88,12 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .eq("user_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    ctx.service.rpc("admin_user_login_history", { target: id, lim: 10 }),
   ]);
 
   const authUser = authUserRes.data?.user ?? null;
+  const providers = (authUser?.identities ?? []).map((i) => i.provider);
+  const loginHistory = (loginHistoryRes.data ?? []) as { created_at: string; ip: string | null; action: string | null }[];
 
   // Payment status for the earner-side bookings.
   const bookingIds = (earnerBookingsRes.data ?? []).map((b) => b.id);
@@ -175,6 +179,40 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             </div>
           )}
         </dl>
+      </Section>
+
+      <Section title="Sign-in">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm md:grid-cols-4">
+          <div>
+            <dt className="text-[var(--muted)]">Providers</dt>
+            <dd>{providers.length ? providers.join(", ") : "email"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--muted)]">Last sign-in</dt>
+            <dd>{fmtDate(authUser?.last_sign_in_at)}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--muted)]">Email confirmed</dt>
+            <dd>{authUser?.email_confirmed_at ? fmtDate(authUser.email_confirmed_at) : "no"}</dd>
+          </div>
+        </dl>
+        {loginHistory.length > 0 ? (
+          <ul className="mt-3 text-sm">
+            {loginHistory.map((h, i) => (
+              <li key={i} className="flex justify-between border-t border-[var(--line)] py-1.5">
+                <span>{h.action ?? "login"}</span>
+                <span className="text-[var(--muted)]">
+                  {h.ip ?? "—"} · {fmtDate(h.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            No per-login IP history is recorded (Supabase Auth isn&apos;t logging auth events on this project, and the app
+            doesn&apos;t track user IPs by design).
+          </p>
+        )}
       </Section>
 
       <Section title="Actions">

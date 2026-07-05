@@ -12,14 +12,19 @@ export default async function ConsoleLayout({
   return (
     <div className="min-h-screen">
       <header className="border-b border-[var(--line)] bg-white">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
-          <Link href="/users" className="text-sm font-bold text-[var(--brand)]">
+        <div className="mx-auto flex max-w-7xl items-center gap-5 px-6 py-3">
+          <Link href="/" className="text-sm font-bold text-[var(--brand)]">
             GoHustlr Admin
           </Link>
           <nav className="flex items-center gap-4 text-sm">
+            <Link href="/" className="hover:text-[var(--brand)]">Dashboard</Link>
             <Link href="/users" className="hover:text-[var(--brand)]">Users</Link>
+            <Link href="/moderation" className="hover:text-[var(--brand)]">Moderation</Link>
+            <Link href="/payments" className="hover:text-[var(--brand)]">Payments</Link>
+            <Link href="/jobs" className="hover:text-[var(--brand)]">Jobs</Link>
+            <Link href="/support" className="hover:text-[var(--brand)]">Support</Link>
             {ctx.role === "admin" && (
-              <Link href="/audit" className="hover:text-[var(--brand)]">Audit log</Link>
+              <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
@@ -35,7 +40,7 @@ export default async function ConsoleLayout({
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
     </div>
   );
 }
