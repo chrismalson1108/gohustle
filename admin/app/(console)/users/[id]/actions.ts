@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { requireAdmin, AdminAuthError } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 import { deleteUserCascade } from "@/lib/deleteUser";
-import { USER_APP_URL } from "@/lib/config";
+import { getServerSupabase } from "@/lib/supabaseServer";
+import { USER_APP_URL, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/config";
 
 export interface ActionResult {
   ok: boolean;
@@ -163,6 +164,83 @@ export async function sendPasswordReset(formData: FormData): Promise<ActionResul
     });
     if (error) throw new Error(error.message);
     return { email };
+  });
+}
+
+export async function confirmEmail(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, message: "Missing user id." };
+  return run("user.confirm_email", userId, async (ctx) => {
+    const { error } = await ctx.service.auth.admin.updateUserById(userId, { email_confirm: true });
+    if (error) throw new Error(error.message);
+  });
+}
+
+export async function changeEmail(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!userId) return { ok: false, message: "Missing user id." };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, message: "Enter a valid email." };
+  return run("user.change_email", userId, async (ctx) => {
+    // Set + auto-confirm so the user isn't locked out behind a fresh confirmation.
+    const { error } = await ctx.service.auth.admin.updateUserById(userId, { email, email_confirm: true });
+    if (error) throw new Error(error.message);
+    return { email };
+  });
+}
+
+export async function grantStudent(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, message: "Missing user id." };
+  return run("user.grant_student", userId, async (ctx) => {
+    const { error } = await ctx.service
+      .from("profiles")
+      .update({
+        student_verified: true,
+        student_status: "student",
+        student_verify_method: "manual",
+        student_verified_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+    if (error) throw new Error(error.message);
+  });
+}
+
+export async function notifyUser(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const alsoEmail = formData.get("alsoEmail") === "on";
+  if (!userId || !title || !body) return { ok: false, message: "Title and message are required." };
+  return run("user.notify", userId, async (ctx) => {
+    // In-app alert (notifications table; the app's inbox reads it).
+    const { error } = await ctx.service
+      .from("notifications")
+      .insert({ user_id: userId, type: "admin", title, body });
+    if (error) throw new Error(`in-app notify failed: ${error.message}`);
+
+    let emailed = false;
+    if (alsoEmail) {
+      const { data } = await ctx.service.auth.admin.getUserById(userId);
+      const email = data?.user?.email;
+      if (email) {
+        const supa = await getServerSupabase();
+        const {
+          data: { session },
+        } = await supa.auth.getSession();
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/support-reply`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ toEmail: email, subject: title, body }),
+        });
+        emailed = res.ok;
+      }
+    }
+    return { title, emailed: alsoEmail ? emailed : undefined };
   });
 }
 

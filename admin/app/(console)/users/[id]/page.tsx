@@ -1,17 +1,22 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdminPage } from "@/lib/guard";
-import { audit } from "@/lib/audit";
+import { auditRead } from "@/lib/audit";
 import { fmtCents, fmtDate } from "@/lib/format";
+import { STRIPE_DASHBOARD_BASE } from "@/lib/config";
 import ActionsPanel from "./ActionsPanel";
 import NoteForm from "./NoteForm";
+import NotifyForm from "./NotifyForm";
 
 export const metadata = { title: "User detail" };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
     <section className="rounded-xl border border-[var(--line)] bg-white p-5">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">{title}</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">{title}</h2>
+        {right}
+      </div>
       {children}
     </section>
   );
@@ -44,6 +49,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     reviewsRes,
     notesRes,
     loginHistoryRes,
+    stripeRes,
   ] = await Promise.all([
     ctx.service.auth.admin.getUserById(id),
     ctx.service
@@ -89,9 +95,11 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .order("created_at", { ascending: false })
       .limit(50),
     ctx.service.rpc("admin_user_login_history", { target: id, lim: 10 }),
+    ctx.service.from("stripe_accounts").select("account_id, onboarded").eq("user_id", id).maybeSingle(),
   ]);
 
   const authUser = authUserRes.data?.user ?? null;
+  const stripeAccount = stripeRes.data;
   const providers = (authUser?.identities ?? []).map((i) => i.provider);
   const loginHistory = (loginHistoryRes.data ?? []) as { created_at: string; ip: string | null; action: string | null }[];
 
@@ -115,7 +123,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const adminName = new Map(noteAdmins.map((a) => [a.id, a.name]));
 
   // Sensitive read — leave a trace.
-  await audit(ctx, "user.view", "user", id);
+  await auditRead(ctx, "user.view", "user", id);
 
   const suspended = Boolean(profile.suspended_at);
 
@@ -215,15 +223,57 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         )}
       </Section>
 
+      <Section title="Payouts (Stripe Connect)" right={
+        stripeAccount?.account_id ? (
+          <a
+            href={`${STRIPE_DASHBOARD_BASE}/connect/accounts/${stripeAccount.account_id}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-xs text-[var(--brand)] hover:underline"
+          >
+            Open in Stripe ↗
+          </a>
+        ) : undefined
+      }>
+        {stripeAccount?.account_id ? (
+          <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm md:grid-cols-4">
+            <div className="col-span-2">
+              <dt className="text-[var(--muted)]">Connect account</dt>
+              <dd className="font-mono text-xs">{stripeAccount.account_id}</dd>
+            </div>
+            <div>
+              <dt className="text-[var(--muted)]">Onboarded (cached)</dt>
+              <dd>{stripeAccount.onboarded ? "yes" : "no"}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-[var(--muted)]">
+            No Stripe Connect account — this user hasn&apos;t set up payouts. (Live payout status lives in Stripe.)
+          </p>
+        )}
+      </Section>
+
       <Section title="Actions">
         <ActionsPanel
           userId={profile.id}
           email={authUser?.email ?? null}
           suspended={suspended}
           verified={Boolean(profile.verified)}
+          emailConfirmed={Boolean(authUser?.email_confirmed_at)}
+          student={Boolean(profile.student_verified)}
           isAdmin={ctx.role === "admin"}
         />
       </Section>
+
+      {ctx.role === "admin" && (
+        <Section title="Notify user" right={
+          <Link href={`/users/${profile.id}/export`} prefetch={false} className="text-xs text-[var(--brand)] hover:underline">
+            Export data (GDPR) ↓
+          </Link>
+        }>
+          <NotifyForm userId={profile.id} />
+        </Section>
+      )}
 
       <Section title={`Bookings as worker (${earnerBookingsRes.data?.length ?? 0})`}>
         {(earnerBookingsRes.data ?? []).length === 0 ? (

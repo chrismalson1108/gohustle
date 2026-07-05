@@ -9,6 +9,9 @@ import {
   resetProfileFields,
   sendPasswordReset,
   deleteAccount,
+  confirmEmail,
+  changeEmail,
+  grantStudent,
   type ActionResult,
 } from "./actions";
 
@@ -19,18 +22,23 @@ export default function ActionsPanel({
   email,
   suspended,
   verified,
+  emailConfirmed,
+  student,
   isAdmin,
 }: {
   userId: string;
   email: string | null;
   suspended: boolean;
   verified: boolean;
+  emailConfirmed: boolean;
+  student: boolean;
   isAdmin: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [suspendReason, setSuspendReason] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [newEmail, setNewEmail] = useState("");
 
   if (!isAdmin) {
     return (
@@ -136,6 +144,46 @@ export default function ActionsPanel({
           }
         >
           Reset username/bio
+        </button>
+
+        {!emailConfirmed && (
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() => fire(confirmEmail, {}, "Manually mark this account's email confirmed (bypasses the confirmation link)?")}
+          >
+            Confirm email
+          </button>
+        )}
+
+        {!student && (
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() => fire(grantStudent, {}, "Manually grant Student status (wrongly-rejected .edu)?")}
+          >
+            Grant student status
+          </button>
+        )}
+      </div>
+
+      {/* Change email — separate row, needs an input */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="email"
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          placeholder="new-email@example.com"
+          className="w-64 rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
+        />
+        <button
+          className={btn}
+          disabled={pending || !newEmail.includes("@")}
+          onClick={() =>
+            fire(changeEmail, { email: newEmail }, `Change this account's email to ${newEmail} (and confirm it)?`)
+          }
+        >
+          Change email
         </button>
       </div>
 

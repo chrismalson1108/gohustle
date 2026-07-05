@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, AdminAuthError } from "@/lib/guard";
 import { audit } from "@/lib/audit";
+import { pathFromPublicUrl } from "@/lib/media";
 
 export interface ActionResult {
   ok: boolean;
@@ -27,10 +28,34 @@ export async function setJobStatus(formData: FormData): Promise<ActionResult> {
   try {
     const { error } = await ctx.service.from("jobs").update({ status }).eq("id", jobId);
     if (error) throw new Error(error.message);
-    await audit(ctx, status === "cancelled" ? "job.takedown" : "job.restore", "job", jobId, { reason: reason || undefined });
+
+    // On take-down, also purge the gig's photos from the public bucket (a
+    // policy-violating image otherwise stays live at its URL). Best-effort.
+    let photosDeleted = 0;
+    if (status === "cancelled") {
+      const { data: job } = await ctx.service.from("jobs").select("photos").eq("id", jobId).maybeSingle();
+      const paths = ((job?.photos as string[] | null) ?? [])
+        .map((u) => pathFromPublicUrl(u, "job-photos"))
+        .filter((p): p is string => !!p);
+      if (paths.length) {
+        const { error: rmErr } = await ctx.service.storage.from("job-photos").remove(paths);
+        if (!rmErr) {
+          photosDeleted = paths.length;
+          await ctx.service.from("jobs").update({ photos: [] }).eq("id", jobId);
+        }
+      }
+    }
+
+    await audit(ctx, status === "cancelled" ? "job.takedown" : "job.restore", "job", jobId, {
+      reason: reason || undefined,
+      photos_deleted: photosDeleted || undefined,
+    });
     revalidatePath(`/jobs/${jobId}`);
     revalidatePath("/jobs");
-    return { ok: true, message: status === "cancelled" ? "Taken down." : "Restored." };
+    return {
+      ok: true,
+      message: status === "cancelled" ? `Taken down${photosDeleted ? ` (${photosDeleted} photo(s) removed)` : ""}.` : "Restored.",
+    };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }

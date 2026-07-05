@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
 import { Pill, statusTone } from "@/lib/ui";
+import { auditRead } from "@/lib/audit";
 import Composer from "./Composer";
 
 export const metadata = { title: "Ticket" };
@@ -13,6 +14,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   const { data: ticket } = await ctx.service.from("support_tickets").select("*").eq("id", id).maybeSingle();
   if (!ticket) notFound();
+  await auditRead(ctx, "support.view", "ticket", id);
 
   const [messagesRes, linkedUser] = await Promise.all([
     ctx.service

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdminPage } from "@/lib/guard";
+import { auditRead } from "@/lib/audit";
 import { fmtDate } from "@/lib/format";
 
 export const metadata = { title: "Users" };
@@ -30,6 +31,8 @@ export default async function UsersPage({
     const { data, error } = await ctx.service.rpc("admin_find_users", { q });
     if (error) searchError = error.message;
     else results = data as FoundUser[];
+    // Searching returns emails/names — record who searched for what.
+    await auditRead(ctx, "user.search", "search", undefined, { q, results: results?.length ?? 0 });
   }
 
   return (

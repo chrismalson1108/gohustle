@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
+import { auditRead } from "@/lib/audit";
 import TakedownControls from "./TakedownControls";
 
 export const metadata = { title: "Job detail" };
@@ -13,6 +14,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: job } = await ctx.service.from("jobs").select("*").eq("id", id).maybeSingle();
   if (!job) notFound();
+  const photos: string[] = job.photos ?? [];
+  await auditRead(ctx, "job.view", "job", id);
 
   const [posterRes, slotsRes, bookingsRes] = await Promise.all([
     ctx.service.from("profiles").select("id, name, username").eq("id", job.poster_id).maybeSingle(),
@@ -54,6 +57,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </dl>
       </Section>
+
+      {photos.length > 0 && (
+        <Section title={`Photos (${photos.length})`}>
+          <div className="flex flex-wrap gap-3">
+            {photos.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer noopener">
+                <img src={url} alt={`job photo ${i + 1}`} className="h-40 w-40 rounded-lg border border-[var(--line)] object-cover" />
+              </a>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section title="Actions">
         <TakedownControls jobId={job.id} cancelled={job.status === "cancelled"} isAdmin={ctx.role === "admin"} />

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin, AdminAuthError } from "@/lib/guard";
-import { audit } from "@/lib/audit";
+import { audit, auditRead } from "@/lib/audit";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/config";
 
@@ -132,6 +132,8 @@ export async function aiDraft(ticketId: string): Promise<{ ok: boolean; draft?: 
     const res = await callEdge("support-ai-draft", { subject: ticket?.subject, messages: messages ?? [] });
     if (!res.ok) return { ok: false, message: "AI draft unavailable." };
     const data = await res.json();
+    // The draft ships ticket content to the LLM — record the PII egress (best-effort).
+    await auditRead(ctx, "support.ai_draft", "ticket", ticketId);
     return { ok: true, draft: data.draft ?? "" };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };

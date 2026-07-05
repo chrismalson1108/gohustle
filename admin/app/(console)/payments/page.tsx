@@ -3,6 +3,7 @@ import { requireAdminPage } from "@/lib/guard";
 import { fmtCents, fmtDate } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
+import { auditRead } from "@/lib/audit";
 
 export const metadata = { title: "Payments & disputes" };
 
@@ -13,6 +14,7 @@ export default async function PaymentsPage({
 }) {
   const ctx = await requireAdminPage("support");
   const statusFilter = (await searchParams).status ?? "";
+  await auditRead(ctx, "payments.view", "payments", undefined, statusFilter ? { status: statusFilter } : undefined);
 
   let payQ = ctx.service
     .from("payments")

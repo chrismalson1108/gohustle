@@ -27,3 +27,20 @@ export async function audit(
   });
   if (error) throw new Error(`audit write failed (${action}): ${error.message}`);
 }
+
+// Best-effort audit for READ/view pages: the data was already fetched, so a
+// failed audit insert shouldn't 500 the page (which would just deny the admin
+// the view without preventing the access). Logs the failure and moves on.
+export async function auditRead(
+  ctx: AdminContext,
+  action: string,
+  targetType?: string,
+  targetId?: string,
+  detail?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await audit(ctx, action, targetType, targetId, detail);
+  } catch (e) {
+    console.error("auditRead failed:", e);
+  }
+}

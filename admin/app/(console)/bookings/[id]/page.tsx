@@ -4,6 +4,8 @@ import { requireAdminPage } from "@/lib/guard";
 import { fmtCents, fmtDate } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
+import { auditRead } from "@/lib/audit";
+import { signChatImage } from "@/lib/media";
 
 export const metadata = { title: "Booking detail" };
 
@@ -14,12 +16,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const { data: booking } = await ctx.service.from("bookings").select("*").eq("id", id).maybeSingle();
   if (!booking) notFound();
 
-  const [jobRes, earnerRes, paymentRes, disputeRes, msgCountRes] = await Promise.all([
+  const [jobRes, earnerRes, paymentRes, disputeRes, messagesRes] = await Promise.all([
     ctx.service.from("jobs").select("id, title, poster_id, status").eq("id", booking.job_id).maybeSingle(),
     ctx.service.from("profiles").select("id, name, username").eq("id", booking.earner_id).maybeSingle(),
     ctx.service.from("payments").select("*").eq("booking_id", id).maybeSingle(),
     ctx.service.from("disputes").select("id, reason, pct_paid, raised_by, created_at").eq("booking_id", id),
-    ctx.service.from("messages").select("id", { count: "exact", head: true }).eq("booking_id", id),
+    ctx.service
+      .from("messages")
+      .select("id, sender_id, text, image_url, created_at")
+      .eq("booking_id", id)
+      .order("created_at", { ascending: true })
+      .limit(200),
   ]);
 
   const posterId = jobRes.data?.poster_id;
@@ -30,6 +37,19 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const name = (p: { name: string; username: string | null } | null | undefined, fallback: string) =>
     p ? (p.username ? `@${p.username}` : p.name) : fallback;
   const pay = paymentRes.data;
+
+  // Sign any chat images (private bucket) so an admin can review flagged DM content.
+  const messages = await Promise.all(
+    (messagesRes.data ?? []).map(async (m) => ({
+      ...m,
+      signedImage: m.image_url ? await signChatImage(ctx.service, m.image_url) : null,
+    })),
+  );
+  const completionPhotos: string[] = booking.completion_photos ?? [];
+
+  // Viewing a booking exposes both parties' identity, escrow amounts, and chat —
+  // record the access (T&S / compliance).
+  await auditRead(ctx, "booking.view", "booking", id);
 
   return (
     <div className="space-y-6">
@@ -63,7 +83,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div><dt className="text-[var(--muted)]">Poster done</dt><dd>{booking.poster_done ? "yes" : "no"}</dd></div>
           <div><dt className="text-[var(--muted)]">Tip</dt><dd>{booking.tip_amount ? `$${booking.tip_amount}` : "—"}</dd></div>
           <div><dt className="text-[var(--muted)]">Amendment</dt><dd>{booking.amendment_status ?? "none"}</dd></div>
-          <div><dt className="text-[var(--muted)]">Messages</dt><dd>{msgCountRes.count ?? 0}</dd></div>
+          <div><dt className="text-[var(--muted)]">Messages</dt><dd>{messages.length}</dd></div>
           {booking.counter_offer && <div><dt className="text-[var(--muted)]">Counter-offer</dt><dd>${Number(booking.counter_offer)}</dd></div>}
         </dl>
       </Section>
@@ -87,6 +107,49 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <div><dt className="text-[var(--muted)]">Captured</dt><dd>{fmtDate(pay.captured_at)}</dd></div>
             <div className="col-span-3"><dt className="text-[var(--muted)]">PaymentIntent</dt><dd className="font-mono text-xs">{pay.payment_intent_id}</dd></div>
           </dl>
+        )}
+      </Section>
+
+      {completionPhotos.length > 0 && (
+        <Section title={`Completion photos (${completionPhotos.length})`}>
+          <div className="flex flex-wrap gap-3">
+            {completionPhotos.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer noopener">
+                <img src={url} alt={`completion ${i + 1}`} className="h-40 w-40 rounded-lg border border-[var(--line)] object-cover" />
+              </a>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <Section title={`Conversation (${messages.length})`}>
+        {messages.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">No messages.</p>
+        ) : (
+          <div className="space-y-2">
+            {messages.map((m) => {
+              const fromEarner = m.sender_id === booking.earner_id;
+              return (
+                <div
+                  key={m.id}
+                  className={`max-w-[80%] rounded-xl border p-3 text-sm ${
+                    fromEarner ? "mr-auto border-[var(--line)] bg-white" : "ml-auto border-indigo-200 bg-indigo-50"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-4 text-xs text-[var(--muted)]">
+                    <span className="font-medium">{fromEarner ? name(earnerRes.data, "earner") : name(poster, "poster")}</span>
+                    <span>{fmtDate(m.created_at)}</span>
+                  </div>
+                  {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                  {m.signedImage && (
+                    <a href={m.signedImage} target="_blank" rel="noreferrer noopener">
+                      <img src={m.signedImage} alt="chat attachment" className="mt-2 max-h-64 rounded-lg border border-[var(--line)]" />
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </Section>
 

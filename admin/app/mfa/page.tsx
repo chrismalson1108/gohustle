@@ -112,7 +112,6 @@ export default function MfaPage() {
               1Password, Google Authenticator, or similar — then enter the 6-digit code.
             </p>
             {qrSrc && (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={qrSrc} alt="TOTP enrollment QR code" className="mx-auto mb-2 h-44 w-44" />
             )}
             {secret && (
