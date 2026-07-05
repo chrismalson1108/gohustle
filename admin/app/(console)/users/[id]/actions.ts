@@ -220,6 +220,23 @@ export async function grantStudent(formData: FormData): Promise<ActionResult> {
   });
 }
 
+export async function revokeStudent(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, message: "Missing user id." };
+  return run("user.revoke_student", userId, async (ctx) => {
+    const { error } = await ctx.service
+      .from("profiles")
+      .update({
+        student_verified: false,
+        student_status: "none",
+        student_verify_method: null,
+        student_verified_at: null,
+      })
+      .eq("id", userId);
+    if (error) throw new Error(error.message);
+  });
+}
+
 export async function notifyUser(formData: FormData): Promise<ActionResult> {
   const userId = String(formData.get("userId") ?? "");
   const title = String(formData.get("title") ?? "").trim();

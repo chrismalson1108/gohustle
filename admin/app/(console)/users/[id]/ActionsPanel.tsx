@@ -12,6 +12,7 @@ import {
   confirmEmail,
   changeEmail,
   grantStudent,
+  revokeStudent,
   type ActionResult,
 } from "./actions";
 
@@ -156,15 +157,17 @@ export default function ActionsPanel({
           </button>
         )}
 
-        {!student && (
-          <button
-            className={btn}
-            disabled={pending}
-            onClick={() => fire(grantStudent, {}, "Manually grant Student status (wrongly-rejected .edu)?")}
-          >
-            Grant student status
-          </button>
-        )}
+        <button
+          className={btn}
+          disabled={pending}
+          onClick={() =>
+            student
+              ? fire(revokeStudent, {}, "Revoke this user's Student status?")
+              : fire(grantStudent, {}, "Manually grant Student status (wrongly-rejected .edu)?")
+          }
+        >
+          {student ? "Revoke student status" : "Grant student status"}
+        </button>
       </div>
 
       {/* Change email — separate row, needs an input */}
