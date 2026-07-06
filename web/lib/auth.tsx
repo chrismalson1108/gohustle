@@ -27,6 +27,17 @@ function hasPersistedSession(): boolean {
   }
 }
 
+// Race a promise against a timeout. The Supabase client attaches no fetch timeout
+// by default, so a black-holed socket (dead network, OS suspend/resume, captive
+// proxy) can leave a PostgREST read pending forever. Every auth-gating read is
+// wrapped in this so a hung read degrades gracefully instead of freezing the gate.
+function withTimeout<T>(p: PromiseLike<T>, ms: number, label = "timed out"): Promise<T> {
+  return Promise.race([
+    Promise.resolve(p),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(label)), ms)),
+  ]);
+}
+
 interface AuthValue {
   session: Session | null;
   user: User | null;
@@ -66,6 +77,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [needsTerms, setNeedsTerms] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const purgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live mirrors of session / onbResolved for the hardTimer closure (which is armed
+  // once at mount and must read current values, not the values captured at arm time).
+  const sessionRef = useRef<Session | null>(session);
+  const onbResolvedRef = useRef(onbResolved);
+  useEffect(() => {
+    sessionRef.current = session;
+    onbResolvedRef.current = onbResolved;
+  }, [session, onbResolved]);
 
   // Any new auth attempt must cancel a pending sign-out purge, or the timer
   // would delete the new flow's PKCE code-verifier / freshly stored session.
@@ -80,12 +99,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     // Hard ceiling: even if getSession hangs AND no auth event ever fires (dead
-    // network), never trap the app on the spinner forever.
+    // network), never trap the app on the spinner forever. If a session is present
+    // but onboarding never resolved, fail SAFE — route to /onboarding (which
+    // re-reads and self-heals for an already-onboarded user) rather than admitting
+    // the app shell on the optimistic onboardingDone=true default.
     const hardTimer = setTimeout(() => {
-      if (!cancelled) {
-        setOnbResolved(true);
-        setLoading(false);
+      if (cancelled) return;
+      if (sessionRef.current?.user && !onbResolvedRef.current) {
+        setOnbDone(false);
+        setNeedsTerms(false);
       }
+      setOnbResolved(true);
+      setLoading(false);
     }, 20000);
 
     // 1. Resolve the initial session. supabase-js can stall on a slow ?code
@@ -188,14 +213,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user?.id]);
 
   const loadOnboarding = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("onboarding_done")
-      .eq("id", userId)
-      .maybeSingle();
+    // Time-boxed with one retry so a transient blip self-heals and a hung socket
+    // can never freeze the gate. Distinguish a READ ERROR (unknown — don't demote
+    // an established user into the wizard) from a genuinely-missing row (null data
+    // with no error → a brand-new user who should onboard).
+    let data: { onboarding_done?: boolean } | null = null;
+    let readError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 1000));
+      const res = await withTimeout(
+        supabase.from("profiles").select("onboarding_done").eq("id", userId).maybeSingle(),
+        6000,
+        "onboarding read timed out",
+      ).catch((e) => ({ data: null, error: e }));
+      if (!res.error) {
+        data = res.data as { onboarding_done?: boolean } | null;
+        readError = null;
+        break;
+      }
+      readError = res.error;
+    }
+    if (readError) {
+      // Read failed after retries — leave onboardingDone at its prior/optimistic
+      // value (never bounce an established user into onboarding on a transient
+      // error). The caller's finally still releases the gate; a reload / next
+      // session re-evaluates.
+      console.warn("loadOnboarding read failed:", readError);
+      return;
+    }
     const done = data?.onboarding_done ?? false;
     setOnbDone(done);
-    setNeedsTerms(done ? await checkNeedsAcceptance(userId) : false);
+    // Time-box the terms check too; on a hang, don't wall the user (admit and
+    // re-check next session) — a genuine "not accepted" read still returns true.
+    setNeedsTerms(done ? await withTimeout(checkNeedsAcceptance(userId), 6000).catch(() => false) : false);
   };
 
   const markOnboardingDone = () => {
@@ -221,12 +271,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthError(friendlyAuthError(error));
       return false;
     }
-    // Set session + onboarding state synchronously from the result so the page can
-    // redirect into the app without racing the async onAuthStateChange event
-    // (which otherwise lets the auth gate see a stale null session and bounce back).
+    // Set the session synchronously from the result so the page can redirect into
+    // the app without racing the async onAuthStateChange event. Onboarding/terms
+    // loading is owned by the keyed effect (triggered by this setSession flipping
+    // the user id) — never awaited here, so a stalled profile read can't wedge the
+    // sign-in button, and onboarding loads exactly once. The (app) gate waits on
+    // onboardingResolved, so a not-onboarded user still can't flash the app shell.
     if (data.session) {
       setSession(data.session);
-      if (data.user) await loadOnboarding(data.user.id);
     }
     setPendingEmail(null);
     track("sign_in");
@@ -281,7 +333,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         code === "email_exists" ||
         /already registered|already exists/i.test(error.message)
       ) {
-        supabase.auth.resend({ type: "signup", email }).catch(() => {});
+        // Await the resend so we don't dead-end. If it succeeds the account was
+        // UNCONFIRMED — a real confirmation link went out, so "check your email" is
+        // truthful and neutral. If it fails the account is almost certainly already
+        // CONFIRMED — guide them to sign in rather than leave them waiting for an
+        // email that will never arrive (matches the sibling no-session branch).
+        const { error: resendErr } = await supabase.auth.resend({ type: "signup", email });
+        if (resendErr) {
+          setAuthError(
+            'An account with this email already exists. Try signing in, or use "Forgot password?" to reset it.',
+          );
+          track("sign_up");
+          return false;
+        }
         setPendingEmail(email);
         track("sign_up");
         return true;

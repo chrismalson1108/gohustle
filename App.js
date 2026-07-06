@@ -200,8 +200,12 @@ function MainApp() {
 }
 
 function RootNavigator() {
-  const { session, loading, onboardingDone, needsTermsAcceptance, markOnboardingDone } = useAuth();
-  if (loading) {
+  const { session, loading, onboardingResolved, onboardingDone, needsTermsAcceptance, markOnboardingDone } = useAuth();
+  // With a session present, wait for onboarding/terms state to actually load before
+  // routing — otherwise a fresh sign-in flashes MainApp on the optimistic
+  // onboardingDone=true default before bouncing to onboarding/consent.
+  const gateResolving = loading || (!!session && !onboardingResolved);
+  if (gateResolving) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />

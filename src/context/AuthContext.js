@@ -19,6 +19,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [authError, setAuthError]     = useState(null);
   const [onboardingDone, setOnbDone]  = useState(true);
+  // False until onboarding/terms state has loaded for the current session — the
+  // RootNavigator gate must wait on this before trusting the optimistic
+  // onboardingDone=true default, or a fresh sign-in flashes MainApp before routing
+  // to onboarding/consent. Mirrors web onboardingResolved.
+  const [onbResolved, setOnbResolved] = useState(false);
   const [needsTerms, setNeedsTerms]   = useState(false); // re-accept current legal docs
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
   const purgeTimer = useRef(null); // pending post-sign-out storage purge
@@ -47,9 +52,10 @@ export function AuthProvider({ children }) {
         // No user → release the gate now. With a user, the keyed onboarding effect
         // below releases loading once it resolves, so a not-onboarded user never
         // flashes MainApp before being routed to onboarding.
-        if (!session?.user) setLoading(false);
+        if (!session?.user) { setOnbResolved(true); setLoading(false); }
       } catch (err) {
         console.error('Auth init failed/timed out:', err);
+        setOnbResolved(true);
         setLoading(false);
       }
     })();
@@ -64,7 +70,7 @@ export function AuthProvider({ children }) {
       lastUserId.current = session?.user?.id ?? null;
       setSession(session);
       if (!session?.user) {
-        setOnbDone(true); setNeedsTerms(false); setLoading(false); // signed out → reset gates
+        setOnbDone(true); setNeedsTerms(false); setOnbResolved(true); setLoading(false); // signed out → reset gates
         // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going
         // through signOut(), which is the only place that cleared cache + push token.
         // Without this, the next account on the device could briefly see the previous
@@ -89,6 +95,7 @@ export function AuthProvider({ children }) {
     if (!uid) return;
     let cancelled = false;
     (async () => {
+      setOnbResolved(false); // new user → close the gate until onboarding resolves
       try {
         await Promise.race([
           loadOnboarding(uid),
@@ -97,7 +104,7 @@ export function AuthProvider({ children }) {
       } catch (err) {
         console.error('Onboarding load failed/timed out:', err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) { setOnbResolved(true); setLoading(false); }
       }
     })();
     return () => { cancelled = true; };
@@ -107,12 +114,18 @@ export function AuthProvider({ children }) {
   // Returning users have onboarding_done=true (skip onboarding); the legal gate
   // is driven by the DB (current legal_documents vs the user's legal_acceptances).
   const loadOnboarding = async (userId) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('onboarding_done')
       .eq('id', userId)
       .maybeSingle();
-    const done = data?.onboarding_done ?? false;
+    if (error) {
+      // Read failed — do NOT demote an established user into the wizard. Leave
+      // onboardingDone at its prior/optimistic value; a relaunch re-evaluates.
+      console.warn('loadOnboarding read failed:', error.message);
+      return;
+    }
+    const done = data?.onboarding_done ?? false; // null data (no error) = new user
     setOnbDone(done);
     // Onboarding records acceptance itself, so only gate already-onboarded users.
     setNeedsTerms(done ? await checkNeedsAcceptance(userId) : false);
@@ -337,6 +350,7 @@ export function AuthProvider({ children }) {
       session,
       user: session?.user ?? null,
       loading,
+      onboardingResolved: onbResolved,
       authError,
       onboardingDone,
       pendingEmail,

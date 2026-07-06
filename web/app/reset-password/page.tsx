@@ -89,8 +89,11 @@ export default function ResetPasswordPage() {
         setError(friendlyAuthError(error));
         return;
       }
-      // Clear the isolated recovery session — it is never promoted to a full login.
-      await client.auth.signOut().catch(() => {});
+      // Clear the isolated recovery session — fire-and-forget with LOCAL scope so a
+      // stalled /logout call can't hang the success screen, and so we don't globally
+      // revoke the user's other sessions (e.g. their main login in this same browser
+      // if they were already signed in). The password write already committed.
+      void client.auth.signOut({ scope: "local" }).catch(() => {});
       setDone(true);
       setTimeout(() => router.replace("/login?reset=1"), 1500);
     } catch {

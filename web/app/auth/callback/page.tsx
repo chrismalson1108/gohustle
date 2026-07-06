@@ -74,8 +74,7 @@ export default function AuthCallbackPage() {
         ? "Google sign-in wasn't completed — it looks like it was cancelled. No problem, nothing was changed."
         : oauthError.kind === "identity"
           ? "This email already has a GoHustlr account with a password. Sign in with your email and password instead."
-          : oauthError.description ||
-            "We couldn't complete Google sign-in. Please try again, or sign in with your email and password.";
+          : "We couldn't complete Google sign-in. Please try again, or sign in with your email and password.";
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-5 text-center">
         <p className="max-w-sm text-ink-soft">{message}</p>
