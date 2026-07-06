@@ -17,6 +17,7 @@ import { useJobs } from "@/lib/jobs";
 import JobCard from "@/components/JobCard";
 import FilterSheet, { type Filters } from "@/components/FilterSheet";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import { classNames } from "@/lib/format";
 import type { Job } from "@/lib/types";
@@ -29,8 +30,15 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
 const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
 
 export default function BrowsePage() {
-  const { name, streakDays, school, skills, city } = useUser();
-  const { jobs, bookings, blockedIds } = useJobs();
+  const { name, streakDays, school, skills, city, profileStatus } = useUser();
+  const { jobs, bookings, blockedIds, jobsLoading } = useJobs();
+
+  // Show the real name only once the profile has actually loaded — never render the
+  // "Hustler" placeholder as if it were the signed-in user's account.
+  const greeting = profileStatus === "ready" ? `Hey ${name}` : "Hey there";
+  // First jobs load still in flight (nothing arrived yet) → show a loader, not the
+  // "no gigs" empty state, so a still-loading feed never looks like an empty one.
+  const jobsFirstLoad = jobsLoading && jobs.length === 0;
 
   const [selectedCat, setSelectedCat] = useState("all");
   const [search, setSearch] = useState("");
@@ -127,13 +135,13 @@ export default function BrowsePage() {
   return (
     <div>
       <PageHeader
-        title={`Hey ${name}`}
+        title={greeting}
         subtitle="Ready to hustle?"
         variant="brand"
         right={
           <div className="flex flex-col items-center rounded-2xl bg-white/15 px-3.5 py-2">
             <Flame className="size-5 text-gold" />
-            <span className="text-xl font-black leading-none">{streakDays}</span>
+            <span className="text-xl font-black leading-none">{profileStatus === "ready" ? streakDays : "—"}</span>
             <span className="text-[10px] text-white/75">week streak</span>
           </div>
         }
@@ -208,7 +216,9 @@ export default function BrowsePage() {
         {/* Results bar */}
         <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-            {filtered.length} gig{filtered.length !== 1 ? "s" : ""} available
+            {jobsFirstLoad
+              ? "Loading gigs…"
+              : `${filtered.length} gig${filtered.length !== 1 ? "s" : ""} available`}
           </p>
           <div className="flex items-center gap-4">
             {activeFilterCount > 0 && (
@@ -231,7 +241,9 @@ export default function BrowsePage() {
         </div>
 
         {/* Content */}
-        {viewMode === "map" ? (
+        {jobsFirstLoad && viewMode === "list" ? (
+          <FullPageSpinner label="Finding gigs near you…" />
+        ) : viewMode === "map" ? (
           <div className="pb-8">
             <JobsMap jobs={filtered} userCoords={userCoords} />
           </div>

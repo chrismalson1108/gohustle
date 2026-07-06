@@ -26,10 +26,13 @@ export async function fetchCurrentDocs(): Promise<Record<string, LegalDoc>> {
 }
 
 export async function fetchAcceptedVersions(userId: string): Promise<Record<string, Set<string>>> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("legal_acceptances")
     .select("slug, version")
     .eq("user_id", userId);
+  // Surface read failures so checkNeedsAcceptance treats "couldn't determine" as
+  // "needs acceptance" (fail closed) instead of silently assuming accepted.
+  if (error) throw error;
   const map: Record<string, Set<string>> = {};
   (data || []).forEach((a) => {
     if (!map[a.slug]) map[a.slug] = new Set();
@@ -60,7 +63,12 @@ export async function recordAcceptances(
     version: currentDocs[s].version,
   }));
   if (!rows.length) return;
-  const { error } = await supabase.from("legal_acceptances").insert(rows);
+  // Idempotent: the (user_id, slug, version) unique index makes re-recording a
+  // no-op instead of piling duplicate audit rows (a double-tap, a concurrent tab,
+  // or a re-run of onboarding). ignoreDuplicates keeps the original accepted_at.
+  const { error } = await supabase
+    .from("legal_acceptances")
+    .upsert(rows, { onConflict: "user_id,slug,version", ignoreDuplicates: true });
   if (error) throw error;
 }
 
@@ -72,6 +80,11 @@ export async function checkNeedsAcceptance(userId: string): Promise<boolean> {
     ]);
     return needsAcceptance(docs, accepted);
   } catch {
-    return false;
+    // Fail CLOSED: if we cannot confirm the user has accepted the current terms
+    // (a transient read error, RLS hiccup, offline reconnect), route them to
+    // /consent rather than silently admitting them past a legally-binding gate.
+    // /consent retries the document load and records acceptance, so a transient
+    // failure self-heals there instead of bypassing consent.
+    return true;
   }
 }

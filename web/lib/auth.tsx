@@ -2,15 +2,38 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase, purgePersistedSession, getRecoveryClient } from "./supabaseClient";
+import {
+  supabase,
+  purgePersistedSession,
+  getRecoveryClient,
+  SESSION_STORAGE_KEY,
+} from "./supabaseClient";
 import { cacheClearAll } from "./cache";
 import { track } from "./analytics";
 import { checkNeedsAcceptance } from "./legal";
+import { friendlyAuthError } from "./authErrors";
+
+// True when a session blob is actually persisted in this browser. Used to tell a
+// slow-refresh returning user (keep waiting) apart from a genuinely logged-out
+// visitor (go to /login) when the initial getSession() times out.
+function hasPersistedSession(): boolean {
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return !!(parsed?.refresh_token || parsed?.access_token || parsed?.currentSession);
+  } catch {
+    return false;
+  }
+}
 
 interface AuthValue {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  // False until the current session's onboarding/terms state has been loaded. The
+  // (app) gate must wait on this before trusting onboardingDone/needsTermsAcceptance.
+  onboardingResolved: boolean;
   authError: string | null;
   onboardingDone: boolean;
   pendingEmail: string | null;
@@ -34,6 +57,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [onboardingDone, setOnbDone] = useState(true);
+  // Has the onboarding/terms state been LOADED for the current session yet? The
+  // (app) gate must not trust the optimistic onboardingDone=true default for a
+  // freshly-set session — otherwise a not-onboarded / terms-owing user flashes the
+  // full app shell for a frame before being bounced. False until loadOnboarding
+  // (or the signed-out branch) resolves.
+  const [onbResolved, setOnbResolved] = useState(false);
   const [needsTerms, setNeedsTerms] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const purgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,49 +77,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Resolve the initial session. supabase-js serializes auth calls behind a
-    // navigator LockManager lock that is shared across every tab of the origin —
-    // if another tab is holding it (a backgrounded/stuck tab), getSession() can
-    // hang indefinitely. A confirmation/recovery `?code=` exchange can also fail.
-    // Either way we must never leave `loading` true forever (that freezes the
-    // whole app on the spinner), so we time the call out and always clear loading.
+    let cancelled = false;
+
+    // Hard ceiling: even if getSession hangs AND no auth event ever fires (dead
+    // network), never trap the app on the spinner forever.
+    const hardTimer = setTimeout(() => {
+      if (!cancelled) {
+        setOnbResolved(true);
+        setLoading(false);
+      }
+    }, 20000);
+
+    // 1. Resolve the initial session. supabase-js can stall on a slow ?code
+    //    exchange or a contended auth lock, so we time the read out and never
+    //    leave `loading` true forever (that would freeze the app on the spinner).
+    //    We only resolve the SESSION here; the profile/onboarding row is loaded by
+    //    the effect below (keyed on the user id), never inside the auth callback.
     (async () => {
       try {
-        // Race the WHOLE init (session read + the onboarding/profile fetch) against
-        // a timeout. loadOnboarding is a normal PostgREST call not covered by the
-        // auth-lock timeout, so if IT stalls the gate would still hang on the spinner.
-        await Promise.race([
-          (async () => {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-            setSession(session);
-            if (session?.user) await loadOnboarding(session.user.id);
-          })(),
+        const {
+          data: { session },
+        } = await Promise.race([
+          supabase.auth.getSession(),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error("auth init timed out")), 8000),
           ),
         ]);
+        if (cancelled) return;
+        setSession(session);
+        // No user → nothing to load, release the gate now. With a user, the
+        // onboarding effect below releases it once the profile row resolves, so a
+        // not-yet-onboarded user never flashes into the app on placeholder state.
+        if (!session?.user) {
+          setOnbResolved(true);
+          setLoading(false);
+        }
       } catch (err) {
         console.error("Auth init failed/timed out:", err);
-      } finally {
-        setLoading(false);
+        if (cancelled) return;
+        // A genuinely logged-out visitor (no stored session) should reach /login
+        // immediately. But a RETURNING user with a valid persisted session whose
+        // refresh merely ran long must NOT be dumped on the sign-in form — keep the
+        // spinner and let onAuthStateChange (TOKEN_REFRESHED / SIGNED_IN when the
+        // refresh lands, or SIGNED_OUT if the token is truly dead) resolve it. The
+        // hardTimer above is the ultimate backstop against an infinite spinner.
+        if (!hasPersistedSession()) {
+          setOnbResolved(true);
+          setLoading(false);
+        }
       }
     })();
 
+    // 2. React to auth changes. CRITICAL: this callback MUST stay synchronous and
+    //    never await a Supabase data call. supabase-js emits some events (a tab
+    //    refocus SIGNED_IN, a TOKEN_REFRESHED) from *inside* its auth lock and
+    //    awaits every subscriber; awaiting getSession/PostgREST here re-enters the
+    //    held lock and deadlocks the client permanently — every later data fetch
+    //    hangs and the app renders a blank "guest" account until a manual reload
+    //    (the exact OAuth sign-in bug this replaced). Profile/terms loading happens
+    //    in the effect below, outside the lock. See supabase-js onAuthStateChange
+    //    docs: "Do not use an async callback / do not call other Supabase functions
+    //    directly inside it."
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session?.user) await loadOnboarding(session.user.id);
-      else {
+    } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+      if (!next?.user) {
         setOnbDone(true);
         setNeedsTerms(false);
+        setOnbResolved(true);
+        setLoading(false);
       }
+      // With a user, the keyed onboarding effect below owns onbResolved + loading.
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      clearTimeout(hardTimer);
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Load onboarding + legal-acceptance state whenever the signed-in user changes.
+  // Runs OUTSIDE the auth-lock callback (a plain effect), so the PostgREST call it
+  // makes can safely acquire the auth lock to attach the JWT. This is what keeps a
+  // fresh OAuth / password sign-in from wedging the client. Releases the loading
+  // gate once resolved so the (app) gate routes onboarded vs. not-onboarded users
+  // correctly instead of flashing the app shell on default state.
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      // New user → onboarding/terms state is unknown; close the gate (spinner) until
+      // it resolves so the app shell never renders on the stale default. Runs
+      // synchronously before the first await, so the gate closes this tick.
+      setOnbResolved(false);
+      try {
+        await loadOnboarding(uid);
+      } finally {
+        if (!cancelled) {
+          setOnbResolved(true);
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
 
   const loadOnboarding = async (userId: string) => {
     const { data } = await supabase
@@ -123,7 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthError("Please confirm your email first — check your inbox for the link.");
         return false;
       }
-      setAuthError(error.message);
+      setAuthError(friendlyAuthError(error));
       return false;
     }
     // Set session + onboarding state synchronously from the result so the page can
@@ -154,7 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     if (error) {
-      setAuthError(error.message);
+      setAuthError(friendlyAuthError(error));
       return false;
     }
     // On success the browser is already navigating to Google — nothing more to do.
@@ -177,10 +272,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) {
       const code = (error as { code?: string }).code;
+      // Never confirm whether an email is already registered (account enumeration).
+      // Mirror the neutral "check your email" outcome of a fresh sign-up instead of
+      // leaking "account already exists". Fire a confirmation resend in case it's an
+      // unconfirmed account (a no-op for a confirmed one).
+      if (
+        code === "user_already_exists" ||
+        code === "email_exists" ||
+        /already registered|already exists/i.test(error.message)
+      ) {
+        supabase.auth.resend({ type: "signup", email }).catch(() => {});
+        setPendingEmail(email);
+        track("sign_up");
+        return true;
+      }
       if (code === "over_email_send_rate_limit" || /rate limit/i.test(error.message)) {
         setAuthError("Too many sign-up emails were sent recently. Please wait a few minutes and try again.");
       } else {
-        setAuthError(error.message);
+        setAuthError(friendlyAuthError(error));
       }
       return false;
     }
@@ -227,7 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const { error } = await supabase.auth.resend({ type: "signup", email: target });
     if (error) {
-      setAuthError(error.message);
+      setAuthError(friendlyAuthError(error));
       return false;
     }
     return true;
@@ -244,7 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // hash token still establishes a session on /reset-password.
     const { error } = await getRecoveryClient().auth.resetPasswordForEmail(email, { redirectTo });
     if (error) {
-      setAuthError(error.message);
+      setAuthError(friendlyAuthError(error));
       return false;
     }
     return true;
@@ -284,6 +393,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         user: session?.user ?? null,
         loading,
+        onboardingResolved: onbResolved,
         authError,
         onboardingDone,
         pendingEmail,

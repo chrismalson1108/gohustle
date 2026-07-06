@@ -10,6 +10,7 @@ import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -44,9 +45,13 @@ const needsAction = (b: Booking) =>
   (b.status === "verified" && !b.posterRating);
 
 export default function MyJobsPage() {
-  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus } = useJobs();
-  const { earningsToday, earningsWeek, earningsTotal, challenges, showToast, updateChallenge } = useUser();
+  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus, bookingsLoading } = useJobs();
+  const { earningsToday, earningsWeek, earningsTotal, challenges, showToast, updateChallenge, profileStatus } = useUser();
   const { user } = useAuth();
+
+  // First bookings load still in flight → show a loader, not "No active jobs",
+  // so a still-loading account never looks like one with nothing booked.
+  const bookingsFirstLoad = bookingsLoading && bookings.length === 0;
 
   const [tab, setTab] = useState<Tab>("active");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -343,7 +348,7 @@ export default function MyJobsPage() {
       <PageHeader title="My Jobs" subtitle="Gigs you've booked" variant="earn">
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-baseline gap-1.5 rounded-full bg-white/15 px-4 py-2">
-            <span className="text-lg font-black leading-none">{money(earningsWeek)}</span>
+            <span className="text-lg font-black leading-none">{profileStatus === "ready" ? money(earningsWeek) : "—"}</span>
             <span className="text-xs font-semibold text-white/75">this week</span>
           </span>
         </div>
@@ -410,7 +415,9 @@ export default function MyJobsPage() {
         </div>
 
         {/* The booked-gig list — the primary content. */}
-        {shown.length === 0 ? (
+        {bookingsFirstLoad ? (
+          <FullPageSpinner label="Loading your jobs…" />
+        ) : shown.length === 0 ? (
           <EmptyState
             icon={tab === "awaiting" ? <Clock className="size-10" /> : <Briefcase className="size-10" />}
             title={tab === "active" ? "No active jobs" : tab === "awaiting" ? "Nothing awaiting" : "No completed jobs yet"}

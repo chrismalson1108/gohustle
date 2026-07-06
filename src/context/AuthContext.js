@@ -38,29 +38,33 @@ export function AuthProvider({ children }) {
     // always clear loading so a bad state drops the user to AuthScreen instead.
     (async () => {
       try {
-        await Promise.race([
-          (async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            lastUserId.current = session?.user?.id ?? null;
-            setSession(session);
-            if (session?.user) await loadOnboarding(session.user.id);
-          })(),
+        const { data: { session } } = await Promise.race([
+          supabase.auth.getSession(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('auth init timed out')), 8000)),
         ]);
+        lastUserId.current = session?.user?.id ?? null;
+        setSession(session);
+        // No user → release the gate now. With a user, the keyed onboarding effect
+        // below releases loading once it resolves, so a not-onboarded user never
+        // flashes MainApp before being routed to onboarding.
+        if (!session?.user) setLoading(false);
       } catch (err) {
         console.error('Auth init failed/timed out:', err);
-      } finally {
         setLoading(false);
       }
     })();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // CRITICAL: this callback MUST stay synchronous — never await a Supabase data
+    // call here. supabase-js awaits every subscriber inside its event emission, so
+    // an awaited profile read couples auth events to network latency (and, if a
+    // lock is ever configured, can deadlock the client — the exact web bug). The
+    // onboarding read runs in the keyed effect below, outside the callback.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const prevUserId = lastUserId.current;
       lastUserId.current = session?.user?.id ?? null;
       setSession(session);
-      if (session?.user) await loadOnboarding(session.user.id);
-      else {
-        setOnbDone(true); setNeedsTerms(false); // signed out → reset gates
+      if (!session?.user) {
+        setOnbDone(true); setNeedsTerms(false); setLoading(false); // signed out → reset gates
         // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going
         // through signOut(), which is the only place that cleared cache + push token.
         // Without this, the next account on the device could briefly see the previous
@@ -71,10 +75,33 @@ export function AuthProvider({ children }) {
           unregisterPushToken(prevUserId).catch(() => {});
         }
       }
+      // With a user, the keyed onboarding effect below owns loading + onboarding.
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load onboarding + legal-acceptance state whenever the signed-in user changes —
+  // OUTSIDE the auth callback so a slow/stalled profile read never blocks the auth
+  // event chain. Time-boxed so loading always releases. Mirrors web/lib/auth.tsx.
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await Promise.race([
+          loadOnboarding(uid),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('onboarding load timed out')), 8000)),
+        ]);
+      } catch (err) {
+        console.error('Onboarding load failed/timed out:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
 
   // Derive onboarding + legal-acceptance state whenever a session is established.
   // Returning users have onboarding_done=true (skip onboarding); the legal gate

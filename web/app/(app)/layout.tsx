@@ -14,18 +14,23 @@ import { FullPageSpinner } from "@/components/ui/Spinner";
 // loading → spinner; no session → /login; not onboarded → /onboarding;
 // stale legal acceptance → /consent.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { session, loading, onboardingDone, needsTermsAcceptance } = useAuth();
+  const { session, loading, onboardingResolved, onboardingDone, needsTermsAcceptance } = useAuth();
   const router = useRouter();
 
+  // With a session present, wait for onboarding/terms state to actually load before
+  // making a routing decision — otherwise a not-onboarded / terms-owing user flashes
+  // the app shell on the optimistic onboardingDone=true default before we bounce them.
+  const gateResolving = loading || (!!session && !onboardingResolved);
+
   useEffect(() => {
-    if (loading) return;
+    if (gateResolving) return;
     if (!session) router.replace("/login");
     else if (!onboardingDone) router.replace("/onboarding");
     else if (needsTermsAcceptance) router.replace("/consent");
-  }, [loading, session, onboardingDone, needsTermsAcceptance, router]);
+  }, [gateResolving, session, onboardingDone, needsTermsAcceptance, router]);
 
-  if (loading || !session || !onboardingDone || needsTermsAcceptance) {
-    return <FullPageSpinner label={loading ? "Loading…" : "Redirecting…"} />;
+  if (gateResolving || !session || !onboardingDone || needsTermsAcceptance) {
+    return <FullPageSpinner label={gateResolving ? "Loading…" : "Redirecting…"} />;
   }
 
   return (

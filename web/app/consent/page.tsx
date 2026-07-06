@@ -85,7 +85,7 @@ export default function ConsentPage() {
             Retry loading documents
           </Button>
         )}
-        {error && <p className="mt-3 text-center text-sm font-medium text-urgent">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-center text-sm font-medium text-urgent">{error}</p>}
         <Button variant="ghost" size="sm" fullWidth className="mt-4 text-ink-muted" onClick={() => signOut()}>
           Sign out
         </Button>

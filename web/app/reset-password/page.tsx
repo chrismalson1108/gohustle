@@ -4,14 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
+import { getRecoveryClient } from "@/lib/supabaseClient";
+import { friendlyAuthError } from "@/lib/authErrors";
 import Logo from "@/components/Logo";
 import Button from "@/components/ui/Button";
 import { Label, FieldError } from "@/components/ui/Field";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 
-// Reached via the password-reset email link. detectSessionInUrl establishes a
-// temporary recovery session; we then let the user set a new password.
+// Reached via the password-reset email link. The reset email was requested with
+// the IMPLICIT-flow recovery client, so the link carries the recovery tokens in
+// the URL hash (#access_token=…&refresh_token=…&type=recovery) and works in ANY
+// browser/device (it is not PKCE-bound to the requesting browser).
+//
+// We consume that hash with the SAME implicit recovery client. Its session lives
+// under an isolated storageKey and is deliberately NEVER promoted to the app's
+// main session — a stolen/opened recovery link therefore cannot browse the app;
+// it can only set a new password. After a successful reset we clear that isolated
+// session and send the user to /login to sign in fresh with the new password.
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -19,21 +29,44 @@ export default function ResetPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  // null = still checking, true/false = whether a recovery session was established
-  // from the link. detectSessionInUrl consumes the hash token on mount.
+  // null = still verifying the link; true = valid recovery session established;
+  // false = link invalid/expired/already used.
   const [hasSession, setHasSession] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
-    // Give detectSessionInUrl a beat to process the recovery hash, then check.
-    const check = () => supabase.auth.getSession().then(({ data }) => {
+    (async () => {
+      const client = getRecoveryClient();
+      const hash =
+        typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+      const params = new URLSearchParams(hash);
+
+      // Supabase appends error params (in the hash) for an expired or already-used
+      // link — surface the invalid state immediately, no spinner delay.
+      if (params.get("error") || params.get("error_code")) {
+        if (active) setHasSession(false);
+        return;
+      }
+
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+      if (access_token && refresh_token) {
+        const { data, error } = await client.auth.setSession({ access_token, refresh_token });
+        // Strip the tokens from the address bar so they aren't left in history.
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+        if (active) setHasSession(!error && !!data?.session);
+        return;
+      }
+
+      // No tokens and no error in the URL → nothing to verify against.
+      const { data } = await client.auth.getSession();
       if (active) setHasSession(!!data.session);
-    });
-    const t = setTimeout(check, 600);
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (active && session) setHasSession(true);
-    });
-    return () => { active = false; clearTimeout(t); sub.subscription.unsubscribe(); };
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -43,25 +76,26 @@ export default function ResetPasswordPage() {
     if (password !== confirm) return setError("Passwords don't match.");
     setBusy(true);
     try {
-      // Time the call out: supabase-js auth calls share a cross-tab navigator
-      // lock and can hang forever if another open tab holds it — never leave the
-      // button spinning indefinitely.
+      const client = getRecoveryClient();
+      // Time the call out so the button never spins forever on a dead network.
       const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("updateUser timed out")), 12000),
+        setTimeout(() => reject(new Error("updateUser timed out")), 15000),
       );
       const { error } = await Promise.race([
-        supabase.auth.updateUser({ password }),
+        client.auth.updateUser({ password }),
         timeout,
       ]);
       if (error) {
-        setError(error.message);
+        setError(friendlyAuthError(error));
         return;
       }
+      // Clear the isolated recovery session — it is never promoted to a full login.
+      await client.auth.signOut().catch(() => {});
       setDone(true);
-      setTimeout(() => router.replace("/browse"), 1500);
+      setTimeout(() => router.replace("/login?reset=1"), 1500);
     } catch {
       setError(
-        "That took too long to go through — your reset link may have expired. Close any other open GoHustlr tabs, then request a fresh reset link and try again.",
+        "That took too long to go through — your reset link may have expired. Request a fresh reset link and try again.",
       );
     } finally {
       setBusy(false);
@@ -78,23 +112,43 @@ export default function ResetPasswordPage() {
           <KeyRound className="size-7" />
         </div>
         <h1 className="text-2xl font-black text-ink">Set a new password</h1>
+
         {done ? (
-          <p className="mt-3 font-medium text-success">Password updated — taking you in…</p>
+          <p className="mt-3 font-medium text-success" role="status">
+            Password updated — taking you to sign in…
+          </p>
+        ) : hasSession === null ? (
+          <div className="mt-6">
+            <FullPageSpinner label="Verifying your reset link…" />
+          </div>
         ) : hasSession === false ? (
           <p className="mt-3 text-sm text-ink-soft">
-            This reset link can&apos;t be verified in this browser — it may have expired, already been
-            used, or been opened somewhere other than where you requested it. Request a fresh link and
-            open it in the same browser.
+            This reset link can&apos;t be verified — it may have expired or already been used.
+            Request a fresh link and open the newest one.
           </p>
         ) : (
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
-              <Label>New password</Label>
-              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+              <Label htmlFor="new-password">New password</Label>
+              <PasswordInput
+                id="new-password"
+                aria-label="New password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
             </div>
             <div>
-              <Label>Confirm password</Label>
-              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+              <Label htmlFor="confirm-password">Confirm password</Label>
+              <PasswordInput
+                id="confirm-password"
+                aria-label="Confirm password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
             </div>
             <FieldError>{error}</FieldError>
             <Button type="submit" size="lg" fullWidth loading={busy}>

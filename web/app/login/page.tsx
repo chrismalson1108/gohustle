@@ -7,6 +7,7 @@ import { Mail, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import Logo from "@/components/Logo";
 import Button from "@/components/ui/Button";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 import { Input, Label, FieldError } from "@/components/ui/Field";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 
@@ -17,6 +18,7 @@ function LoginInner() {
   const params = useSearchParams();
   const {
     session,
+    loading,
     signIn,
     signInWithGoogle,
     signUp,
@@ -29,6 +31,7 @@ function LoginInner() {
   } = useAuth();
 
   const [mode, setMode] = useState<Mode>(params.get("mode") === "signup" ? "signup" : "signin");
+  const justReset = params.get("reset") === "1";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,6 +53,7 @@ function LoginInner() {
     setMode(m);
     setLocalErr(null);
     setResetSent(false);
+    setResent(false); // don't carry a stale "Email re-sent ✓" into a new panel
     setAgreed(false);
     clearError();
     clearPending();
@@ -98,6 +102,16 @@ function LoginInner() {
   };
 
   const err = localErr || authError;
+
+  // Don't flash the sign-in form at someone who's already authenticated (or whose
+  // session is still resolving) — show a spinner while the redirect above fires.
+  if (loading || session) {
+    return (
+      <Card>
+        <FullPageSpinner label="Taking you in…" />
+      </Card>
+    );
+  }
 
   // Email-confirmation pending state (after sign-up).
   if (pendingEmail && mode === "signup") {
@@ -148,16 +162,23 @@ function LoginInner() {
             : "We'll email you a reset link."}
       </p>
 
+      {justReset && mode === "signin" && (
+        <p role="status" className="mt-4 rounded-2xl bg-success/10 px-4 py-3 text-sm font-semibold text-success">
+          Password updated — sign in with your new password.
+        </p>
+      )}
+
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         {mode === "signup" && (
           <div>
-            <Label>Full name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Rivera" autoComplete="name" />
+            <Label htmlFor="name">Full name</Label>
+            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Rivera" autoComplete="name" />
           </div>
         )}
         <div>
-          <Label>Email</Label>
+          <Label htmlFor="email">Email</Label>
           <Input
+            id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -167,8 +188,10 @@ function LoginInner() {
         </div>
         {mode !== "forgot" && (
           <div>
-            <Label>Password</Label>
+            <Label htmlFor="password">Password</Label>
             <PasswordInput
+              id="password"
+              aria-label="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -179,8 +202,10 @@ function LoginInner() {
         {mode === "signup" && (
           <>
             <div>
-              <Label>Confirm password</Label>
+              <Label htmlFor="confirm">Confirm password</Label>
               <PasswordInput
+                id="confirm"
+                aria-label="Confirm password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="••••••••"
@@ -188,8 +213,8 @@ function LoginInner() {
               />
             </div>
             <div>
-              <Label>Referral code (optional)</Label>
-              <Input value={referral} onChange={(e) => setReferral(e.target.value)} placeholder="Got a code?" />
+              <Label htmlFor="referral">Referral code (optional)</Label>
+              <Input id="referral" value={referral} onChange={(e) => setReferral(e.target.value)} placeholder="Got a code?" />
             </div>
           </>
         )}

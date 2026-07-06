@@ -4,9 +4,19 @@ import { classNames } from "@/lib/format";
 const base =
   "w-full rounded-2xl border border-line bg-white px-4 py-3 text-[15px] text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-ink-muted disabled:opacity-60";
 
-export function Label({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+export function Label({
+  children,
+  className = "",
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  htmlFor?: string;
+}) {
   return (
-    <label className={classNames("mb-1.5 block text-sm font-bold text-ink", className)}>{children}</label>
+    <label htmlFor={htmlFor} className={classNames("mb-1.5 block text-sm font-bold text-ink", className)}>
+      {children}
+    </label>
   );
 }
 
@@ -33,9 +43,16 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   },
 );
 
+// role="alert" so assistive tech announces the error the moment it appears — a
+// silently-injected <p> is never read out (WCAG 4.1.3). Applies to every auth form
+// that renders errors through this component.
 export function FieldError({ children }: { children?: React.ReactNode }) {
   if (!children) return null;
-  return <p className="mt-1.5 text-sm font-medium text-urgent">{children}</p>;
+  return (
+    <p role="alert" className="mt-1.5 text-sm font-medium text-urgent">
+      {children}
+    </p>
+  );
 }
 
 export function Field({
@@ -43,15 +60,17 @@ export function Field({
   error,
   children,
   hint,
+  htmlFor,
 }: {
   label?: string;
   error?: string | null;
   hint?: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-4">
-      {label && <Label>{label}</Label>}
+      {label && <Label htmlFor={htmlFor}>{label}</Label>}
       {children}
       {hint && !error && <p className="mt-1.5 text-sm text-ink-muted">{hint}</p>}
       <FieldError>{error}</FieldError>

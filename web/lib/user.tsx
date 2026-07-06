@@ -243,8 +243,30 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeUserId.current = user?.id ?? null;
     if (!user) return;
+    const uid = user.id;
     setProfileStatus("loading");
-    loadProfile(user.id);
+    loadProfile(uid);
+    return () => {
+      // On sign-out / account switch, flush any pending debounced profile write for
+      // THIS user before teardown — otherwise the last ~2s of XP/earnings is either
+      // lost or fires later against the wrong (or no) session. Sign-out is optimistic
+      // and revokes the token in the background, so the token is still valid here.
+      if (syncTimer.current) {
+        clearTimeout(syncTimer.current);
+        syncTimer.current = null;
+        const patch = pendingPatch.current;
+        pendingPatch.current = {};
+        if (patch && Object.keys(patch).length) {
+          supabase
+            .from("profiles")
+            .update(patch)
+            .eq("id", uid)
+            .then(({ error }) => {
+              if (error) console.warn("Profile sync flush error:", error.message);
+            });
+        }
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 

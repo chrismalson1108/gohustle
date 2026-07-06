@@ -174,6 +174,8 @@ interface JobsValue extends State {
   refreshJobs: () => Promise<void>;
   refreshBookings: () => Promise<void>;
   refreshPosterBookings: () => Promise<void>;
+  jobsLoading: boolean;
+  bookingsLoading: boolean;
   earnBadgeCount: number;
   profileBadgeCount: number;
   proposeAmendment: (bookingId: string, note: string) => Promise<void>;
@@ -224,6 +226,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [unreadMessages, setUnreadMessages] = useState(0);
+  // `true` until the first jobs / bookings fetch for this user settles, so screens
+  // can show a loading state instead of rendering an empty array as "no gigs" /
+  // "no jobs" (which made a still-loading account look like a blank guest account).
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [bookingsLoading, setBookingsLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
@@ -297,6 +304,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   // ── Initial load + realtime ────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
+    // New user (or re-login) → show loading, not a stale/empty result.
+    setJobsLoading(true);
+    setBookingsLoading(true);
     loadFromCacheThenFetch();
     loadBookings();
     loadPosterBookings();
@@ -317,48 +327,58 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // poster select so the jobs list never blanks out.
     const jobsSelect = (poster: string) =>
       `*, profiles!jobs_poster_id_fkey(${poster}), job_slots(*), job_requirements(*), reviews(*)`;
-    let { data, error } = await supabase
-      .from("jobs")
-      .select(jobsSelect(POSTER_RICH))
-      .neq("status", "cancelled")
-      .order("created_at", { ascending: false });
-    if (error?.code === "42703") {
-      ({ data, error } = await supabase
+    try {
+      let { data, error } = await supabase
         .from("jobs")
-        .select(jobsSelect(POSTER_BASE))
+        .select(jobsSelect(POSTER_RICH))
         .neq("status", "cancelled")
-        .order("created_at", { ascending: false }));
-    }
+        .order("created_at", { ascending: false });
+      if (error?.code === "42703") {
+        ({ data, error } = await supabase
+          .from("jobs")
+          .select(jobsSelect(POSTER_BASE))
+          .neq("status", "cancelled")
+          .order("created_at", { ascending: false }));
+      }
 
-    if (error || !data) return;
-    const rows = data as unknown as Record<string, unknown>[];
-    const transformed = rows.map(transformJob) as Job[];
-    dispatch({ type: "SET_JOBS", jobs: transformed });
+      if (error || !data) return;
+      const rows = data as unknown as Record<string, unknown>[];
+      const transformed = rows.map(transformJob) as Job[];
+      dispatch({ type: "SET_JOBS", jobs: transformed });
 
-    if (user) {
-      const myIds = rows
-        .filter((j) => j.poster_id === user.id && j.status !== "cancelled")
-        .map((j) => j.id as string);
-      dispatch({ type: "SET_POSTED_IDS", ids: myIds });
+      if (user) {
+        const myIds = rows
+          .filter((j) => j.poster_id === user.id && j.status !== "cancelled")
+          .map((j) => j.id as string);
+        dispatch({ type: "SET_POSTED_IDS", ids: myIds });
+      }
+      cacheSet(JOBS_CACHE, transformed);
+    } finally {
+      // Whatever the outcome, the initial load is over — stop showing the spinner
+      // so the empty state (if genuinely empty) or the results render.
+      setJobsLoading(false);
     }
-    cacheSet(JOBS_CACHE, transformed);
   }, [user?.id]);
 
   const loadBookings = async () => {
     if (!user) return;
-    const cached = await cacheGet<Booking[]>(BOOKINGS_CACHE);
-    if (cached?.length) dispatch({ type: "SET_BOOKINGS", bookings: cached });
+    try {
+      const cached = await cacheGet<Booking[]>(BOOKINGS_CACHE);
+      if (cached?.length) dispatch({ type: "SET_BOOKINGS", bookings: cached });
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(`*, job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location)`)
-      .eq("earner_id", user.id)
-      .order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("bookings")
+        .select(`*, job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location)`)
+        .eq("earner_id", user.id)
+        .order("created_at", { ascending: false });
 
-    if (error || !data) return;
-    const bookings = data.map(transformBooking) as Booking[];
-    dispatch({ type: "SET_BOOKINGS", bookings });
-    cacheSet(BOOKINGS_CACHE, bookings);
+      if (error || !data) return;
+      const bookings = data.map(transformBooking) as Booking[];
+      dispatch({ type: "SET_BOOKINGS", bookings });
+      cacheSet(BOOKINGS_CACHE, bookings);
+    } finally {
+      setBookingsLoading(false);
+    }
   };
 
   const loadPosterBookings = useCallback(async () => {
@@ -1125,6 +1145,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         refreshJobs: fetchJobs,
         refreshBookings: loadBookings,
         refreshPosterBookings: loadPosterBookings,
+        jobsLoading,
+        bookingsLoading,
         earnBadgeCount,
         profileBadgeCount,
         proposeAmendment,

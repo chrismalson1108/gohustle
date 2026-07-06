@@ -35,10 +35,19 @@ export const supabase = getSupabase();
 // Password reset must NOT use PKCE: a PKCE recovery link stores a code-verifier in
 // the REQUESTING browser's localStorage, so opening the emailed link on any other
 // device/browser (phone mail app, different default browser, private window) would
-// dead-end at "Auth session missing". This implicit-flow client is used ONLY for
-// resetPasswordForEmail, so the emailed link carries a hash token any browser can
-// consume. The main client's detectSessionInUrl already handles the implicit
-// recovery callback on /reset-password regardless of its own flowType.
+// dead-end at "Auth session missing". This implicit-flow client is used for BOTH
+// ends of recovery: resetPasswordForEmail (so the emailed link carries a hash
+// token any browser can consume) AND consuming that hash on /reset-password.
+//
+// IMPORTANT: the main PKCE client CANNOT consume an implicit recovery hash — its
+// _getSessionFromURL throws "Not a valid PKCE flow url." on an #access_token. So
+// /reset-password reads the hash and calls THIS client's setSession() directly.
+// detectSessionInUrl stays false (we parse the hash ourselves, deterministically,
+// without racing the main client). persistSession stays false so the recovery
+// session lives only in memory for the reset page — it is ISOLATED from the app's
+// main session (a recovery link can never browse the app) and leaves no token in
+// storage after the tab closes. setSession keeps the session in memory regardless
+// of persistSession, so updateUser({ password }) works within the page lifetime.
 let _recoveryClient: SupabaseClient | null = null;
 export function getRecoveryClient(): SupabaseClient {
   if (!_recoveryClient) {
@@ -48,7 +57,7 @@ export function getRecoveryClient(): SupabaseClient {
         autoRefreshToken: false,
         detectSessionInUrl: false,
         flowType: "implicit",
-        storageKey: "sb-recovery-noop", // isolated; never written (persistSession false)
+        storageKey: "sb-recovery", // isolated from the main client's session
       },
     });
   }

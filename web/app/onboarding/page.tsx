@@ -10,6 +10,7 @@ import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
 import { getReferralCode, recordReferral } from "@/lib/referrals";
 import Button from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Field";
+import { FullPageSpinner } from "@/components/ui/Spinner";
 import LocationPicker from "@/components/LocationPicker";
 import { classNames } from "@/lib/format";
 
@@ -23,7 +24,8 @@ const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, session, loading: authLoading, onboardingDone, markOnboardingDone } = useAuth();
+  const { user, session, loading: authLoading, onboardingResolved, onboardingDone, markOnboardingDone } =
+    useAuth();
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -44,10 +46,13 @@ export default function OnboardingPage() {
     ((user?.app_metadata?.provider as string | undefined) ?? "") !== "email";
 
   useEffect(() => {
-    if (authLoading) return; // session unknown yet — don't redirect-pinball on refresh
-    if (session && onboardingDone) router.replace("/browse");
+    // Don't route until we actually know the session + onboarding state — otherwise
+    // a not-onboarded user (onboardingDone defaults to true until loaded) gets
+    // bounced to /browse and pinballs back here.
+    if (authLoading || (session && !onboardingResolved)) return;
     if (session === null) router.replace("/login");
-  }, [authLoading, session, onboardingDone, router]);
+    else if (onboardingDone) router.replace("/browse");
+  }, [authLoading, session, onboardingResolved, onboardingDone, router]);
 
   const next = () => setStep((s) => s + 1);
   const toggleSkill = (s: string) =>
@@ -72,6 +77,17 @@ export default function OnboardingPage() {
     if (!user) return;
     setFinishError("");
     setSaving(true);
+    // Record the user's agreement to the current terms FIRST, and BLOCK on failure —
+    // the account must not be marked onboarded until acceptance is durably stored
+    // (it is the legal audit source of truth). recordAcceptances is idempotent, so
+    // retrying after a later error (e.g. a username collision below) is safe.
+    try {
+      await recordAcceptances(user.id, await fetchCurrentDocs());
+    } catch {
+      setSaving(false);
+      setFinishError("Couldn't record your agreement to the terms — check your connection and try again.");
+      return;
+    }
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -99,9 +115,6 @@ export default function OnboardingPage() {
       return;
     }
     try {
-      await recordAcceptances(user.id, await fetchCurrentDocs());
-    } catch {}
-    try {
       await getReferralCode(user.id);
       const code = (user.user_metadata as { referral_code?: string })?.referral_code;
       if (code) await recordReferral(user.id, code);
@@ -112,6 +125,17 @@ export default function OnboardingPage() {
   };
 
   const totalSteps = 6;
+
+  // Never paint the wizard in an unresolved or already-onboarded state — hold a
+  // spinner while auth resolves and during the brief window before the redirect
+  // effect above navigates an onboarded/logged-out visitor away.
+  if (authLoading || !session || !onboardingResolved || onboardingDone) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <FullPageSpinner label="Loading…" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-canvas via-primary-light to-white">
@@ -144,8 +168,9 @@ export default function OnboardingPage() {
               placeholder="e.g. chris_hustler"
               maxLength={30}
               autoCapitalize="none"
+              aria-label="Username"
             />
-            {usernameError && <p className="mt-1.5 text-left text-sm font-medium text-urgent">{usernameError}</p>}
+            {usernameError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{usernameError}</p>}
             <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">@{username.toLowerCase() || "username"}</p>
             <Button size="lg" fullWidth disabled={!username} onClick={async () => { if (await checkUsername()) next(); }}>
               Continue <ArrowRight className="size-5" />
@@ -248,7 +273,7 @@ export default function OnboardingPage() {
               </label>
             )}
             <Button size="lg" fullWidth loading={saving} disabled={needsConsent && !agreedTerms} onClick={finish}>Enter GoHustlr</Button>
-            {finishError && <p className="mt-3 text-sm font-medium text-urgent">{finishError}</p>}
+            {finishError && <p role="alert" className="mt-3 text-sm font-medium text-urgent">{finishError}</p>}
           </Step>
         )}
       </div>
