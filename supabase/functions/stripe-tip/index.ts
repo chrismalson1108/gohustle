@@ -97,6 +97,14 @@ Deno.serve(async (req: Request) => {
     return json({ success: true, tipCents: Math.round(tipCents) });
   } catch (err: any) {
     console.error('stripe-tip:', err);
+    // A saved card that needs off-session SCA throws authentication_required (or a
+    // generic StripeCardError). Surface a distinct, actionable code so the client
+    // can tell the poster their card needs re-verification, instead of a generic
+    // 500. No money moved (the off-session confirm failed), and the idempotency key
+    // + claim_and_credit_tip ledger keep any later successful retry exactly-once.
+    if (err?.type === 'StripeCardError' || err?.code === 'authentication_required') {
+      return json({ error: 'card_requires_authentication' }, 402);
+    }
     return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });

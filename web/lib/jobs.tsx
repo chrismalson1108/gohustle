@@ -848,7 +848,16 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         track("tip_sent", { tipCents });
       } catch (e) {
         captureError(e, { op: "tip", bookingId });
-        showToast({ icon: "⚠️", title: "Tip not processed", message: "The job was verified, but the tip could not be charged." });
+        // A card that needs re-verification (off-session SCA) returns a distinct
+        // code — guide the poster to fix their card rather than a dead-end message.
+        const needsReauth = (e as { code?: string })?.code === "card_requires_authentication";
+        showToast({
+          icon: "⚠️",
+          title: "Tip not processed",
+          message: needsReauth
+            ? "The job was verified, but your saved card needs re-verifying before it can be charged. Update your card in Payments and try the tip again."
+            : "The job was verified, but the tip could not be charged.",
+        });
       }
     }
 
