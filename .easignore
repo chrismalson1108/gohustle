@@ -1,0 +1,51 @@
+# .easignore — files EAS Build excludes from the uploaded project archive.
+#
+# The Expo mobile app only needs: root config (app.json/eas.json/package*.json/
+# babel/metro/tsconfig), index.js, App.js, src/, shared/, and assets/. Everything
+# below is dev tooling, tests, docs, or the sibling web/admin/Supabase projects —
+# none of which are used to build the app. Excluding them cut the upload from
+# ~1.1 GB to a small fraction and makes builds noticeably faster.
+#
+# NOTE: when a .easignore exists it takes precedence over .gitignore for the EAS
+# upload, so the .gitignore patterns are re-listed here (otherwise node_modules,
+# build output, and secrets would be re-included).
+
+# --- mirror of .gitignore (keep excluded) ---
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
+/ios
+/android
+supabase/.temp/
+.vercel
+.env*
+
+# --- sibling apps + backend (not needed to build the mobile app) ---
+web/
+admin/
+supabase/
+
+# --- dev tooling / tests / docs / CI ---
+__tests__/
+scripts/
+.github/
+.claude/
+.vscode/
+*.md
