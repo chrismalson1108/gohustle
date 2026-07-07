@@ -5,6 +5,7 @@ import { Check, ShieldCheck } from "lucide-react";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import RatingStars from "./ui/RatingStars";
+import SignedPhotoStrip from "./SignedPhotoStrip";
 import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
@@ -138,25 +139,13 @@ export default function CompletionModal({
 
       {booking.beforePhotos?.length > 0 && (
         <div className="mb-5">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Before</p>
-          <div className="flex gap-2 overflow-x-auto">
-            {booking.beforePhotos.map((u, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={i} src={u} alt="" className="size-20 shrink-0 rounded-xl object-cover" />
-            ))}
-          </div>
+          <SignedPhotoStrip label="Before" values={booking.beforePhotos} bucket="completion-photos" thumbClass="size-20" />
         </div>
       )}
 
       {booking.completionPhotos?.length > 0 && (
         <div className="mb-5">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">After</p>
-          <div className="flex gap-2 overflow-x-auto">
-            {booking.completionPhotos.map((u, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={i} src={u} alt="" className="size-20 shrink-0 rounded-xl object-cover" />
-            ))}
-          </div>
+          <SignedPhotoStrip label="After" values={booking.completionPhotos} bucket="completion-photos" thumbClass="size-20" />
         </div>
       )}
 

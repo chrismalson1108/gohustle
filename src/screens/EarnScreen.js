@@ -20,7 +20,8 @@ import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { pickImages, uploadImages } from '../lib/uploadImage';
+import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
+import SignedImage from '../components/SignedImage';
 import { computeEarnerInsights } from '../lib/insights';
 import { addExpense } from '../lib/expenses';
 import { haversineMiles } from '../lib/geo';
@@ -283,10 +284,10 @@ export default function EarnScreen({ navigation }) {
       let urls = null;
       let beforeUrls = null;
       if (finishBeforePhotos.length) {
-        beforeUrls = await uploadImages({ uris: finishBeforePhotos, bucket: 'completion-photos', userId: user.id });
+        beforeUrls = await uploadPrivateImages({ uris: finishBeforePhotos, bucket: 'completion-photos', userId: user.id });
       }
       if (finishPhotos.length) {
-        urls = await uploadImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
+        urls = await uploadPrivateImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
       }
       await markEarnerDone(finishTarget.id, urls, beforeUrls);
       // Progress the "Earn $100 this week" challenge (c2) by the gig's value when the
@@ -616,7 +617,7 @@ export default function EarnScreen({ navigation }) {
               <View style={styles.photoStrip}>
                 <Text style={styles.photoStripLabel}>Before</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {booking.beforePhotos.map((u, i) => <Image key={i} source={{ uri: u }} style={styles.photoThumb} />)}
+                  {booking.beforePhotos.map((u, i) => <SignedImage key={i} value={u} bucket="completion-photos" style={styles.photoThumb} />)}
                 </ScrollView>
               </View>
             )}
@@ -624,7 +625,7 @@ export default function EarnScreen({ navigation }) {
               <View style={styles.photoStrip}>
                 <Text style={styles.photoStripLabel}>After</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {booking.completionPhotos.map((u, i) => <Image key={i} source={{ uri: u }} style={styles.photoThumb} />)}
+                  {booking.completionPhotos.map((u, i) => <SignedImage key={i} value={u} bucket="completion-photos" style={styles.photoThumb} />)}
                 </ScrollView>
               </View>
             )}

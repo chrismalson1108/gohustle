@@ -20,7 +20,8 @@ import MoneyGoalCard from "@/components/MoneyGoalCard";
 import ChallengeCard from "@/components/ChallengeCard";
 import WorkStatusBar from "@/components/WorkStatusBar";
 import TrackExpensesModal from "@/components/TrackExpensesModal";
-import { uploadImages } from "@/lib/uploadImage";
+import { uploadPrivateImages } from "@/lib/uploadImage";
+import SignedPhotoStrip from "@/components/SignedPhotoStrip";
 import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
 import { computeEarnerInsights } from "@gohustlr/shared";
@@ -98,8 +99,11 @@ export default function MyJobsPage() {
 
   // Finish (mark-done) sheet with optional before & after proof-of-work photos → completion-photos bucket.
   const [finishBooking, setFinishBooking] = useState<Booking | null>(null);
-  const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
-  const [photos, setPhotos] = useState<string[]>([]);
+  // Each item pairs the uploaded object PATH (stored on the booking) with a local
+  // blob URL for instant preview — completion-photos is a private bucket, so we
+  // never render its objects by public URL.
+  const [beforePhotos, setBeforePhotos] = useState<{ path: string; preview: string }[]>([]);
+  const [photos, setPhotos] = useState<{ path: string; preview: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const beforeFileRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -129,12 +133,16 @@ export default function MyJobsPage() {
 
   const addPhotos = async (files: FileList | null, kind: "before" | "after") => {
     if (!files?.length || !user) return;
+    const arr = Array.from(files);
+    const previews = arr.map((f) => URL.createObjectURL(f));
     setUploading(true);
     try {
-      const urls = await uploadImages(Array.from(files), "completion-photos", user.id);
-      if (kind === "before") setBeforePhotos((p) => [...p, ...urls]);
-      else setPhotos((p) => [...p, ...urls]);
+      const paths = await uploadPrivateImages(arr, "completion-photos", user.id);
+      const items = paths.map((path, i) => ({ path, preview: previews[i] }));
+      if (kind === "before") setBeforePhotos((p) => [...p, ...items]);
+      else setPhotos((p) => [...p, ...items]);
     } catch {
+      previews.forEach((u) => URL.revokeObjectURL(u));
       showToast({ icon: "⚠️", title: "Upload failed", message: "Couldn't add those photos." });
     }
     setUploading(false);
@@ -144,7 +152,11 @@ export default function MyJobsPage() {
     if (!finishBooking) return;
     const fb = finishBooking;
     setBusy(true);
-    const ok = await markEarnerDone(finishBooking.id, photos.length ? photos : null, beforePhotos.length ? beforePhotos : null);
+    const ok = await markEarnerDone(
+      finishBooking.id,
+      photos.length ? photos.map((p) => p.path) : null,
+      beforePhotos.length ? beforePhotos.map((p) => p.path) : null,
+    );
     setBusy(false);
     if (!ok) return; // markEarnerDone already surfaced the failure — don't false-toast success
     // Progress the "Earn $100 this week" challenge (c2) by the gig's value on completion.
@@ -481,8 +493,8 @@ export default function MyJobsPage() {
                       ) : null}
                       {(b.beforePhotos?.length > 0 || b.completionPhotos?.length > 0) && (
                         <div className="space-y-2">
-                          {b.beforePhotos?.length > 0 && <PhotoStrip label="Before" urls={b.beforePhotos} />}
-                          {b.completionPhotos?.length > 0 && <PhotoStrip label="After" urls={b.completionPhotos} />}
+                          {b.beforePhotos?.length > 0 && <SignedPhotoStrip label="Before" values={b.beforePhotos} bucket="completion-photos" />}
+                          {b.completionPhotos?.length > 0 && <SignedPhotoStrip label="After" values={b.completionPhotos} bucket="completion-photos" />}
                         </div>
                       )}
                       {!b.posterRating && !b.earnerRating && b.beforePhotos?.length === 0 && b.completionPhotos?.length === 0 && (
@@ -622,12 +634,12 @@ export default function MyJobsPage() {
         <input ref={beforeFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "before"); e.target.value = ""; }} />
         {beforePhotos.length > 0 && (
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {beforePhotos.map((url, i) => (
-              <div key={url} className="relative">
+            {beforePhotos.map((item, i) => (
+              <div key={item.path} className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
                 <button
-                  onClick={() => setBeforePhotos((p) => p.filter((_, j) => j !== i))}
+                  onClick={() => setBeforePhotos((p) => { URL.revokeObjectURL(item.preview); return p.filter((_, j) => j !== i); })}
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
                   aria-label="Remove photo"
                 >
@@ -649,12 +661,12 @@ export default function MyJobsPage() {
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "after"); e.target.value = ""; }} />
         {photos.length > 0 && (
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {photos.map((url, i) => (
-              <div key={url} className="relative">
+            {photos.map((item, i) => (
+              <div key={item.path} className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
                 <button
-                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  onClick={() => setPhotos((p) => { URL.revokeObjectURL(item.preview); return p.filter((_, j) => j !== i); })}
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
                   aria-label="Remove photo"
                 >
@@ -775,16 +787,3 @@ function WeeklyGoalsCard() {
 }
 
 // Horizontal thumbnail strip used in the expanded Completed row.
-function PhotoStrip({ label, urls }: { label: string; urls: string[] }) {
-  return (
-    <div>
-      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">{label}</p>
-      <div className="flex gap-2 overflow-x-auto">
-        {urls.map((u) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={u} src={u} alt="" className="size-16 shrink-0 rounded-xl object-cover ring-1 ring-line" />
-        ))}
-      </div>
-    </div>
-  );
-}

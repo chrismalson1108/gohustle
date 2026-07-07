@@ -19,6 +19,14 @@ export async function uploadImages(files: File[], bucket: string, userId: string
   return urls;
 }
 
+// Upload several files to a PRIVATE bucket; returns the object PATHS (render via
+// getSignedUrl). Used for completion/before proof-of-work photos.
+export async function uploadPrivateImages(files: File[], bucket: string, userId: string): Promise<string[]> {
+  const paths: string[] = [];
+  for (const f of files) paths.push(await uploadPrivateToBucket(f, bucket, userId));
+  return paths;
+}
+
 // Upload to a PRIVATE bucket and return the object PATH (not a URL). Render via
 // getSignedUrl(). Used for chat images (party-scoped) so DM photos aren't
 // world-readable.
@@ -39,6 +47,15 @@ export async function uploadPrivateToBucket(file: File, bucket: string, userId: 
 export function chatObjectPath(stored: string | null | undefined): string | null {
   if (!stored) return null;
   const marker = "/chat-photos/";
+  const i = stored.indexOf(marker);
+  return i >= 0 ? stored.slice(i + marker.length) : stored;
+}
+
+// Same idea for any private bucket: new rows store a bare "<uid>/<file>" path,
+// legacy rows a full public URL "…/<bucket>/<uid>/<file>". Return the object path.
+export function objectPath(stored: string | null | undefined, bucket: string): string | null {
+  if (!stored) return null;
+  const marker = `/${bucket}/`;
   const i = stored.indexOf(marker);
   return i >= 0 ? stored.slice(i + marker.length) : stored;
 }

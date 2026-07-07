@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, gradients, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
+import SignedImage from './SignedImage';
 
 const RATING_LABELS = {
   5: { ion: 'star',           text: 'Excellent' },
@@ -136,7 +137,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                 <Text style={styles.sectionLabel}>Before</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {booking.beforePhotos.map((u, i) => (
-                    <Image key={i} source={{ uri: u }} style={styles.completionPhoto} />
+                    <SignedImage key={i} value={u} bucket="completion-photos" style={styles.completionPhoto} />
                   ))}
                 </ScrollView>
               </>
@@ -148,7 +149,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                 <Text style={styles.sectionLabel}>After</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {booking.completionPhotos.map((u, i) => (
-                    <Image key={i} source={{ uri: u }} style={styles.completionPhoto} />
+                    <SignedImage key={i} value={u} bucket="completion-photos" style={styles.completionPhoto} />
                   ))}
                 </ScrollView>
               </>

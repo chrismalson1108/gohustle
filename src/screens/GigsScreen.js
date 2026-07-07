@@ -16,6 +16,7 @@ import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
 import MessageSheet from '../components/MessageSheet';
 import Avatar from '../components/Avatar';
+import SignedImage from '../components/SignedImage';
 import { skillFitScore } from '../lib/filters';
 import { colors, gradients, shadows } from '../theme';
 
@@ -545,7 +546,7 @@ function CompletionStrip({ photos, label = 'Completion photos' }) {
       <Text style={styles.photoStripLabel}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {photos.map((u, i) => (
-          <Image key={i} source={{ uri: u }} style={styles.photoThumb} />
+          <SignedImage key={i} value={u} bucket="completion-photos" style={styles.photoThumb} />
         ))}
       </ScrollView>
     </View>

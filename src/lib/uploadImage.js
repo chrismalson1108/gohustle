@@ -124,3 +124,22 @@ export async function uploadImages({ uris, bucket, userId, maxWidth = 1280, comp
   }
   return urls;
 }
+
+// Upload many local URIs to a PRIVATE bucket; returns array of object PATHS
+// (render via getSignedUrl). Used for completion/before proof-of-work photos.
+export async function uploadPrivateImages({ uris, bucket, userId, maxWidth = 1280, compress = 0.6 }) {
+  const paths = [];
+  for (const uri of uris) {
+    paths.push(await uploadPrivateImage({ uri, bucket, userId, maxWidth, compress }));
+  }
+  return paths;
+}
+
+// A stored value is a bare object path ("<uid>/<file>", new rows) or a legacy full
+// public URL ("…/<bucket>/<uid>/<file>"). Return the object path for signing.
+export function objectPath(stored, bucket) {
+  if (!stored) return null;
+  const marker = `/${bucket}/`;
+  const i = stored.indexOf(marker);
+  return i >= 0 ? stored.slice(i + marker.length) : stored;
+}
