@@ -1,10 +1,10 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Job photos, completion photos, and avatars live in PUBLIC buckets and are stored
-// as full public URLs — render them directly. Chat images live in the PRIVATE
-// chat-photos bucket; the service role mints a short-lived signed URL so an admin
-// can view flagged DM images.
+// Job photos and avatars live in PUBLIC buckets and are stored as full public URLs
+// — render them directly. Chat images (chat-photos) AND completion/before photos
+// (completion-photos) live in PRIVATE buckets; the service role mints short-lived
+// signed URLs so an admin can review flagged DM content and proof-of-work photos.
 //
 // SECURITY: messages.image_url is free text the sender controls. The DB write-guard
 // (chat_photo_path_guard) validates the tail after the LAST "/chat-photos/" starts
@@ -28,6 +28,29 @@ export async function signChatImage(
   // Only ever sign an object under the message sender's own folder.
   if (!path.startsWith(`${senderId}/`) || path.includes("..")) return null;
   const { data } = await service.storage.from("chat-photos").createSignedUrl(path, 600);
+  return data?.signedUrl ?? null;
+}
+
+// Sign a completion/before photo (private completion-photos bucket) so an admin can
+// review proof-of-work evidence for a dispute. Handles both a bare object path
+// ("<earnerId>/<file>", new rows) and a legacy full public URL. The service role
+// bypasses RLS, so this signs whatever object the booking references; the value
+// comes from the booking's own completion_photos/before_photos arrays (written only
+// via the guarded upload path), and we reject traversal.
+export async function signCompletionPhoto(
+  service: SupabaseClient,
+  stored: string | null | undefined,
+): Promise<string | null> {
+  if (!stored) return null;
+  let path = stored;
+  if (stored.startsWith("http")) {
+    const marker = "/completion-photos/";
+    const i = stored.lastIndexOf(marker);
+    if (i === -1) return null; // absolute URL that isn't a completion-photos object
+    path = stored.slice(i + marker.length).split("?")[0];
+  }
+  if (!path || path.includes("..")) return null;
+  const { data } = await service.storage.from("completion-photos").createSignedUrl(path, 600);
   return data?.signedUrl ?? null;
 }
 

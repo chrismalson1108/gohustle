@@ -5,7 +5,7 @@ import { fmtCents, fmtDate } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
 import { auditRead } from "@/lib/audit";
-import { signChatImage } from "@/lib/media";
+import { signChatImage, signCompletionPhoto } from "@/lib/media";
 
 export const metadata = { title: "Booking detail" };
 
@@ -45,7 +45,15 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       signedImage: m.image_url ? await signChatImage(ctx.service, m.image_url, m.sender_id) : null,
     })),
   );
-  const completionPhotos: string[] = booking.completion_photos ?? [];
+  // completion-photos is a PRIVATE bucket — mint short-lived signed URLs (service
+  // role) so an admin can review proof-of-work evidence for a dispute. Failed signs
+  // are dropped so no broken thumbnail renders.
+  const completionPhotos = (
+    await Promise.all(((booking.completion_photos as string[]) ?? []).map((v) => signCompletionPhoto(ctx.service, v)))
+  ).filter(Boolean) as string[];
+  const beforePhotos = (
+    await Promise.all(((booking.before_photos as string[]) ?? []).map((v) => signCompletionPhoto(ctx.service, v)))
+  ).filter(Boolean) as string[];
 
   // Viewing a booking exposes both parties' identity, escrow amounts, and chat —
   // record the access (T&S / compliance).
@@ -109,6 +117,18 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </dl>
         )}
       </Section>
+
+      {beforePhotos.length > 0 && (
+        <Section title={`Before photos (${beforePhotos.length})`}>
+          <div className="flex flex-wrap gap-3">
+            {beforePhotos.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer noopener">
+                <img src={url} alt={`before ${i + 1}`} className="h-40 w-40 rounded-lg border border-[var(--line)] object-cover" />
+              </a>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {completionPhotos.length > 0 && (
         <Section title={`Completion photos (${completionPhotos.length})`}>
