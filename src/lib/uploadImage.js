@@ -78,7 +78,9 @@ export async function uploadImage({ uri, bucket, userId, maxWidth = 1024, compre
   const path = `${userId}/${Date.now()}-${Math.round(arraybuffer.byteLength % 100000)}.jpg`;
   const { error } = await supabase.storage.from(bucket).upload(path, arraybuffer, {
     contentType: 'image/jpeg',
-    upsert: true,
+    // Paths are already unique (timestamp + byte-length suffix), so never overwrite —
+    // matches the web uploader and sidesteps the buckets that lack an UPDATE policy.
+    upsert: false,
   });
   if (error) throw error;
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
@@ -97,7 +99,9 @@ export async function uploadPrivateImage({ uri, bucket, userId, maxWidth = 1280,
   const path = `${userId}/${Date.now()}-${Math.round(arraybuffer.byteLength % 100000)}.jpg`;
   const { error } = await supabase.storage.from(bucket).upload(path, arraybuffer, {
     contentType: 'image/jpeg',
-    upsert: true,
+    // Paths are already unique (timestamp + byte-length suffix), so never overwrite —
+    // matches the web uploader and sidesteps the buckets that lack an UPDATE policy.
+    upsert: false,
   });
   if (error) throw error;
   return path;

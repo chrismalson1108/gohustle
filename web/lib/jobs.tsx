@@ -9,7 +9,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { transformJob, transformBooking } from "@gohustlr/shared";
+import { transformJob, transformBooking, findProhibited } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
 import { stripeEdge } from "./edge";
@@ -621,6 +621,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const ratePoster: JobsValue["ratePoster"] = async (bookingId, { rating, reviewText }) => {
+    // Reviews publish to a public profile — run the same content filter every other
+    // free-text field uses (it was previously wired everywhere BUT reviews).
+    if (reviewText && findProhibited(reviewText)) {
+      showToast({ icon: "🚫", title: "Review not allowed", message: "That review contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
     const prev = { posterRating: booking?.posterRating, posterReview: booking?.posterReview };
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { posterRating: rating, posterReview: reviewText || null } });
@@ -794,6 +800,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     { rating, reviewText, paymentMethod, pct, tipCents, disputeReason },
   ) => {
     const partial = typeof pct === "number" && pct > 0 && pct < 1;
+
+    // Block a prohibited review BEFORE moving any money — the review publishes to the
+    // earner's public profile, so it must pass the same filter as every other field.
+    if (reviewText && findProhibited(reviewText)) {
+      showToast({ icon: "🚫", title: "Review not allowed", message: "That review contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
 
     // Validate state BEFORE moving any money — don't capture escrow or log a dispute
     // for a booking that's missing or already finalized.

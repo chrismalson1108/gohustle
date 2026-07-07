@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
+import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
@@ -591,6 +592,12 @@ export function JobsProvider({ children }) {
   };
 
   const ratePoster = async (bookingId, { rating, reviewText }) => {
+    // Reviews publish to a public profile — run the same content filter every other
+    // free-text field uses (it was wired everywhere BUT reviews).
+    if (reviewText && findProhibited(reviewText)) {
+      showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     const prev = { posterRating: booking?.posterRating, posterReview: booking?.posterReview };
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { posterRating: rating, posterReview: reviewText } });
@@ -782,6 +789,13 @@ export function JobsProvider({ children }) {
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason }) => {
     const partial = typeof pct === 'number' && pct > 0 && pct < 1;
+
+    // Block a prohibited review BEFORE moving any money — the review publishes to the
+    // earner's public profile, so it must pass the same filter as every other field.
+    if (reviewText && findProhibited(reviewText)) {
+      showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
 
     // Validate state BEFORE moving any money: capture/verify only makes sense on a
     // completed booking that isn't already finalized — otherwise we could capture
