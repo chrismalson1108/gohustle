@@ -57,9 +57,7 @@ https://gohustlr.com/brand/wordmark-orange.png
 ```
 
 `gohustlr.com` is **connected in Vercel and live (HTTPS)** as of 2026-06-30, so this URL resolves
-and the logo renders. (If you ever need the pre-domain preview host instead, it's
-`https://gohustle-git-master-go-hustlr.vercel.app/brand/wordmark-orange.png` — note `gohustle-chi`
-is a *different* project, don't use it.)
+and the logo renders. Always use `gohustlr.com` — the old `*.vercel.app` deploy URLs are legacy.
 
 **Graceful fallback is also built in:** the `<img>` carries a styled `alt="Hustlr"`, so if a client
 blocks images the header shows an on-brand orange "Hustlr" wordmark in text instead of a
@@ -178,8 +176,7 @@ account:
 - **Resend domain `gohustlr.com` VERIFIED** — DKIM/SPF/DMARC all green (DNS records live at Domain.com).
 - **`gohustlr.com` connected in Vercel + live over HTTPS** (apex → `216.150.1.1`).
 - **Supabase Auth → URL Configuration**: Site URL = `https://gohustlr.com`; redirect URLs now
-  `https://gohustlr.com/**`, the master-preview URL, and `gohustlr://**` (the stale
-  `gohustle-chi.vercel.app` Site URL was removed).
+  `https://gohustlr.com/**` and `gohustlr://**` (all legacy `*.vercel.app` redirect URLs removed).
 
 **👤 Still yours (secrets/pastes can't be automated — all in Supabase → Auth → Emails):**
 1. **Set up custom SMTP** (the "Set up SMTP" button): create a Resend **API key**, then enter host

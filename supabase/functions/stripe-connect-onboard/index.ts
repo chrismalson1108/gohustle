@@ -18,13 +18,13 @@ const DEFAULT_WEB_BASE = 'https://gohustlr.com';
 // Validate the caller-supplied origin against an EXACT-host allowlist so a forged
 // origin can't turn the Stripe return into an open redirect. The previous check
 // accepted any host ending in '.vercel.app' — an attacker's own free preview
-// subdomain passed it and could steer the post-onboarding redirect. Pin the known
-// hosts instead; anything else falls back to the production web app. Mobile passes
-// no origin and always uses the default. Add new deploy hosts here explicitly.
+// subdomain passed it and could steer the post-onboarding redirect. Pin the
+// canonical production domain instead; anything else (incl. old *.vercel.app
+// deploy URLs) falls back to the production web app. Mobile passes no origin and
+// always uses the default. Add new deploy hosts here explicitly.
 const ALLOWED_WEB_HOSTS = new Set([
   'gohustlr.com',
   'www.gohustlr.com',
-  'gohustle-git-master-go-hustlr.vercel.app', // current production deploy host
 ]);
 function resolveWebBase(origin: unknown): string {
   if (typeof origin === 'string' && origin) {

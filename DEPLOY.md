@@ -11,8 +11,9 @@ frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic 
 > **Status (2026-06-30): already done.** The project is created and linked
 > (`go-hustlr/gohustle`, linked at the **repo root** `.vercel/`, Root Directory = `web`),
 > GitHub is connected so **every push to `master` auto-deploys to production**, and the
-> deployment-protection login wall is **off**. The current production URL is
-> **`https://gohustle-git-master-go-hustlr.vercel.app`** (until `gohustlr.com` is connected — §2).
+> deployment-protection login wall is **off**. The live production URL is
+> **`https://gohustlr.com`** (custom domain connected; the old
+> `gohustle-git-master-go-hustlr.vercel.app` deploy URL is legacy — use gohustlr.com).
 > CLI deploys must run **from the repo root** (`npx vercel --prod`), NOT from `web/`, or the
 > `../shared` package is excluded and the build fails. The steps below are the original setup
 > reference.
@@ -37,8 +38,8 @@ frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic 
 5. **Branch:** `master` is the **production branch** (auto-deploys to production); other
    branches deploy as previews.
 
-The live URL is **`https://gohustle-git-master-go-hustlr.vercel.app`** (NOT `gohustle.vercel.app`
-— that's an unrelated project). Confirm it loads, then add the domain below.
+The live URL is **`https://gohustlr.com`** (the custom domain is connected). The old
+`gohustle-git-master-go-hustlr.vercel.app` deploy URL still resolves but is legacy — use gohustlr.com.
 
 ---
 
