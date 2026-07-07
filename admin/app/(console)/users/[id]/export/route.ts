@@ -40,8 +40,16 @@ const BUCKETS = ["avatars", "job-photos", "chat-photos", "completion-photos", "r
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Defense-in-depth CSRF guard for this PII-export GET. Session cookies are
+  // SameSite=Lax (so cross-site subresource loads already carry no cookie), but a
+  // cross-site top-level navigation could still trigger the export + an audit row.
+  // Modern browsers send Sec-Fetch-Site: a legit in-app download is 'same-origin'
+  // and direct address-bar navigation is 'none' — reject only explicit cross-site.
+  if (req.headers.get("sec-fetch-site") === "cross-site") {
+    return new Response("Forbidden", { status: 403 });
+  }
   let ctx;
   try {
     ctx = await requireAdmin("admin");

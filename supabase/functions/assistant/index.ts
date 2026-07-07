@@ -29,12 +29,24 @@ const BLOCKED_TERMS = [
   'escort', 'prostitute', 'sexual favor', 'sexual favors', 'nudes', 'onlyfans',
   'cocaine', 'meth', 'heroin', 'launder', 'money laundering', 'stolen goods',
 ];
+// Normalize common evasions before matching — KEPT IN LOCKSTEP with
+// shared/contentFilter.js normalizeForMatch and the DB backstop
+// public.contains_prohibited (migration 20260707040000). NFKC+lowercase, strip
+// zero-width + in-word separators (. _ * -; whitespace kept), fold leet/homoglyphs.
+const LEET_MAP: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '@': 'a', '$': 's' };
+function normalizeForMatch(text: string): string {
+  let s = text.normalize('NFKC').toLowerCase();
+  s = s.replace(/[​‌‍﻿]/g, '');   // zero-width chars
+  s = s.replace(/[._*-]/g, '');                       // in-word separators (keep spaces)
+  s = s.replace(/[0134578@$]/g, (c) => LEET_MAP[c]);
+  return s;
+}
 function findProhibited(text: string | null | undefined): string | null {
   if (!text) return null;
-  const lower = String(text).toLowerCase();
+  const norm = normalizeForMatch(String(text));
   for (const term of BLOCKED_TERMS) {
     const re = new RegExp(`(^|[^a-z])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
-    if (re.test(lower)) return term;
+    if (re.test(norm)) return term;
   }
   return null;
 }

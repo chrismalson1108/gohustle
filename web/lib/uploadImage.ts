@@ -1,7 +1,23 @@
 import { supabase } from "./supabaseClient";
 
+// Only raster image types may be uploaded. Defense-in-depth that fails fast on the
+// client and mirrors the storage-bucket allowed_mime_types allowlist (the DB-level
+// list is the authoritative guard — a direct Storage API call bypasses this check).
+// Blocks image/svg+xml and text/html, which execute on the storage origin.
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif",
+]);
+function assertSafeImageType(file: File): void {
+  // Some pickers report an empty type (e.g. HEIC on desktop); allow those (they
+  // upload as image/jpeg). Reject only an explicitly non-image / dangerous type.
+  if (file.type && !ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) {
+    throw new Error("Only image files (JPG, PNG, WEBP, HEIC, GIF) can be uploaded.");
+  }
+}
+
 // Upload a browser File to a public Supabase Storage bucket; returns the public URL.
 export async function uploadToBucket(file: File, bucket: string, userId: string): Promise<string> {
+  assertSafeImageType(file);
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const rand = Math.random().toString(36).slice(2, 8);
   const path = `${userId}/${Date.now()}-${rand}.${ext}`;
@@ -31,6 +47,7 @@ export async function uploadPrivateImages(files: File[], bucket: string, userId:
 // getSignedUrl(). Used for chat images (party-scoped) so DM photos aren't
 // world-readable.
 export async function uploadPrivateToBucket(file: File, bucket: string, userId: string): Promise<string> {
+  assertSafeImageType(file);
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const rand = Math.random().toString(36).slice(2, 8);
   const path = `${userId}/${Date.now()}-${rand}.${ext}`;

@@ -2,8 +2,8 @@
 // interface (src/lib/analytics.js) so shared call sites behave identically.
 const isDev = process.env.NODE_ENV !== "production";
 
-export function identify(_userId: string | null): void {
-  /* forward to provider when configured */
+export function identify(userId: string | null): void {
+  void userId; /* forward to provider when configured */
 }
 
 export function track(event: string, props: Record<string, unknown> = {}): void {

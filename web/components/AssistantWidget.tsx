@@ -154,7 +154,6 @@ export default function AssistantWidget() {
   };
 
   // Stop the mic if the component unmounts (e.g. sign-out) while listening.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => stopListening(), []);
 
   // These switch conversation context, so they're blocked mid-send (and their

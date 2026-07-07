@@ -45,6 +45,27 @@ Deno.serve(async (req: Request) => {
     if (!sharedRows.length) return json({ error: 'Not allowed to notify this user' }, 403);
     const sharedJobIds = new Set(sharedRows.map((r: any) => r.job_id).filter(Boolean));
 
+    // Anti-spam rate limit: cap sends per caller so a booking counterparty can't
+    // loop this endpoint to flood the target's devices + persistent Alerts inbox.
+    // Service-role table (push_send_rate) with no client policies; mirrors the
+    // assistant_rate pattern. Best-effort — fail open if the table is missing, but
+    // log loudly so a missing cap is surfaced in monitoring, not hidden.
+    try {
+      await supabase.from('push_send_rate').insert({ user_id: user.id });
+      const sinceMin = new Date(Date.now() - 60_000).toISOString();
+      const { count } = await supabase
+        .from('push_send_rate')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', sinceMin);
+      if ((count ?? 0) > 30) return json({ error: 'rate_limited' }, 429);
+      // Opportunistic cleanup so the table stays bounded per active user.
+      supabase.from('push_send_rate').delete().eq('user_id', user.id)
+        .lt('created_at', new Date(Date.now() - 3_600_000).toISOString()).then(() => {}, () => {});
+    } catch (e) {
+      console.error('send-push: rate-limit check unavailable (cap NOT enforced):', e);
+    }
+
     // Harden caller-supplied content against notification spoofing / phishing and
     // deep-link manipulation: strip control chars, cap length, whitelist the type
     // and routing tab, and only honor a job deep-link that belongs to a shared job.
