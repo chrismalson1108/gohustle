@@ -81,6 +81,18 @@ declare module "@gohustlr/shared" {
   export function earnBadgeCount(bookings: Array<{ status: string }>): number;
   export function profileBadgeCount(posterBookings: Array<{ status: string }>): number;
   export function nextStatusOnDone(booking: { status: string; posterDone: boolean; earnerDone: boolean }, side: "earner" | "poster"): string;
+  export const EARNER_CLAIM_GRACE_DAYS: number;
+  export function canClaimEarnerPayment(
+    booking: { earnerDone?: boolean; status?: string; startsAt?: string | null } | null | undefined,
+    now?: Date,
+    graceDays?: number,
+  ): boolean;
+
+  // ── age ──
+  export const MIN_AGE: number;
+  export function parseDob(input: string | null | undefined): string | null;
+  export function computeAge(dob: string | Date | null | undefined, now?: Date): number | null;
+  export function isAdult(dob: string | Date | null | undefined, now?: Date): boolean;
 
   // ── taxFormat ──
   export const EXPENSE_CATEGORIES: { id: string; label: string; ion: string }[];

@@ -33,3 +33,9 @@ verify_jwt = false
 
 [functions.support-ai-draft]
 verify_jwt = false
+
+# safety-alert — invoked by the reports AFTER INSERT trigger via pg_net with the
+#   x-safety-secret shared secret (SAFETY_ALERT_SECRET), never a user JWT, so the
+#   gateway JWT check must be off; the function verifies the secret itself.
+[functions.safety-alert]
+verify_jwt = false
