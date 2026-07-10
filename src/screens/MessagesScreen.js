@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import {
-  fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText,
+  fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText, notBlocked,
 } from '../lib/messages';
 import { colors, gradients, shadows } from '../theme';
 
@@ -28,7 +28,7 @@ function timeLabel(iso) {
 
 export default function MessagesScreen() {
   const { user } = useAuth();
-  const { bookings, posterBookings, jobs, refreshUnread } = useJobs();
+  const { bookings, posterBookings, jobs, refreshUnread, blockedIds } = useJobs();
   const haptic = useHaptic();
   const [convos, setConvos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -58,12 +58,12 @@ export default function MessagesScreen() {
         unread: isUnread(last[id], st[id], user.id),
         archived: !!st[id]?.archived,
       };
-    }).filter(c => c.lastMsg && c.other);
+    }).filter(c => c.lastMsg && c.other && notBlocked(c, blockedIds));
     list.sort((a, b) => new Date(b.lastMsg.created_at) - new Date(a.lastMsg.created_at));
     setConvos(list);
     setLoading(false);
     refreshUnread?.();
-  }, [user?.id, bookings, posterBookings, jobs]);
+  }, [user?.id, bookings, posterBookings, jobs, blockedIds]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

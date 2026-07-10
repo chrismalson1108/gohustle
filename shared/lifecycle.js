@@ -31,3 +31,25 @@ export function nextStatusOnDone(booking, side /* 'earner' | 'poster' */) {
   const otherDone = side === 'earner' ? booking.posterDone : booking.earnerDone;
   return otherDone ? 'completed' : booking.status;
 }
+
+// H3 (poster-ghosting-hold-expiry): grace window, in days past the gig's scheduled
+// time, after which an earner who did + marked the work done may claim settlement of
+// their OWN completed work when the poster never confirms/verifies. Kept < the ~7-day
+// Stripe authorization-hold expiry so a capture still succeeds. MUST match the value
+// hard-coded in the earner-claim-payment edge function.
+export const EARNER_CLAIM_GRACE_DAYS = 3;
+
+// Whether the "Claim your payment" escalation should be offered to the earner. Pure
+// and testable; the server (earner-claim-payment) re-checks every condition
+// authoritatively AND additionally rejects on an open dispute / unresolved report /
+// disabled payout account — none of which the client is trusted to evaluate.
+export function canClaimEarnerPayment(booking, now = new Date(), graceDays = EARNER_CLAIM_GRACE_DAYS) {
+  if (!booking) return false;
+  if (!booking.earnerDone) return false;                                   // earner did + marked the work
+  if (!['confirmed', 'completed'].includes(booking.status)) return false;  // not finalized/cancelled/declined
+  const sched = booking.startsAt ? new Date(booking.startsAt) : null;
+  if (!sched || isNaN(sched.getTime())) return false;                      // need a scheduled time to anchor grace
+  const deadline = new Date(sched.getTime() + graceDays * 24 * 60 * 60 * 1000);
+  const at = now instanceof Date ? now : new Date(now);
+  return at.getTime() >= deadline.getTime();
+}

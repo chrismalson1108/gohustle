@@ -35,7 +35,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   };
 
   const handleBlock = () => {
-    Alert.alert(`Block ${otherName}?`, "You won't see their gigs and they can't reach you here.", [
+    Alert.alert(`Block ${otherName}?`, "You won't see their gigs, and they won't be able to message or book you.", [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Block', style: 'destructive',

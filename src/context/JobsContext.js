@@ -581,6 +581,28 @@ export function JobsProvider({ children }) {
   // Keep old name as alias for earner side
   const markJobComplete = markEarnerDone;
 
+  // H3 (poster ghosting): the earner claims settlement of their own completed work
+  // after the poster never confirms. The server (earner-claim-payment) enforces the
+  // grace window, no-open-dispute/report, and payout-account checks; this is the
+  // thin client wrapper + optimistic UI.
+  const claimEarnerPayment = async (bookingId) => {
+    const booking = state.bookings.find(b => b.id === bookingId);
+    try {
+      await stripeEdge.claimEarnerPayment(bookingId);
+    } catch (err) {
+      showToast({ icon: '⚠️', title: "Couldn't claim payment", message: err.message || 'Please try again.' });
+      return false;
+    }
+    dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'verified', posterDone: true } });
+    showToast({ icon: '✅', title: 'Payment released', message: "The poster didn't confirm in time, so your payment was released to you." });
+    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId || booking?.job?.posterId;
+    if (posterId) {
+      notify(posterId, 'A gig was auto-settled', "You didn't confirm a completed gig in time, so the earner was paid the full amount.", { tab: 'GigsTab' });
+    }
+    track('earner_claimed_payment', { bookingId });
+    return true;
+  };
+
   // Earner rates the poster after job is verified
   // Recompute a user's ratings from ALL their reviews: the general (combined)
   // rating/review_count plus the role caches (poster_* = as a client; the earner
@@ -1167,6 +1189,7 @@ export function JobsProvider({ children }) {
       markPosterDone,
       ratePoster,
       verifyAndRate,
+      claimEarnerPayment,
       refreshJobs: fetchJobs,
       refreshBookings: loadBookings,
       refreshPosterBookings: loadPosterBookings,

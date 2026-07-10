@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Tag, Target, MapPin, Dumbbell, Rocket, ArrowRight, Check, GraduationCap, Briefcase, Zap } from "lucide-react";
+import { parseDob, isAdult, MIN_AGE } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
@@ -30,6 +31,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
+  const [dob, setDob] = useState("");
+  const [dobError, setDobError] = useState("");
   const [role, setRole] = useState("");
   const [city, setCity] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
@@ -73,6 +76,16 @@ export default function OnboardingPage() {
     return true;
   };
 
+  // Age floor (H7): require a valid, 18+ DOB. Server also blocks a known minor at
+  // action time (guard_min_age); this is the UX gate.
+  const checkDob = () => {
+    const iso = parseDob(dob);
+    if (!iso) { setDobError("Enter your date of birth as MM/DD/YYYY."); return false; }
+    if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return false; }
+    setDobError("");
+    return true;
+  };
+
   const finish = async () => {
     if (!user) return;
     setFinishError("");
@@ -92,6 +105,7 @@ export default function OnboardingPage() {
       .from("profiles")
       .update({
         username: username.trim().toLowerCase(),
+        date_of_birth: parseDob(dob),
         role,
         city,
         skills,
@@ -172,7 +186,17 @@ export default function OnboardingPage() {
             />
             {usernameError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{usernameError}</p>}
             <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">@{username.toLowerCase() || "username"}</p>
-            <Button size="lg" fullWidth disabled={!username} onClick={async () => { if (await checkUsername()) next(); }}>
+            <Input
+              value={dob}
+              onChange={(e) => { setDob(e.target.value); setDobError(""); }}
+              placeholder="Date of birth · MM/DD/YYYY"
+              maxLength={10}
+              inputMode="numeric"
+              aria-label="Date of birth"
+            />
+            {dobError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{dobError}</p>}
+            <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">You must be {MIN_AGE}+ to use GoHustlr.</p>
+            <Button size="lg" fullWidth disabled={!username || !dob} onClick={async () => { const dobOk = checkDob(); if ((await checkUsername()) && dobOk) next(); }}>
               Continue <ArrowRight className="size-5" />
             </Button>
           </Step>

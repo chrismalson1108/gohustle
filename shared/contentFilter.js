@@ -8,6 +8,18 @@ const BLOCKED = [
   'escort', 'prostitute', 'sexual favor', 'sexual favors', 'nudes', 'onlyfans',
   // obvious illegal / scam
   'cocaine', 'meth', 'heroin', 'launder', 'money laundering', 'stolen goods',
+  // controlled / illegal drugs
+  'marijuana', 'cannabis', 'adderall', 'xanax', 'mdma', 'lsd', 'ecstasy',
+  'ketamine', 'fentanyl', 'percocet', 'oxycodone', 'psilocybin', 'shrooms',
+  // weapons
+  'handgun', 'firearm', 'firearms', 'ammunition', 'silencer', 'ghost gun', 'assault rifle',
+  // alcohol to minors / fraudulent identification
+  'fake id', 'fake ids', 'buy me alcohol', 'buy me beer', 'buy alcohol for',
+  // academic / contract cheating
+  'write my essay', 'write my paper', 'do my homework', 'do my assignment',
+  'take my exam', 'take my test', 'take my quiz', 'exam answers',
+  // off-platform payment (escrow circumvention)
+  'venmo', 'cashapp', 'cash app', 'zelle', 'paypal',
 ];
 
 // Normalize common evasions before whole-word matching. KEPT IN LOCKSTEP with the

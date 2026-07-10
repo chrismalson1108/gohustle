@@ -8,6 +8,7 @@ import { cacheClear } from '../lib/cache';
 import { unregisterPushToken } from '../lib/push';
 import { track } from '../lib/analytics';
 import { checkNeedsAcceptance } from '../lib/legal';
+import { betaSignupMessage } from '../lib/authErrors';
 
 // Dismiss any lingering auth browser session on cold start (Android edge case).
 WebBrowser.maybeCompleteAuthSession();
@@ -269,7 +270,10 @@ export function AuthProvider({ children }) {
       password,
       options: { data: { name, referral_code: referralCode || null } },
     });
-    if (error) { setAuthError(error.message); return false; }
+    // A non-allowlisted email is rejected server-side by the closed-beta gate
+    // (handle_new_user trigger); GoTrue surfaces it as a generic DB error, so map it
+    // to beta-appropriate copy. See src/lib/authErrors.js.
+    if (error) { setAuthError(betaSignupMessage(error)); return false; }
     setOnbDone(false);
     // If the email already exists, Supabase obfuscates the response (empty
     // identities) and does NOT send a fresh confirmation — the "signed up before,

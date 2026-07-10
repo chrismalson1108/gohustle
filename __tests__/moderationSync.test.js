@@ -29,8 +29,10 @@ describe('moderation blocklist stays in sync across all three copies', () => {
     'const BLOCKED_TERMS = [',
     '];',
   );
+  // Read the term array from the LATEST migration that redefines the array — the
+  // create-or-replace with the newest timestamp is the one that wins live.
   const sql = quotedTerms(
-    fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260707040000_moderation_normalize_evasions.sql'), 'utf8'),
+    fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260710060000_moderation_expand_terms.sql'), 'utf8'),
     'terms text[] := array[',
     '];',
   );

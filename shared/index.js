@@ -13,3 +13,4 @@ export * from './school.js';
 export * from './finance.js';
 export * from './availability.js';
 export * from './analytics.js';
+export * from './age.js';

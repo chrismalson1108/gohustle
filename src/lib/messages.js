@@ -48,3 +48,11 @@ export function previewText(m) {
   if (m.image_url && !m.text) return '📷 Photo';
   return m.text || '';
 }
+
+// Hub filter (H2): hide a conversation whose other party I've blocked. The server
+// also stops blocked users from messaging/booking (see the block_enforcement
+// migration); this is the UI half so my inbox doesn't keep showing them.
+export function notBlocked(convo, blockedIds) {
+  if (!blockedIds || !convo?.other?.id) return true;
+  return !blockedIds.has(convo.other.id);
+}

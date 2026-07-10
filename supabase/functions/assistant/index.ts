@@ -28,6 +28,18 @@ const BLOCKED_TERMS = [
   'nigger', 'faggot', 'retard', 'kike', 'spic', 'chink',
   'escort', 'prostitute', 'sexual favor', 'sexual favors', 'nudes', 'onlyfans',
   'cocaine', 'meth', 'heroin', 'launder', 'money laundering', 'stolen goods',
+  // controlled / illegal drugs
+  'marijuana', 'cannabis', 'adderall', 'xanax', 'mdma', 'lsd', 'ecstasy',
+  'ketamine', 'fentanyl', 'percocet', 'oxycodone', 'psilocybin', 'shrooms',
+  // weapons
+  'handgun', 'firearm', 'firearms', 'ammunition', 'silencer', 'ghost gun', 'assault rifle',
+  // alcohol to minors / fraudulent identification
+  'fake id', 'fake ids', 'buy me alcohol', 'buy me beer', 'buy alcohol for',
+  // academic / contract cheating
+  'write my essay', 'write my paper', 'do my homework', 'do my assignment',
+  'take my exam', 'take my test', 'take my quiz', 'exam answers',
+  // off-platform payment (escrow circumvention)
+  'venmo', 'cashapp', 'cash app', 'zelle', 'paypal',
 ];
 // Normalize common evasions before matching — KEPT IN LOCKSTEP with
 // shared/contentFilter.js normalizeForMatch and the DB backstop
@@ -72,6 +84,20 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    // Beta kill-switch. Set the ASSISTANT_ENABLED secret to 'false' to turn the
+    // AI assistant off for the closed beta (neutralizes the per-user cost-cap and
+    // prompt-injection surface while the cohort is small). Unset/any other value =
+    // enabled, so this is a no-op unless the owner opts in.
+    if ((Deno.env.get('ASSISTANT_ENABLED') ?? '').toLowerCase() === 'false') {
+      return json(
+        {
+          error: 'assistant_disabled',
+          message: "Hustlr AI is turned off during the beta. It'll be back soon.",
+        },
+        503,
+      );
+    }
+
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
       return json(

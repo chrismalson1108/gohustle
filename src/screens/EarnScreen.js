@@ -26,6 +26,7 @@ import { computeEarnerInsights } from '../lib/insights';
 import { addExpense } from '../lib/expenses';
 import { haversineMiles } from '../lib/geo';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
+import { canClaimEarnerPayment } from '../../shared/lifecycle';
 import { colors, gradients, shadows } from '../theme';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
@@ -54,7 +55,7 @@ export default function EarnScreen({ navigation }) {
     streakDays, levelInfo, xp, challenges,
     weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast, updateChallenge,
   } = useUser();
-  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
+  const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, claimEarnerPayment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
   const haptic = useHaptic();
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
@@ -412,6 +413,32 @@ export default function EarnScreen({ navigation }) {
     </>
   );
 
+  // H3: after the poster ghosts, offer the earner a way to release the full payment
+  // to themselves. Server-authorized (earner-claim-payment) — this is the escalation.
+  const handleClaim = (booking) => {
+    Alert.alert(
+      'Claim your payment?',
+      "The poster hasn't confirmed this finished job in time. You can release the full payment to yourself now.",
+      [
+        { text: 'Not yet', style: 'cancel' },
+        { text: 'Claim payment', onPress: () => { haptic.medium(); claimEarnerPayment(booking.id); } },
+      ],
+    );
+  };
+
+  const renderClaimCta = (booking) => {
+    if (!canClaimEarnerPayment(booking)) return null;
+    return (
+      <>
+        <TouchableOpacity style={styles.ctaPrimary} onPress={() => handleClaim(booking)}>
+          <Ionicons name="cash-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={styles.ctaPrimaryText}>Claim your payment</Text>
+        </TouchableOpacity>
+        <Text style={styles.helperText}>The poster hasn't confirmed in time — release the full payment to yourself.</Text>
+      </>
+    );
+  };
+
   // The single, state-derived primary action + demoted secondary controls for a gig.
   const renderActions = (j, booking) => {
     const status = booking.status;
@@ -474,6 +501,7 @@ export default function EarnScreen({ navigation }) {
             <Ionicons name="hourglass-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
             <Text style={styles.waitingText}>Waiting for poster to confirm done…</Text>
           </View>
+          {renderClaimCta(booking)}
           <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
         </>
       );
@@ -486,6 +514,7 @@ export default function EarnScreen({ navigation }) {
             <Ionicons name="sync-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
             <Text style={styles.waitingText}>Waiting for the poster to verify & pay.</Text>
           </View>
+          {renderClaimCta(booking)}
           <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
         </>
       );

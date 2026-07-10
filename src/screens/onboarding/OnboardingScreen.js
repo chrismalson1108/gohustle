@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { colors, gradients } from '../../theme';
 import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
 import { getReferralCode, recordReferral } from '../../lib/referrals';
+import { parseDob, isAdult, MIN_AGE } from '../../lib/age';
 import LocationPicker from '../../components/LocationPicker';
 
 const { width } = Dimensions.get('window');
@@ -38,6 +39,7 @@ export default function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(0); // 0=welcome, 1=username, 2=role, 3=location, 4=skills/radius, 5=done
   const [form, setForm] = useState({
     username: '',
+    dob: '',
     role: '',
     city: '',
     skills: [],
@@ -45,6 +47,7 @@ export default function OnboardingScreen({ onComplete }) {
     bio: '',
   });
   const [usernameError, setUsernameError] = useState('');
+  const [dobError, setDobError] = useState('');
   const [saving, setSaving] = useState(false);
   const [finishError, setFinishError] = useState('');
   const [accepted, setAccepted] = useState(false);
@@ -96,9 +99,20 @@ export default function OnboardingScreen({ onComplete }) {
     return true;
   };
 
+  // Age floor (H7): a valid, 18+ DOB is required to continue. The server also blocks
+  // a known minor at action time (guard_min_age), but gate here for clear UX.
+  const checkDob = () => {
+    const iso = parseDob(form.dob);
+    if (!iso) { setDobError('Enter your date of birth as MM/DD/YYYY.'); return false; }
+    if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return false; }
+    setDobError('');
+    return true;
+  };
+
   const handleUsernameNext = async () => {
+    const dobOk = checkDob();
     const ok = await checkUsername();
-    if (ok) goNext();
+    if (ok && dobOk) goNext();
   };
 
   const handleFinish = async () => {
@@ -107,6 +121,7 @@ export default function OnboardingScreen({ onComplete }) {
     setFinishError('');
     const { error } = await supabase.from('profiles').update({
       username: form.username.trim().toLowerCase(),
+      date_of_birth: parseDob(form.dob),
       role: form.role,
       city: form.city,
       skills: form.skills,
@@ -174,12 +189,24 @@ export default function OnboardingScreen({ onComplete }) {
       />
       {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
       <Text style={styles.hintText}>@{form.username.toLowerCase() || 'username'} · lowercase letters, numbers, underscores</Text>
+      <TextInput
+        style={[styles.input, dobError ? styles.inputError : null, { marginTop: 14 }]}
+        placeholder="Date of birth · MM/DD/YYYY"
+        placeholderTextColor={colors.textMuted}
+        value={form.dob}
+        onChangeText={v => { set('dob', v); setDobError(''); }}
+        keyboardType="numbers-and-punctuation"
+        autoCorrect={false}
+        maxLength={10}
+      />
+      {dobError ? <Text style={styles.errorText}>{dobError}</Text> : null}
+      <Text style={styles.hintText}>You must be {MIN_AGE}+ to use GoHustlr.</Text>
       <TouchableOpacity
-        style={[styles.nextBtn, !form.username && styles.nextBtnDisabled]}
-        disabled={!form.username}
+        style={[styles.nextBtn, (!form.username || !form.dob) && styles.nextBtnDisabled]}
+        disabled={!form.username || !form.dob}
         onPress={handleUsernameNext}
       >
-        <LinearGradient colors={form.username ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
+        <LinearGradient colors={form.username && form.dob ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
           <Text style={styles.nextBtnText}>Continue →</Text>
         </LinearGradient>
       </TouchableOpacity>
