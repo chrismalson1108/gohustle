@@ -44,3 +44,6 @@ yarn-error.*
 supabase/.temp/
 .vercel
 .env*
+
+# Claude Code local (machine-specific) settings — keep out of the repo
+.claude/settings.local.json
