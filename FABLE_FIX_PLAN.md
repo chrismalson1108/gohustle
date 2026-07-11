@@ -1,5 +1,7 @@
 # FABLE_FIX_PLAN.md
 
+> **✅ RESOLVED — Phase 1 (2026-07-11).** All Phase-1 code blockers (**H1–H8**) are implemented, tested, and **deployed** — Supabase migrations applied (`supabase db push`), edge functions deployed, web live on Vercel. The `skill_rates` DDL prereq, anon-revoke, block enforcement, age floor, safety-alert wiring, and moderation expansion all shipped. Phases 2–4 (config/verify/ops, fast-follow, before-OPEN) remain per below. Evidence: [FABLE_BETA_AUDIT_REPORT.md §4.1.1](FABLE_BETA_AUDIT_REPORT.md).
+
 *Prioritized, sequenced remediation for GoHustlr at commit `a70c9b5`. Pairs with [FABLE_BETA_LAUNCH_DECISION.md](FABLE_BETA_LAUNCH_DECISION.md) (the checklist) and the topical reports (the evidence). This is a plan, not applied changes — no code was modified.*
 
 **How to use this:** the launch decision defines *what* must be true; this defines *how*, *in what order*, and *what will bite you if you do it out of order*. Effort is rough (S ≤ half day, M ≈ 1–2 days, L ≈ 3–5 days). Owner column left blank to assign.

@@ -1,5 +1,7 @@
 # FABLE_BETA_LAUNCH_DECISION.md
 
+> **✅ UPDATE (2026-07-11).** The blocking **code** set (**H1–H8**) identified below is now implemented and **deployed to production** — see [FABLE_BETA_AUDIT_REPORT.md §4.1.1](FABLE_BETA_AUDIT_REPORT.md) for evidence. Remaining go-live gates are configuration/ops (H6 GUCs, Stripe payout delay + `charge.dispute.created` webhook, live-mode flip, mobile EAS build) and the external/legal items below — those still govern final GO.
+
 *Beta go/no-go decision for GoHustlr at commit `a70c9b5`. Based on [FABLE_BETA_AUDIT_REPORT.md](FABLE_BETA_AUDIT_REPORT.md), [FABLE_SECURITY_PRIVACY_REVIEW.md](FABLE_SECURITY_PRIVACY_REVIEW.md), and [FABLE_MARKETPLACE_ABUSE_REVIEW.md](FABLE_MARKETPLACE_ABUSE_REVIEW.md). Remediation sequencing is in [FABLE_FIX_PLAN.md](FABLE_FIX_PLAN.md).*
 
 ---

@@ -1,5 +1,7 @@
 # FABLE_SECURITY_PRIVACY_REVIEW.md
 
+> **✅ RESOLVED (2026-07-11).** The High-severity blockers from this review — **H1** (invite gate), **H4/H5** (anon-read revoke), **H7** (age floor) — are implemented and **deployed to production**, verified with an anon-key `curl` (`profiles`/`jobs` → 401) and a live signup test. Full per-item status + evidence: [FABLE_BETA_AUDIT_REPORT.md §4.1.1](FABLE_BETA_AUDIT_REPORT.md). Medium/Low items below remain as recorded and are retained as the audit record.
+
 *Independent defensive security & privacy review of GoHustlr at commit `a70c9b5`. Companion to [FABLE_BETA_AUDIT_REPORT.md](FABLE_BETA_AUDIT_REPORT.md). Read-only; every claim grounded in source read during the audit.*
 
 This report covers: broken authorization / IDOR, cross-user data access, missing server-side validation, client-only trust, receipt/storage security, privacy risks for a minor-inclusive college population, admin abuse surface, deploy-drift/reproducibility, and missing tests. Marketplace-abuse and physical-safety findings are in [FABLE_MARKETPLACE_ABUSE_REVIEW.md](FABLE_MARKETPLACE_ABUSE_REVIEW.md).

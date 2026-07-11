@@ -1,5 +1,7 @@
 # FABLE_MARKETPLACE_ABUSE_REVIEW.md
 
+> **✅ RESOLVED (2026-07-11).** The High-severity blockers from this review — **H2** (server-enforced block), **H3** (guaranteed payment for completed work), **H6** (safety-report alerting), **H8** (prohibited-use terms) — are implemented and **deployed**. Deferred by scope: **H9/H10** (later-phase) and **H11/H12** (Stripe-dashboard config / before-OPEN). Full status + evidence: [FABLE_BETA_AUDIT_REPORT.md §4.1.1](FABLE_BETA_AUDIT_REPORT.md). Retained as the audit record.
+
 *Independent review of marketplace abuse/fraud economics and physical-world trust & safety for GoHustlr at commit `a70c9b5`. Companion to [FABLE_BETA_AUDIT_REPORT.md](FABLE_BETA_AUDIT_REPORT.md).*
 
 The differentiating risk of this product is not its fintech backend — that is sound (see the security report). It is that **the platform schedules in-person meetings between strangers, one side of whom is 17–22 years old and identifiable by name, campus, and schedule, and pays real money through instant payouts.** This report treats fraud economics and physical safety with equal weight, because for this population they are equally consequential.

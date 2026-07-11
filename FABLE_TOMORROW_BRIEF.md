@@ -1,5 +1,7 @@
 # FABLE_TOMORROW_BRIEF.md — Start-here brief for the beta-readiness audit
 
+> **✅ AUDIT COMPLETE (2026-07-11).** This start-here brief for the audit is spent — the audit ran and its High-severity blockers (**H1–H8**) shipped. Outcome + evidence: [FABLE_BETA_AUDIT_REPORT.md §4.1.1](FABLE_BETA_AUDIT_REPORT.md). Retained as historical context.
+
 *Prepared 2026-07-07 at commit `a70c9b5` (master). This is the fast on-ramp; the eight sibling docs (FABLE_HANDOFF, ROLE_PERMISSION_MATRIX, PRODUCT_FLOW_MAP, LIFECYCLE_STATE_MACHINES, CURRENT_COMMANDS, BASELINE_STATUS, BETA_QA_PLAN, KNOWN_RISKS) hold the detail.*
 
 Read this first, then **FABLE_HANDOFF.md**. Everything below is grounded in source; `path:line` anchors let you jump straight to code.
