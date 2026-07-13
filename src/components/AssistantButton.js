@@ -3,7 +3,8 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { askAssistant } from '../lib/assistantClient';
 import { listThreads, loadThread, deleteThread } from '../lib/assistantThreads';
@@ -34,6 +35,7 @@ export default function AssistantButton() {
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const haptic = useHaptic();
+  const insets = useSafeAreaInsets();
 
   const { refreshJobs, refreshBookings, refreshPosterBookings } = useJobs();
   const { refreshProfile, showToast } = useUser();
@@ -142,10 +144,11 @@ export default function AssistantButton() {
       </TouchableOpacity>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <SafeAreaView style={styles.modal} edges={['top', 'bottom']}>
+        <View style={styles.modal}>
+          <StatusBar style="light" />
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
               <View style={styles.headerIcon}>
                 <Ionicons name="sparkles" size={20} color="#fff" />
               </View>
@@ -199,7 +202,7 @@ export default function AssistantButton() {
 
                 {/* Composer */}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                <View style={styles.composer}>
+                <View style={[styles.composer, { paddingBottom: insets.bottom + 10 }]}>
                   <TextInput
                     style={styles.input}
                     value={input}
@@ -221,7 +224,7 @@ export default function AssistantButton() {
               </>
             )}
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </>
   );
