@@ -262,7 +262,7 @@ export default function GigsScreen({ navigation }) {
         <View style={styles.headerRow}>
           <View style={styles.headerTitleRow}>
             <Ionicons name="megaphone" size={22} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.headerTitle}>Hiring</Text>
+            <Text style={styles.headerTitle}>Hire</Text>
           </View>
           <Text style={styles.headerSub}>
             {postedJobs.length === 0
@@ -473,6 +473,16 @@ export default function GigsScreen({ navigation }) {
             key={booking.id}
             booking={booking}
             onViewEarner={booking.earner?.id ? () => navigation.navigate('UserProfile', { userId: booking.earner.id }) : null}
+            onRebook={booking.earner?.id ? () => {
+              haptic.light();
+              // Full job row (all fields) if it's still cached; the booking's thin
+              // job embed (title/pay/payType/location) is the fallback.
+              const fullJob = postedJobs.find(j => j.id === booking.jobId);
+              navigation.navigate('PostJob', {
+                prefill: fullJob || booking.job,
+                rebookEarner: { id: booking.earner.id, name: booking.earner.name },
+              });
+            } : null}
           />
         ))}
       </ScrollView>
@@ -562,7 +572,7 @@ function Chip({ ion, color, bg, label }) {
   );
 }
 
-function PastBookingCard({ booking, onViewEarner }) {
+function PastBookingCard({ booking, onViewEarner, onRebook }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const declined   = booking.status === 'declined';
@@ -605,6 +615,12 @@ function PastBookingCard({ booking, onViewEarner }) {
       )}
       <CompletionStrip photos={booking.beforePhotos} label="Before" />
       <CompletionStrip photos={booking.completionPhotos} label={booking.beforePhotos?.length ? 'After' : 'Completion photos'} />
+      {!declined && onRebook && (
+        <TouchableOpacity style={styles.rebookBtn} onPress={onRebook} activeOpacity={0.85}>
+          <Ionicons name="refresh" size={15} color={colors.primary} style={{ marginRight: 6 }} />
+          <Text style={styles.rebookBtnText}>Rebook {earnerName}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -869,6 +885,12 @@ const styles = StyleSheet.create({
   doneFlag: { fontSize: 11, color: colors.textMuted },
   doneFlagDone: { color: colors.success, fontWeight: '700' },
   pastRatingRow: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 10 },
+  rebookBtn: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    borderRadius: 10, paddingVertical: 11, marginTop: 10,
+    borderWidth: 1.5, borderColor: colors.primary + '60', backgroundColor: colors.primaryLight,
+  },
+  rebookBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   pastStars: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
   pastRatingText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   photoStrip: { marginTop: 8, marginBottom: 4 },

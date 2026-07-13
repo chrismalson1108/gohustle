@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Platform, StyleSheet } from 'react-native';
 import { CATEGORY_COLORS } from '../data/mockData';
+import { maskLocation } from '../lib/address';
 import { colors } from '../theme';
 
 // Lazy-require react-native-maps so the native AIRMap view registers only when a
@@ -58,7 +59,7 @@ export default function JobsMap({ jobs, userCoords, onPressJob }) {
             key={j.id}
             coordinate={{ latitude: j.lat, longitude: j.lng }}
             title={j.title}
-            description={j.payType === 'hourly' ? `$${j.pay}/hr · ${j.location}` : `$${j.pay} · ${j.location}`}
+            description={j.payType === 'hourly' ? `$${j.pay}/hr · ${maskLocation(j.location)}` : `$${j.pay} · ${maskLocation(j.location)}`}
             pinColor={CATEGORY_COLORS[j.category] || colors.primary}
             onCalloutPress={() => onPressJob?.(j)}
           />

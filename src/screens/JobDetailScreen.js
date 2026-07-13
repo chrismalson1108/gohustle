@@ -12,6 +12,7 @@ import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { maskLocation, canSeeExactAddress } from '../lib/address';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import MessageSheet from '../components/MessageSheet';
@@ -60,6 +61,12 @@ export default function JobDetailScreen({ route, navigation }) {
 
   const statusContent = STATUS_CONTENT[currentBooking?.status] || STATUS_CONTENT.pending;
   const canMessage = !!currentBooking && ['pending','confirmed','completed'].includes(currentBooking.status);
+
+  // Address privacy: exact street address only for the poster or an accepted
+  // earner; everyone else sees the city-level label (coords are already ~1km).
+  const showExactAddress = canSeeExactAddress({ isPoster: isOwnJob, bookingStatus: currentBooking?.status });
+  const displayLocation = showExactAddress ? job.location : maskLocation(job.location);
+  const addressMasked = !showExactAddress && displayLocation !== job.location;
 
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
@@ -168,7 +175,7 @@ export default function JobDetailScreen({ route, navigation }) {
           </LinearGradient>
           <View style={[styles.locPill, { flexDirection: 'row', alignItems: 'center' }]}>
             <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
-            <Text style={styles.locText}>{job.location}</Text>
+            <Text style={styles.locText}>{displayLocation}</Text>
           </View>
           {RECUR_LABEL[job.recurrence] && (
             <View style={[styles.recurPill, { flexDirection: 'row', alignItems: 'center' }]}>
@@ -177,6 +184,13 @@ export default function JobDetailScreen({ route, navigation }) {
             </View>
           )}
         </View>
+
+        {addressMasked && (
+          <View style={styles.addressHint}>
+            <Ionicons name="lock-closed-outline" size={13} color={colors.textMuted} style={{ marginRight: 6 }} />
+            <Text style={styles.addressHintText}>Exact address is shared once your booking is accepted.</Text>
+          </View>
+        )}
 
         {job.photos?.length > 0 && (
           <ScrollView
@@ -477,6 +491,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10,
   },
   locText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  addressHint: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 8 },
+  addressHintText: { fontSize: 12, color: colors.textMuted, flex: 1 },
   recurPill: {
     backgroundColor: colors.primary + '14', borderRadius: 12,
     paddingHorizontal: 12, paddingVertical: 9, marginLeft: 10, marginBottom: 10,

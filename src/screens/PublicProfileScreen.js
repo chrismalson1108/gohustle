@@ -17,6 +17,7 @@ import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
 import { collegeLine } from '../lib/school';
 import { DAYS, windowsForDay, fmtTime, workStatusMeta } from '../lib/availability';
+import { maskLocation } from '../lib/address';
 import { colors, gradients, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 
@@ -347,7 +348,7 @@ export default function PublicProfileScreen({ route, navigation }) {
                 <View style={[styles.jobAccent, { backgroundColor: cc }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.jobTitle} numberOfLines={1}>{j.title}</Text>
-                  <Text style={styles.jobMeta}>{j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {j.location}</Text>
+                  <Text style={styles.jobMeta}>{j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {maskLocation(j.location)}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
               </TouchableOpacity>

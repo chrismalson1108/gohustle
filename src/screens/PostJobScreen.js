@@ -14,6 +14,7 @@ import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
+import { notify } from '../lib/push';
 import { colors, gradients } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
@@ -55,11 +56,14 @@ function buildInitial(prefill) {
 
 export default function PostJobScreen({ navigation, route }) {
   const { addJob } = useJobs();
-  const { showToast } = useUser();
+  const { showToast, name: myName } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
   const prefill = route?.params?.prefill;
+  // Rebook flow: set when the poster tapped "Rebook <earner>" on a past booking —
+  // after this gig posts, that earner gets a gig-invitation push.
+  const rebookEarner = route?.params?.rebookEarner;
   const [form, setForm] = useState(() => buildInitial(prefill));
   const [showCustomCat, setShowCustomCat] = useState(!!prefill && !CATS.some(c => c.id === prefill.category));
   const [photos, setPhotos] = useState([]); // local URIs
@@ -136,12 +140,21 @@ export default function PostJobScreen({ navigation, route }) {
       showToast({ icon: '⚠️', title: "Couldn't post your gig", message: e.message || 'Please try again.' });
       return;
     }
+    const postedTitle = form.title; // capture before the form resets
     setForm(INITIAL);
     setPhotos([]);
     setCoords(null);
     setShowCustomCat(false);
     setPosting(false);
-    showToast({ icon: '🚀', title: 'Gig Posted!', message: 'Your gig is live — students can now apply!' });
+    if (rebookEarner?.id) {
+      // Rebook: invite the previous earner to the fresh gig (same shape as the
+      // profile "Invite to a gig" flow — the tap lands them on Browse).
+      notify(rebookEarner.id, 'You got a gig invitation',
+        `${myName || 'Someone'} invited you to apply to "${postedTitle}"`, { tab: 'HomeTab' });
+      showToast({ icon: '🚀', title: 'Gig Posted!', message: `${rebookEarner.name || 'They'} got an invite to apply.` });
+    } else {
+      showToast({ icon: '🚀', title: 'Gig Posted!', message: 'Your gig is live — students can now apply!' });
+    }
     navigation.navigate('GigsMain');
   };
 
@@ -153,7 +166,7 @@ export default function PostJobScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>{prefill ? 'Duplicate Gig' : 'Post a Gig'}</Text>
+          <Text style={styles.headerTitle}>{rebookEarner ? `Rebook ${rebookEarner.name || ''}`.trim() : prefill ? 'Duplicate Gig' : 'Post a Gig'}</Text>
           <Text style={styles.headerSub}>{prefill ? 'Review the details, then post your copy' : 'Hire a motivated college student'}</Text>
         </LinearGradient>
 

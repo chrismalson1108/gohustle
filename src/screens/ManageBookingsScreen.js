@@ -48,12 +48,12 @@ export default function ManageBookingsScreen() {
   };
 
   const handleAccept = async () => {
-    // Accepting requires authorizing the escrow card hold, which lives in the Hiring
+    // Accepting requires authorizing the escrow card hold, which lives in the Hire
     // tab's accept flow (GigsScreen → AcceptPaymentModal). This legacy screen has no
     // payment step, so route the poster there instead of attempting a confirm that
     // the server would reject for having no funded hold.
     haptic.selection();
-    showToast({ icon: '💳', title: 'Accept from Hiring', message: 'Open the gig in the Hiring tab to authorize payment and accept.' });
+    showToast({ icon: '💳', title: 'Accept from Hire', message: 'Open the gig in the Hire tab to authorize payment and accept.' });
     navigation.navigate('GigsTab');
   };
 
@@ -168,7 +168,9 @@ function BookingItem({ booking, loading, onAccept, onDecline, onMarkDone, onVeri
         </View>
         <View style={styles.earnerInfo}>
           <Text style={styles.earnerName}>{earnerName}</Text>
-          {rating ? <Text style={styles.earnerRating}>⭐ {Number(rating).toFixed(1)}</Text> : null}
+          {booking.earner?.reviewCount > 0
+            ? <Text style={styles.earnerRating}>⭐ {Number(rating).toFixed(1)}</Text>
+            : <Text style={styles.earnerRating}>New</Text>}
         </View>
         <BookingStatusBadge status={status} compact />
       </View>

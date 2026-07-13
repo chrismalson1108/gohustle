@@ -5,6 +5,7 @@ import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { maskLocation, canSeeExactAddress } from '../lib/address';
 import RatingStars from './RatingStars';
 import Avatar from './Avatar';
 import StudentBadge from './StudentBadge';
@@ -100,7 +101,8 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel, at
           </View>
           <Ionicons name="location" size={13} color={colors.textSecondary} style={{ marginRight: 3 }} />
           <Text style={styles.loc} numberOfLines={1}>
-            {job.location}{distanceLabel ? ` · ${distanceLabel}` : ''}
+            {canSeeExactAddress({ bookingStatus }) ? job.location : maskLocation(job.location)}
+            {distanceLabel ? ` · ${distanceLabel}` : ''}
           </Text>
         </View>
         <View style={styles.posterRow}>

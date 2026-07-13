@@ -189,7 +189,7 @@ function AppNavigator() {
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
         <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'My Jobs' }} />
-        <Tab.Screen name="GigsTab"     component={GigsStack}     options={{ title: 'Hiring' }} />
+        <Tab.Screen name="GigsTab"     component={GigsStack}     options={{ title: 'Hire' }} />
         <Tab.Screen name="MessagesTab" component={MessagesStack} options={{ title: 'Messages' }} />
         <Tab.Screen name="ProfileTab"  component={ProfileStack}  options={{ title: 'Profile' }} />
       </Tab.Navigator>
