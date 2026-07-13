@@ -16,7 +16,7 @@ import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
 import { collegeLine } from '../lib/school';
-import { DAYS, windowsForDay, fmtTime, availabilitySummary } from '../lib/availability';
+import { DAYS, windowsForDay, fmtTime, workStatusMeta } from '../lib/availability';
 import { colors, gradients, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
 
@@ -83,7 +83,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
     const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
       supabase.from('profiles')
-        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status')
+        .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status, work_status')
         .eq('id', userId).single(),
       supabase.from('reviews')
         .select('id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
@@ -225,7 +225,15 @@ export default function PublicProfileScreen({ route, navigation }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Availability</Text>
           <View style={styles.availCard}>
-            <Text style={styles.availSummary}>{availabilitySummary(availability)}</Text>
+            {!!profile?.work_status && (() => {
+              const ws = workStatusMeta(profile.work_status);
+              return (
+                <View style={styles.availStatusRow}>
+                  <View style={[styles.availStatusDot, { backgroundColor: ws.color }]} />
+                  <Text style={styles.availStatusLabel}>{ws.label}</Text>
+                </View>
+              );
+            })()}
             {availDays.map(({ label, day, windows }) => (
               <View key={day} style={styles.availRow}>
                 <Text style={styles.availDay}>{label}</Text>
@@ -472,7 +480,9 @@ const styles = StyleSheet.create({
   },
   jobAccent: { width: 4, height: 36, borderRadius: 2, marginRight: 12 },
   availCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
-  availSummary: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  availStatusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  availStatusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  availStatusLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   availRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.divider },
   availDay: { fontSize: 13, fontWeight: '800', color: colors.primary, width: 48 },
   availTimes: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '600', color: colors.textSecondary },

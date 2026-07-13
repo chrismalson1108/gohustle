@@ -287,6 +287,7 @@ export default function HomeScreen({ navigation }) {
 
       <ScrollView
         horizontal showsHorizontalScrollIndicator={false}
+        style={styles.catScroll}
         contentContainerStyle={styles.catRow}
       >
         {CHIPS.map(cat => {
@@ -448,7 +449,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
-  catRow: { paddingHorizontal: 16, paddingVertical: 14 },
+  catScroll: { flexGrow: 0, flexShrink: 0 },
+  catRow: { paddingHorizontal: 16, paddingVertical: 14, alignItems: 'center' },
   catChip: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 9,
