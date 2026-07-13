@@ -47,3 +47,6 @@ supabase/.temp/
 
 # Claude Code local (machine-specific) settings — keep out of the repo
 .claude/settings.local.json
+
+# Local seed manifest (test-user ids/emails, machine-local)
+scripts/.seed/
