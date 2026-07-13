@@ -19,7 +19,9 @@ const BOOKING_PILL = {
 
 const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly' };
 
-export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) {
+// attached: renders with a square bottom edge so a status panel can sit flush
+// beneath it and the pair reads as ONE card (rounded top, rounded bottom).
+export default function JobCard({ job, onPress, bookingStatus, distanceLabel, attached }) {
   const haptic = useHaptic();
   const { savedJobIds, toggleSavedJob } = useJobs();
   const saved = savedJobIds.has(job.id);
@@ -30,7 +32,7 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel }) 
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, attached && styles.cardAttached]}
       onPress={() => { haptic.light(); onPress(); }}
       activeOpacity={0.82}
     >
@@ -125,6 +127,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     overflow: 'hidden',
     ...shadows.card,
+  },
+  cardAttached: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 0,
   },
   accent: { width: 5 },
   saveBtn: {

@@ -528,7 +528,7 @@ export default function EarnScreen({ navigation }) {
     const status = booking.status;
     return (
       <View key={j.id} style={styles.bookedItem}>
-        <JobCard job={j} bookingStatus={status} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} />
+        <JobCard job={j} bookingStatus={status} attached onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} />
         <View style={styles.bookingMeta}>
           <BookingStatusBadge status={status} />
 
@@ -1104,12 +1104,16 @@ const styles = StyleSheet.create({
   goalTrack: { height: 10, borderRadius: 5, backgroundColor: colors.divider, overflow: 'hidden' },
   goalFill: { height: 10, borderRadius: 5 },
   bookedItem: { marginBottom: 0 },
+  // Sits flush under an attached JobCard (square bottom) so the pair reads as ONE
+  // card: rounded top (card) + rounded bottom (this panel). Width must match the
+  // card's marginHorizontal, and only a hairline divider separates the two.
   bookingMeta: {
     backgroundColor: colors.surface, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 12,
-    marginTop: -14, marginBottom: 16,
-    borderWidth: 1, borderColor: colors.border,
+    marginHorizontal: 16, marginBottom: 16,
+    borderTopWidth: 1, borderTopColor: colors.divider,
     borderTopLeftRadius: 0, borderTopRightRadius: 0,
+    ...shadows.card,
   },
   bookingRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 8 },
   bookingIcon: { marginRight: 6, marginTop: 2 },
