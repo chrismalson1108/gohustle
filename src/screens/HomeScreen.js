@@ -313,13 +313,13 @@ export default function HomeScreen({ navigation }) {
       </ScrollView>
 
       <View style={styles.resultsRow}>
-        <Text style={styles.sectionTitle}>
+        <Text style={styles.sectionTitle} numberOfLines={1}>
           {filtered.length} gig{filtered.length !== 1 ? 's' : ''} available
         </Text>
         <View style={styles.resultsRight}>
           {activeFilterCount > 0 && (
             <TouchableOpacity onPress={() => setFilters(DEFAULT_FILTERS)}>
-              <Text style={styles.clearFilters}>Clear filters</Text>
+              <Text style={styles.clearFilters} numberOfLines={1}>Clear filters</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -327,14 +327,14 @@ export default function HomeScreen({ navigation }) {
             onPress={() => { haptic.light(); navigation.navigate('MarketInsights'); }}
           >
             <Ionicons name="bar-chart-outline" size={16} color={colors.primary} />
-            <Text style={styles.viewToggleText}>Insights</Text>
+            <Text style={styles.viewToggleText} numberOfLines={1}>Insights</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.viewToggle}
             onPress={() => { haptic.light(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
           >
             <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.primary} />
-            <Text style={styles.viewToggleText}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
+            <Text style={styles.viewToggleText} numberOfLines={1}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -474,9 +474,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13, fontWeight: '700', color: colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.5,
+    // Yield space (and ellipsize) so the right-hand action cluster is never
+    // clipped when a filter is active (Clear filters + Insights + Map/List).
+    flexShrink: 1, marginRight: 8,
   },
   clearFilters: { fontSize: 13, fontWeight: '700', color: colors.primary },
-  resultsRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  resultsRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   viewToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewToggleText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   list: { paddingBottom: 96 },

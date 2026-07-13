@@ -17,7 +17,7 @@ export default function BadgeGrid({ badges }) {
               color={unlocked ? colors.gold : colors.textMuted}
               style={styles.icon}
             />
-            <Text style={[styles.label, !unlocked && styles.labelLocked]} numberOfLines={1}>
+            <Text style={[styles.label, !unlocked && styles.labelLocked]} numberOfLines={2}>
               {def.label}
             </Text>
           </View>
@@ -28,16 +28,20 @@ export default function BadgeGrid({ badges }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap' },
+  // 3-per-row grid — at the old 18% (5-per-row) the two-word labels
+  // ("First Hustle", "Speed Demon") truncated to "First…" at fontSize 9.
+  // 30% cells give ~83pt of inner width so labels render in full.
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   badge: {
-    width: '18%', marginRight: '2.5%', marginBottom: 12,
-    alignItems: 'center', backgroundColor: colors.surface,
+    width: '30%',
+    alignItems: 'center', justifyContent: 'flex-start', minHeight: 92,
+    backgroundColor: colors.surface,
     borderRadius: 14, padding: 10, borderWidth: 1.5, borderColor: colors.border,
     ...shadows.sm,
   },
   locked: { backgroundColor: colors.divider, borderColor: 'transparent', opacity: 0.5 },
   icon: { fontSize: 22, marginBottom: 4 },
   iconLocked: { opacity: 0.5 },
-  label: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
+  label: { fontSize: 11, lineHeight: 14, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
   labelLocked: { color: colors.textMuted },
 });
