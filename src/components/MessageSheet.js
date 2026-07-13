@@ -259,8 +259,8 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
           <View style={styles.header}>
             <View style={styles.handle} />
             <View style={styles.headerContent}>
-              <View>
-                <Text style={styles.headerTitle}>{otherPerson?.name || 'Chat'}</Text>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.headerTitle} numberOfLines={1}>{otherPerson?.name || 'Chat'}</Text>
                 {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>

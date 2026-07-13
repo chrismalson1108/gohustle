@@ -84,7 +84,7 @@ export default function MarketInsightsScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientHeader colors={gradients.primary}>
+      <GradientHeader colors={gradients.primary} topInset={false}>
         <View style={styles.topRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Market Insights</Text>

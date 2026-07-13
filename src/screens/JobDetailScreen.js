@@ -132,7 +132,8 @@ export default function JobDetailScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}
+        automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
         {job.urgent && (
           <View style={[styles.urgentBanner, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
             <Ionicons name="flash" size={14} color={colors.urgent} style={{ marginRight: 6 }} />

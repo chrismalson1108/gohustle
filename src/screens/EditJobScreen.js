@@ -98,7 +98,18 @@ export default function EditJobScreen({ route, navigation }) {
     set('hazards', v);
   };
 
-  if (!job) return null;
+  if (!job) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.background }}>
+        <Text style={{ fontSize: 15, color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }}>
+          This gig is no longer available.
+        </Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, backgroundColor: colors.primary }}>
+          <Text style={{ color: '#fff', fontWeight: '800' }}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const handleSave = async () => {
     Keyboard.dismiss();

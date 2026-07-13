@@ -111,7 +111,8 @@ export default function AvailabilityScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 16, gap: 14 }}>
+    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 14 }}
+      automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <Text style={styles.lead}>When you can work — Hustlr AI uses this to match gigs to your free time.</Text>
 
       <WorkStatusBar />

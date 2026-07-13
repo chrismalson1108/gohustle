@@ -137,7 +137,7 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      <GradientHeader colors={gradients.profile}>
+      <GradientHeader colors={gradients.profile} topInset={false}>
         <View style={styles.headerRow}>
           <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} size={64} fontSize={26}
             bg="rgba(255,255,255,0.25)" borderColor="rgba(255,255,255,0.6)" borderWidth={3} style={{ marginRight: 16 }} />
@@ -400,9 +400,9 @@ export default function PublicProfileScreen({ route, navigation }) {
       <Modal visible={inviteOpen} animationType="slide" transparent onRequestClose={() => setInviteOpen(false)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setInviteOpen(false)} />
-          <View style={styles.sheet}>
+          <View style={styles.inviteSheet}>
             <View style={styles.handle} />
-            <Text style={styles.sheetTitle}>Invite {profile.name || 'them'} to…</Text>
+            <Text style={styles.inviteSheetTitle}>Invite {profile.name || 'them'} to…</Text>
             <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
               {myOpenGigs.map(j => (
                 <TouchableOpacity key={j.id} style={styles.inviteRow} onPress={() => sendInvite(j)}>
@@ -459,9 +459,9 @@ const styles = StyleSheet.create({
   inviteBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 36, ...shadows.md },
+  inviteSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 36, ...shadows.md },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 16 },
-  sheetTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 },
+  inviteSheetTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
   inviteRowTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   inviteRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },

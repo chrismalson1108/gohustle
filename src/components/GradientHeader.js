@@ -3,14 +3,14 @@ import { StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function GradientHeader({ colors, children, style }) {
+export default function GradientHeader({ colors, children, style, topInset = true }) {
   const insets = useSafeAreaInsets();
   return (
     <LinearGradient
       colors={colors}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.base, { paddingTop: insets.top + 16 }, style]}
+      style={[styles.base, { paddingTop: (topInset ? insets.top : 0) + 16 }, style]}
     >
       {children}
     </LinearGradient>

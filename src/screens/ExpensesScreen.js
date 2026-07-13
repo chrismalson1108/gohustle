@@ -180,7 +180,7 @@ export default function ExpensesScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        <GradientHeader colors={gradients.profile}>
+        <GradientHeader colors={gradients.profile} topInset={false}>
           <View style={styles.titleRow}>
             <Ionicons name="receipt-outline" size={22} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.screenTitle}>Tax Center</Text>

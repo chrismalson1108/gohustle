@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   resultsRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   viewToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewToggleText: { fontSize: 13, fontWeight: '700', color: colors.primary },
-  list: { paddingBottom: 24 },
+  list: { paddingBottom: 96 },
   empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { fontSize: 16, color: colors.textSecondary, textAlign: 'center' },
