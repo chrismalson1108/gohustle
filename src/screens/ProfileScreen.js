@@ -273,6 +273,8 @@ export default function ProfileScreen({ navigation }) {
         <Stat label="Avg Rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
       </View>
 
+      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>Account</Text>
+
       {/* Manage your gigs — lives in the Gigs tab now */}
       {(postedJobs.length > 0 || posterBookings?.length > 0) && (
         <TouchableOpacity
@@ -310,6 +312,8 @@ export default function ProfileScreen({ navigation }) {
         </View>
         <Text style={styles.manageBtnArrow}>›</Text>
       </TouchableOpacity>
+
+      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>Trust & Verification</Text>
 
       <TouchableOpacity
         style={styles.manageBtn}
@@ -393,6 +397,8 @@ export default function ProfileScreen({ navigation }) {
         </View>
         <Text style={styles.manageBtnArrow}>›</Text>
       </TouchableOpacity>
+
+      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>My Stuff</Text>
 
       <TouchableOpacity
         style={styles.manageBtn}
@@ -585,14 +591,14 @@ function Stat({ label, value }) {
 
 const styles = StyleSheet.create({
   manageBtn: {
-    marginHorizontal: 16, marginTop: 16, borderRadius: 16,
-    backgroundColor: colors.surface, padding: 16,
+    marginHorizontal: 16, marginTop: 12, borderRadius: 14,
+    backgroundColor: colors.surface, paddingVertical: 14, paddingHorizontal: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1.5, borderColor: colors.primary + '40', ...shadows.sm,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   manageBtnLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   manageBtnIcon: { fontSize: 22, marginRight: 12 },
-  manageBtnTitle: { fontSize: 15, fontWeight: '800', color: colors.primary },
+  manageBtnTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   manageBtnSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   manageBadge: {
     backgroundColor: colors.urgent, borderRadius: 10,
@@ -604,7 +610,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
   },
   alertBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  manageBtnArrow: { fontSize: 22, color: colors.primary, fontWeight: '700' },
+  manageBtnArrow: { fontSize: 20, color: colors.textMuted, fontWeight: '400' },
   settingsBtn: {
     marginHorizontal: 16, marginTop: 16, borderRadius: 14,
     paddingVertical: 14, alignItems: 'center',
@@ -618,12 +624,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 10,
   },
   legalHeader: {
-    fontSize: 11, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4,
+    fontSize: 13, fontWeight: '800', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
   },
   legalRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.divider,
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   legalRowText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
   signOutBtn: {
@@ -664,8 +670,8 @@ const styles = StyleSheet.create({
   roleHint: { fontSize: 12, color: colors.textMuted, marginRight: 10 },
   payAlert: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#3F25FE',
-    marginHorizontal: 16, marginTop: 14,
+    backgroundColor: colors.primary,
+    marginHorizontal: 16, marginTop: 12,
     borderRadius: 14, padding: 14,
     ...shadows.sm,
   },
@@ -677,14 +683,14 @@ const styles = StyleSheet.create({
   payAlertTitle: { color: '#fff', fontSize: 13.5, fontWeight: '800' },
   payAlertSub: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 1 },
   statsRow: {
-    backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 14,
+    backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 12,
     borderRadius: 16, flexDirection: 'row', alignItems: 'center',
     paddingVertical: 16, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   stat: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 3 },
-  statLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
-  statDiv: { width: 1, height: 36, backgroundColor: colors.border },
+  statValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 },
+  statLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  statDiv: { width: 1, height: 32, backgroundColor: colors.border },
   section: { paddingHorizontal: 16, marginTop: 24 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: {

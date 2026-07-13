@@ -110,12 +110,14 @@ export default function MessagesScreen() {
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 24 }}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >
           {shown.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="chatbubbles-outline" size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
+              <View style={styles.emptyIconWrap}>
+                <Ionicons name="chatbubbles-outline" size={30} color={colors.primary} />
+              </View>
               <Text style={styles.emptyTitle}>{tab === 'archived' ? 'No archived chats' : 'No messages yet'}</Text>
               <Text style={styles.emptyText}>
                 {tab === 'archived' ? 'Archived conversations show up here.' : 'Message a poster or earner from a gig to start a conversation.'}
@@ -127,16 +129,18 @@ export default function MessagesScreen() {
               <View style={{ flex: 1 }}>
                 <View style={styles.rowTop}>
                   <Text style={[styles.name, c.unread && styles.unreadText]} numberOfLines={1}>{c.other.name || 'User'}</Text>
-                  <Text style={styles.time}>{timeLabel(c.lastMsg.created_at)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {c.unread && <View style={styles.unreadDot} />}
+                    <Text style={[styles.time, c.unread && styles.timeUnread]}>{timeLabel(c.lastMsg.created_at)}</Text>
+                  </View>
                 </View>
                 {c.jobTitle ? <Text style={styles.jobTitle} numberOfLines={1}>re: {c.jobTitle}</Text> : null}
-                <Text style={[styles.preview, c.unread && styles.unreadText]} numberOfLines={1}>
+                <Text style={[styles.preview, c.unread && styles.previewUnread]} numberOfLines={1}>
                   {c.lastMsg.sender_id === user.id ? 'You: ' : ''}{previewText(c.lastMsg)}
                 </Text>
               </View>
               <View style={styles.rowRight}>
-                {c.unread && <View style={styles.unreadDot} />}
-                <TouchableOpacity onPress={() => toggleArchive(c)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 6 }}>
+                <TouchableOpacity onPress={() => toggleArchive(c)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ padding: 6 }}>
                   <Ionicons name={c.archived ? 'arrow-undo-outline' : 'archive-outline'} size={18} color={colors.textMuted} />
                 </TouchableOpacity>
               </View>
@@ -159,7 +163,10 @@ export default function MessagesScreen() {
 function SegBtn({ label, count, active, onPress }) {
   return (
     <TouchableOpacity style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress} activeOpacity={0.8}>
-      <Text style={[styles.segText, active && styles.segTextActive]}>{label}{count > 0 ? ` (${count})` : ''}</Text>
+      <Text style={[styles.segText, active && styles.segTextActive]}>
+        {label}
+        {count > 0 ? <Text style={{ fontWeight: '500' }}>{`  ${count}`}</Text> : null}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -171,25 +178,32 @@ const styles = StyleSheet.create({
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: colors.border,
+    ...shadows.sm,
   },
-  segBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 10 },
+  segBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   segBtnActive: { backgroundColor: colors.primary },
   segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   segTextActive: { color: '#fff' },
-  empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
+  empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56 },
+  emptyIconWrap: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   row: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    marginHorizontal: 16, marginTop: 10, borderRadius: 14, padding: 12,
+    marginHorizontal: 16, marginTop: 8, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14,
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1, marginRight: 8 },
-  unreadText: { fontWeight: '900', color: colors.textPrimary },
+  unreadText: { fontWeight: '800', color: colors.textPrimary },
   time: { fontSize: 11, color: colors.textMuted },
-  jobTitle: { fontSize: 12, color: colors.primary, marginTop: 1 },
+  timeUnread: { color: colors.primary, fontWeight: '700' },
+  jobTitle: { fontSize: 12, color: colors.primary, marginTop: 2 },
   preview: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  rowRight: { alignItems: 'center', marginLeft: 8 },
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  previewUnread: { fontWeight: '600', color: colors.textPrimary },
+  rowRight: { alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginRight: 5 },
 });

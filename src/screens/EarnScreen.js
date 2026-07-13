@@ -755,7 +755,7 @@ export default function EarnScreen({ navigation }) {
             </Text>
             <Text style={styles.emptyText}>
               {tab === 'active'
-                ? 'Jobs you’re actively working show up here. Browse the Home tab to book one!'
+                ? 'Jobs you’re actively working show up here. Find one in the Browse tab!'
                 : tab === 'awaiting'
                   ? 'Gigs you’ve applied to — waiting on the poster to accept — appear here.'
                   : 'Completed and closed gigs will show up here.'}
@@ -1011,27 +1011,27 @@ const styles = StyleSheet.create({
   },
   payoutBannerTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
   payoutBannerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   screenTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
   // Header chips (replaces the old 4-tile earnings wall + full XP bar)
   headerChipsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   weekChip: {
     flexDirection: 'row', alignItems: 'baseline',
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9,
+    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8,
   },
-  weekChipValue: { fontSize: 20, fontWeight: '900', color: '#fff' },
+  weekChipValue: { fontSize: 17, fontWeight: '900', color: '#fff' },
   weekChipLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginLeft: 6 },
   streakPill: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8,
   },
   streakText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   lvChip: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8,
   },
   lvChipText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   // Action-needed nudge band
@@ -1070,9 +1070,9 @@ const styles = StyleSheet.create({
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: 14, padding: 4,
-    borderWidth: 1, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
-  segBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 10 },
+  segBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   segBtnActive: { backgroundColor: colors.primary },
   segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   segTextActive: { color: '#fff' },
@@ -1103,11 +1103,11 @@ const styles = StyleSheet.create({
   goalValue: { fontSize: 13, fontWeight: '700' },
   goalTrack: { height: 10, borderRadius: 5, backgroundColor: colors.divider, overflow: 'hidden' },
   goalFill: { height: 10, borderRadius: 5 },
-  bookedItem: { marginBottom: 4 },
+  bookedItem: { marginBottom: 0 },
   bookingMeta: {
-    backgroundColor: colors.surface, borderRadius: 12,
+    backgroundColor: colors.surface, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 12,
-    marginTop: -4, marginBottom: 12,
+    marginTop: -14, marginBottom: 16,
     borderWidth: 1, borderColor: colors.border,
     borderTopLeftRadius: 0, borderTopRightRadius: 0,
   },
@@ -1121,16 +1121,16 @@ const styles = StyleSheet.create({
     marginBottom: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
   histRowRate: { borderLeftWidth: 4, borderLeftColor: colors.gold },
-  histTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  histTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
   histMain: { flex: 1, minWidth: 0 },
   histTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   histSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
   histRateBtn: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary,
-    borderRadius: 9, paddingVertical: 6, paddingHorizontal: 10,
+    borderRadius: 10, paddingVertical: 9, paddingHorizontal: 10,
   },
   histRateText: { fontSize: 12, fontWeight: '800', color: '#fff' },
-  histChevron: { padding: 2 },
+  histChevron: { paddingVertical: 10, paddingHorizontal: 8, marginRight: -8 },
   histDetail: { borderTopWidth: 1, borderTopColor: colors.divider, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
   histEmptyText: { fontSize: 13, color: colors.textMuted },
   inProgressBanner: {
@@ -1165,23 +1165,23 @@ const styles = StyleSheet.create({
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFF7ED', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 6, marginTop: 10, alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, alignSelf: 'flex-start',
   },
   waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
   // One primary CTA per gig
   ctaPrimary: {
     flexDirection: 'row', backgroundColor: colors.primary, borderRadius: 12,
-    paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+    paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
   ctaGreen: {
     flexDirection: 'row', backgroundColor: colors.success, borderRadius: 12,
-    paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+    paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
   ctaPrimaryText: { fontSize: 14, fontWeight: '800', color: '#fff' },
-  helperText: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
-  secondaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10 },
+  helperText: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
+  secondaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12 },
   driveStartBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 11, marginTop: 10,
+    flexDirection: 'row', borderRadius: 12, paddingVertical: 12, marginTop: 10,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primaryLight,
   },
@@ -1219,12 +1219,12 @@ const styles = StyleSheet.create({
   reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
   posterRatedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
   msgBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 9, paddingHorizontal: 14,
+    flexDirection: 'row', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
   },
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-  cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
+  cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent, paddingVertical: 10 },
   cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', flexShrink: 1, textAlign: 'right' },
   photoStrip: {},
   photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
@@ -1242,10 +1242,10 @@ const styles = StyleSheet.create({
   },
   addPhotoText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
   noGigsCard: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 24,
+    backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 36, paddingHorizontal: 24,
     alignItems: 'center', borderWidth: 1, borderColor: colors.border,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   // Rate poster modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },

@@ -242,17 +242,22 @@ export default function HomeScreen({ navigation }) {
 
   const header = (
     <>
-      <GradientHeader colors={gradients.primary}>
+      <GradientHeader colors={gradients.primary} style={{ paddingBottom: 18 }}>
         <View style={styles.topRow}>
           <View>
             <Text style={styles.greeting}>Hey {name}</Text>
             <Text style={styles.sub}>Ready to hustle?</Text>
           </View>
-          <View style={styles.streakBox}>
-            <Ionicons name="flame" size={20} color="#F59E0B" />
-            <View style={{ height: 2 }} />
-            <Text style={styles.streakNum}>{streakDays}</Text>
-            <Text style={styles.streakLabel}>week streak</Text>
+          <View style={styles.streakPill}>
+            <Ionicons name="flame" size={15} color="#F59E0B" />
+            {streakDays > 0 ? (
+              <>
+                <Text style={styles.streakNum}>{streakDays}</Text>
+                <Text style={styles.streakLabel}>week streak</Text>
+              </>
+            ) : (
+              <Text style={styles.streakLabel}>Start a streak</Text>
+            )}
           </View>
         </View>
         <View style={styles.searchRow}>
@@ -415,17 +420,17 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  greeting: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 2 },
-  sub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  streakBox: {
-    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8,
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  greeting: { fontSize: 27, fontWeight: '900', color: '#fff', letterSpacing: -0.4, marginBottom: 2 },
+  sub: { fontSize: 13.5, fontWeight: '500', color: 'rgba(255,255,255,0.75)' },
+  streakPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
   },
-  streakFire: { fontSize: 22 },
-  streakNum: { fontSize: 22, fontWeight: '900', color: '#fff', lineHeight: 26 },
-  streakLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
-  searchRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  streakNum: { fontSize: 15, fontWeight: '900', color: '#fff' },
+  streakLabel: { fontSize: 11.5, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+  searchRow: { flexDirection: 'row', alignItems: 'center' },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 14,
@@ -450,13 +455,13 @@ const styles = StyleSheet.create({
   },
   filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   catScroll: { flexGrow: 0, flexShrink: 0 },
-  catRow: { paddingHorizontal: 16, paddingVertical: 14, alignItems: 'center' },
+  catRow: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, alignItems: 'center' },
   catChip: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 9,
     borderRadius: 22, backgroundColor: colors.surface,
     borderWidth: 1.5, borderColor: colors.border,
-    marginRight: 10,
+    marginRight: 8,
   },
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   catIcon: { fontSize: 15, marginRight: 6 },
@@ -464,7 +469,7 @@ const styles = StyleSheet.create({
   catLabelActive: { color: '#fff' },
   resultsRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, marginBottom: 4,
+    paddingHorizontal: 16, marginBottom: 8,
   },
   sectionTitle: {
     fontSize: 13, fontWeight: '700', color: colors.textMuted,

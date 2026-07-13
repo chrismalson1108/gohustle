@@ -275,7 +275,7 @@ export default function GigsScreen({ navigation }) {
           onPress={() => navigation.navigate('PostJob')}
           activeOpacity={0.85}
         >
-          <Ionicons name="add" size={20} color="#fff" style={{ marginRight: 6 }} />
+          <Ionicons name="add" size={20} color={colors.primary} style={{ marginRight: 6 }} />
           <Text style={styles.postBtnText}>Post New Gig</Text>
         </TouchableOpacity>
       </LinearGradient>
@@ -344,23 +344,23 @@ export default function GigsScreen({ navigation }) {
                 {/* Booking summary chips */}
                 <View style={styles.chipRow}>
                   {isOpen && jobBookings.length === 0 && (
-                    <Chip ion="ellipse" color="#059669" bg="#ECFDF5" label="Live" />
+                    <Chip ion="ellipse" color={colors.success} bg={colors.successLight} label="Live" />
                   )}
                   {pendingN > 0 && (
-                    <Chip ion="time" color="#D97706" bg="#FFF7ED" label={`${pendingN} Pending`} />
+                    <Chip ion="time" color={colors.accentDeep} bg={colors.accentLight} label={`${pendingN} Pending`} />
                   )}
                   {confirmedN > 0 && (
-                    <Chip ion="checkmark-circle" color="#4F46E5" bg="#EEF2FF" label={`${confirmedN} In Progress`} />
+                    <Chip ion="checkmark-circle" color={colors.primary} bg={colors.primaryLight} label={`${confirmedN} In Progress`} />
                   )}
                   {completedN > 0 && (
-                    <Chip ion="sync" color="#B45309" bg="#FEF3C7" label={`${completedN} Needs Verify`} />
+                    <Chip ion="sync" color={colors.accentDeep} bg={colors.accentLight} label={`${completedN} Needs Verify`} />
                   )}
                 </View>
 
                 {/* Job actions — hidden for removed gigs */}
                 {job.removed ? (
                   <View style={styles.removedNote}>
-                    <Ionicons name="alert-circle-outline" size={14} color="#D97706" style={{ marginRight: 5 }} />
+                    <Ionicons name="alert-circle-outline" size={14} color={colors.accentDeep} style={{ marginRight: 5 }} />
                     <Text style={styles.removedNoteText}>This gig was removed — resolve the bookings below.</Text>
                   </View>
                 ) : (
@@ -705,7 +705,7 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           )}
           {status === 'confirmed' && booking.posterDone && !booking.earnerDone && (
             <View style={styles.waitingBanner}>
-              <Ionicons name="hourglass-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
+              <Ionicons name="hourglass-outline" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
               <Text style={styles.waitingText}>Waiting for earner to confirm…</Text>
             </View>
           )}
@@ -767,25 +767,25 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
   postBtn: {
     flexDirection: 'row', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 14, paddingVertical: 13,
+    backgroundColor: '#fff',
+    borderRadius: 14, paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)',
+    ...shadows.md,
   },
-  postBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  postBtnText: { color: colors.primary, fontSize: 16, fontWeight: '800' },
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: 14, padding: 4,
-    borderWidth: 1, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
-  segBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 10 },
+  segBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   segBtnActive: { backgroundColor: colors.primary },
   segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   segTextActive: { color: '#fff' },
   payAlert: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#3F25FE',
-    marginHorizontal: 16, marginTop: 14,
+    backgroundColor: colors.primary,
+    marginHorizontal: 16, marginTop: 16,
     borderRadius: 14, padding: 14,
     ...shadows.sm,
   },
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  jobSection: { marginHorizontal: 16, marginTop: 16 },
+  jobSection: { marginHorizontal: 16, marginTop: 12 },
   jobCard: {
     backgroundColor: colors.surface, borderRadius: 18,
     padding: 16, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
@@ -804,23 +804,23 @@ const styles = StyleSheet.create({
   jobTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
   jobMeta: { fontSize: 12, color: colors.textMuted },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 },
-  chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, marginBottom: 4 },
-  chipText: { fontSize: 11, fontWeight: '700' },
+  chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, marginRight: 6, marginBottom: 4 },
+  chipText: { fontSize: 12, fontWeight: '700' },
   jobActions: { flexDirection: 'row' },
-  removedNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderRadius: 10, padding: 9 },
-  removedNoteText: { fontSize: 12, fontWeight: '600', color: '#D97706', flex: 1 },
+  removedNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.accentLight, borderRadius: 10, padding: 9 },
+  removedNoteText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep, flex: 1 },
   editBtn: {
     flex: 1, flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.primaryLight, borderRadius: 10,
-    paddingVertical: 9, alignItems: 'center', marginRight: 8,
+    paddingVertical: 11, alignItems: 'center', marginRight: 8,
     borderWidth: 1, borderColor: colors.primary + '40',
   },
   editBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   deleteBtn: {
     flex: 1, flexDirection: 'row', justifyContent: 'center',
-    backgroundColor: '#FEF2F2', borderRadius: 10,
-    paddingVertical: 9, alignItems: 'center',
-    borderWidth: 1, borderColor: '#FECACA',
+    backgroundColor: colors.urgentLight, borderRadius: 10,
+    paddingVertical: 11, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.urgent + '40',
   },
   deleteBtnText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
   bookingsList: {
@@ -832,7 +832,7 @@ const styles = StyleSheet.create({
   sortRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginLeft: 8, marginBottom: 6 },
   sortLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginRight: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
   sortChip: {
-    borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, marginRight: 6, marginBottom: 4,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, marginRight: 6, marginBottom: 4,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   sortChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
@@ -850,11 +850,6 @@ const styles = StyleSheet.create({
   },
   earnerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   earnerTap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10,
-  },
-  avatarText: { color: '#fff', fontWeight: '900', fontSize: 15 },
   earnerInfo: { flex: 1 },
   earnerName: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
@@ -883,51 +878,51 @@ const styles = StyleSheet.create({
   acceptBtn: {
     flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.successLight, borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center', marginBottom: 6,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 6,
   },
   acceptText: { fontSize: 13, fontWeight: '800', color: colors.success },
   declineBtn: {
     flexDirection: 'row', justifyContent: 'center',
-    backgroundColor: '#FEE2E2', borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center', marginBottom: 6,
+    backgroundColor: colors.urgentLight, borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 6,
   },
   declineText: { fontSize: 13, fontWeight: '800', color: colors.urgent },
   markDoneBtn: {
     flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.primaryLight, borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center', marginBottom: 6,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 6,
     borderWidth: 1.5, borderColor: colors.primary,
   },
   markDoneText: { fontSize: 13, fontWeight: '800', color: colors.primary },
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#FFF7ED', borderRadius: 8,
+    backgroundColor: colors.accentLight, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 7, marginBottom: 6,
   },
-  waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
+  waitingText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep },
   verifyBtn: { flexDirection: 'row', justifyContent: 'center', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 6 },
   verifyText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   msgBtn: {
     flexDirection: 'row', justifyContent: 'center',
-    borderRadius: 10, paddingVertical: 9, alignItems: 'center',
+    borderRadius: 10, paddingVertical: 11, alignItems: 'center',
     borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
   },
   msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   changeBtn: {
     flexDirection: 'row', justifyContent: 'center',
-    borderRadius: 10, paddingVertical: 9, alignItems: 'center', marginTop: 6,
+    borderRadius: 10, paddingVertical: 11, alignItems: 'center', marginTop: 6,
     borderWidth: 1.5, borderColor: colors.primary + '60', backgroundColor: colors.primaryLight,
   },
   changeBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
-  cancelLink: { paddingVertical: 9, alignItems: 'center', marginTop: 6 },
+  cancelLink: { paddingVertical: 11, alignItems: 'center', marginTop: 6 },
   cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
   cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
-  amendPendingBanner: { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 9, marginTop: 6 },
-  amendPendingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
-  amendAcceptedBanner: { backgroundColor: '#ECFDF5', borderRadius: 8, padding: 9, marginTop: 6 },
-  amendAcceptedText: { fontSize: 12, fontWeight: '600', color: '#059669' },
-  amendDeclinedBanner: { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 9, marginTop: 6 },
-  amendDeclinedText: { fontSize: 12, fontWeight: '600', color: '#DC2626' },
+  amendPendingBanner: { backgroundColor: colors.accentLight, borderRadius: 8, padding: 9, marginTop: 6 },
+  amendPendingText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep },
+  amendAcceptedBanner: { backgroundColor: colors.successLight, borderRadius: 8, padding: 9, marginTop: 6 },
+  amendAcceptedText: { fontSize: 12, fontWeight: '600', color: colors.success },
+  amendDeclinedBanner: { backgroundColor: colors.urgentLight, borderRadius: 8, padding: 9, marginTop: 6 },
+  amendDeclinedText: { fontSize: 12, fontWeight: '600', color: colors.urgent },
   // Amendment modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
