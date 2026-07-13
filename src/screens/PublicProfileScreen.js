@@ -137,7 +137,7 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      <GradientHeader colors={gradients.profile} topInset={false}>
+      <GradientHeader colors={gradients.profile} underNav>
         <View style={styles.headerRow}>
           <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} size={64} fontSize={26}
             bg="rgba(255,255,255,0.25)" borderColor="rgba(255,255,255,0.6)" borderWidth={3} style={{ marginRight: 16 }} />

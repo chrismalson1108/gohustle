@@ -74,13 +74,26 @@ const MANAGE_OPTS = {
   headerShown: false,
 };
 
+// Hero pattern for screens that open with their own <GradientHeader underNav>:
+// the native bar is transparent, so the gradient runs to the very top of the
+// screen and the back button floats over it (iOS 26 draws it in a frosted
+// circle, which stays legible over the gradient AND over scrolled content).
+// Opaque DETAIL_OPTS here would stack a dead white strip on top of the gradient.
+const HERO_OPTS = {
+  ...DETAIL_OPTS,
+  headerTransparent: true,
+  // DETAIL_OPTS paints the bar white — that would cover the gradient. Must be
+  // transparent here or the "floating" header renders as an opaque white strip.
+  headerStyle: { backgroundColor: 'transparent' },
+};
+
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain"  component={HomeScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -90,7 +103,7 @@ function EarnStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -102,7 +115,7 @@ function GigsStack() {
       <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -111,7 +124,7 @@ function MessagesStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MessagesMain" component={MessagesScreen} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -126,9 +139,9 @@ function ProfileStack() {
       <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Expenses"       component={ExpensesScreen} options={HERO_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
-      <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={HERO_OPTS} />
       <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved People' }} />
       <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved Gigs' }} />
       <Stack.Screen name="JobDetail"      component={JobDetailScreen} options={DETAIL_OPTS} />
