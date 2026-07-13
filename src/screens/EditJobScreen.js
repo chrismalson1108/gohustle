@@ -188,11 +188,9 @@ export default function EditJobScreen({ route, navigation }) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={gradients.profile} style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <LinearGradient colors={gradients.profile} style={[styles.header, { paddingTop: insets.top + 50 }]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Text style={styles.backText}>‹ Back</Text>
-            </TouchableOpacity>
+            {/* Back is the floating frosted nav button (HERO_OPTS); only Delete lives in the header. */}
             <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
               <Text style={styles.deleteBtnText}>Delete</Text>
             </TouchableOpacity>
@@ -398,9 +396,7 @@ function Field({ label, children }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: 20, paddingBottom: 24 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  backBtn: { padding: 4 },
-  backText: { color: 'rgba(255,255,255,0.85)', fontSize: 16, fontWeight: '700' },
+  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 },
   deleteBtn: { backgroundColor: 'rgba(239,68,68,0.2)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 },
   deleteBtnText: { color: '#FCA5A5', fontSize: 14, fontWeight: '800' },
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },

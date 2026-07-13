@@ -112,9 +112,9 @@ function GigsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="GigsMain"  component={GigsScreen} />
-      <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="PostJob"   component={PostJobScreen} options={HERO_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="EditJob"   component={EditJobScreen} options={HERO_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
@@ -134,7 +134,7 @@ function ProfileStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileMain"    component={ProfileScreen} />
       <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
-      <Stack.Screen name="EditJob"        component={EditJobScreen} />
+      <Stack.Screen name="EditJob"        component={EditJobScreen} options={HERO_OPTS} />
       <Stack.Screen name="Settings"       component={SettingsScreen} />
       <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />

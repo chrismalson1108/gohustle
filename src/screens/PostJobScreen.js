@@ -165,7 +165,7 @@ export default function PostJobScreen({ navigation, route }) {
         contentContainerStyle={{ paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 50 }]}>
           <Text style={styles.headerTitle}>{rebookEarner ? `Rebook ${rebookEarner.name || ''}`.trim() : prefill ? 'Duplicate Gig' : 'Post a Gig'}</Text>
           <Text style={styles.headerSub}>{prefill ? 'Review the details, then post your copy' : 'Hire a motivated college student'}</Text>
         </LinearGradient>

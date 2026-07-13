@@ -464,7 +464,7 @@ function Section({ title, children }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  scroll: { padding: 20 },
+  scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 },
   urgentBanner: {
     backgroundColor: colors.urgentLight, borderRadius: 10,
     padding: 10, marginBottom: 16, alignItems: 'center',
