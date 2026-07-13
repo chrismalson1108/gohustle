@@ -374,28 +374,28 @@ export default function GigsScreen({ navigation }) {
                       }}
                     >
                       <Ionicons name="arrow-up-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
-                      <Text style={styles.editBtnText}>Bump</Text>
+                      <Text style={styles.editBtnText} numberOfLines={1}>Bump</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.editBtn}
                       onPress={() => navigation.navigate('EditJob', { jobId: job.id })}
                     >
                       <Ionicons name="create-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
-                      <Text style={styles.editBtnText}>Edit</Text>
+                      <Text style={styles.editBtnText} numberOfLines={1}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.editBtn}
                       onPress={() => { haptic.light(); navigation.navigate('PostJob', { prefill: job }); }}
                     >
                       <Ionicons name="copy-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
-                      <Text style={styles.editBtnText}>Duplicate</Text>
+                      <Text style={styles.editBtnText} numberOfLines={1}>Duplicate</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDelete(job)}
                     >
                       <Ionicons name="trash-outline" size={15} color={colors.urgent} style={{ marginRight: 5 }} />
-                      <Text style={styles.deleteBtnText}>Delete</Text>
+                      <Text style={styles.deleteBtnText} numberOfLines={1}>Delete</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -822,20 +822,22 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 },
   chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, marginRight: 6, marginBottom: 4 },
   chipText: { fontSize: 12, fontWeight: '700' },
-  jobActions: { flexDirection: 'row' },
+  // 2x2 grid — four labeled actions won't fit legibly in one row (long
+  // labels like "Duplicate" overflow at ~80px), so they wrap two-per-row.
+  jobActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   removedNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.accentLight, borderRadius: 10, padding: 9 },
   removedNoteText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep, flex: 1 },
   editBtn: {
-    flex: 1, flexDirection: 'row', justifyContent: 'center',
+    flexBasis: '45%', flexGrow: 1, flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.primaryLight, borderRadius: 10,
-    paddingVertical: 11, alignItems: 'center', marginRight: 8,
+    paddingVertical: 12, alignItems: 'center',
     borderWidth: 1, borderColor: colors.primary + '40',
   },
   editBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   deleteBtn: {
-    flex: 1, flexDirection: 'row', justifyContent: 'center',
+    flexBasis: '45%', flexGrow: 1, flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.urgentLight, borderRadius: 10,
-    paddingVertical: 11, alignItems: 'center',
+    paddingVertical: 12, alignItems: 'center',
     borderWidth: 1, borderColor: colors.urgent + '40',
   },
   deleteBtnText: { fontSize: 13, fontWeight: '700', color: colors.urgent },
