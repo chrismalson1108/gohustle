@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { SUPPORT_EMAIL } from "@/lib/legal";
@@ -22,8 +22,16 @@ interface Doc {
 // Reads the latest published version per slug from the legal_documents table.
 export default function LegalDocPage() {
   const { doc } = useParams<{ doc: string }>();
+  const router = useRouter();
   const [data, setData] = useState<Doc | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Return to wherever the user came from (e.g. Profile → Support & Legal),
+  // falling back to home when opened directly with no in-app history.
+  const goBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push("/");
+  };
 
   useEffect(() => {
     let active = true;
@@ -50,9 +58,9 @@ export default function LegalDocPage() {
         <Link href="/">
           <Logo />
         </Link>
-        <Link href="/" className="flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Home
-        </Link>
+        <button onClick={goBack} className="flex items-center gap-1 text-sm font-bold text-primary">
+          <ArrowLeft className="size-4" /> Back
+        </button>
       </header>
 
       <main className="mx-auto w-full max-w-3xl px-5 pb-20">

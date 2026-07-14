@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, LifeBuoy,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
@@ -237,6 +237,11 @@ export default function ProfilePage() {
           <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
         </Group>
 
+        <Group title="Preferences">
+          <Row icon={BellRing} title="Notification settings" sub="Push & email preferences" href="/profile/notifications" />
+          <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
+        </Group>
+
         <Group title="Profile & Trust">
           <Row icon={Eye} title="View my public profile" sub="See exactly how others see you" href={user ? `/u/${user.id}` : "/profile"} />
           <Row
@@ -255,7 +260,6 @@ export default function ProfilePage() {
             href={u.studentVerified ? undefined : "/verify-student"}
             disabled={u.studentVerified}
           />
-          <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
         </Group>
 
         <Group title="Grow">
