@@ -53,7 +53,7 @@ export default function EarnScreen({ navigation }) {
   const {
     earningsToday, earningsWeek, earningsTotal,
     streakDays, levelInfo, xp, challenges,
-    weeklyEarningGoal, weeklyJobsGoal, weeklyJobsDone, showToast, updateChallenge,
+    weeklyEarningGoal, weeklyJobsGoal, showToast, updateChallenge,
   } = useUser();
   const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, claimEarnerPayment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
@@ -71,7 +71,9 @@ export default function EarnScreen({ navigation }) {
   const [refreshing, setRefreshing]     = useState(false);
   const [payoutReady, setPayoutReady]   = useState(true); // optimistic until checked
   // Collapsible secondary sections + completed-history expansion.
-  const [showMonth, setShowMonth]       = useState(false);
+  // Open by default: it renders only on the Completed tab now, where the month
+  // recap is the point of the visit.
+  const [showMonth, setShowMonth]       = useState(true);
   const [showGoals, setShowGoals]       = useState(false);
   const [expandedId, setExpandedId]     = useState(null);
 
@@ -226,6 +228,19 @@ export default function EarnScreen({ navigation }) {
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
   const completedCount = (bookings || []).filter(b => b.status === 'verified').length;
   const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
+  // Weekly jobs goal counts work that actually FINISHED this week (mutual
+  // completion or verified), derived from bookings — not the old apply-time
+  // counter, which advanced the moment a gig was booked. Week starts Monday.
+  const weekStartMs = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.getTime();
+  })();
+  const weeklyJobsDone = (bookings || []).filter(b =>
+    (b.status === 'completed' || b.status === 'verified')
+    && b.completedAt && new Date(b.completedAt).getTime() >= weekStartMs
+  ).length;
   const jobsPct    = Math.min(1, weeklyJobsDone / weeklyJobsGoal);
 
   // Personal insights from this earner's own completed work (null until they have any).
@@ -742,6 +757,51 @@ export default function EarnScreen({ navigation }) {
         <SegmentBtn label="Completed" count={completedPairs.length} active={tab === 'completed'} onPress={() => { haptic.selection(); setTab('completed'); }} />
       </View>
 
+      {/* "Your month" — earnings, goal, insights & status. Lives on the Completed
+          tab (with the finished work it summarizes) instead of floating below the
+          gig list on every tab. */}
+      {tab === 'completed' && (
+        <CollapsibleSection title="Your month" open={showMonth} onToggle={() => setShowMonth(v => !v)}>
+          <MoneyGoalCard navigation={navigation} />
+
+          <View style={styles.breakdownCard}>
+            <Text style={styles.insightsTitle}>Earnings</Text>
+            <View style={styles.breakdownRow}>
+              {[
+                { label: 'Today',     value: `$${earningsToday}` },
+                { label: 'This week', value: `$${earningsWeek}` },
+                { label: 'All time',  value: `$${earningsTotal.toLocaleString()}` },
+                { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
+              ].map(s => (
+                <View key={s.label} style={styles.breakdownTile}>
+                  <Text style={styles.breakdownVal}>{s.value}</Text>
+                  <Text style={styles.breakdownLabel}>{s.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {insights && insights.jobCount > 0 && (
+            <View style={styles.insightsCard}>
+              <Text style={styles.insightsTitle}>Your insights</Text>
+              <View style={styles.insightsRow}>
+                <InsightTile icon="location-outline" label="Top area" value={insights.topArea?.label || '—'} />
+                <InsightTile icon="calendar-outline" label="Busiest" value={insights.busiestDay?.label || '—'} />
+                <InsightTile
+                  icon="cash-outline"
+                  label="Best day"
+                  value={insights.mostProfitableDay
+                    ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
+                    : '—'}
+                />
+              </View>
+            </View>
+          )}
+
+          <WorkStatusBar />
+        </CollapsibleSection>
+      )}
+
       {/* The booked-gig list — the primary content */}
       <View style={styles.section}>
         {shownPairs.length === 0 && (
@@ -767,47 +827,6 @@ export default function EarnScreen({ navigation }) {
           ? shownPairs.map(renderCompletedRow)
           : shownPairs.map(renderActiveCard)}
       </View>
-
-      {/* "Your month" — earnings, goal, insights & status, demoted below the gigs */}
-      <CollapsibleSection title="Your month" open={showMonth} onToggle={() => setShowMonth(v => !v)}>
-        <MoneyGoalCard navigation={navigation} />
-
-        <View style={styles.breakdownCard}>
-          <Text style={styles.insightsTitle}>Earnings</Text>
-          <View style={styles.breakdownRow}>
-            {[
-              { label: 'Today',     value: `$${earningsToday}` },
-              { label: 'This week', value: `$${earningsWeek}` },
-              { label: 'All time',  value: `$${earningsTotal.toLocaleString()}` },
-              { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
-            ].map(s => (
-              <View key={s.label} style={styles.breakdownTile}>
-                <Text style={styles.breakdownVal}>{s.value}</Text>
-                <Text style={styles.breakdownLabel}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {insights && insights.jobCount > 0 && (
-          <View style={styles.insightsCard}>
-            <Text style={styles.insightsTitle}>Your insights</Text>
-            <View style={styles.insightsRow}>
-              <InsightTile icon="location-outline" label="Top area" value={insights.topArea?.label || '—'} />
-              <InsightTile icon="calendar-outline" label="Busiest" value={insights.busiestDay?.label || '—'} />
-              <InsightTile
-                icon="cash-outline"
-                label="Best day"
-                value={insights.mostProfitableDay
-                  ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
-                  : '—'}
-              />
-            </View>
-          </View>
-        )}
-
-        <WorkStatusBar />
-      </CollapsibleSection>
 
       {/* "Goals & challenges" — gamification, lowest priority */}
       <CollapsibleSection title="Goals & challenges" open={showGoals} onToggle={() => setShowGoals(v => !v)}>

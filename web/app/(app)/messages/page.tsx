@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2, Archive, ArchiveRestore } from "lucide-react";
+import Link from "next/link";
+import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2, Archive, ArchiveRestore, Search } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -26,6 +27,7 @@ interface Conversation {
   avatarUrl: string | null;
   avatarInitial: string | null;
   jobTitle: string;
+  jobId: string | null;
 }
 
 interface Msg {
@@ -53,6 +55,7 @@ export default function MessagesPage() {
         avatarUrl: job?.poster.avatarUrl || null,
         avatarInitial: job?.poster.avatarInitial || "P",
         jobTitle: b.job?.title || job?.title || "Gig",
+        jobId: b.jobId ?? null,
       });
     });
     posterBookings.forEach((b) => {
@@ -63,6 +66,7 @@ export default function MessagesPage() {
         avatarUrl: b.earner?.avatarUrl || null,
         avatarInitial: b.earner?.avatarInitial || "E",
         jobTitle: b.job?.title || "Gig",
+        jobId: b.jobId ?? null,
       });
     });
     // De-dupe by bookingId (a booking belongs to one conversation).
@@ -134,8 +138,16 @@ export default function MessagesPage() {
 
   return (
     <div>
-      <div className={active ? "hidden md:block" : ""}>
+      <div className={classNames("relative", active && "hidden md:block")}>
         <PageHeader title="Messages" subtitle="Your conversations" />
+        <Link
+          href="/people"
+          aria-label="Find people"
+          title="Find people"
+          className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2 text-ink-muted transition hover:bg-line/60 hover:text-primary"
+        >
+          <Search className="size-5" />
+        </Link>
       </div>
       <div className="mx-auto flex w-full max-w-3xl">
         {/* Conversation list */}
@@ -174,11 +186,18 @@ export default function MessagesPage() {
                     .map((c) => (
                       <li key={c.bookingId}>
                         <div className="flex w-full items-center gap-3 border-b border-divider px-4 py-3 hover:bg-primary-light/40">
+                          {/* Avatar is its own link → the person's public profile. */}
+                          {c.otherId ? (
+                            <Link href={`/u/${c.otherId}`} aria-label={`View ${c.name}'s profile`} className="shrink-0 transition hover:opacity-85">
+                              <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
+                            </Link>
+                          ) : (
+                            <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
+                          )}
                           <button
                             onClick={() => { setActive(c); markConversationRead(user.id, c.bookingId).then(() => { loadPreviews(); refreshUnread(); }); }}
                             className="flex min-w-0 flex-1 items-center gap-3 text-left"
                           >
-                            <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="truncate font-bold text-ink">{c.name}</span>
@@ -385,10 +404,30 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
         <button onClick={onBack} className="md:hidden">
           <ArrowLeft className="size-5 text-ink-soft" />
         </button>
-        <Avatar url={conversation.avatarUrl} initial={conversation.avatarInitial} name={conversation.name} size={36} />
+        {/* Person → their public profile; job line → the listing (works for past
+            gigs via the job page's direct-fetch fallback). */}
+        {conversation.otherId ? (
+          <Link href={`/u/${conversation.otherId}`} aria-label={`View ${conversation.name}'s profile`} className="shrink-0 transition hover:opacity-85">
+            <Avatar url={conversation.avatarUrl} initial={conversation.avatarInitial} name={conversation.name} size={36} />
+          </Link>
+        ) : (
+          <Avatar url={conversation.avatarUrl} initial={conversation.avatarInitial} name={conversation.name} size={36} />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-bold text-ink">{conversation.name}</p>
-          <p className="truncate text-xs text-ink-muted">{conversation.jobTitle}</p>
+          {conversation.otherId ? (
+            <Link href={`/u/${conversation.otherId}`} className="block truncate font-bold text-ink hover:text-primary">
+              {conversation.name}
+            </Link>
+          ) : (
+            <p className="truncate font-bold text-ink">{conversation.name}</p>
+          )}
+          {conversation.jobId ? (
+            <Link href={`/jobs/${conversation.jobId}`} className="block truncate text-xs font-semibold text-primary hover:underline">
+              re: {conversation.jobTitle}
+            </Link>
+          ) : (
+            <p className="truncate text-xs text-ink-muted">{conversation.jobTitle}</p>
+          )}
         </div>
         <button onClick={() => setMenuOpen((o) => !o)} className="rounded-full p-1.5 text-ink-muted hover:bg-line/60" aria-label="Conversation options">
           <MoreVertical className="size-5" />

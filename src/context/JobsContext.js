@@ -312,6 +312,25 @@ export function JobsProvider({ children }) {
     cacheSet(JOBS_CACHE, transformed);
   }, [user?.id]);
 
+  // Fetch a single job by id regardless of status. Conversation links can point
+  // at past listings (soft-cancelled ones are excluded from fetchJobs), so
+  // JobDetail needs a direct lookup when the job isn't in the browse list.
+  const fetchJobById = useCallback(async (jobId) => {
+    if (!jobId) return null;
+    const { data } = await supabase
+      .from('jobs')
+      .select(`
+        *,
+        profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status),
+        job_slots(*),
+        job_requirements(*),
+        reviews(*)
+      `)
+      .eq('id', jobId)
+      .maybeSingle();
+    return data ? transformJob(data) : null;
+  }, []);
+
   const loadBookings = async () => {
     if (!user) return;
     const cached = await cacheGet(BOOKINGS_CACHE);
@@ -1195,6 +1214,7 @@ export function JobsProvider({ children }) {
       verifyAndRate,
       claimEarnerPayment,
       refreshJobs: fetchJobs,
+      fetchJobById,
       refreshBookings: loadBookings,
       refreshPosterBookings: loadPosterBookings,
       earnBadgeCount,

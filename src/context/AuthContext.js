@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
+import Constants from 'expo-constants';
 import { supabase, recoveryAuthClient, purgePersistedSession } from '../lib/supabase';
 import { cacheClear } from '../lib/cache';
 import { unregisterPushToken } from '../lib/push';
@@ -12,6 +14,27 @@ import { betaSignupMessage } from '../lib/authErrors';
 
 // Dismiss any lingering auth browser session on cold start (Android edge case).
 WebBrowser.maybeCompleteAuthSession();
+
+// @react-native-google-signin must be loaded lazily: its JS entry calls
+// TurboModuleRegistry.getEnforcing, which THROWS when the native module isn't in
+// the installed binary (builds predating it, Expo Go, web). undefined = not
+// tried yet, null = unavailable → signInWithGoogle uses the browser fallback.
+let googleSigninModule;
+function getGoogleSignin() {
+  if (googleSigninModule === undefined) {
+    try {
+      googleSigninModule = require('@react-native-google-signin/google-signin');
+    } catch {
+      googleSigninModule = null;
+    }
+  }
+  return googleSigninModule;
+}
+// Client IDs live in app.json → extra.googleAuth. The REPLACE placeholders
+// (pre-Google-Cloud setup) must not count as configured.
+const googleIds = Constants.expoConfig?.extra?.googleAuth ?? {};
+const googleNativeReady = !!googleIds.webClientId && !googleIds.webClientId.includes('REPLACE');
+let googleConfigured = false;
 
 const AuthContext = createContext(null);
 
@@ -161,6 +184,53 @@ export function AuthProvider({ children }) {
   const signInWithGoogle = async () => {
     setAuthError(null);
     cancelPendingPurge();
+    // Prefer the NATIVE Google flow (no browser session, so iOS never shows the
+    // “wants to use …supabase.co to sign in” system prompt) when the module is in
+    // the binary AND real client IDs are configured. Otherwise fall back to the
+    // Supabase browser OAuth flow so older binaries keep signing in.
+    if (Platform.OS !== 'web' && googleNativeReady && getGoogleSignin()) {
+      return signInWithGoogleNative();
+    }
+    return signInWithGoogleBrowser();
+  };
+
+  // Native account picker → Google ID token → Supabase session, mirroring
+  // signInWithApple. The ID token's audience is webClientId, which must be
+  // listed under Supabase Auth → Providers → Google → "Client IDs".
+  const signInWithGoogleNative = async () => {
+    const { GoogleSignin } = getGoogleSignin();
+    try {
+      if (!googleConfigured) {
+        GoogleSignin.configure({
+          webClientId: googleIds.webClientId,
+          iosClientId: googleIds.iosClientId,
+        });
+        googleConfigured = true;
+      }
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const response = await GoogleSignin.signIn();
+      if (response.type !== 'success') return false; // user dismissed the account picker
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        setAuthError('Google sign-in did not return a valid token. Please try again.');
+        return false;
+      }
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+      if (error) { setAuthError(error.message); return false; }
+      // onAuthStateChange establishes the session + onboarding gate from here.
+      setPendingEmail(null);
+      track('sign_in');
+      return true;
+    } catch (err) {
+      setAuthError(err?.message || 'Google sign-in failed. Please try again.');
+      return false;
+    }
+  };
+
+  const signInWithGoogleBrowser = async () => {
     try {
       // gohustlr://auth-callback in a dev/standalone build (the app scheme).
       const redirectTo = Linking.createURL('auth-callback');
@@ -335,6 +405,11 @@ export function AuthProvider({ children }) {
     // this device only). Fire-and-forget — failures are irrelevant to the user.
     if (userId) unregisterPushToken(userId).catch(() => {});
     supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    // Drop the natively cached Google account too, so the next Google sign-in
+    // shows the account picker instead of silently reusing the last account.
+    if (Platform.OS !== 'web' && googleConfigured) {
+      try { getGoogleSignin()?.GoogleSignin.signOut().catch(() => {}); } catch {}
+    }
     // Drop cached profile/jobs/bookings so a shared device never shows the
     // previous user's data.
     cacheClear();

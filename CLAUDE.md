@@ -53,11 +53,11 @@ SafeAreaProvider → AuthProvider → RootNavigator
                           ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail → UserProfile
                           ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail → UserProfile
                           ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob → UserProfile
-                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen (chat via MessageSheet) → UserProfile
-                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → Settings/Expenses/Legal/Favorites/UserProfile/…
+                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen (chat via MessageSheet) → UserProfile/JobDetail/FindPeople
+                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → Settings/Expenses/Legal/Favorites/UserProfile/FindPeople/…
 ```
 
-**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat (`MessageSheet`, reused) marks it read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`).
+**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat (`MessageSheet`, reused) marks it read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
 
 - **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`ProfileTab`) are intentionally kept even though display labels are Browse/My Jobs/Hiring/Profile** — many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.
@@ -72,8 +72,10 @@ SafeAreaProvider → AuthProvider → RootNavigator
 
 **Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
+**Google sign-in is native-first**: `signInWithGoogle` uses `@react-native-google-signin/google-signin` + `supabase.auth.signInWithIdToken` (like the Apple flow — no browser session, so iOS never shows the "wants to use …supabase.co" prompt). It requires (1) the native module in the binary (dev-client rebuild), (2) real client IDs in `app.json` → `extra.googleAuth` (`webClientId` = a Google Cloud **web** OAuth client that must also be listed under Supabase Auth → Providers → Google → "Client IDs"; `iosClientId` = the iOS OAuth client for `com.gohustlr.app`, whose **reversed** ID goes in the plugin's `iosUrlScheme`; Android needs an Android OAuth client with the release SHA-1 registered in the same Google Cloud project — nothing extra in the app config). The module is lazy-`require`d (its import throws when the native side is missing), so **older binaries / Expo Go / web automatically fall back to the browser PKCE OAuth flow** (`signInWithGoogleBrowser`). `REPLACE`-placeholder IDs count as unconfigured → fallback.
+
 ### UserContext (`src/context/UserContext.js`)
-XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync for XP/earnings to avoid flooding DB. Key exports: `addXP`, `recordApply`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync.
+XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync for XP/earnings to avoid flooding DB. Key exports: `addXP`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync. **"Jobs Done" is derived from bookings (`completed`/`verified` statuses), never a counter bumped at apply time** — the old `recordApply`/`weekly_jobs_done` increment-on-booking was removed because it showed unconfirmed applications as done work.
 
 ### JobsContext (`src/context/JobsContext.js`)
 Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-first job loading. Key exports:
@@ -102,7 +104,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `JobDetailScreen` | Job info, slot picker, counter-offer input, book button. Shows "This is your gig" banner if `job.posterId === user.id`. |
 | `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
 | `GigsScreen` (tab "Hiring") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only completed/declined booking history. Pull-to-refresh. |
-| `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip. Nested in GigsStack. |
+| `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + custom "Other" category chip. Times are optional: **no slots picked → a bookable "Flexible — Contact to Schedule" slot is attached** (a hint under the picker says so; EditJob applies the same fallback on save), so a gig can never end up slot-less/un-bookable. Nested in GigsStack. |
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
 | `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
@@ -110,7 +112,8 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
 | `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
 | `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
-| `OnboardingScreen` | Multi-step: Welcome → Username → Role → Location → Skills/Radius → Done. Saves all fields + `onboarding_done: true`. |
+| `OnboardingScreen` | Multi-step: Welcome → Username+DOB → Role → Location → Skills/Radius → Done. DOB uses `DobPicker` (Month/Day/Year dropdowns, `composeDob` → `parseDob`). Saves all fields + `onboarding_done: true`. |
+| `FindPeopleScreen` | Search people by name/@username → tap through to `UserProfile`. Registered as `FindPeople` in Messages + Profile stacks. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
 
 ## Key Components

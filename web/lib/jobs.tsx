@@ -172,6 +172,7 @@ interface JobsValue extends State {
   ratePoster: (bookingId: string, args: { rating: number; reviewText?: string }) => Promise<void>;
   verifyAndRate: (bookingId: string, args: VerifyArgs) => Promise<void>;
   refreshJobs: () => Promise<void>;
+  fetchJobById: (jobId: string) => Promise<Job | null>;
   refreshBookings: () => Promise<void>;
   refreshPosterBookings: () => Promise<void>;
   jobsLoading: boolean;
@@ -359,6 +360,21 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       setJobsLoading(false);
     }
   }, [user?.id]);
+
+  // Fetch a single job by id regardless of status. Conversation links can point
+  // at past listings (soft-cancelled ones are excluded from fetchJobs), so the
+  // job page needs a direct lookup when the job isn't in the browse list.
+  const fetchJobById = useCallback(async (jobId: string): Promise<Job | null> => {
+    if (!jobId) return null;
+    const jobsSelect = (poster: string) =>
+      `*, profiles!jobs_poster_id_fkey(${poster}), job_slots(*), job_requirements(*), reviews(*)`;
+    let { data, error } = await supabase.from("jobs").select(jobsSelect(POSTER_RICH)).eq("id", jobId).maybeSingle();
+    if (error?.code === "42703") {
+      ({ data, error } = await supabase.from("jobs").select(jobsSelect(POSTER_BASE)).eq("id", jobId).maybeSingle());
+    }
+    if (error || !data) return null;
+    return transformJob(data as unknown as Record<string, unknown>) as Job;
+  }, []);
 
   const loadBookings = async () => {
     if (!user) return;
@@ -1165,6 +1181,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         ratePoster,
         verifyAndRate,
         refreshJobs: fetchJobs,
+        fetchJobById,
         refreshBookings: loadBookings,
         refreshPosterBookings: loadPosterBookings,
         jobsLoading,

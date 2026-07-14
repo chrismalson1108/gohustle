@@ -26,7 +26,7 @@ function timeLabel(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function MessagesScreen() {
+export default function MessagesScreen({ navigation }) {
   const { user } = useAuth();
   const { bookings, posterBookings, jobs, refreshUnread, blockedIds } = useJobs();
   const haptic = useHaptic();
@@ -43,17 +43,19 @@ export default function MessagesScreen() {
     const list = ids.map(id => {
       const pb = posterBookings.find(b => b.id === id);
       const eb = bookings.find(b => b.id === id);
-      let other = null, jobTitle = '';
+      let other = null, jobTitle = '', jobId = null;
       if (pb) {
         other = pb.earner ? { id: pb.earner.id, name: pb.earner.name, avatarInitial: pb.earner.avatarInitial, avatarUrl: pb.earner.avatarUrl } : null;
         jobTitle = pb.job?.title || '';
+        jobId = pb.jobId;
       } else if (eb) {
         const job = jobs.find(j => j.id === eb.jobId);
         other = job?.poster ? { id: job.posterId, name: job.poster.name, avatarInitial: job.poster.avatarInitial, avatarUrl: job.poster.avatarUrl } : null;
         jobTitle = job?.title || eb.job?.title || '';
+        jobId = eb.jobId;
       }
       return {
-        bookingId: id, other, jobTitle,
+        bookingId: id, other, jobTitle, jobId,
         lastMsg: last[id], state: st[id],
         unread: isUnread(last[id], st[id], user.id),
         archived: !!st[id]?.archived,
@@ -73,6 +75,7 @@ export default function MessagesScreen() {
     haptic.light();
     setActiveChat({
       bookingId: c.bookingId,
+      jobId: c.jobId,
       jobTitle: c.jobTitle,
       otherPerson: c.other,
     });
@@ -95,9 +98,18 @@ export default function MessagesScreen() {
   return (
     <View style={styles.container}>
       <GradientHeader colors={gradients.primary}>
-        <View style={styles.titleRow}>
-          <Ionicons name="chatbubbles" size={22} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.title}>Messages</Text>
+        <View style={[styles.titleRow, { justifyContent: 'space-between' }]}>
+          <View style={styles.titleRow}>
+            <Ionicons name="chatbubbles" size={22} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.title}>Messages</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => { haptic.light(); navigation.navigate('FindPeople'); }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Find people"
+          >
+            <Ionicons name="search" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
       </GradientHeader>
 
@@ -125,7 +137,14 @@ export default function MessagesScreen() {
             </View>
           ) : shown.map(c => (
             <TouchableOpacity key={c.bookingId} style={styles.row} onPress={() => openChat(c)} activeOpacity={0.85}>
-              <Avatar url={c.other.avatarUrl} initial={c.other.avatarInitial || c.other.name?.[0]} size={48} fontSize={18} style={{ marginRight: 12 }} />
+              {/* Avatar is its own tap target → the person's public profile. */}
+              <TouchableOpacity
+                onPress={() => { haptic.light(); navigation.navigate('UserProfile', { userId: c.other.id }); }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityLabel={`View ${c.other.name || 'user'}'s profile`}
+              >
+                <Avatar url={c.other.avatarUrl} initial={c.other.avatarInitial || c.other.name?.[0]} size={48} fontSize={18} style={{ marginRight: 12 }} />
+              </TouchableOpacity>
               <View style={{ flex: 1 }}>
                 <View style={styles.rowTop}>
                   <Text style={[styles.name, c.unread && styles.unreadText]} numberOfLines={1}>{c.other.name || 'User'}</Text>
@@ -152,9 +171,12 @@ export default function MessagesScreen() {
       <MessageSheet
         visible={!!activeChat}
         bookingId={activeChat?.bookingId}
+        jobId={activeChat?.jobId}
         jobTitle={activeChat?.jobTitle}
         otherPerson={activeChat?.otherPerson}
         onClose={() => { setActiveChat(null); load(); }}
+        onViewProfile={(userId) => { setActiveChat(null); navigation.navigate('UserProfile', { userId }); }}
+        onViewJob={(jobId) => { setActiveChat(null); navigation.navigate('JobDetail', { jobId }); }}
       />
     </View>
   );

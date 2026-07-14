@@ -172,7 +172,6 @@ type Action =
   | { type: "ADD_XP"; amount: number }
   | { type: "UPDATE_CHALLENGE"; id: string; delta: number }
   | { type: "UNLOCK_BADGE"; key: string }
-  | { type: "RECORD_APPLY"; amount: number }
   | { type: "SET_GOALS"; earningGoal: number; jobsGoal: number }
   | { type: "SHOW_TOAST"; toast: Toast }
   | { type: "DISMISS_TOAST" };
@@ -194,9 +193,6 @@ function reducer(state: UserState, action: Action): UserState {
       };
     case "UNLOCK_BADGE":
       return { ...state, badges: { ...state.badges, [action.key]: { unlocked: true } } };
-    case "RECORD_APPLY":
-      // No earnings credit at apply time — credited at settlement (Stripe capture).
-      return { ...state, weeklyJobsDone: state.weeklyJobsDone + 1 };
     case "SET_GOALS":
       return { ...state, weeklyEarningGoal: action.earningGoal, weeklyJobsGoal: action.jobsGoal };
     case "SHOW_TOAST":
@@ -215,7 +211,6 @@ interface UserValue extends UserState {
   addXP: (amount: number) => void;
   updateChallenge: (id: string, delta: number) => void;
   unlockBadge: (key: string) => void;
-  recordApply: (amount: number) => void;
   setRole: (role: UserState["role"]) => void;
   setGoals: (earningGoal: number, jobsGoal: number) => void;
   setMonthlyGoal: (goal: number) => void;
@@ -330,8 +325,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Merge pending patches into one object so a later debounced call (e.g. earnings)
-  // doesn't clobber an earlier one (e.g. xp) — otherwise rapid addXP + recordApply
-  // would drop the XP write entirely.
+  // doesn't clobber an earlier one (e.g. xp) — otherwise two rapid syncs would
+  // drop the first write entirely.
   const scheduleSyncProfile = (patch: Record<string, unknown>) => {
     if (!user) return;
     pendingPatch.current = { ...pendingPatch.current, ...patch };
@@ -402,12 +397,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       });
   };
 
-  const recordApply = (amount: number) => {
-    // Earnings are credited at settlement (Stripe capture), not at apply time.
-    dispatch({ type: "RECORD_APPLY", amount });
-    scheduleSyncProfile({ weekly_jobs_done: state.weeklyJobsDone + 1 });
-  };
-
   const setRole = (role: UserState["role"]) => {
     dispatch({ type: "SET_ROLE", role });
     syncProfileNow({ role });
@@ -461,7 +450,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         addXP,
         updateChallenge,
         unlockBadge,
-        recordApply,
         setRole,
         setGoals,
         setMonthlyGoal,

@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
 import { getReferralCode, recordReferral } from "@/lib/referrals";
 import Button from "@/components/ui/Button";
-import { Input, Textarea } from "@/components/ui/Field";
+import { Input, Textarea, Select } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import LocationPicker from "@/components/LocationPicker";
 import { classNames } from "@/lib/format";
@@ -22,6 +22,7 @@ const ROLES = [
 ];
 const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -31,8 +32,15 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
-  const [dob, setDob] = useState("");
+  // DOB as Month/Day/Year dropdown parts (mirror of mobile DobPicker) — no more
+  // free-form MM/DD/YYYY typing. Composed into a parseDob-compatible string below.
+  const [dobM, setDobM] = useState("");
+  const [dobD, setDobD] = useState("");
+  const [dobY, setDobY] = useState("");
   const [dobError, setDobError] = useState("");
+  const dob = dobM && dobD && dobY ? `${dobM}/${dobD}/${dobY}` : "";
+  const dobDayCount = new Date(Number(dobY) || 2000, Number(dobM) || 12, 0).getDate();
+  const dobYears = Array.from({ length: new Date().getFullYear() - 1920 + 1 }, (_, i) => new Date().getFullYear() - i);
   const [role, setRole] = useState("");
   const [city, setCity] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
@@ -80,7 +88,7 @@ export default function OnboardingPage() {
   // action time (guard_min_age); this is the UX gate.
   const checkDob = () => {
     const iso = parseDob(dob);
-    if (!iso) { setDobError("Enter your date of birth as MM/DD/YYYY."); return false; }
+    if (!iso) { setDobError("Select your date of birth."); return false; }
     if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return false; }
     setDobError("");
     return true;
@@ -186,14 +194,48 @@ export default function OnboardingPage() {
             />
             {usernameError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{usernameError}</p>}
             <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">@{username.toLowerCase() || "username"}</p>
-            <Input
-              value={dob}
-              onChange={(e) => { setDob(e.target.value); setDobError(""); }}
-              placeholder="Date of birth · MM/DD/YYYY"
-              maxLength={10}
-              inputMode="numeric"
-              aria-label="Date of birth"
-            />
+            <p className="mb-1.5 text-left text-sm font-bold text-ink-soft">Date of birth</p>
+            <div className="flex gap-2">
+              <Select
+                value={dobM}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setDobM(m);
+                  setDobError("");
+                  // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
+                  if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
+                }}
+                aria-label="Month"
+                className="flex-[1.6]"
+              >
+                <option value="">Month</option>
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </Select>
+              <Select
+                value={dobD}
+                onChange={(e) => { setDobD(e.target.value); setDobError(""); }}
+                aria-label="Day"
+                className="flex-1"
+              >
+                <option value="">Day</option>
+                {/* Day list adapts to the chosen month/year — no Feb 30. */}
+                {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+              </Select>
+              <Select
+                value={dobY}
+                onChange={(e) => {
+                  const y = e.target.value;
+                  setDobY(y);
+                  setDobError("");
+                  if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
+                }}
+                aria-label="Year"
+                className="flex-[1.2]"
+              >
+                <option value="">Year</option>
+                {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </Select>
+            </div>
             {dobError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{dobError}</p>}
             <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">You must be {MIN_AGE}+ to use GoHustlr.</p>
             <Button size="lg" fullWidth disabled={!username || !dob} onClick={async () => { const dobOk = checkDob(); if ((await checkUsername()) && dobOk) next(); }}>

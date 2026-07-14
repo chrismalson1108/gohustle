@@ -29,11 +29,11 @@ export default function ProfileScreen({ navigation }) {
   const {
     name, avatarInitial, avatarUrl, rating, reviewCount,
     memberSince, levelInfo, xp, badges, earningsTotal,
-    weeklyJobsDone, weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
+    weeklyEarningGoal, weeklyJobsGoal, setGoals, refreshProfile, showToast,
     school, major, gradYear, studentVerified, studentStatus,
     profileStatus, retryProfile,
   } = useUser();
-  const { postedJobs, bookedJobs, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
+  const { postedJobs, bookedJobs, bookings, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
   const haptic = useHaptic();
   const [payReady, setPayReady] = useState(null); // { payoutReady, paymentMethodReady }
@@ -53,7 +53,7 @@ export default function ProfileScreen({ navigation }) {
     haptic.medium();
     try {
       const code = await getReferralCode(user.id);
-      await Share.share({ message: `Join me on GoHustlr — sign up with my referral code ${code} to get started!` });
+      await Share.share({ message: `Join me on GoHustlr — sign up with my referral code ${code} to get started!\n\nhttps://gohustlr.com` });
     } catch (_) {}
   };
 
@@ -265,8 +265,11 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
+      {/* Jobs Done counts work that actually finished (mutual completion or
+          verified) — never pending/confirmed applications, which used to bump
+          the stat the moment a gig was booked. */}
       <View style={styles.statsRow}>
-        <Stat label="Jobs Done" value={weeklyJobsDone} />
+        <Stat label="Jobs Done" value={bookings.filter(b => b.status === 'completed' || b.status === 'verified').length} />
         <View style={styles.statDiv} />
         <Stat label="Total Earned" value={`$${earningsTotal.toLocaleString()}`} />
         <View style={styles.statDiv} />
@@ -381,6 +384,12 @@ export default function ProfileScreen({ navigation }) {
       </Group>
 
       <Group title="Grow">
+        <Row
+          icon="search-outline"
+          title="Find People"
+          sub="Search anyone by name or username"
+          onPress={() => { haptic.medium(); navigation.navigate('FindPeople'); }}
+        />
         <Row
           icon="gift-outline"
           title="Invite Friends"

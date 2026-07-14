@@ -153,7 +153,12 @@ export default function EditJobScreen({ route, navigation }) {
       title: form.title, category: effectiveCategory,
       pay: parseFloat(form.pay), payType: form.payType,
       location: form.location, description: form.description,
-      urgent: form.urgent, requirements: reqs, slots: form.slots,
+      // Removing every time slot falls back to a bookable "Flexible" slot (same
+      // as posting) so an edit can never strand the gig slot-less.
+      urgent: form.urgent, requirements: reqs,
+      slots: form.slots.length > 0
+        ? form.slots
+        : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }],
       photos: finalPhotos,
       recurrence: form.recurrence,
       tags: form.tags,

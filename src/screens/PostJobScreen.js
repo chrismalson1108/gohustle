@@ -116,6 +116,8 @@ export default function PostJobScreen({ navigation, route }) {
       return;
     }
     haptic.success();
+    // No times picked → a bookable "Flexible" slot, so the gig is never a
+    // slot-less dead end (booking flows around slot selection).
     const slots = form.slots.length > 0
       ? form.slots
       : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }];
@@ -341,6 +343,11 @@ export default function PostJobScreen({ navigation, route }) {
               slots={form.slots}
               onChange={slots => set('slots', slots)}
             />
+            {form.slots.length === 0 && (
+              <Text style={styles.flexibleHint}>
+                No times picked — your gig will show "Flexible — Contact to Schedule".
+              </Text>
+            )}
           </Field>
 
           <Field label="Repeats">
@@ -467,6 +474,7 @@ const styles = StyleSheet.create({
   urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgent },
   urgentToggleText: { fontSize: 14, fontWeight: '700', color: colors.urgent },
   validationNote: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginBottom: 10 },
+  flexibleHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, fontStyle: 'italic' },
   submitBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   submitText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });
