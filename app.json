@@ -98,11 +98,21 @@
         {
           "color": "#3F25FE"
         }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID"
+        }
       ]
     ],
     "extra": {
       "eas": {
         "projectId": "96a690b5-098f-4d44-a900-9a641249acda"
+      },
+      "googleAuth": {
+        "iosClientId": "REPLACE-WITH-IOS-CLIENT-ID.apps.googleusercontent.com",
+        "webClientId": "REPLACE-WITH-WEB-CLIENT-ID.apps.googleusercontent.com"
       }
     },
     "owner": "gohustlr"
