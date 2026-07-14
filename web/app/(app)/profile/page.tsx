@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
@@ -102,7 +102,7 @@ export default function ProfilePage() {
   };
 
   const invite = async () => {
-    const text = `Join me on GoHustlr — the gig marketplace for students. Sign up with my referral code ${refCode} to get started!`;
+    const text = `Join me on GoHustlr — the gig marketplace for students. Sign up with my referral code ${refCode} to get started!\n\nhttps://gohustlr.com`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({ text });
@@ -263,6 +263,7 @@ export default function ProfilePage() {
         </Group>
 
         <Group title="Grow">
+          <Row icon={Search} title="Find people" sub="Search anyone by name or username" href="/people" />
           <Row
             icon={Gift}
             title="Invite friends"

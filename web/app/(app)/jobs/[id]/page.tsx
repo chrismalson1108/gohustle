@@ -19,6 +19,7 @@ import Modal from "@/components/ui/Modal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { Textarea } from "@/components/ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
+import type { Job } from "@/lib/types";
 
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
 
@@ -42,8 +43,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob } = useJobs();
-  const { addXP, recordApply, updateChallenge, showToast } = useUser();
+  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob, fetchJobById } = useJobs();
+  const { addXP, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
 
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -51,21 +52,25 @@ export default function JobDetailPage() {
   const [applicationNote, setApplicationNote] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [waitedForJob, setWaitedForJob] = useState(false);
 
-  const job = jobs.find((j) => j.id === id);
-
-  // Don't spin forever for a gig that isn't in the loaded feed — deleted/cancelled,
-  // already filled, a stale or mistyped shared link, or a failed fetch. Give the
-  // context a moment, then show a real "not found" state instead of an endless spinner.
+  // Not every viewable job is in the browse feed — conversation links can point
+  // at past (soft-cancelled) listings, so fall back to a direct fetch before
+  // declaring the gig gone (mirror of mobile JobDetailScreen).
+  const [fetchedJob, setFetchedJob] = useState<Job | null>(null);
+  const [fetchTried, setFetchTried] = useState(false);
+  const listJob = jobs.find((j) => j.id === id);
+  const job = listJob || fetchedJob;
   useEffect(() => {
-    if (job) return;
-    const t = setTimeout(() => setWaitedForJob(true), 6000);
-    return () => clearTimeout(t);
-  }, [job]);
+    if (listJob || fetchTried) return;
+    let live = true;
+    fetchJobById(id)
+      .then((j) => { if (live) setFetchedJob(j); })
+      .finally(() => { if (live) setFetchTried(true); });
+    return () => { live = false; };
+  }, [id, listJob, fetchTried, fetchJobById]);
 
   if (!job) {
-    if (!waitedForJob) return <FullPageSpinner label="Loading gig…" />;
+    if (!fetchTried) return <FullPageSpinner label="Loading gig…" />;
     return (
       <PageContainer>
         <EmptyState
@@ -122,7 +127,6 @@ export default function JobDetailPage() {
       return;
     }
     addXP(25);
-    recordApply(job.payType === "flat" ? job.pay : job.pay * job.estimatedHours);
     updateChallenge("c1", 1);
     if (job.category === "Tech Help") updateChallenge("c3", 1);
     showToast({

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban, ShieldCheck } from "lucide-react";
+import { CheckCircle2, GraduationCap, MapPin, ArrowLeft, Heart, MoreVertical, Flag, Ban, ShieldCheck, MessageCircle } from "lucide-react";
 import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, workStatusMeta } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
@@ -17,7 +17,7 @@ import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import RatingStars from "@/components/ui/RatingStars";
 import Modal from "@/components/ui/Modal";
-import Button from "@/components/ui/Button";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames, money, payLabel } from "@/lib/format";
@@ -85,7 +85,7 @@ export default function PublicProfilePage() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast, name: myName } = useUser();
-  const { postedJobs } = useJobs();
+  const { postedJobs, jobs, bookings, posterBookings } = useJobs();
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [availability, setAvailabilityState] = useState<AvailabilityWindow[]>([]);
   const [reviews, setReviews] = useState<PubReview[]>([]);
@@ -101,6 +101,16 @@ export default function PublicProfilePage() {
   const isSelf = user?.id === id;
 
   const myOpenGigs = (postedJobs || []).filter((j) => j.status === "open");
+
+  // Messaging is booking-scoped (party-scoped RLS on messages), so this person is
+  // messageable iff a booking connects us: me as the earner on their job, or them
+  // as the earner on mine. Prefer an in-flight booking; both arrays are newest-first.
+  const ACTIVE_MSG_STATUSES = ["pending", "confirmed", "completed"];
+  const sharedBookings = [
+    ...bookings.filter((b) => jobs.find((j) => j.id === b.jobId)?.posterId === id),
+    ...posterBookings.filter((b) => b.earner?.id === id),
+  ];
+  const sharedBooking = sharedBookings.find((b) => ACTIVE_MSG_STATUSES.includes(b.status)) || sharedBookings[0] || null;
 
   const sendInvite = (job: { id: string; title: string }) => {
     notify(id, "You got a gig invitation", `${myName || "Someone"} invited you to apply to "${job.title}"`, { tab: "HomeTab" });
@@ -304,10 +314,21 @@ export default function PublicProfilePage() {
           </>
         )}
 
-        {!isSelf && user && myOpenGigs.length > 0 && (
-          <Button fullWidth onClick={() => setInviteOpen(true)}>
-            Invite to a gig
-          </Button>
+        {!isSelf && user && (sharedBooking || myOpenGigs.length > 0) && (
+          <div className="flex gap-2">
+            {/* Deep-links into the Messages page, which opens the conversation for
+                that booking directly (?booking=<id>). */}
+            {sharedBooking && (
+              <Link href={`/messages?booking=${sharedBooking.id}`} className={buttonClasses("primary", "md", "flex-1")}>
+                <MessageCircle className="size-4" /> Message
+              </Link>
+            )}
+            {myOpenGigs.length > 0 && (
+              <Button className="flex-1" variant={sharedBooking ? "outline" : "primary"} onClick={() => setInviteOpen(true)}>
+                Invite to a gig
+              </Button>
+            )}
+          </div>
         )}
 
         {profile.bio && (
