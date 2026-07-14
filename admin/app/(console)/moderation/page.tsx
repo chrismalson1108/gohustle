@@ -16,7 +16,7 @@ export default async function ModerationPage({
 
   let q = ctx.service
     .from("reports")
-    .select("id, reporter_id, reported_user_id, job_id, booking_id, reason, details, created_at, resolved_at, resolution")
+    .select("id, reporter_id, reported_user_id, job_id, booking_id, reason, details, created_at, resolved_at, resolution, source")
     .order("created_at", { ascending: false })
     .limit(100);
   q = showResolved ? q.not("resolved_at", "is", null) : q.is("resolved_at", null);
@@ -81,6 +81,7 @@ export default async function ModerationPage({
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{r.reason}</span>
                       {r.resolved_at ? <Pill tone="green">resolved</Pill> : <Pill tone="red">open</Pill>}
+                      {r.source === "auto" && <Pill tone="amber">auto</Pill>}
                     </div>
                     {r.details && <p className="mt-1 text-sm text-[var(--muted)]">{r.details}</p>}
                     <p className="mt-1 text-xs text-[var(--muted)]">
@@ -93,9 +94,13 @@ export default async function ModerationPage({
                         </>
                       ) : null}
                       by{" "}
-                      <Link href={`/users/${r.reporter_id}`} className="text-[var(--brand)] hover:underline">
-                        {nameOf.get(r.reporter_id) ?? r.reporter_id.slice(0, 8)}
-                      </Link>
+                      {r.source === "auto" ? (
+                        <span className="text-[var(--muted)]">🤖 Auto-moderation</span>
+                      ) : (
+                        <Link href={`/users/${r.reporter_id}`} className="text-[var(--brand)] hover:underline">
+                          {nameOf.get(r.reporter_id) ?? r.reporter_id.slice(0, 8)}
+                        </Link>
+                      )}
                       {r.job_id ? ` · gig: ${titleOf.get(r.job_id) ?? r.job_id.slice(0, 8)}` : ""}
                       {" · "}
                       {fmtDate(r.created_at)}

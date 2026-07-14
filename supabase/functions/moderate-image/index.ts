@@ -111,7 +111,8 @@ Deno.serve(async (req: Request) => {
 
     if (verdict.allow) return json({ allowed: true });
 
-    // Blocked: remove the object and record the attempt.
+    // Blocked: remove the object, record the attempt, and file it in the admin
+    // Moderation queue so a human can review the account.
     await supabase.storage.from(bucket).remove([path]).catch((e) => console.error('moderate-image: remove failed', e));
     try {
       await supabase.from('moderation_flags').insert({
@@ -119,6 +120,21 @@ Deno.serve(async (req: Request) => {
       });
     } catch (e) {
       console.error('moderate-image: flag insert failed', e);
+    }
+    // Auto-report to the admin console (reports table drives the Moderation page).
+    // source='auto' flags it as system-generated; reporter/reported are the
+    // uploader (reporter_id is NOT NULL). The image is already deleted.
+    try {
+      const cats = verdict.categories.length ? verdict.categories.join(', ') : 'policy-violating content';
+      await supabase.from('reports').insert({
+        reporter_id: user.id,
+        reported_user_id: user.id,
+        reason: 'Auto-moderation: unsafe image blocked',
+        details: `System auto-detected & removed a ${cats} image from ${bucket}.` + (verdict.reason ? ` (${verdict.reason})` : ''),
+        source: 'auto',
+      });
+    } catch (e) {
+      console.error('moderate-image: auto-report insert failed', e);
     }
     return json({ allowed: false, categories: verdict.categories, reason: verdict.reason });
   } catch (err) {
