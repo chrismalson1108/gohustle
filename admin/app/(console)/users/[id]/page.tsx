@@ -295,7 +295,9 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 const job = Array.isArray(b.jobs) ? b.jobs[0] : b.jobs;
                 return (
                   <tr key={b.id} className="border-t border-[var(--line)]">
-                    <td className="py-2 pr-4">{job?.title ?? "—"}</td>
+                    <td className="py-2 pr-4">
+                      <Link href={`/bookings/${b.id}`} className="text-[var(--brand)] hover:underline">{job?.title ?? "view"}</Link>
+                    </td>
                     <td className="py-2 pr-4">{b.status}</td>
                     <td className="py-2 pr-4">
                       {pay ? `${pay.status} · ${fmtCents(pay.amount_cents)}` : "—"}

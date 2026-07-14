@@ -9,10 +9,11 @@ import { supabase } from "./supabaseClient";
 export async function moderateText(
   text: string,
   surface = "text",
+  bookingId: string | null = null,
 ): Promise<{ allowed: boolean; reason?: string }> {
   if (!text || !text.trim()) return { allowed: true };
   try {
-    const invoke = supabase.functions.invoke("moderate-text", { body: { text, surface } });
+    const invoke = supabase.functions.invoke("moderate-text", { body: { text, surface, bookingId } });
     const timeout = new Promise<{ data: null; error: string }>((res) =>
       setTimeout(() => res({ data: null, error: "timeout" }), 6000),
     );
@@ -30,9 +31,9 @@ export async function moderateText(
 // Fire-and-forget: record a client-detected keyword block in the admin Moderation
 // queue (so keyword blocks are visible too, not just Claude/image blocks). Never
 // throws — it must not break or slow the submit flow.
-export function logModerationBlock(term: string, surface = "text", snippet = ""): void {
+export function logModerationBlock(term: string, surface = "text", snippet = "", bookingId: string | null = null): void {
   try {
-    void supabase.functions.invoke("log-moderation", { body: { term, surface, snippet } }).catch(() => {});
+    void supabase.functions.invoke("log-moderation", { body: { term, surface, snippet, bookingId } }).catch(() => {});
   } catch {
     /* ignore */
   }

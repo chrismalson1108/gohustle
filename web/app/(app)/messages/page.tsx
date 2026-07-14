@@ -307,12 +307,12 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     // other prohibited content before it hits the DB (web previously bypassed this).
     const kwTerm = findProhibited(body);
     if (kwTerm) {
-      logModerationBlock(kwTerm, "message", body);
+      logModerationBlock(kwTerm, "message", body, conversation.bookingId);
       showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
       return;
     }
     // Context-aware check (harassment, threats, scams a keyword list misses).
-    const mod = await moderateText(body, "message");
+    const mod = await moderateText(body, "message", conversation.bookingId);
     if (!mod.allowed) {
       showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
       return;

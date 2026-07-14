@@ -36,6 +36,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const text = typeof body?.text === 'string' ? body.text.slice(0, 4000) : '';
     const surface = SURFACES.has(body?.surface) ? body.surface : 'text';
+    // Optional: the booking this text belongs to, so the admin report deep-links
+    // to the full conversation. Validated (uuid-ish) before use.
+    const bookingId = typeof body?.bookingId === 'string' && /^[0-9a-f-]{36}$/i.test(body.bookingId) ? body.bookingId : null;
     if (!text.trim()) return json({ allowed: true }); // nothing to check
 
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
@@ -106,6 +109,7 @@ Deno.serve(async (req: Request) => {
       await supabase.from('reports').insert({
         reporter_id: user.id,
         reported_user_id: user.id,
+        booking_id: bookingId,
         reason: 'Auto-moderation: unsafe text blocked',
         details: `Blocked ${surface} text (${cats}). "${snippet}"` + (verdict.reason ? ` — ${verdict.reason}` : ''),
         source: 'auto',

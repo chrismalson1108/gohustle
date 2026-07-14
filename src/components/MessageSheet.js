@@ -143,13 +143,13 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     if (!text || !bookingId || !user) return;
     const kwTerm = findProhibited(text);
     if (kwTerm) {
-      logModerationBlock(kwTerm, 'message', text);
+      logModerationBlock(kwTerm, 'message', text, bookingId);
       Alert.alert('Message blocked', "That message contains content that isn't allowed.");
       return;
     }
     // Context-aware check (harassment, threats, scams a keyword list misses).
     setSending(true);
-    const mod = await moderateText(text, 'message');
+    const mod = await moderateText(text, 'message', bookingId);
     setSending(false);
     if (!mod.allowed) {
       Alert.alert('Message blocked', "That message contains content that isn't allowed.");

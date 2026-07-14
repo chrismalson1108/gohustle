@@ -102,6 +102,12 @@ export default async function ModerationPage({
                         </Link>
                       )}
                       {r.job_id ? ` · gig: ${titleOf.get(r.job_id) ?? r.job_id.slice(0, 8)}` : ""}
+                      {r.booking_id ? (
+                        <>
+                          {" · "}
+                          <Link href={`/bookings/${r.booking_id}`} className="text-[var(--brand)] hover:underline">view conversation</Link>
+                        </>
+                      ) : null}
                       {" · "}
                       {fmtDate(r.created_at)}
                       {r.resolution ? ` · “${r.resolution}”` : ""}

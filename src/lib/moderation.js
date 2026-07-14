@@ -5,10 +5,10 @@ import { supabase } from './supabase';
 // threats, grooming, scams, and banned intent phrased in clean words. Returns
 // { allowed, reason }. Fails OPEN on any error/timeout so posting and chat never
 // hang; the keyword filter + DB trigger remain the hard backstop.
-export async function moderateText(text, surface = 'text') {
+export async function moderateText(text, surface = 'text', bookingId = null) {
   if (!text || !String(text).trim()) return { allowed: true };
   try {
-    const invoke = supabase.functions.invoke('moderate-text', { body: { text, surface } });
+    const invoke = supabase.functions.invoke('moderate-text', { body: { text, surface, bookingId } });
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: 'timeout' }), 6000));
     const { data, error } = await Promise.race([invoke, timeout]);
     if (error || !data) return { allowed: true }; // fail open
@@ -21,9 +21,9 @@ export async function moderateText(text, surface = 'text') {
 // Fire-and-forget: record a client-detected keyword block in the admin Moderation
 // queue (so keyword blocks are visible too, not just Claude/image blocks). Never
 // throws — it must not break or slow the submit flow.
-export function logModerationBlock(term, surface = 'text', snippet = '') {
+export function logModerationBlock(term, surface = 'text', snippet = '', bookingId = null) {
   try {
-    supabase.functions.invoke('log-moderation', { body: { term, surface, snippet } }).catch(() => {});
+    supabase.functions.invoke('log-moderation', { body: { term, surface, snippet, bookingId } }).catch(() => {});
   } catch (_) { /* ignore */ }
 }
 
