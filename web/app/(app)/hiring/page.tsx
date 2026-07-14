@@ -134,7 +134,7 @@ export default function HiringPage() {
   return (
     <div>
       <PageHeader
-        title="Hiring"
+        title="Hire"
         subtitle="Gigs you've posted"
         right={
           <Link href="/hiring/new" className={buttonClasses("secondary", "sm", "bg-white text-primary hover:bg-white")}>
