@@ -332,6 +332,22 @@ export default function ProfileScreen({ navigation }) {
         />
       </Group>
 
+      <Group title="Preferences">
+        <Row
+          icon="options-outline"
+          title="Notification Settings"
+          sub="Push & email preferences"
+          onPress={() => { haptic.medium(); navigation.navigate('NotificationSettings'); }}
+        />
+        <Row
+          icon="time-outline"
+          title="Availability & Schedule"
+          sub="Set your work status, hours & classes"
+          onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
+          last
+        />
+      </Group>
+
       <Group title="Profile & Trust">
         <Row
           icon="eye-outline"
@@ -360,12 +376,6 @@ export default function ProfileScreen({ navigation }) {
           sub={studentVerified ? 'Your profile shows a Verified Student badge' : 'Confirm your .edu email for a badge'}
           onPress={() => { haptic.medium(); if (!studentVerified) setShowStudentVerify(true); }}
           disabled={studentVerified}
-        />
-        <Row
-          icon="time-outline"
-          title="Availability & Schedule"
-          sub="Set your work status, hours & classes"
-          onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
           last
         />
       </Group>

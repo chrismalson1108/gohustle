@@ -35,6 +35,7 @@ import FavoritesScreen      from './src/screens/FavoritesScreen';
 import SavedGigsScreen      from './src/screens/SavedGigsScreen';
 import AvailabilityScreen   from './src/screens/AvailabilityScreen';
 import NotificationsScreen  from './src/screens/NotificationsScreen';
+import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
 import MessagesScreen       from './src/screens/MessagesScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
@@ -138,6 +139,7 @@ function ProfileStack() {
       <Stack.Screen name="Settings"       component={SettingsScreen} />
       <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />
+      <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={HERO_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
