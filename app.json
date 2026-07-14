@@ -102,7 +102,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID"
+          "iosUrlScheme": "com.googleusercontent.apps.735847623182-el3phndjd054rpc0h4p5s235m5nusir9"
         }
       ]
     ],
@@ -111,8 +111,8 @@
         "projectId": "96a690b5-098f-4d44-a900-9a641249acda"
       },
       "googleAuth": {
-        "iosClientId": "REPLACE-WITH-IOS-CLIENT-ID.apps.googleusercontent.com",
-        "webClientId": "REPLACE-WITH-WEB-CLIENT-ID.apps.googleusercontent.com"
+        "iosClientId": "735847623182-el3phndjd054rpc0h4p5s235m5nusir9.apps.googleusercontent.com",
+        "webClientId": "735847623182-0su26ifu38ncsvu82ogc7l5ka2v2cads.apps.googleusercontent.com"
       }
     },
     "owner": "gohustlr"
