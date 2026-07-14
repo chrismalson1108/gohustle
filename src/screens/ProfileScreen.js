@@ -273,217 +273,112 @@ export default function ProfileScreen({ navigation }) {
         <Stat label="Avg Rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
       </View>
 
-      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>Account</Text>
-
-      {/* Manage your gigs — lives in the Gigs tab now */}
-      {(postedJobs.length > 0 || posterBookings?.length > 0) && (
-        <TouchableOpacity
-          style={styles.manageBtn}
-          onPress={() => { haptic.medium(); navigation.navigate('GigsTab'); }}
-        >
-          <View style={styles.manageBtnLeft}>
-            <Ionicons name="briefcase" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-            <View>
-              <Text style={styles.manageBtnTitle}>Manage My Gigs</Text>
-              <Text style={styles.manageBtnSub}>
-                {profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'Posted gigs & booking requests'}
-              </Text>
-            </View>
-          </View>
-          {profileBadgeCount > 0 && (
-            <View style={styles.manageBadge}>
-              <Text style={styles.manageBadgeText}>{profileBadgeCount}</Text>
-            </View>
-          )}
-          <Text style={styles.manageBtnArrow}>›</Text>
-        </TouchableOpacity>
-      )}
-
+      {/* Primary action — edit the identity shown in the header above */}
       <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('PayoutSetup'); }}
+        style={styles.editProfileBtn}
+        onPress={() => { haptic.medium(); navigation.navigate('Settings'); }}
+        activeOpacity={0.85}
       >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="card" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Payments</Text>
-            <Text style={styles.manageBtnSub}>{paymentsSub}</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
+        <Ionicons name="create-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+        <Text style={styles.editProfileText}>Edit Profile & Settings</Text>
       </TouchableOpacity>
 
-      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>Trust & Verification</Text>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={handleVerify}
-        disabled={idv.verified}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons
-            name={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : idv.status === 'rejected' ? 'alert-circle-outline' : 'shield-outline'}
-            size={22}
-            color={idv.verified ? colors.success : idv.status === 'rejected' ? colors.urgent : colors.primary}
-            style={styles.manageBtnIcon}
+      <Group title="Gigs & Earnings">
+        {(postedJobs.length > 0 || posterBookings?.length > 0) && (
+          <Row
+            icon="briefcase-outline"
+            title="Manage My Gigs"
+            sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'Posted gigs & booking requests'}
+            badge={profileBadgeCount > 0 ? profileBadgeCount : null}
+            onPress={() => { haptic.medium(); navigation.navigate('GigsTab'); }}
           />
-          <View>
-            <Text style={styles.manageBtnTitle}>
-              {idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : idv.status === 'rejected' ? 'Verification Failed' : 'Verify Your Identity'}
-            </Text>
-            <Text style={styles.manageBtnSub}>
-              {idv.verified
-                ? 'Your profile shows a Verified badge'
-                : idv.status === 'pending'
-                  ? 'Tap to finish or resume your ID check'
-                  : idv.status === 'rejected'
-                    ? "We couldn't verify your ID — tap to try again"
-                    : 'Get a Verified badge to build trust'}
-            </Text>
-          </View>
-        </View>
-        {!idv.verified && <Text style={styles.manageBtnArrow}>›</Text>}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); if (!studentVerified) setShowStudentVerify(true); }}
-        disabled={studentVerified}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons
-            name={studentVerified ? 'school' : 'school-outline'}
-            size={22}
-            color={studentVerified ? colors.success : colors.primary}
-            style={styles.manageBtnIcon}
-          />
-          <View>
-            <Text style={styles.manageBtnTitle}>
-              {studentVerified ? (studentStatus === 'alumni' ? 'Verified Alumni' : 'Verified Student') : 'Verify Student Status'}
-            </Text>
-            <Text style={styles.manageBtnSub}>
-              {studentVerified
-                ? 'Your profile shows a Verified Student badge'
-                : 'Confirm your .edu email for a Verified Student badge'}
-            </Text>
-          </View>
-        </View>
-        {!studentVerified && <Text style={styles.manageBtnArrow}>›</Text>}
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.manageBtn} onPress={handleInvite}>
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="gift-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Invite Friends</Text>
-            <Text style={styles.manageBtnSub}>
-              {refCount > 0 ? `${refCount} friend${refCount !== 1 ? 's' : ''} joined · share your code` : 'Share your referral code'}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); if (user) navigation.navigate('UserProfile', { userId: user.id }); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="eye-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>View My Public Profile</Text>
-            <Text style={styles.manageBtnSub}>See exactly how others see you</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <Text style={[styles.sectionTitle, { marginTop: 24, marginHorizontal: 16, marginBottom: 0 }]}>My Stuff</Text>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="heart-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Saved People</Text>
-            <Text style={styles.manageBtnSub}>Workers & clients you've favorited</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('SavedGigs'); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="bookmark-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Saved Gigs</Text>
-            <Text style={styles.manageBtnSub}>Gigs you've bookmarked to book later</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('Expenses'); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="receipt-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Tax Center</Text>
-            <Text style={styles.manageBtnSub}>Track business expenses & export for taxes</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="time-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Availability & Schedule</Text>
-            <Text style={styles.manageBtnSub}>Set your work status, hours & classes</Text>
-          </View>
-        </View>
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() => { haptic.medium(); navigation.navigate('Notifications'); }}
-      >
-        <View style={styles.manageBtnLeft}>
-          <Ionicons name="notifications-outline" size={22} color={colors.primary} style={styles.manageBtnIcon} />
-          <View>
-            <Text style={styles.manageBtnTitle}>Alerts</Text>
-            <Text style={styles.manageBtnSub}>Gig matches from your AI watches</Text>
-          </View>
-        </View>
-        {alertCount > 0 && (
-          <View style={styles.alertBadge}>
-            <Text style={styles.alertBadgeText}>{alertCount}</Text>
-          </View>
         )}
-        <Text style={styles.manageBtnArrow}>›</Text>
-      </TouchableOpacity>
+        <Row
+          icon="card-outline"
+          title="Payments"
+          sub={paymentsSub}
+          onPress={() => { haptic.medium(); navigation.navigate('PayoutSetup'); }}
+        />
+        <Row
+          icon="receipt-outline"
+          title="Tax Center"
+          sub="Track expenses & export for taxes"
+          onPress={() => { haptic.medium(); navigation.navigate('Expenses'); }}
+          last
+        />
+      </Group>
 
-      <TouchableOpacity
-        style={styles.settingsBtn}
-        onPress={() => navigation.navigate('Settings')}
-      >
-        <View style={styles.settingsBtnRow}>
-          <Ionicons name="settings-outline" size={18} color={colors.textPrimary} style={{ marginRight: 8 }} />
-          <Text style={styles.settingsBtnText}>Edit Profile & Settings</Text>
-        </View>
-      </TouchableOpacity>
+      <Group title="Saved & Alerts">
+        <Row
+          icon="notifications-outline"
+          title="Alerts"
+          sub="Booking updates & gig matches"
+          badge={alertCount > 0 ? alertCount : null}
+          badgeColor={colors.primary}
+          onPress={() => { haptic.medium(); navigation.navigate('Notifications'); }}
+        />
+        <Row
+          icon="bookmark-outline"
+          title="Saved Gigs"
+          sub="Gigs you've bookmarked to book later"
+          onPress={() => { haptic.medium(); navigation.navigate('SavedGigs'); }}
+        />
+        <Row
+          icon="heart-outline"
+          title="Saved People"
+          sub="Workers & clients you've favorited"
+          onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
+          last
+        />
+      </Group>
+
+      <Group title="Profile & Trust">
+        <Row
+          icon="eye-outline"
+          title="View My Public Profile"
+          sub="See exactly how others see you"
+          onPress={() => { haptic.medium(); if (user) navigation.navigate('UserProfile', { userId: user.id }); }}
+        />
+        <Row
+          icon={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : idv.status === 'rejected' ? 'alert-circle-outline' : 'shield-outline'}
+          iconColor={idv.verified ? colors.success : idv.status === 'rejected' ? colors.urgent : colors.primary}
+          title={idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : idv.status === 'rejected' ? 'Verification Failed' : 'Verify Your Identity'}
+          sub={idv.verified
+            ? 'Your profile shows a Verified badge'
+            : idv.status === 'pending'
+              ? 'Tap to finish or resume your ID check'
+              : idv.status === 'rejected'
+                ? "We couldn't verify your ID — tap to try again"
+                : 'Get a Verified badge to build trust'}
+          onPress={handleVerify}
+          disabled={idv.verified}
+        />
+        <Row
+          icon={studentVerified ? 'school' : 'school-outline'}
+          iconColor={studentVerified ? colors.success : colors.primary}
+          title={studentVerified ? (studentStatus === 'alumni' ? 'Verified Alumni' : 'Verified Student') : 'Verify Student Status'}
+          sub={studentVerified ? 'Your profile shows a Verified Student badge' : 'Confirm your .edu email for a badge'}
+          onPress={() => { haptic.medium(); if (!studentVerified) setShowStudentVerify(true); }}
+          disabled={studentVerified}
+        />
+        <Row
+          icon="time-outline"
+          title="Availability & Schedule"
+          sub="Set your work status, hours & classes"
+          onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
+          last
+        />
+      </Group>
+
+      <Group title="Grow">
+        <Row
+          icon="gift-outline"
+          title="Invite Friends"
+          sub={refCount > 0 ? `${refCount} friend${refCount !== 1 ? 's' : ''} joined · share your code` : 'Share your referral code'}
+          onPress={handleInvite}
+          last
+        />
+      </Group>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Badges</Text>
@@ -589,7 +484,75 @@ function Stat({ label, value }) {
   );
 }
 
+// A titled group of rows rendered as one rounded card (iOS-Settings style).
+function Group({ title, children }) {
+  return (
+    <View style={styles.group}>
+      {title ? <Text style={styles.groupTitle}>{title}</Text> : null}
+      <View style={styles.groupCard}>{children}</View>
+    </View>
+  );
+}
+
+// A single tappable row inside a Group: icon tile + title/subtitle + optional
+// badge + chevron. `last` drops the divider; `disabled` hides the chevron.
+function Row({ icon, iconColor, title, sub, badge, badgeColor, onPress, disabled, last }) {
+  const tint = iconColor || colors.primary;
+  return (
+    <TouchableOpacity
+      style={[styles.row, !last && styles.rowDivider]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.6}
+    >
+      <View style={[styles.rowIconTile, { backgroundColor: tint + '18' }]}>
+        <Ionicons name={icon} size={18} color={tint} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+        {sub ? <Text style={styles.rowSub} numberOfLines={1}>{sub}</Text> : null}
+      </View>
+      {badge ? (
+        <View style={[styles.rowBadge, badgeColor ? { backgroundColor: badgeColor } : null]}>
+          <Text style={styles.rowBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
+      {!disabled && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: 4 }} />}
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
+  // Grouped-list profile menu (iOS-Settings style)
+  editProfileBtn: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
+    paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary, ...shadows.sm,
+  },
+  editProfileText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  group: { marginHorizontal: 16, marginTop: 22 },
+  groupTitle: {
+    fontSize: 12, fontWeight: '800', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8, marginLeft: 4,
+  },
+  groupCard: {
+    backgroundColor: colors.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden', ...shadows.sm,
+  },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14 },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  rowIconTile: {
+    width: 32, height: 32, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  rowText: { flex: 1 },
+  rowTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  rowSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowBadge: {
+    backgroundColor: colors.urgent, borderRadius: 10, minWidth: 20,
+    paddingHorizontal: 7, paddingVertical: 2, alignItems: 'center', marginLeft: 6,
+  },
+  rowBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   manageBtn: {
     marginHorizontal: 16, marginTop: 12, borderRadius: 14,
     backgroundColor: colors.surface, paddingVertical: 14, paddingHorizontal: 16,

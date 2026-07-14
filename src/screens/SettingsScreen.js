@@ -277,6 +277,7 @@ export default function SettingsScreen({ navigation }) {
         </LinearGradient>
 
         <View style={styles.form}>
+          <SectionHeader first>Basics</SectionHeader>
           <Field label="Display Name">
             <TextInput
               style={styles.input} placeholder="Your name"
@@ -332,6 +333,7 @@ export default function SettingsScreen({ navigation }) {
             />
           </Field>
 
+          <SectionHeader>Education</SectionHeader>
           <Field label="College (optional)">
             <TextInput
               style={styles.input} placeholder="e.g. University of Texas at Austin"
@@ -392,6 +394,7 @@ export default function SettingsScreen({ navigation }) {
 
           {(form.role === 'earner' || form.role === 'both') && (
             <>
+              <SectionHeader>Work Preferences</SectionHeader>
               <Field label="Travel Radius">
                 <View style={styles.radiusRow}>
                   {RADIUS_OPTIONS.map(r => (
@@ -597,6 +600,15 @@ function Field({ label, children }) {
   );
 }
 
+// Larger, darker heading that chunks the long form into labeled sections.
+function SectionHeader({ children, first }) {
+  return (
+    <Text style={[styles.sectionHeader, first && { marginTop: 0, paddingTop: 0, borderTopWidth: 0 }]}>
+      {children}
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
@@ -607,6 +619,11 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
   form: { padding: 20 },
+  sectionHeader: {
+    fontSize: 17, fontWeight: '900', color: colors.textPrimary,
+    marginTop: 18, marginBottom: 16,
+    borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 22,
+  },
   field: { marginBottom: 22 },
   fieldLabel: {
     fontSize: 12, fontWeight: '800', color: colors.textMuted,
