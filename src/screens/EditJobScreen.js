@@ -118,6 +118,12 @@ export default function EditJobScreen({ route, navigation }) {
       haptic.error();
       return;
     }
+    // Same rule as posting: a gig needs at least one time slot to be bookable.
+    if (form.slots.length === 0) {
+      haptic.error();
+      showToast({ icon: '🗓️', title: 'Add at least one time', message: 'Pick a day and time earners can book — gigs need a time slot to be bookable.' });
+      return;
+    }
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);

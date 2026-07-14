@@ -17,7 +17,10 @@ import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { markConversationRead } from '../lib/messages';
 
-export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
+// Optional navigation hooks: `onViewProfile(userId)` makes the header person
+// tappable, `onViewJob(jobId)` (with `jobId`) makes the "re: job" line tappable.
+// Callers are responsible for closing the sheet before navigating.
+export default function MessageSheet({ visible, bookingId, jobId, jobTitle, otherPerson, onClose, onViewProfile, onViewJob }) {
   const { user } = useAuth();
   const { blockUser, refreshUnread } = useJobs();
   const haptic = useHaptic();
@@ -271,8 +274,29 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
             <View style={styles.handle} />
             <View style={styles.headerContent}>
               <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.headerTitle} numberOfLines={1}>{otherPerson?.name || 'Chat'}</Text>
-                {jobTitle && <Text style={styles.headerSub} numberOfLines={1}>re: {jobTitle}</Text>}
+                <TouchableOpacity
+                  style={styles.headerPerson}
+                  disabled={!onViewProfile || !otherPerson?.id}
+                  onPress={() => onViewProfile?.(otherPerson.id)}
+                  activeOpacity={0.7}
+                >
+                  <Avatar url={otherPerson?.avatarUrl} initial={otherPerson?.avatarInitial || otherPerson?.name?.[0]} size={28} fontSize={12} style={{ marginRight: 8 }} />
+                  <Text style={styles.headerTitle} numberOfLines={1}>{otherPerson?.name || 'Chat'}</Text>
+                  {onViewProfile && otherPerson?.id ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} style={{ marginLeft: 2 }} /> : null}
+                </TouchableOpacity>
+                {jobTitle ? (
+                  <TouchableOpacity
+                    disabled={!onViewJob || !jobId}
+                    onPress={() => onViewJob?.(jobId)}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                  >
+                    <Text style={[styles.headerSub, onViewJob && jobId ? styles.headerSubLink : null]} numberOfLines={1}>
+                      re: {jobTitle}
+                    </Text>
+                    {onViewJob && jobId ? <Ionicons name="open-outline" size={12} color={colors.primary} style={{ marginLeft: 4, marginTop: 2 }} /> : null}
+                  </TouchableOpacity>
+                ) : null}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 {otherPerson?.id && (
@@ -387,8 +411,10 @@ const styles = StyleSheet.create({
     alignSelf: 'center', marginTop: 12, marginBottom: 14,
   },
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  headerPerson: { flexDirection: 'row', alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
   headerSub: { fontSize: 12, color: colors.textMuted, marginTop: 2, maxWidth: 260 },
+  headerSubLink: { color: colors.primary, fontWeight: '600' },
   closeBtn: { padding: 4 },
   closeBtnText: { fontSize: 17, color: colors.textMuted, fontWeight: '700' },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },

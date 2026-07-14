@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Image, Alert,
+  StyleSheet, TextInput, Image, Alert, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,12 +43,26 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob } = useJobs();
-  const { addXP, recordApply, updateChallenge, showToast } = useUser();
+  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob, fetchJobById } = useJobs();
+  const { addXP, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
 
-  const job = jobs.find(j => j.id === jobId);
+  // Not every viewable job is in the browse list — conversation links can point
+  // at past (soft-cancelled) listings, so fall back to a direct fetch.
+  const [fetchedJob, setFetchedJob] = useState(null);
+  const [fetchTried, setFetchTried] = useState(false);
+  const listJob = jobs.find(j => j.id === jobId);
+  const job = listJob || fetchedJob;
+  React.useEffect(() => {
+    if (listJob || fetchTried) return;
+    let active = true;
+    fetchJobById(jobId)
+      .then(j => { if (active) setFetchedJob(j); })
+      .finally(() => { if (active) setFetchTried(true); });
+    return () => { active = false; };
+  }, [jobId, listJob, fetchTried]);
+
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
   const [applicationNote, setApplicationNote] = useState('');
@@ -58,7 +72,15 @@ export default function JobDetailScreen({ route, navigation }) {
   const currentBooking = bookings.find(b => b.jobId === jobId);
   const jobPosterBookings = posterBookings.filter(b => b.jobId === jobId);
 
-  if (!job) return null;
+  if (!job) {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
+        {fetchTried
+          ? <Text style={{ fontSize: 15, color: colors.textSecondary, textAlign: 'center' }}>This gig is no longer available.</Text>
+          : <ActivityIndicator color={colors.primary} />}
+      </View>
+    );
+  }
 
   const statusContent = STATUS_CONTENT[currentBooking?.status] || STATUS_CONTENT.pending;
   const canMessage = !!currentBooking && ['pending','confirmed','completed'].includes(currentBooking.status);
@@ -125,7 +147,6 @@ export default function JobDetailScreen({ route, navigation }) {
     }
     haptic.success();
     addXP(25);
-    recordApply(job.payType === 'flat' ? job.pay : job.pay * job.estimatedHours);
     updateChallenge('c1', 1);
     if (job.category === 'Tech Help') updateChallenge('c3', 1);
 

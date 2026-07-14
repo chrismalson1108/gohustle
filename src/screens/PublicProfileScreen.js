@@ -14,6 +14,7 @@ import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
 import GradientHeader from '../components/GradientHeader';
 import Avatar from '../components/Avatar';
+import MessageSheet from '../components/MessageSheet';
 import RatingStars from '../components/RatingStars';
 import { collegeLine } from '../lib/school';
 import { DAYS, windowsForDay, fmtTime, workStatusMeta } from '../lib/availability';
@@ -27,9 +28,10 @@ export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
   const { user } = useAuth();
   const { name: myName, showToast } = useUser();
-  const { postedJobs, blockUser } = useJobs();
+  const { postedJobs, blockUser, jobs, bookings, posterBookings } = useJobs();
   const haptic = useHaptic();
   const isSelf = user?.id === userId;
+  const [msgOpen, setMsgOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [availability, setAvailabilityState] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -42,6 +44,21 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [reportOpen, setReportOpen] = useState(false);
 
   const myOpenGigs = (postedJobs || []).filter(j => j.status === 'open');
+
+  // Messaging is booking-scoped (party-scoped RLS on messages), so this person
+  // is messageable iff a booking connects us: me as the earner on their job, or
+  // them as the earner on mine. Prefer an in-flight booking; both source arrays
+  // are already newest-first.
+  const ACTIVE_MSG_STATUSES = ['pending', 'confirmed', 'completed'];
+  const sharedBookings = [
+    ...(bookings || [])
+      .filter(b => (jobs || []).find(j => j.id === b.jobId)?.posterId === userId)
+      .map(b => ({ booking: b, jobTitle: (jobs || []).find(j => j.id === b.jobId)?.title || b.job?.title || '' })),
+    ...(posterBookings || [])
+      .filter(b => b.earner?.id === userId)
+      .map(b => ({ booking: b, jobTitle: b.job?.title || '' })),
+  ];
+  const sharedBooking = sharedBookings.find(s => ACTIVE_MSG_STATUSES.includes(s.booking.status)) || sharedBookings[0] || null;
 
   const sendInvite = (job) => {
     haptic.success();
@@ -247,11 +264,29 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       )}
 
-      {!isSelf && user && myOpenGigs.length > 0 && (
-        <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteOpen(true)} activeOpacity={0.85}>
-          <Ionicons name="paper-plane-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.inviteBtnText}>Invite to a gig</Text>
-        </TouchableOpacity>
+      {!isSelf && user && (sharedBooking || myOpenGigs.length > 0) && (
+        <View style={styles.actionRow}>
+          {sharedBooking && (
+            <TouchableOpacity
+              style={[styles.inviteBtn, styles.actionBtn, myOpenGigs.length > 0 && { marginRight: 8 }]}
+              onPress={() => { haptic.light(); setMsgOpen(true); }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chatbubble-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.inviteBtnText}>Message</Text>
+            </TouchableOpacity>
+          )}
+          {myOpenGigs.length > 0 && (
+            <TouchableOpacity
+              style={[styles.inviteBtn, styles.actionBtn, sharedBooking && styles.actionBtnOutline]}
+              onPress={() => setInviteOpen(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="paper-plane-outline" size={16} color={sharedBooking ? colors.primary : '#fff'} style={{ marginRight: 6 }} />
+              <Text style={[styles.inviteBtnText, sharedBooking && { color: colors.primary }]}>Invite to a gig</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {profile.bio ? (
@@ -421,6 +456,18 @@ export default function PublicProfileScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
+
+      {sharedBooking && (
+        <MessageSheet
+          visible={msgOpen}
+          bookingId={sharedBooking.booking.id}
+          jobId={sharedBooking.booking.jobId}
+          jobTitle={sharedBooking.jobTitle}
+          otherPerson={{ id: userId, name: profile.name, avatarInitial: profile.avatar_initial, avatarUrl: profile.avatar_url }}
+          onClose={() => setMsgOpen(false)}
+          onViewJob={(jid) => { setMsgOpen(false); navigation.navigate('JobDetail', { jobId: jid }); }}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -458,6 +505,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginTop: 12,
   },
   inviteBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  actionRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12 },
+  actionBtn: { flex: 1, marginHorizontal: 0, marginTop: 0 },
+  actionBtnOutline: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   inviteSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 36, ...shadows.md },

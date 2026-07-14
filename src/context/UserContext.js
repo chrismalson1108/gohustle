@@ -148,10 +148,6 @@ function reducer(state, action) {
         badges: { ...state.badges, [action.key]: { unlocked: true } },
       };
 
-    case 'RECORD_APPLY':
-      // No earnings credit at apply time — only the weekly counter advances.
-      return { ...state, weeklyJobsDone: state.weeklyJobsDone + 1 };
-
     case 'SET_GOALS':
       return { ...state, weeklyEarningGoal: action.earningGoal, weeklyJobsGoal: action.jobsGoal };
 
@@ -243,7 +239,7 @@ export function UserProvider({ children }) {
 
   // Debounced sync to Supabase so rapid XP taps don't flood the DB. Patches are
   // MERGED into a pending object so two calls in the same tick (e.g. addXP +
-  // recordApply) don't clobber each other's fields.
+  // setGoals) don't clobber each other's fields.
   const scheduleSyncProfile = (patch) => {
     if (!user) return;
     pendingPatch.current = { ...pendingPatch.current, ...patch };
@@ -276,13 +272,6 @@ export function UserProvider({ children }) {
     supabase.from('badges')
       .upsert({ user_id: user.id, badge_key: key, unlocked: true, unlocked_at: new Date().toISOString() }, { onConflict: 'user_id,badge_key' })
       .then(({ error }) => { if (error) console.warn('Badge sync error:', error.message); });
-  };
-
-  const recordApply = () => {
-    // Booking/applying advances the weekly gamification counter only — real
-    // earnings are credited at settlement (Stripe capture), never at apply time.
-    dispatch({ type: 'RECORD_APPLY' });
-    scheduleSyncProfile({ weekly_jobs_done: state.weeklyJobsDone + 1 });
   };
 
   const setRole = (role) => {
@@ -346,7 +335,6 @@ export function UserProvider({ children }) {
       addXP,
       updateChallenge,
       unlockBadge,
-      recordApply,
       setRole,
       setGoals,
       setMonthlyGoal,

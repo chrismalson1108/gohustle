@@ -13,6 +13,7 @@ import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
 import { getReferralCode, recordReferral } from '../../lib/referrals';
 import { parseDob, isAdult, MIN_AGE } from '../../lib/age';
 import LocationPicker from '../../components/LocationPicker';
+import DobPicker, { composeDob } from '../../components/DobPicker';
 
 const { width } = Dimensions.get('window');
 
@@ -39,7 +40,7 @@ export default function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(0); // 0=welcome, 1=username, 2=role, 3=location, 4=skills/radius, 5=done
   const [form, setForm] = useState({
     username: '',
-    dob: '',
+    dob: { month: null, day: null, year: null }, // Month/Day/Year dropdown parts
     role: '',
     city: '',
     skills: [],
@@ -101,9 +102,10 @@ export default function OnboardingScreen({ onComplete }) {
 
   // Age floor (H7): a valid, 18+ DOB is required to continue. The server also blocks
   // a known minor at action time (guard_min_age), but gate here for clear UX.
+  const dobComplete = !!composeDob(form.dob);
   const checkDob = () => {
-    const iso = parseDob(form.dob);
-    if (!iso) { setDobError('Enter your date of birth as MM/DD/YYYY.'); return false; }
+    const iso = parseDob(composeDob(form.dob));
+    if (!iso) { setDobError('Select your date of birth.'); return false; }
     if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return false; }
     setDobError('');
     return true;
@@ -121,7 +123,7 @@ export default function OnboardingScreen({ onComplete }) {
     setFinishError('');
     const { error } = await supabase.from('profiles').update({
       username: form.username.trim().toLowerCase(),
-      date_of_birth: parseDob(form.dob),
+      date_of_birth: parseDob(composeDob(form.dob)),
       role: form.role,
       city: form.city,
       skills: form.skills,
@@ -189,24 +191,20 @@ export default function OnboardingScreen({ onComplete }) {
       />
       {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
       <Text style={styles.hintText}>@{form.username.toLowerCase() || 'username'} · lowercase letters, numbers, underscores</Text>
-      <TextInput
-        style={[styles.input, dobError ? styles.inputError : null, { marginTop: 14 }]}
-        placeholder="Date of birth · MM/DD/YYYY"
-        placeholderTextColor={colors.textMuted}
+      <Text style={styles.dobLabel}>Date of birth</Text>
+      <DobPicker
         value={form.dob}
-        onChangeText={v => { set('dob', v); setDobError(''); }}
-        keyboardType="numbers-and-punctuation"
-        autoCorrect={false}
-        maxLength={10}
+        onChange={v => { set('dob', v); setDobError(''); }}
+        error={!!dobError}
       />
-      {dobError ? <Text style={styles.errorText}>{dobError}</Text> : null}
-      <Text style={styles.hintText}>You must be {MIN_AGE}+ to use GoHustlr.</Text>
+      {dobError ? <Text style={[styles.errorText, { marginTop: 6 }]}>{dobError}</Text> : null}
+      <Text style={[styles.hintText, { marginTop: 6 }]}>You must be {MIN_AGE}+ to use GoHustlr.</Text>
       <TouchableOpacity
-        style={[styles.nextBtn, (!form.username || !form.dob) && styles.nextBtnDisabled]}
-        disabled={!form.username || !form.dob}
+        style={[styles.nextBtn, (!form.username || !dobComplete) && styles.nextBtnDisabled]}
+        disabled={!form.username || !dobComplete}
         onPress={handleUsernameNext}
       >
-        <LinearGradient colors={form.username && form.dob ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
+        <LinearGradient colors={form.username && dobComplete ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
           <Text style={styles.nextBtnText}>Continue →</Text>
         </LinearGradient>
       </TouchableOpacity>
@@ -446,6 +444,7 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 100, lineHeight: 22 },
   errorText: { color: colors.urgent, fontSize: 13, fontWeight: '600', marginBottom: 6, alignSelf: 'flex-start' },
   hintText: { fontSize: 12, color: colors.textMuted, marginBottom: 24, alignSelf: 'flex-start' },
+  dobLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, alignSelf: 'flex-start', marginTop: 14, marginBottom: 8 },
   nextBtn: { width: '100%', marginTop: 12 },
   nextBtnDisabled: { opacity: 0.6 },
   nextBtnGrad: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
