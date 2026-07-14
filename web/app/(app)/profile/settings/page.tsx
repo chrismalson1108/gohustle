@@ -13,6 +13,9 @@ import {
   deleteCertification,
   type Certification,
 } from "@/lib/certifications";
+import {
+  getNotificationPrefs, saveNotificationPrefs, DEFAULT_NOTIF_PREFS, NOTIF_CATEGORIES, type NotifPrefs,
+} from "@/lib/notifications";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -44,6 +47,35 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
+// Chunks the long settings form into labeled sections (divider above each).
+function SectionHeader({ children, first }: { children: React.ReactNode; first?: boolean }) {
+  return (
+    <h2 className={classNames("text-lg font-black text-ink", first ? "" : "border-t border-line pt-5")}>{children}</h2>
+  );
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={classNames(
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+        checked ? "bg-primary" : "bg-line",
+      )}
+    >
+      <span
+        className={classNames(
+          "inline-block size-5 transform rounded-full bg-white shadow transition",
+          checked ? "translate-x-[22px]" : "translate-x-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -58,6 +90,7 @@ export default function SettingsPage() {
   const [certModalOpen, setCertModalOpen] = useState(false);
   const [savingCert, setSavingCert] = useState(false);
   const [cert, setCert] = useState({ title: "", issuer: "", year: "", file: null as File | null });
+  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
   const [f, setF] = useState({
     name: "", username: "", bio: "", city: "", role: "earner" as "earner" | "poster" | "both",
     skills: [] as string[], radiusMiles: 25, skillRates: {} as Record<string, string>,
@@ -89,9 +122,26 @@ export default function SettingsPage() {
       } catch {
         /* non-fatal */
       }
+      try {
+        setNotifPrefs(await getNotificationPrefs());
+      } catch {
+        /* non-fatal */
+      }
       setLoading(false);
     })();
   }, [user]);
+
+  // Per-category notification toggle (push/email). Saves immediately, optimistic.
+  const toggleNotif = async (key: keyof NotifPrefs, value: boolean) => {
+    const next = { ...notifPrefs, [key]: value };
+    setNotifPrefs(next);
+    try {
+      await saveNotificationPrefs(next);
+    } catch {
+      setNotifPrefs(notifPrefs); // revert
+      showToast({ icon: "⚠️", title: "Couldn't update", message: "Please try again." });
+    }
+  };
 
   const saveCert = async () => {
     if (!user) return;
@@ -225,6 +275,7 @@ export default function SettingsPage() {
         </button>
 
         <div className="space-y-5">
+          <SectionHeader first>Basics</SectionHeader>
           <div>
             <Label>Display name</Label>
             <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" />
@@ -253,6 +304,7 @@ export default function SettingsPage() {
 
           {showEarnerFields && (
             <>
+              <SectionHeader>Work Preferences</SectionHeader>
               <div>
                 <Label>Travel radius</Label>
                 <div className="flex flex-wrap gap-2">
@@ -318,6 +370,7 @@ export default function SettingsPage() {
             </>
           )}
 
+          <SectionHeader>Education</SectionHeader>
           {/* College */}
           <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
             <Label>College (optional)</Label>
@@ -395,6 +448,40 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+
+          <SectionHeader>Notifications</SectionHeader>
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <p className="text-xs text-ink-muted">
+              Choose how you hear about activity. In-app alerts always show in your Alerts inbox regardless.
+            </p>
+            <div className="mt-3">
+              <div className="flex items-center pb-2">
+                <span className="flex-1" />
+                <span className="w-14 text-center text-[11px] font-bold uppercase tracking-wide text-ink-muted">Push</span>
+                <span className="w-14 text-center text-[11px] font-bold uppercase tracking-wide text-ink-muted">Email</span>
+              </div>
+              {NOTIF_CATEGORIES.map((cat) => (
+                <div key={cat.key} className="flex items-center border-t border-line py-3">
+                  <div className="min-w-0 flex-1 pr-2">
+                    <p className="text-sm font-bold text-ink">{cat.label}</p>
+                    <p className="text-xs text-ink-muted">{cat.hint}</p>
+                  </div>
+                  <div className="flex w-14 justify-center">
+                    <Toggle
+                      checked={notifPrefs[`${cat.key}_push` as keyof NotifPrefs]}
+                      onChange={(v) => toggleNotif(`${cat.key}_push` as keyof NotifPrefs, v)}
+                    />
+                  </div>
+                  <div className="flex w-14 justify-center">
+                    <Toggle
+                      checked={notifPrefs[`${cat.key}_email` as keyof NotifPrefs]}
+                      onChange={(v) => toggleNotif(`${cat.key}_email` as keyof NotifPrefs, v)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
