@@ -65,10 +65,13 @@ export default function DateTimePicker({ slots = [], onChange }) {
   // Auto-add on time tap — no separate "Add" button needed
   const handleTimeSelect = (time) => {
     if (!selectedDay) return;
+    const startsAt = computeStartsAt(selectedDay.date, time);
+    // Never allow a slot in the past (e.g. earlier times on "Today").
+    if (startsAt && new Date(startsAt).getTime() <= Date.now()) return;
     const label = `${selectedDay.label}, ${time}`;
     if (slots.some(s => s.label === label)) return; // already added
     haptic.medium();
-    onChange([...slots, { id: `s${Date.now()}`, label, taken: false, startsAt: computeStartsAt(selectedDay.date, time) }]);
+    onChange([...slots, { id: `s${Date.now()}`, label, taken: false, startsAt }]);
   };
 
   const removeSlot = (id) => {
@@ -135,17 +138,20 @@ export default function DateTimePicker({ slots = [], onChange }) {
           <View style={styles.timeGrid}>
             {TIMES.map(t => {
               const added = addedTimes.has(t);
+              const startsAt = computeStartsAt(selectedDay.date, t);
+              const past = startsAt ? new Date(startsAt).getTime() <= Date.now() : false;
               return (
                 <TouchableOpacity
                   key={t}
-                  style={[styles.timeChip, added && styles.timeChipAdded]}
+                  style={[styles.timeChip, added && styles.timeChipAdded, past && styles.timeChipPast]}
                   onPress={() => handleTimeSelect(t)}
-                  activeOpacity={added ? 1 : 0.7}
+                  disabled={past}
+                  activeOpacity={added || past ? 1 : 0.7}
                 >
                   {added && (
                     <Ionicons name="checkmark" size={12} color={colors.success} style={{ marginRight: 4 }} />
                   )}
-                  <Text style={[styles.timeText, added && styles.timeTextAdded]}>
+                  <Text style={[styles.timeText, added && styles.timeTextAdded, past && styles.timeTextPast]}>
                     {t}
                   </Text>
                 </TouchableOpacity>
@@ -218,8 +224,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
   },
   timeChipAdded: { backgroundColor: colors.successLight, borderColor: colors.success },
+  timeChipPast: { backgroundColor: colors.divider, borderColor: 'transparent', opacity: 0.45 },
   timeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   timeTextAdded: { color: colors.success, fontWeight: '700' },
+  timeTextPast: { color: colors.textMuted, textDecorationLine: 'line-through' },
   slotList: { marginTop: 12 },
   addedLabel: {
     fontSize: 11, fontWeight: '700', color: colors.textMuted,

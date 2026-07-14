@@ -23,11 +23,28 @@ export default function SlotBuilder({
   onChange: (slots: Slot[]) => void;
 }) {
   const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+
+  // Earliest selectable value for the datetime-local picker: now, in the user's
+  // local time (YYYY-MM-DDTHH:mm). Blocks picking past times in the UI.
+  const minLocal = (() => {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  })();
 
   const add = () => {
     if (!value) return;
     const d = new Date(value);
-    if (isNaN(d.getTime()) || d.getTime() < Date.now()) return;
+    if (isNaN(d.getTime())) {
+      setError("Enter a valid date and time.");
+      return;
+    }
+    if (d.getTime() < Date.now()) {
+      setError("Pick a time in the future.");
+      return;
+    }
+    setError("");
     const slot: Slot = {
       id: `new-${Date.now()}-${slots.length}`,
       label: labelFor(d),
@@ -44,13 +61,15 @@ export default function SlotBuilder({
         <Input
           type="datetime-local"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          min={minLocal}
+          onChange={(e) => { setValue(e.target.value); if (error) setError(""); }}
           className="flex-1"
         />
         <Button type="button" onClick={add} disabled={!value}>
           <Plus className="size-4" /> Add
         </Button>
       </div>
+      {error && <p className="mt-1.5 text-sm font-medium text-urgent">{error}</p>}
       {slots.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {slots.map((s) => (
