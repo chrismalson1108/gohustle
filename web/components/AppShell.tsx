@@ -12,7 +12,7 @@ import Logo from "./Logo";
 const NAV = [
   { href: "/browse", label: "Browse", icon: Search, badge: null },
   { href: "/my-jobs", label: "My Jobs", icon: Briefcase, badge: "earn" },
-  { href: "/hiring", label: "Hiring", icon: Megaphone, badge: "poster" },
+  { href: "/hiring", label: "Hire", icon: Megaphone, badge: "poster" },
   { href: "/messages", label: "Messages", icon: MessageCircle, badge: "unread" },
   { href: "/notifications", label: "Alerts", icon: Bell, badge: "alerts" },
   { href: "/profile", label: "Profile", icon: UserCircle2, badge: null },

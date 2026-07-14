@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, LifeBuoy,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
@@ -34,8 +35,9 @@ interface Review {
 export default function ProfilePage() {
   const u = useUser();
   const { refreshProfile, showToast } = u;
-  const { postedJobs } = useJobs();
+  const { postedJobs, profileBadgeCount } = useJobs();
   const { signOut, user } = useAuth();
+  const [alertCount, setAlertCount] = useState(0);
 
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [idv, setIdv] = useState({ verified: false, status: "none" });
@@ -59,6 +61,14 @@ export default function ProfilePage() {
     getReferralCode(user.id).then(setRefCode).catch(() => {});
     fetchReferralCount(user.id).then(setRefCount).catch(() => {});
     loadReviews();
+    // One-off unread-alert count (the realtime badge hook lives in the layout;
+    // re-subscribing here would collide on the shared channel name).
+    supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("read", false)
+      .eq("archived", false)
+      .then(({ count }) => setAlertCount(count || 0), () => {});
   }, [user, loadReviews]);
 
   const onAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,21 +148,6 @@ export default function ProfilePage() {
     );
   }
 
-  // Single, findable account menu — the destinations users actually hunt for
-  // (money, settings, schedule, saved) grouped near the top instead of buried
-  // below badges/reviews.
-  const links = [
-    { href: "/profile/payouts", label: "Payouts & payments", icon: Wallet },
-    { href: "/profile/taxes", label: "Tax Center", icon: Receipt },
-    { href: "/profile/availability", label: "Availability & schedule", icon: CalendarClock },
-    { href: "/profile/saved", label: "Saved people", icon: Heart },
-    { href: "/profile/saved-gigs", label: "Saved gigs", icon: Bookmark },
-    { href: "/verify-student", label: u.studentVerified ? "Verified Student ✓" : "Verify student status", icon: GraduationCap },
-    { href: user ? `/u/${user.id}` : "/profile", label: "View my public profile", icon: Eye },
-    { href: "/profile/settings", label: "Settings", icon: Settings },
-    { href: "/legal/terms", label: "Legal & terms", icon: FileText },
-  ];
-
   return (
     <div>
       <PageHeader
@@ -179,10 +174,16 @@ export default function ProfilePage() {
               {u.studentVerified && <GraduationCap className="size-4 text-white/90" />}
             </div>
             <div className="mt-0.5 flex items-center gap-2 text-white/85">
-              <RatingStars value={u.rating} size={14} />
-              <span className="text-sm">
-                {u.rating.toFixed(1)} · {u.reviewCount} review{u.reviewCount !== 1 ? "s" : ""}
-              </span>
+              {u.reviewCount > 0 ? (
+                <>
+                  <RatingStars value={u.rating} size={14} />
+                  <span className="text-sm">
+                    {u.rating.toFixed(1)} · {u.reviewCount} review{u.reviewCount !== 1 ? "s" : ""}
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm">No reviews yet</span>
+              )}
             </div>
             {college && <p className="mt-0.5 text-sm font-semibold text-white/90">{college}</p>}
           </div>
@@ -208,50 +209,63 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* Verify identity — the primary trust action stays a prominent card. */}
-        <button
-          onClick={verifyIdentity}
-          disabled={idv.verified}
-          className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70 disabled:opacity-100"
+        {/* Primary action — tied to the identity header above. */}
+        <Link
+          href="/profile/settings"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 font-black text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark"
         >
-          <ShieldCheck className={`size-6 ${idv.verified ? "text-success" : "text-primary"}`} />
-          <div className="flex-1">
-            <p className="font-bold text-ink">
-              {idv.verified ? "Identity verified" : idv.status === "pending" ? "Verification in progress" : "Verify your identity"}
-            </p>
-            <p className="text-xs text-ink-muted">
-              {idv.verified ? "Your profile shows a Verified badge" : "Get a Verified badge to build trust"}
-            </p>
-          </div>
-          {!idv.verified && <ChevronRight className="size-5 text-ink-muted" />}
-        </button>
+          <Settings className="size-[18px]" /> Edit Profile &amp; Settings
+        </Link>
 
-        {/* Account menu — moved up so money/settings/schedule are findable at a glance. */}
-        <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          {links.map((l) => {
-            const Icon = l.icon;
-            return (
-              <Link key={l.href} href={l.href} className="flex items-center gap-3 px-4 py-3.5 hover:bg-primary-light/40">
-                <Icon className="size-5 text-primary" />
-                <span className="flex-1 font-bold text-ink">{l.label}</span>
-                <ChevronRight className="size-4 text-ink-muted" />
-              </Link>
-            );
-          })}
-        </div>
+        <Group title="Gigs & Earnings">
+          {postedJobs.length > 0 && (
+            <Row
+              icon={Briefcase}
+              title="Manage my gigs"
+              sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? "s" : ""} attention` : "Posted gigs & booking requests"}
+              href="/hiring"
+              badge={profileBadgeCount || undefined}
+            />
+          )}
+          <Row icon={Wallet} title="Payouts & payments" sub="Manage payout & payment methods" href="/profile/payouts" />
+          <Row icon={Receipt} title="Tax Center" sub="Track expenses & export for taxes" href="/profile/taxes" />
+        </Group>
 
-        {/* Invite friends — growth action. */}
-        <button onClick={invite} className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          <Gift className="size-6 text-primary" />
-          <div className="flex-1">
-            <p className="font-bold text-ink">Invite friends</p>
-            <p className="text-xs text-ink-muted">
-              {refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · ` : ""}
-              Share your code {refCode && <span className="font-bold text-primary">{refCode}</span>}
-            </p>
-          </div>
-          <ChevronRight className="size-5 text-ink-muted" />
-        </button>
+        <Group title="Saved & Alerts">
+          <Row icon={Bell} title="Alerts" sub="Booking updates & gig matches" href="/notifications" badge={alertCount || undefined} badgeTone="primary" />
+          <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
+          <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
+        </Group>
+
+        <Group title="Profile & Trust">
+          <Row icon={Eye} title="View my public profile" sub="See exactly how others see you" href={user ? `/u/${user.id}` : "/profile"} />
+          <Row
+            icon={ShieldCheck}
+            tone={idv.verified ? "success" : "primary"}
+            title={idv.verified ? "Identity verified" : idv.status === "pending" ? "Verification in progress" : "Verify your identity"}
+            sub={idv.verified ? "Your profile shows a Verified badge" : idv.status === "pending" ? "Tap to finish or resume your ID check" : "Get a Verified badge to build trust"}
+            onClick={idv.verified ? undefined : verifyIdentity}
+            disabled={idv.verified}
+          />
+          <Row
+            icon={GraduationCap}
+            tone={u.studentVerified ? "success" : "primary"}
+            title={u.studentVerified ? "Verified Student" : "Verify student status"}
+            sub={u.studentVerified ? "Your profile shows a Verified Student badge" : "Confirm your .edu email for a badge"}
+            href={u.studentVerified ? undefined : "/verify-student"}
+            disabled={u.studentVerified}
+          />
+          <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
+        </Group>
+
+        <Group title="Grow">
+          <Row
+            icon={Gift}
+            title="Invite friends"
+            sub={refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · share your code` : "Share your referral code"}
+            onClick={invite}
+          />
+        </Group>
 
         {/* Badges */}
         <section>
@@ -318,14 +332,77 @@ export default function ProfilePage() {
           </section>
         )}
 
+        <Group title="Support & Legal">
+          <Row icon={FileText} title="Terms of Service" href="/legal/terms" />
+          <Row icon={FileText} title="Privacy Policy" href="/legal/privacy" />
+          <Row icon={FileText} title="Independent Contractor Agreement" href="/legal/contractor" />
+          <Row icon={LifeBuoy} title="Contact support" externalHref={`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`} />
+        </Group>
+
         <button onClick={() => signOut()} className={buttonClasses("outline", "md", "w-full text-urgent hover:border-urgent hover:text-urgent")}>
           <LogOut className="size-4" /> Sign out
         </button>
-
-        <div className="flex items-center justify-center gap-1.5 text-xs text-ink-muted">
-          <ShieldCheck className="size-3.5" /> Need help? <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-primary">{SUPPORT_EMAIL}</a>
-        </div>
       </PageContainer>
     </div>
   );
+}
+
+// A titled group of rows rendered as one rounded card (matches the mobile app).
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 ml-1 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</h2>
+      <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+const ROW_TONES = {
+  primary: { tile: "bg-primary-light", icon: "text-primary" },
+  success: { tile: "bg-success-light", icon: "text-success" },
+  urgent: { tile: "bg-urgent-light", icon: "text-urgent" },
+} as const;
+
+// A single row inside a Group: tinted icon tile + title/subtitle + optional
+// badge + chevron. Renders as a Link (href), plain <a> (externalHref), a button
+// (onClick), or a static div (disabled).
+function Row({
+  icon: Icon, title, sub, href, externalHref, onClick, badge, badgeTone = "urgent", tone = "primary", disabled,
+}: {
+  icon: LucideIcon;
+  title: string;
+  sub?: string;
+  href?: string;
+  externalHref?: string;
+  onClick?: () => void;
+  badge?: number;
+  badgeTone?: "urgent" | "primary";
+  tone?: keyof typeof ROW_TONES;
+  disabled?: boolean;
+}) {
+  const t = ROW_TONES[tone];
+  const content = (
+    <>
+      <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${t.tile}`}>
+        <Icon className={`size-[18px] ${t.icon}`} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-bold text-ink">{title}</span>
+        {sub && <span className="block truncate text-xs text-ink-muted">{sub}</span>}
+      </span>
+      {badge ? (
+        <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-black text-white ${badgeTone === "primary" ? "bg-primary" : "bg-urgent"}`}>
+          {badge}
+        </span>
+      ) : null}
+      {!disabled && <ChevronRight className="size-4 text-ink-muted" />}
+    </>
+  );
+  const cls = "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-primary-light/40";
+  if (disabled) return <div className={`${cls} cursor-default`}>{content}</div>;
+  if (externalHref) return <a href={externalHref} className={cls}>{content}</a>;
+  if (href) return <Link href={href} className={cls}>{content}</Link>;
+  return <button type="button" onClick={onClick} className={cls}>{content}</button>;
 }
