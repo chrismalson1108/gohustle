@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle } from "lucide-react";
+import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
 import { CATEGORY_COLORS, findProhibited } from "@gohustlr/shared";
+import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -84,6 +85,10 @@ export default function JobDetailPage() {
   const alreadyBooked = isBooked(job.id);
   const isOwnJob = job.posterId && user?.id === job.posterId;
   const currentBooking = bookings.find((b) => b.jobId === job.id);
+  // Address privacy: exact location shows only to the poster or an accepted earner.
+  const showExactAddress = canSeeExactAddress({ isPoster: !!isOwnJob, bookingStatus: currentBooking?.status });
+  const displayLocation = showExactAddress ? job.location : maskLocation(job.location);
+  const addressMasked = !showExactAddress && !String(job.location || "").toLowerCase().includes("remote");
   const jobPosterBookings = posterBookings.filter((b) => b.jobId === job.id);
   const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";
   const estPay =
@@ -169,7 +174,7 @@ export default function JobDetailPage() {
           <DollarSign className="size-4" /> {estPay}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-xl bg-canvas px-3 py-2 text-sm font-semibold text-ink-soft">
-          <MapPin className="size-4" /> {job.location}
+          <MapPin className="size-4" /> {displayLocation}
         </span>
         {RECUR_LABEL[job.recurrence] && (
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary-light px-3 py-2 text-sm font-bold text-primary">
@@ -177,6 +182,12 @@ export default function JobDetailPage() {
           </span>
         )}
       </div>
+
+      {addressMasked && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
+          <Lock className="size-3.5" /> Exact address is shared once your booking is accepted.
+        </p>
+      )}
 
       {job.tags?.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">

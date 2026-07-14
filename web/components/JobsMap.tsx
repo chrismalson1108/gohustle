@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { LatLngExpression } from "leaflet";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
 import { payLabel } from "@/lib/format";
+import { maskLocation } from "@/lib/address";
 import type { Job } from "@/lib/types";
 
 interface Props {
@@ -43,7 +44,7 @@ export default function JobsMap({ jobs, userCoords }: Props) {
                 {j.title}
               </Link>
               <div className="text-xs text-ink-soft">
-                {payLabel(j)} · {j.location}
+                {payLabel(j)} · {maskLocation(j.location)}
               </div>
             </Popup>
           </CircleMarker>

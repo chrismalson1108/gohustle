@@ -8,6 +8,7 @@ import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
 import { useJobs } from "@/lib/jobs";
 import { payLabel, classNames } from "@/lib/format";
+import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import type { Job, BookingStatus } from "@/lib/types";
 
 const BOOKING_PILL: Record<string, { label: string; Icon: typeof Clock; className: string }> = {
@@ -109,7 +110,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
           </span>
           <MapPin className="size-3.5 shrink-0 text-ink-soft" />
           <span className="truncate text-xs text-ink-soft">
-            {job.location}
+            {canSeeExactAddress({ bookingStatus }) ? job.location : maskLocation(job.location)}
             {distanceLabel ? ` · ${distanceLabel}` : ""}
           </span>
         </div>
