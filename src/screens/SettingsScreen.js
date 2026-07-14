@@ -15,6 +15,7 @@ import LocationPicker from '../components/LocationPicker';
 import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
 import { pickImage } from '../lib/uploadImage';
 import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
+import { getNotificationPrefs, saveNotificationPrefs, DEFAULT_NOTIF_PREFS, NOTIF_CATEGORIES } from '../lib/notifications';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -39,6 +40,8 @@ export default function SettingsScreen({ navigation }) {
   const [certs, setCerts] = useState([]);
   const [savingCert, setSavingCert] = useState(false);
   const [certForm, setCertForm] = useState({ title: '', issuer: '', year: '', imageUri: null });
+
+  const [notifPrefs, setNotifPrefs] = useState(DEFAULT_NOTIF_PREFS);
 
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
@@ -76,7 +79,21 @@ export default function SettingsScreen({ navigation }) {
       });
     }
     try { setCerts(await fetchCertifications(user.id)); } catch (_) {}
+    try { setNotifPrefs(await getNotificationPrefs()); } catch (_) {}
     setLoading(false);
+  };
+
+  // Per-category notification toggle (push/email). Saves immediately, optimistic.
+  const toggleNotif = (key) => async (value) => {
+    haptic.selection();
+    const next = { ...notifPrefs, [key]: value };
+    setNotifPrefs(next);
+    try {
+      await saveNotificationPrefs(next);
+    } catch (_) {
+      setNotifPrefs(notifPrefs); // revert
+      showToast({ icon: '⚠️', title: "Couldn't update", message: 'Please try again.' });
+    }
   };
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -500,6 +517,47 @@ export default function SettingsScreen({ navigation }) {
             </View>
           </Field>
 
+          <View style={styles.notifSection}>
+            <Text style={styles.fieldLabel}>Notifications</Text>
+            <Text style={styles.hintText}>
+              Choose how you hear about activity. In-app alerts always show up in your Alerts inbox regardless.
+            </Text>
+            <View style={styles.notifTable}>
+              <View style={styles.notifHeaderRow}>
+                <View style={{ flex: 1 }} />
+                <Text style={styles.notifColHead}>Push</Text>
+                <Text style={styles.notifColHead}>Email</Text>
+              </View>
+              {NOTIF_CATEGORIES.map((cat, i) => (
+                <View
+                  key={cat.key}
+                  style={[styles.notifRow, i === NOTIF_CATEGORIES.length - 1 && styles.notifRowLast]}
+                >
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.notifCatLabel}>{cat.label}</Text>
+                    <Text style={styles.notifCatHint} numberOfLines={2}>{cat.hint}</Text>
+                  </View>
+                  <View style={styles.notifCell}>
+                    <Switch
+                      value={notifPrefs[`${cat.key}_push`]}
+                      onValueChange={toggleNotif(`${cat.key}_push`)}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                  <View style={styles.notifCell}>
+                    <Switch
+                      value={notifPrefs[`${cat.key}_email`]}
+                      onValueChange={toggleNotif(`${cat.key}_email`)}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+
           <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85}>
             <LinearGradient colors={gradients.profile} style={styles.saveBtn}>
               {saving
@@ -622,6 +680,26 @@ const styles = StyleSheet.create({
   },
   availToggleTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   availToggleHint: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  notifSection: { marginBottom: 22 },
+  notifTable: {
+    marginTop: 10, backgroundColor: colors.surface, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14,
+  },
+  notifHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingBottom: 6,
+  },
+  notifColHead: {
+    width: 56, textAlign: 'center', fontSize: 11, fontWeight: '800',
+    color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  notifRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+  },
+  notifRowLast: { paddingBottom: 12 },
+  notifCell: { width: 56, alignItems: 'center' },
+  notifCatLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  notifCatHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   dangerZone: { marginTop: 36, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },

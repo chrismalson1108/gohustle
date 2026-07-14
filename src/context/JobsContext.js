@@ -487,7 +487,7 @@ export function JobsProvider({ children }) {
 
     // Notify the poster of the new request
     if (job?.posterId) {
-      notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab' });
+      notify(job.posterId, 'New booking request', `Someone wants to book "${job.title}"`, { tab: 'GigsTab', type: 'booking' });
     }
     track('booking_created', { jobId, counterOffer: !!counterOffer });
     return true;
@@ -520,7 +520,7 @@ export function JobsProvider({ children }) {
     }
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     if (posterId) {
-      notify(posterId, 'Job started', `The worker has started "${booking.job?.title || 'a gig'}".`, { tab: 'GigsTab' });
+      notify(posterId, 'Job started', `The worker has started "${booking.job?.title || 'a gig'}".`, { tab: 'GigsTab', type: 'booking' });
     }
     return true;
   };
@@ -553,7 +553,7 @@ export function JobsProvider({ children }) {
     }
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     if (posterId) {
-      notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab' });
+      notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab', type: 'booking' });
     }
   };
 
@@ -574,7 +574,7 @@ export function JobsProvider({ children }) {
       return;
     }
     if (booking?.earner?.id) {
-      notify(booking.earner.id, 'Poster confirmed completion', 'The poster marked the job done on their side.', { tab: 'EarnTab' });
+      notify(booking.earner.id, 'Poster confirmed completion', 'The poster marked the job done on their side.', { tab: 'EarnTab', type: 'booking' });
     }
   };
 
@@ -597,7 +597,7 @@ export function JobsProvider({ children }) {
     showToast({ icon: '✅', title: 'Payment released', message: "The poster didn't confirm in time, so your payment was released to you." });
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId || booking?.job?.posterId;
     if (posterId) {
-      notify(posterId, 'A gig was auto-settled', "You didn't confirm a completed gig in time, so the earner was paid the full amount.", { tab: 'GigsTab' });
+      notify(posterId, 'A gig was auto-settled', "You didn't confirm a completed gig in time, so the earner was paid the full amount.", { tab: 'GigsTab', type: 'payment' });
     }
     track('earner_claimed_payment', { bookingId });
     return true;
@@ -658,7 +658,7 @@ export function JobsProvider({ children }) {
         if (revErr) { console.warn('Poster review insert error:', revErr.message); return; }
       }
       await recomputeRatings(posterId);
-      notify(posterId, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab' });
+      notify(posterId, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab', type: 'review' });
     }
   };
 
@@ -708,7 +708,7 @@ export function JobsProvider({ children }) {
       return;
     }
     if (booking?.earner?.id) {
-      notify(booking.earner.id, 'Booking accepted!', `Your booking for "${booking.job?.title || 'a gig'}" was accepted. Get ready!`, { tab: 'EarnTab' });
+      notify(booking.earner.id, 'Booking accepted!', `Your booking for "${booking.job?.title || 'a gig'}" was accepted. Get ready!`, { tab: 'EarnTab', type: 'booking' });
     }
     track('booking_accepted', { bookingId });
   };
@@ -738,7 +738,7 @@ export function JobsProvider({ children }) {
       }
     }
     if (booking?.earner?.id) {
-      notify(booking.earner.id, 'Booking declined', `Your booking for "${booking.job?.title || 'a gig'}" wasn't accepted this time.`, { tab: 'EarnTab' });
+      notify(booking.earner.id, 'Booking declined', `Your booking for "${booking.job?.title || 'a gig'}" wasn't accepted this time.`, { tab: 'EarnTab', type: 'booking' });
     }
   };
 
@@ -803,9 +803,9 @@ export function JobsProvider({ children }) {
 
     const title = booking?.job?.title || 'a gig';
     if (isPoster && booking?.earner?.id) {
-      notify(booking.earner.id, 'Booking cancelled', `The poster cancelled "${title}".`, { tab: 'EarnTab' });
+      notify(booking.earner.id, 'Booking cancelled', `The poster cancelled "${title}".`, { tab: 'EarnTab', type: 'booking' });
     } else if (posterId) {
-      notify(posterId, 'Booking cancelled', `The earner cancelled "${title}".`, { tab: 'GigsTab' });
+      notify(posterId, 'Booking cancelled', `The earner cancelled "${title}".`, { tab: 'GigsTab', type: 'booking' });
     }
   };
 
@@ -862,9 +862,9 @@ export function JobsProvider({ children }) {
 
     if (booking?.earner?.id) {
       if (partial) {
-        notify(booking.earner.id, 'Job verified with an adjustment', `The poster reported an issue and paid ${Math.round(pct * 100)}%. ${rating}★ rating.`, { tab: 'EarnTab' });
+        notify(booking.earner.id, 'Job verified with an adjustment', `The poster reported an issue and paid ${Math.round(pct * 100)}%. ${rating}★ rating.`, { tab: 'EarnTab', type: 'payment' });
       } else {
-        notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab' });
+        notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab', type: 'payment' });
       }
     }
     track('job_verified', { rating, paymentMethod, disputed: partial });
@@ -875,7 +875,7 @@ export function JobsProvider({ children }) {
         await stripeEdge.tip(bookingId, tipCents);
         dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { tipAmount: tipCents / 100 } });
         if (booking?.earner?.id) {
-          notify(booking.earner.id, 'You got a tip!', `The poster added a $${(tipCents / 100).toFixed(2)} tip. 🎉`, { tab: 'EarnTab' });
+          notify(booking.earner.id, 'You got a tip!', `The poster added a $${(tipCents / 100).toFixed(2)} tip. 🎉`, { tab: 'EarnTab', type: 'tip' });
         }
         track('tip_sent', { tipCents });
       } catch (e) {
@@ -1142,7 +1142,7 @@ export function JobsProvider({ children }) {
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
     await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
     if (booking?.earner?.id) {
-      notify(booking.earner.id, 'Change proposed', 'The poster proposed a change to your gig — review it.', { tab: 'EarnTab' });
+      notify(booking.earner.id, 'Change proposed', 'The poster proposed a change to your gig — review it.', { tab: 'EarnTab', type: 'amendment' });
     }
   };
 
@@ -1153,7 +1153,7 @@ export function JobsProvider({ children }) {
     await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     if (posterId) {
-      notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab' });
+      notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab', type: 'amendment' });
     }
   };
 

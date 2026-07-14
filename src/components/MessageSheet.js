@@ -180,7 +180,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       setMessages(prev => prev.map(m => m.id === tempId ? data : m));
       // Notify the other party of the new message
       if (otherPerson?.id) {
-        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, { tab: 'MessagesTab' });
+        notify(otherPerson.id, data.sender?.name ? `${data.sender.name}` : 'New message', text, { tab: 'MessagesTab', type: 'message' });
       }
     }
   };
@@ -207,7 +207,7 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
       if (signed) setSignedUrls(prev => ({ ...prev, [path]: signed }));
       setMessages(prev => [...prev, data]);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-      if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', { tab: 'MessagesTab' });
+      if (otherPerson?.id) notify(otherPerson.id, data.sender?.name || 'New message', '📷 Photo', { tab: 'MessagesTab', type: 'message' });
     } catch (e) {
       Alert.alert('Failed to send photo', e.message || 'Please try again.');
     }

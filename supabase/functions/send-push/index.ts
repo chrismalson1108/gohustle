@@ -87,9 +87,44 @@ Deno.serve(async (req: Request) => {
     if (safeTab) safeData.tab = safeTab;
     if (safeJobId) safeData.jobId = safeJobId;
 
+    // Resolve the recipient's notification preferences (service role bypasses
+    // RLS). Map the event type to a user-facing category; 'system'/'update'
+    // events aren't categorized — treated as always-on push, never email.
+    // Keep DEFAULT_PREFS in sync with notification_preferences column defaults
+    // and DEFAULT_NOTIF_PREFS in src/lib/notifications.js.
+    const CATEGORY: Record<string, string | null> = {
+      booking: 'bookings', amendment: 'bookings', review: 'bookings',
+      message: 'messages',
+      payment: 'payments', tip: 'payments',
+      update: null, system: null,
+    };
+    const DEFAULT_PREFS: Record<string, boolean> = {
+      bookings_push: true, bookings_email: true,
+      messages_push: true, messages_email: false,
+      payments_push: true, payments_email: true,
+      marketing_push: true, marketing_email: false,
+    };
+    const category = CATEGORY[safeType] ?? null;
+    let prefs: Record<string, any> = DEFAULT_PREFS;
+    try {
+      const { data: prefRow } = await supabase
+        .from('notification_preferences')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (prefRow) prefs = { ...DEFAULT_PREFS, ...prefRow };
+    } catch (e) {
+      console.error('send-push: prefs lookup failed, using defaults', e);
+    }
+    // Uncategorized events always push (critical/system); email only when the
+    // recipient explicitly opted into this category's email channel.
+    const pushAllowed = category ? prefs[`${category}_push`] !== false : true;
+    const emailAllowed = category ? prefs[`${category}_email`] === true : false;
+
     // Persist an in-app alert (best-effort) so the recipient sees it in their
-    // Alerts inbox even without a push-capable device. A missing column (before
-    // the inbox migration) just logs and continues.
+    // Alerts inbox even without a push-capable device. The inbox is the passive
+    // notification center and is written regardless of push/email prefs. A
+    // missing column (before the inbox migration) just logs and continues.
     try {
       await supabase.from('notifications').insert({
         user_id: userId,
@@ -103,46 +138,81 @@ Deno.serve(async (req: Request) => {
       console.error('send-push: notification insert failed', e);
     }
 
-    const { data: rows } = await supabase
-      .from('push_tokens')
-      .select('token')
-      .eq('user_id', userId);
+    // ── OS push (Expo) — gated on the recipient's per-category push pref ──
+    let sent = 0;
+    let pruned = 0;
+    if (pushAllowed) {
+      const { data: rows } = await supabase
+        .from('push_tokens')
+        .select('token')
+        .eq('user_id', userId);
 
-    const tokens = (rows ?? [])
-      .map(r => r.token)
-      .filter((t: string) => typeof t === 'string' && t.startsWith('ExponentPushToken'));
+      const tokens = (rows ?? [])
+        .map(r => r.token)
+        .filter((t: string) => typeof t === 'string' && t.startsWith('ExponentPushToken'));
 
-    if (!tokens.length) return json({ sent: 0 });
+      if (tokens.length) {
+        const messages = tokens.map((to: string) => ({
+          to,
+          title: safeTitle,
+          body: safeBody,
+          data: safeData,
+          sound: 'default',
+          priority: 'high',
+        }));
 
-    const messages = tokens.map((to: string) => ({
-      to,
-      title: safeTitle,
-      body: safeBody,
-      data: safeData,
-      sound: 'default',
-      priority: 'high',
-    }));
+        const res = await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(messages),
+        });
+        const result = await res.json();
 
-    const res = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(messages),
-    });
-    const result = await res.json();
-
-    // Prune tokens Expo reports as no longer registered.
-    const tickets = Array.isArray(result?.data) ? result.data : [];
-    const dead: string[] = [];
-    tickets.forEach((t: any, i: number) => {
-      if (t?.status === 'error' && t?.details?.error === 'DeviceNotRegistered') {
-        dead.push(tokens[i]);
+        // Prune tokens Expo reports as no longer registered.
+        const tickets = Array.isArray(result?.data) ? result.data : [];
+        const dead: string[] = [];
+        tickets.forEach((t: any, i: number) => {
+          if (t?.status === 'error' && t?.details?.error === 'DeviceNotRegistered') {
+            dead.push(tokens[i]);
+          }
+        });
+        if (dead.length) {
+          await supabase.from('push_tokens').delete().eq('user_id', userId).in('token', dead);
+        }
+        sent = tokens.length;
+        pruned = dead.length;
       }
-    });
-    if (dead.length) {
-      await supabase.from('push_tokens').delete().eq('user_id', userId).in('token', dead);
     }
 
-    return json({ sent: tokens.length, pruned: dead.length });
+    // ── Email (Resend) — only for high-value categories the recipient opted
+    // into, and only when RESEND_API_KEY is configured. Best-effort: an email
+    // problem never fails the request (push/inbox already delivered). ──
+    let emailed = false;
+    if (emailAllowed) {
+      try {
+        const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+        if (!RESEND_API_KEY) {
+          console.error('send-push: RESEND_API_KEY unset — email skipped for', userId);
+        } else {
+          const { data: recipient } = await supabase.auth.admin.getUserById(userId);
+          const to = recipient?.user?.email;
+          if (to) {
+            const FROM = Deno.env.get('NOTIFY_FROM') || 'GoHustlr <notifications@gohustlr.com>';
+            const res = await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ from: FROM, to: [to], subject: safeTitle, html: emailHtml(safeTitle, safeBody) }),
+            });
+            emailed = res.ok;
+            if (!res.ok) console.error('send-push: resend error', await res.text().catch(() => ''));
+          }
+        }
+      } catch (e) {
+        console.error('send-push: email send failed', e);
+      }
+    }
+
+    return json({ sent, pruned, emailed, pushAllowed, emailAllowed });
   } catch (err: any) {
     console.error('send-push:', err);
     return json({ error: 'Something went wrong. Please try again.' }, 500);
@@ -154,4 +224,24 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+// Minimal branded HTML for a notification email. Caller-supplied strings are
+// already control-char-stripped and length-capped; escape for HTML safety here.
+function emailHtml(title: string, body: string): string {
+  const esc = (s: string) =>
+    String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<!doctype html><html><body style="margin:0;background:#F5F3FF;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ECE9F5;">
+    <div style="background:#6D28D9;padding:20px 24px;"><span style="color:#ffffff;font-size:20px;font-weight:800;">GoHustlr</span></div>
+    <div style="padding:24px;">
+      <h1 style="margin:0 0 8px;font-size:18px;color:#1A1523;">${esc(title)}</h1>
+      ${body ? `<p style="margin:0;font-size:15px;line-height:1.5;color:#4A4458;">${esc(body)}</p>` : ''}
+      <p style="margin:20px 0 0;font-size:13px;color:#9A93AD;">Open the GoHustlr app to respond.</p>
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #ECE9F5;">
+      <p style="margin:0;font-size:12px;color:#9A93AD;">You're receiving this because of your notification settings. Change them anytime in the app under Profile → Settings → Notifications.</p>
+    </div>
+  </div>
+</body></html>`;
 }
