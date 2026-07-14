@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead, setConversationArchived } from "@/lib/messages";
 import { notify } from "@/lib/push";
 import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
-import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
+import { submitReport, blockUserDb, REPORT_REASONS, moderateText } from "@/lib/moderation";
 import { findProhibited } from "@gohustlr/shared";
 import PageHeader, { EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
@@ -306,6 +306,12 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     // Same chat moderation as mobile — block off-platform-payment solicitation and
     // other prohibited content before it hits the DB (web previously bypassed this).
     if (findProhibited(body)) {
+      showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
+      return;
+    }
+    // Context-aware check (harassment, threats, scams a keyword list misses).
+    const mod = await moderateText(body, "message");
+    if (!mod.allowed) {
       showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
       return;
     }

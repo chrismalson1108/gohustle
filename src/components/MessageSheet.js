@@ -14,6 +14,7 @@ import { notify } from '../lib/push';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
+import { moderateText } from '../lib/moderation';
 import { markConversationRead } from '../lib/messages';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
@@ -141,6 +142,14 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
     const text = inputText.trim();
     if (!text || !bookingId || !user) return;
     if (findProhibited(text)) {
+      Alert.alert('Message blocked', "That message contains content that isn't allowed.");
+      return;
+    }
+    // Context-aware check (harassment, threats, scams a keyword list misses).
+    setSending(true);
+    const mod = await moderateText(text, 'message');
+    setSending(false);
+    if (!mod.allowed) {
       Alert.alert('Message blocked', "That message contains content that isn't allowed.");
       return;
     }

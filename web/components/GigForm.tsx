@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, ImagePlus, Lock, Zap } from "lucide-react";
 import { CATEGORIES, findProhibited } from "@gohustlr/shared";
+import { moderateText } from "@/lib/moderation";
 import { useAuth } from "@/lib/auth";
 import { uploadImages } from "@/lib/uploadImage";
 import Button from "@/components/ui/Button";
@@ -158,6 +159,12 @@ export default function GigForm({
       return;
     }
     if (findProhibited([title, description, ...tags, ...hazards].join(" "))) {
+      onError?.("Your gig contains content that isn't allowed. Please edit it.");
+      return;
+    }
+    // Context-aware check (catches intent a keyword list misses).
+    const mod = await moderateText([title, description].join("\n"), "gig");
+    if (!mod.allowed) {
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;
     }

@@ -1,5 +1,23 @@
 import { supabase } from './supabase';
 
+// Context-aware text moderation (Claude, via the moderate-text edge function).
+// Layers on top of the keyword filter (findProhibited) to catch harassment,
+// threats, grooming, scams, and banned intent phrased in clean words. Returns
+// { allowed, reason }. Fails OPEN on any error/timeout so posting and chat never
+// hang; the keyword filter + DB trigger remain the hard backstop.
+export async function moderateText(text, surface = 'text') {
+  if (!text || !String(text).trim()) return { allowed: true };
+  try {
+    const invoke = supabase.functions.invoke('moderate-text', { body: { text, surface } });
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: 'timeout' }), 6000));
+    const { data, error } = await Promise.race([invoke, timeout]);
+    if (error || !data) return { allowed: true }; // fail open
+    return { allowed: data.allowed !== false, reason: data.reason };
+  } catch (_) {
+    return { allowed: true };
+  }
+}
+
 export const REPORT_REASONS = [
   'Inappropriate content',
   'Scam or fraud',
