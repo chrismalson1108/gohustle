@@ -118,12 +118,6 @@ export default function EditJobScreen({ route, navigation }) {
       haptic.error();
       return;
     }
-    // Same rule as posting: a gig needs at least one time slot to be bookable.
-    if (form.slots.length === 0) {
-      haptic.error();
-      showToast({ icon: '🗓️', title: 'Add at least one time', message: 'Pick a day and time earners can book — gigs need a time slot to be bookable.' });
-      return;
-    }
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
@@ -159,7 +153,12 @@ export default function EditJobScreen({ route, navigation }) {
       title: form.title, category: effectiveCategory,
       pay: parseFloat(form.pay), payType: form.payType,
       location: form.location, description: form.description,
-      urgent: form.urgent, requirements: reqs, slots: form.slots,
+      // Removing every time slot falls back to a bookable "Flexible" slot (same
+      // as posting) so an edit can never strand the gig slot-less.
+      urgent: form.urgent, requirements: reqs,
+      slots: form.slots.length > 0
+        ? form.slots
+        : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }],
       photos: finalPhotos,
       recurrence: form.recurrence,
       tags: form.tags,

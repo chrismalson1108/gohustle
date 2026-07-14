@@ -90,13 +90,6 @@ export default function PostJobScreen({ navigation, route }) {
       haptic.error();
       return;
     }
-    // At least one time slot is required — booking flows around slot selection,
-    // so a slot-less gig was a dead end earners couldn't apply to.
-    if (form.slots.length === 0) {
-      haptic.error();
-      showToast({ icon: '🗓️', title: 'Add at least one time', message: 'Pick a day and time earners can book — gigs need a time slot to be bookable.' });
-      return;
-    }
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
@@ -123,7 +116,11 @@ export default function PostJobScreen({ navigation, route }) {
       return;
     }
     haptic.success();
-    const slots = form.slots;
+    // No times picked → a bookable "Flexible" slot, so the gig is never a
+    // slot-less dead end (booking flows around slot selection).
+    const slots = form.slots.length > 0
+      ? form.slots
+      : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }];
     const reqs = form.requirements
       ? form.requirements.split('\n').filter(Boolean)
       : [];
@@ -341,11 +338,16 @@ export default function PostJobScreen({ navigation, route }) {
             />
           </Field>
 
-          <Field label="Available Times *">
+          <Field label="Available Times">
             <DateTimePicker
               slots={form.slots}
               onChange={slots => set('slots', slots)}
             />
+            {form.slots.length === 0 && (
+              <Text style={styles.flexibleHint}>
+                No times picked — your gig will show "Flexible — Contact to Schedule".
+              </Text>
+            )}
           </Field>
 
           <Field label="Repeats">
@@ -374,13 +376,13 @@ export default function PostJobScreen({ navigation, route }) {
             </Text>
           </TouchableOpacity>
 
-          {(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description || form.slots.length === 0) && (
-            <Text style={styles.validationNote}>* Fill in all required fields (including a time slot) to post</Text>
+          {(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) && (
+            <Text style={styles.validationNote}>* Fill in all required fields to post</Text>
           )}
 
           <TouchableOpacity onPress={handlePost} activeOpacity={0.85} disabled={posting}>
             <LinearGradient
-              colors={(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description || form.slots.length === 0)
+              colors={(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description)
                 ? ['#C4B5FD', '#A5B4FC']
                 : gradients.primary}
               style={styles.submitBtn}
@@ -472,6 +474,7 @@ const styles = StyleSheet.create({
   urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgent },
   urgentToggleText: { fontSize: 14, fontWeight: '700', color: colors.urgent },
   validationNote: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginBottom: 10 },
+  flexibleHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, fontStyle: 'italic' },
   submitBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
   submitText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });
