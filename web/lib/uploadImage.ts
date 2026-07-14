@@ -15,6 +15,24 @@ function assertSafeImageType(file: File): void {
   }
 }
 
+// Server-side image moderation (Claude vision via the moderate-image function).
+// Runs right after an object lands in Storage. Throws a user-facing error when the
+// image violates policy (the object is deleted server-side). Fails open on
+// invocation/network errors so a moderation outage doesn't block legit uploads.
+async function moderateOrThrow(bucket: string, path: string): Promise<void> {
+  try {
+    const { data, error } = await supabase.functions.invoke("moderate-image", { body: { bucket, path } });
+    if (!error && data && (data as { allowed?: boolean }).allowed === false) {
+      const e = new Error("That image was blocked — it may violate our content policy.");
+      (e as Error & { blocked?: boolean }).blocked = true;
+      throw e;
+    }
+  } catch (e) {
+    if ((e as { blocked?: boolean })?.blocked) throw e; // re-throw genuine policy blocks
+    console.warn("moderateOrThrow:", (e as Error)?.message || e); // else fail open
+  }
+}
+
 // Upload a browser File to a public Supabase Storage bucket; returns the public URL.
 export async function uploadToBucket(file: File, bucket: string, userId: string): Promise<string> {
   assertSafeImageType(file);
@@ -26,6 +44,7 @@ export async function uploadToBucket(file: File, bucket: string, userId: string)
     contentType: file.type || "image/jpeg",
   });
   if (error) throw error;
+  await moderateOrThrow(bucket, path);
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
 
@@ -56,6 +75,7 @@ export async function uploadPrivateToBucket(file: File, bucket: string, userId: 
     contentType: file.type || "image/jpeg",
   });
   if (error) throw error;
+  await moderateOrThrow(bucket, path);
   return path;
 }
 

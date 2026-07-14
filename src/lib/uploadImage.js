@@ -66,6 +66,24 @@ export async function pickImage(opts = {}) {
   return res.canceled ? res : { canceled: false, denied: false, uri: res.uris[0] };
 }
 
+// Server-side image moderation (Claude vision via the moderate-image function).
+// Called right after an object lands in Storage. Throws a user-facing error when
+// the image violates policy (the object is deleted server-side). Fails open on
+// invocation/network errors so a moderation outage doesn't block legit uploads.
+async function moderateOrThrow(bucket, path) {
+  try {
+    const { data, error } = await supabase.functions.invoke('moderate-image', { body: { bucket, path } });
+    if (!error && data && data.allowed === false) {
+      const e = new Error('That image was blocked — it may violate our content policy.');
+      e.blocked = true;
+      throw e;
+    }
+  } catch (e) {
+    if (e?.blocked) throw e; // re-throw genuine policy blocks
+    console.warn('moderateOrThrow:', e?.message || e); // else fail open
+  }
+}
+
 // Compress/resize a local image and upload it to `bucket` under "<userId>/...".
 // Returns the public URL.
 export async function uploadImage({ uri, bucket, userId, maxWidth = 1024, compress = 0.7 }) {
@@ -83,6 +101,7 @@ export async function uploadImage({ uri, bucket, userId, maxWidth = 1024, compre
     upsert: false,
   });
   if (error) throw error;
+  await moderateOrThrow(bucket, path);
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;
 }
@@ -104,6 +123,7 @@ export async function uploadPrivateImage({ uri, bucket, userId, maxWidth = 1280,
     upsert: false,
   });
   if (error) throw error;
+  await moderateOrThrow(bucket, path);
   return path;
 }
 
