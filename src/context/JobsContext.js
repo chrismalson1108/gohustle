@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
-import { fetchBlockedIds, blockUserDb } from '../lib/moderation';
+import { fetchBlockedIds, blockUserDb, logModerationBlock } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
@@ -616,7 +616,9 @@ export function JobsProvider({ children }) {
   const ratePoster = async (bookingId, { rating, reviewText }) => {
     // Reviews publish to a public profile — run the same content filter every other
     // free-text field uses (it was wired everywhere BUT reviews).
-    if (reviewText && findProhibited(reviewText)) {
+    const reviewTerm = reviewText && findProhibited(reviewText);
+    if (reviewTerm) {
+      logModerationBlock(reviewTerm, 'review', reviewText);
       showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
       return;
     }
@@ -814,7 +816,9 @@ export function JobsProvider({ children }) {
 
     // Block a prohibited review BEFORE moving any money — the review publishes to the
     // earner's public profile, so it must pass the same filter as every other field.
-    if (reviewText && findProhibited(reviewText)) {
+    const reviewTerm = reviewText && findProhibited(reviewText);
+    if (reviewTerm) {
+      logModerationBlock(reviewTerm, 'review', reviewText);
       showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
       return;
     }

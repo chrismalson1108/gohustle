@@ -14,7 +14,7 @@ import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
-import { moderateText } from '../lib/moderation';
+import { moderateText, logModerationBlock } from '../lib/moderation';
 import { notify } from '../lib/push';
 import { colors, gradients } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -90,7 +90,9 @@ export default function PostJobScreen({ navigation, route }) {
       haptic.error();
       return;
     }
-    if (findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '))) {
+    const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
+    if (kwTerm) {
+      logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
       haptic.error();
       showToast({ icon: '⚠️', title: 'Check your wording', message: "Your gig contains content that isn't allowed. Please edit it." });
       return;

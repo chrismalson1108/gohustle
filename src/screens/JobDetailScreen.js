@@ -18,6 +18,7 @@ import { CATEGORY_COLORS } from '../data/mockData';
 import MessageSheet from '../components/MessageSheet';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
+import { logModerationBlock } from '../lib/moderation';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 
 const STATUS_CONTENT = {
@@ -108,7 +109,9 @@ export default function JobDetailScreen({ route, navigation }) {
     const slot = job.slots?.find(s => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
     const note = applicationNote.trim() || null;
-    if (note && findProhibited(note)) {
+    const noteTerm = note && findProhibited(note);
+    if (noteTerm) {
+      logModerationBlock(noteTerm, 'note', note);
       haptic.error();
       showToast({ icon: '⚠️', title: 'Check your wording', message: "Your note contains content that isn't allowed. Please edit it." });
       return;

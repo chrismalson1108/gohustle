@@ -3,6 +3,7 @@
 import { supabase } from "./supabaseClient";
 import { uploadToBucket } from "./uploadImage";
 import { findProhibited } from "@gohustlr/shared";
+import { logModerationBlock } from "./moderation";
 
 export interface Certification {
   id: string;
@@ -40,7 +41,9 @@ export async function addCertification({
 }: AddCertificationInput): Promise<Certification> {
   // These render on the public profile, so apply the same content filter the rest of
   // the app uses for user-visible free text.
-  if (findProhibited(`${title || ""} ${issuer || ""}`)) {
+  const certTerm = findProhibited(`${title || ""} ${issuer || ""}`);
+  if (certTerm) {
+    logModerationBlock(certTerm, "cert", `${title || ""} ${issuer || ""}`);
     throw new Error("That text isn't allowed — please edit the title or issuer.");
   }
   let image_url: string | null = null;

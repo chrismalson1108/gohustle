@@ -8,7 +8,7 @@ import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
-import { REPORT_REASONS, submitReport } from "@/lib/moderation";
+import { REPORT_REASONS, submitReport, logModerationBlock } from "@/lib/moderation";
 import { SERVICE_FEE_PCT } from "@/lib/config";
 import { PageContainer, EmptyState } from "@/components/PageHeader";
 import PosterTrustCard from "@/components/PosterTrustCard";
@@ -105,7 +105,9 @@ export default function JobDetailPage() {
   const handleBook = async () => {
     if (!selectedSlot && hasAvailableSlot) return;
     const note = applicationNote.trim() || null;
-    if (note && findProhibited(note)) {
+    const noteTerm = note && findProhibited(note);
+    if (noteTerm) {
+      logModerationBlock(noteTerm, "note", note);
       showToast({ icon: "⚠️", title: "Check your wording", message: "Your note contains content that isn't allowed. Please edit it." });
       return;
     }

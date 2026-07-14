@@ -18,6 +18,15 @@ export async function moderateText(text, surface = 'text') {
   }
 }
 
+// Fire-and-forget: record a client-detected keyword block in the admin Moderation
+// queue (so keyword blocks are visible too, not just Claude/image blocks). Never
+// throws — it must not break or slow the submit flow.
+export function logModerationBlock(term, surface = 'text', snippet = '') {
+  try {
+    supabase.functions.invoke('log-moderation', { body: { term, surface, snippet } }).catch(() => {});
+  } catch (_) { /* ignore */ }
+}
+
 export const REPORT_REASONS = [
   'Inappropriate content',
   'Scam or fraud',

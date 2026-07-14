@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, ImagePlus, Lock, Zap } from "lucide-react";
 import { CATEGORIES, findProhibited } from "@gohustlr/shared";
-import { moderateText } from "@/lib/moderation";
+import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { useAuth } from "@/lib/auth";
 import { uploadImages } from "@/lib/uploadImage";
 import Button from "@/components/ui/Button";
@@ -158,7 +158,9 @@ export default function GigForm({
       onError?.(!payValid && pay ? "Enter a valid pay amount." : "Please fill in all required fields.");
       return;
     }
-    if (findProhibited([title, description, ...tags, ...hazards].join(" "))) {
+    const kwTerm = findProhibited([title, description, ...tags, ...hazards].join(" "));
+    if (kwTerm) {
+      logModerationBlock(kwTerm, "gig", `${title} ${description}`);
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;
     }

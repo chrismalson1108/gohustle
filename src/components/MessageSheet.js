@@ -14,7 +14,7 @@ import { notify } from '../lib/push';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
-import { moderateText } from '../lib/moderation';
+import { moderateText, logModerationBlock } from '../lib/moderation';
 import { markConversationRead } from '../lib/messages';
 
 export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson, onClose }) {
@@ -141,7 +141,9 @@ export default function MessageSheet({ visible, bookingId, jobTitle, otherPerson
   const sendMessage = async () => {
     const text = inputText.trim();
     if (!text || !bookingId || !user) return;
-    if (findProhibited(text)) {
+    const kwTerm = findProhibited(text);
+    if (kwTerm) {
+      logModerationBlock(kwTerm, 'message', text);
       Alert.alert('Message blocked', "That message contains content that isn't allowed.");
       return;
     }
