@@ -72,7 +72,12 @@ export async function pickImage(opts = {}) {
 // invocation/network errors so a moderation outage doesn't block legit uploads.
 async function moderateOrThrow(bucket, path) {
   try {
-    const { data, error } = await supabase.functions.invoke('moderate-image', { body: { bucket, path } });
+    // Race the invoke against a timeout so a stalled Claude-vision call can't hang
+    // the whole upload (chat send, mark-done photos, gig posting). A timeout resolves
+    // as an error → we fail open, matching moderateText() and this file's design.
+    const invoke = supabase.functions.invoke('moderate-image', { body: { bucket, path } });
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: 'timeout' }), 8000));
+    const { data, error } = await Promise.race([invoke, timeout]);
     if (!error && data && data.allowed === false) {
       const e = new Error('That image was blocked — it may violate our content policy.');
       e.blocked = true;

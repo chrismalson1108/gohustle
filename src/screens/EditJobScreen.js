@@ -118,6 +118,15 @@ export default function EditJobScreen({ route, navigation }) {
       haptic.error();
       return;
     }
+    // Pay must be a real, positive amount — '0'/'-5' pass the truthiness check above
+    // but would desync the gig from its escrow hold. Guard before submit. (When pay
+    // is locked the field is uneditable, so this only bites a genuine edit.)
+    const pay = parseFloat(form.pay);
+    if (!Number.isFinite(pay) || pay <= 0 || pay > 10000) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: 'Pay must be more than $0 and no more than $10,000.' });
+      return;
+    }
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
@@ -147,29 +156,42 @@ export default function EditJobScreen({ route, navigation }) {
       showToast({ icon: '⚠️', title: 'Photo upload failed', message: e.message || 'Please try again.' });
       return;
     }
-    haptic.success();
     const reqs = form.requirements ? form.requirements.split('\n').filter(Boolean) : [];
-    await updateJob(jobId, {
-      title: form.title, category: effectiveCategory,
-      pay: parseFloat(form.pay), payType: form.payType,
-      location: form.location, description: form.description,
-      // Removing every time slot falls back to a bookable "Flexible" slot (same
-      // as posting) so an edit can never strand the gig slot-less.
-      urgent: form.urgent, requirements: reqs,
-      slots: form.slots.length > 0
-        ? form.slots
-        : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }],
-      photos: finalPhotos,
-      recurrence: form.recurrence,
-      tags: form.tags,
-      hazards: form.hazards,
-      lat: coords?.lat ?? null,
-      lng: coords?.lng ?? null,
-    });
+    // Gate success on the actual write: updateJob rejects (throws / returns false)
+    // when the DB refuses the edit — e.g. guard_jobs_write locking core terms after
+    // a booking confirmed between screen load and save. Never claim "Gig Updated!"
+    // in that case. (Mirrors PostJobScreen's addJob handling.)
+    try {
+      const ok = await updateJob(jobId, {
+        title: form.title, category: effectiveCategory,
+        pay, payType: form.payType,
+        location: form.location, description: form.description,
+        // Removing every time slot falls back to a bookable "Flexible" slot (same
+        // as posting) so an edit can never strand the gig slot-less.
+        urgent: form.urgent, requirements: reqs,
+        slots: form.slots.length > 0
+          ? form.slots
+          : [{ id: 's1', label: 'Flexible — Contact to Schedule', taken: false }],
+        photos: finalPhotos,
+        recurrence: form.recurrence,
+        tags: form.tags,
+        hazards: form.hazards,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+      });
+      if (ok === false) throw new Error('update-rejected');
+    } catch (e) {
+      setSaving(false);
+      haptic.error();
+      const msg = e?.message && e.message !== 'update-rejected' ? e.message : 'Please try again.';
+      showToast({ icon: '⚠️', title: "Couldn't save changes", message: msg });
+      return;
+    }
     if (amendmentAccepted && lockedBooking) {
       await clearAmendment(lockedBooking.id);
     }
     setSaving(false);
+    haptic.success();
     showToast({ icon: '✏️', title: 'Gig Updated!', message: 'Your changes are live.' });
     navigation.goBack();
   };

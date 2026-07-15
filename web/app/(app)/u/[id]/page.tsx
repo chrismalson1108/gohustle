@@ -21,6 +21,7 @@ import Button, { buttonClasses } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames, money, payLabel } from "@/lib/format";
+import { maskLocation } from "@/lib/address";
 
 interface PubProfile {
   id: string;
@@ -423,7 +424,7 @@ export default function PublicProfilePage() {
                 <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="min-w-0">
                     <p className="truncate font-bold text-ink">{j.title}</p>
-                    <p className="text-xs text-ink-muted">{j.category} · {j.location}</p>
+                    <p className="text-xs text-ink-muted">{j.category} · {maskLocation(j.location)}</p>
                   </div>
                   <span className="shrink-0 font-bold text-success">{payLabel({ pay: j.pay, payType: j.pay_type })}</span>
                 </Link>

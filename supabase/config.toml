@@ -21,18 +21,19 @@ verify_jwt = false
 [functions.stripe-connect-return]
 verify_jwt = false
 
-# support-submit — public website Contact form (no JWT).
-# support-reply / support-ai-draft — called by the admin console server, which
-#   authenticates with the service-role key in x-admin-secret (not a user JWT),
-#   so the gateway JWT check must be off; the functions verify the secret themselves.
+# support-submit — public website Contact form (no JWT), so the gateway JWT check
+#   must be off; the function has no per-user auth.
 [functions.support-submit]
 verify_jwt = false
 
-[functions.support-reply]
-verify_jwt = false
-
-[functions.support-ai-draft]
-verify_jwt = false
+# support-reply / support-ai-draft are intentionally NOT listed here. The admin
+#   console calls them with the signed-in admin's Supabase USER JWT (see
+#   admin/app/(console)/support/actions.ts callEdge — Authorization: Bearer
+#   <admin session token>), and each function validates that token + admin_users
+#   membership + AAL2/MFA in-function (isAdminCaller). Like every other
+#   JWT-authenticated function they keep the default verify_jwt = true, so the
+#   gateway also rejects any unauthenticated request before the function runs.
+#   (There is no x-admin-secret / service-role-header mechanism — that never existed.)
 
 # safety-alert — invoked by the reports AFTER INSERT trigger via pg_net with the
 #   x-safety-secret shared secret (SAFETY_ALERT_SECRET), never a user JWT, so the

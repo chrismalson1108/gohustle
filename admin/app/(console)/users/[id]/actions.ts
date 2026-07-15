@@ -271,7 +271,13 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
         emailed = res.ok;
       }
     }
-    return { title, emailed: alsoEmail ? emailed : undefined };
+    // The in-app notification is saved by here; only the optional email leg can still
+    // fail. Don't report the default "Done." in that case — the admin would believe a
+    // suspension explanation / safety notice was emailed when it never sent.
+    const __message = alsoEmail && !emailed
+      ? "Notification saved, but the email failed to send (check Resend)."
+      : undefined;
+    return { title, emailed: alsoEmail ? emailed : undefined, __message };
   });
 }
 

@@ -23,6 +23,15 @@ import { colors, gradients, shadows } from '../theme';
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
 const PAST_STATUSES    = new Set(['verified', 'declined', 'cancelled']);
 
+// Bump cooldown: a gig can only jump to the top of Browse once per 24h, so a poster
+// can't pin their listings above every organic one by tapping Bump on a timer.
+const BUMP_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const bumpCooldownRemaining = (job) => {
+  if (!job?.bumpedAt) return 0;
+  const elapsed = Date.now() - new Date(job.bumpedAt).getTime();
+  return Number.isFinite(elapsed) ? Math.max(0, BUMP_COOLDOWN_MS - elapsed) : 0;
+};
+
 // Applicant sort options for a gig's request list.
 const APPLICANT_SORTS = [
   { id: 'newest', label: 'Newest' },
@@ -41,6 +50,20 @@ function sortApplicants(reqs, job, sortBy) {
   else if (sortBy === 'rating') copy.sort((a, b) => (b.earner?.rating ?? 0) - (a.earner?.rating ?? 0));
   else if (sortBy === 'fit')    copy.sort((a, b) => skillFitScore(job, b.earner?.skills) - skillFitScore(job, a.earner?.skills));
   return copy;
+}
+
+// Alert.alert is a no-op on Expo web, so a destructive confirm dialog silently does
+// nothing there (the action can never fire). Fall back to window.confirm on web; keep
+// the native two-button Alert everywhere else so behavior is unchanged on device.
+function confirmDestructive({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm }) {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: cancelLabel, style: 'cancel' },
+    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+  ]);
 }
 
 export default function GigsScreen({ navigation }) {
@@ -124,23 +147,17 @@ export default function GigsScreen({ navigation }) {
     const bookings = bookingsByJob[job.id] || [];
     const activeBookings = bookings.filter(b => ['pending', 'confirmed', 'completed'].includes(b.status));
     if (activeBookings.length > 0) {
-      Alert.alert(
-        'Cannot Delete',
-        'This gig has active or unverified bookings. Decline pending requests and verify any completed work before deleting.',
-      );
+      // showToast (not Alert) so the guard notice is visible on web too, where
+      // Alert.alert is a no-op.
+      showToast({ icon: '⚠️', title: 'Cannot delete', message: 'This gig has active or unverified bookings. Decline pending requests and verify any completed work before deleting.' });
       return;
     }
-    Alert.alert(
-      'Delete Gig?',
-      `"${job.title}" will be removed from Browse and no one can book it.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: () => { haptic.medium(); deleteJob(job.id); },
-        },
-      ],
-    );
+    confirmDestructive({
+      title: 'Delete Gig?',
+      message: `"${job.title}" will be removed from Browse and no one can book it.`,
+      confirmLabel: 'Delete',
+      onConfirm: () => { haptic.medium(); deleteJob(job.id); },
+    });
   };
 
   const handleAccept = async (bookingId) => {
@@ -204,23 +221,23 @@ export default function GigsScreen({ navigation }) {
     const message = fee > 0
       ? `Cancelling now applies a cancellation fee of $${fee} to the worker. This releases the payment hold and notifies them.`
       : 'This cancels the confirmed gig and releases the payment hold. The earner will be notified.';
-    Alert.alert(
-      'Cancel this booking?',
+    confirmDestructive({
+      title: 'Cancel this booking?',
       message,
-      [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: 'Cancel gig', style: 'destructive',
-          onPress: async () => {
-            haptic.medium();
-            setLoadingId(booking.id);
-            await cancelBooking(booking.id);
-            setLoadingId(null);
-            showToast({ icon: '❌', title: 'Booking cancelled', message: fee > 0 ? `A $${fee} cancellation fee was recorded.` : 'The payment hold was released.' });
-          },
-        },
-      ]
-    );
+      confirmLabel: 'Cancel gig',
+      cancelLabel: 'Keep',
+      onConfirm: async () => {
+        haptic.medium();
+        setLoadingId(booking.id);
+        // Gate on the real result — cancelBooking refuses (returns false) when the
+        // booking can't be cancelled and emits its own failure toast. Don't claim
+        // the hold was released / a fee recorded if nothing was cancelled.
+        const ok = await cancelBooking(booking.id);
+        setLoadingId(null);
+        if (ok === false) { haptic.error(); return; }
+        showToast({ icon: '❌', title: 'Booking cancelled', message: fee > 0 ? `A $${fee} cancellation fee was recorded.` : 'The payment hold was released.' });
+      },
+    });
   };
 
   const handleMarkDone = async (booking) => {
@@ -248,7 +265,11 @@ export default function GigsScreen({ navigation }) {
 
   const handleProposeAmendment = async () => {
     if (!amendTarget || !amendNote.trim()) return;
-    await proposeAmendment(amendTarget.bookingId, amendNote.trim());
+    // Gate on the real write — proposeAmendment returns false when the note is blocked
+    // by the content filter or the DB rejects it, and surfaces its own specific toast
+    // (mirrors ratePoster), so don't show a generic message that would mask the reason.
+    const ok = await proposeAmendment(amendTarget.bookingId, amendNote.trim());
+    if (ok === false) { haptic.error(); return; }
     showToast({ icon: '📝', title: 'Change Proposed', message: `${amendTarget.earnerName} will be notified to approve or decline.` });
     setAmendTarget(null);
     setAmendNote('');
@@ -366,10 +387,19 @@ export default function GigsScreen({ navigation }) {
                 ) : (
                   <View style={styles.jobActions}>
                     <TouchableOpacity
-                      style={styles.editBtn}
-                      onPress={() => {
+                      style={[styles.editBtn, bumpCooldownRemaining(job) > 0 && styles.editBtnDim]}
+                      onPress={async () => {
+                        const remaining = bumpCooldownRemaining(job);
+                        if (remaining > 0) {
+                          haptic.error();
+                          const hrs = Math.ceil(remaining / (60 * 60 * 1000));
+                          showToast({ icon: '⏳', title: 'Already bumped', message: `You can bump this gig again in about ${hrs}h.` });
+                          return;
+                        }
                         haptic.light();
-                        bumpJob(job.id);
+                        // Gate success on the real write — bumpJob returns false on failure.
+                        const ok = await bumpJob(job.id);
+                        if (ok === false) { haptic.error(); showToast({ icon: '⚠️', title: "Couldn't bump", message: 'Please try again.' }); return; }
                         showToast({ icon: '🚀', title: 'Bumped!', message: 'Your gig jumped to the top of Browse.' });
                       }}
                     >
@@ -833,6 +863,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center',
     borderWidth: 1, borderColor: colors.primary + '40',
   },
+  editBtnDim: { opacity: 0.5 },
   editBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   deleteBtn: {
     flexBasis: '45%', flexGrow: 1, flexDirection: 'row', justifyContent: 'center',

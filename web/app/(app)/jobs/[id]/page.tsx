@@ -100,7 +100,10 @@ export default function JobDetailPage() {
     job.payType === "hourly"
       ? `${payLabel(job)} · ~${money(job.pay * job.estimatedHours)} estimated`
       : `${money(job.pay)} flat rate`;
-  const hasAvailableSlot = job.slots?.some((s) => !s.taken);
+  // A slot is bookable only if it isn't taken and isn't already in the past (matches
+  // the SlotPicker's past-slot filter) — otherwise the CTA would gate on stale slots.
+  const nowMs = new Date().getTime();
+  const hasAvailableSlot = job.slots?.some((s) => !s.taken && (!s.startsAt || Date.parse(s.startsAt) > nowMs));
 
   const baseRate = counterPrice ? parseFloat(counterPrice) || job.pay : job.pay;
   const gross = job.payType === "hourly" ? baseRate * (job.estimatedHours || 1) : baseRate;
@@ -191,7 +194,7 @@ export default function JobDetailPage() {
 
       {addressMasked && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
-          <Lock className="size-3.5" /> Exact address is shared once your booking is accepted.
+          <Lock className="size-3.5" /> The poster shares the exact address once your booking is accepted.
         </p>
       )}
 

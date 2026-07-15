@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Image, Alert, ActivityIndicator,
+  StyleSheet, TextInput, Image, Modal, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { supabase } from '../lib/supabase';
 import { maskLocation, canSeeExactAddress } from '../lib/address';
 import { colors, shadows } from '../theme';
 import { CATEGORY_COLORS } from '../data/mockData';
@@ -63,10 +64,29 @@ export default function JobDetailScreen({ route, navigation }) {
     return () => { active = false; };
   }, [jobId, listJob, fetchTried]);
 
+  // The Browse/Earn/Gigs feed no longer joins reviews(*) (bounded payload), so a job
+  // opened from a list arrives with reviews:[]. Load this job's reviews directly on
+  // mount so the detail view still shows them, shaped like transformJob's reviews.
+  const [jobReviews, setJobReviews] = useState(null);
+  React.useEffect(() => {
+    let active = true;
+    supabase.from('reviews')
+      .select('id, author, rating, text, date')
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (active) setJobReviews((data || []).map(r => ({
+          id: r.id, author: r.author, rating: Number(r.rating), text: r.text, date: r.date,
+        })));
+      });
+    return () => { active = false; };
+  }, [jobId]);
+
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
   const [applicationNote, setApplicationNote] = useState('');
   const [msgVisible, setMsgVisible] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const alreadyBooked = isBooked(jobId);
   const isOwnJob = job?.posterId && user?.id && job.posterId === user.id;
   const currentBooking = bookings.find(b => b.jobId === jobId);
@@ -91,23 +111,27 @@ export default function JobDetailScreen({ route, navigation }) {
   const displayLocation = showExactAddress ? job.location : maskLocation(job.location);
   const addressMasked = !showExactAddress && displayLocation !== job.location;
 
+  // Prefer reviews loaded on demand; fall back to whatever came with the job (the
+  // fetchJobById path still embeds them) until the direct load resolves.
+  const displayReviews = jobReviews ?? job.reviews ?? [];
+
   const catColor = CATEGORY_COLORS[job.category] || colors.primary;
   const estPay = job.payType === 'hourly'
     ? `$${job.pay}/hr · ~$${job.pay * job.estimatedHours} estimated`
     : `$${job.pay} flat rate`;
 
-  const handleReportGig = () => {
-    const buttons = REPORT_REASONS.map(reason => ({
-      text: reason,
-      onPress: async () => {
-        try {
-          await submitReport({ reporterId: user.id, reportedUserId: job.posterId, jobId: job.id, reason });
-          Alert.alert('Report submitted', 'Thanks — our team will review this gig.');
-        } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
-      },
-    }));
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert('Report this gig', 'Why are you reporting it?', buttons);
+  // A custom reason sheet — NOT Alert.alert, which caps at 3 buttons on Android and
+  // would silently drop most of the 5 report reasons (same bug the chat report flow
+  // hit and fixed with a modal).
+  const handleReportGig = () => { haptic.light(); setReportOpen(true); };
+  const doReportGig = async (reason) => {
+    setReportOpen(false);
+    try {
+      await submitReport({ reporterId: user.id, reportedUserId: job.posterId, jobId: job.id, reason });
+      showToast({ icon: '🚩', title: 'Report submitted', message: 'Thanks — our team will review this gig.' });
+    } catch (e) {
+      showToast({ icon: '⚠️', title: "Couldn't submit", message: e.message || 'Please try again.' });
+    }
   };
 
   const handleBook = async () => {
@@ -212,7 +236,7 @@ export default function JobDetailScreen({ route, navigation }) {
         {addressMasked && (
           <View style={styles.addressHint}>
             <Ionicons name="lock-closed-outline" size={13} color={colors.textMuted} style={{ marginRight: 6 }} />
-            <Text style={styles.addressHintText}>Exact address is shared once your booking is accepted.</Text>
+            <Text style={styles.addressHintText}>The full address is shown here after the poster accepts your booking.</Text>
           </View>
         )}
 
@@ -369,9 +393,9 @@ export default function JobDetailScreen({ route, navigation }) {
           </Section>
         )}
 
-        {job.reviews?.length > 0 && (
-          <Section title={`Reviews (${job.reviews.length})`}>
-            {job.reviews.map(r => (
+        {displayReviews.length > 0 && (
+          <Section title={`Reviews (${displayReviews.length})`}>
+            {displayReviews.map(r => (
               <View key={r.id} style={styles.reviewCard}>
                 <View style={styles.reviewHeader}>
                   <Text style={styles.reviewAuthor}>{r.author}</Text>
@@ -473,6 +497,19 @@ export default function JobDetailScreen({ route, navigation }) {
         otherPerson={{ id: job.posterId, name: job.poster?.name, avatarInitial: job.poster?.avatarInitial, avatarUrl: job.poster?.avatarUrl }}
         onClose={() => setMsgVisible(false)}
       />
+
+      <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setReportOpen(false)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Report this gig</Text>
+            {REPORT_REASONS.map((r) => (
+              <TouchableOpacity key={r} style={styles.sheetItem} onPress={() => doReportGig(r)}>
+                <Text style={styles.sheetText}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -487,6 +524,11 @@ function Section({ title, children }) {
 }
 
 const styles = StyleSheet.create({
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 12, paddingBottom: 28 },
+  sheetTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, padding: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12 },
+  sheetText: { fontSize: 15.5, fontWeight: '700', color: colors.textPrimary },
   container: { flex: 1, backgroundColor: '#fff' },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 },
   urgentBanner: {

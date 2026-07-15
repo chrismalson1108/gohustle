@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
-  ChevronDown, Star, Clock, AlertCircle, Car, Target, Pencil,
+  ChevronDown, Star, Clock, AlertCircle, Car, Target, Pencil, DollarSign,
 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -24,7 +24,7 @@ import { uploadPrivateImages } from "@/lib/uploadImage";
 import SignedPhotoStrip from "@/components/SignedPhotoStrip";
 import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
-import { computeEarnerInsights } from "@gohustlr/shared";
+import { computeEarnerInsights, canClaimEarnerPayment } from "@gohustlr/shared";
 import type { Booking, BookingStatus } from "@/lib/types";
 
 // Lifecycle buckets — mirror of mobile EarnScreen so web/mobile stay in parity.
@@ -46,7 +46,7 @@ const needsAction = (b: Booking) =>
   (b.status === "verified" && !b.posterRating);
 
 export default function MyJobsPage() {
-  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, getPayoutStatus, bookingsLoading } = useJobs();
+  const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, claimEarnerPayment, getPayoutStatus, bookingsLoading } = useJobs();
   const { earningsToday, earningsWeek, earningsTotal, challenges, showToast, updateChallenge, profileStatus } = useUser();
   const { user } = useAuth();
 
@@ -76,6 +76,8 @@ export default function MyJobsPage() {
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [trackBooking, setTrackBooking] = useState<Booking | null>(null);
+  // H3: earner claim-payment escalation (poster ghosted a finished job past the grace window).
+  const [claimBooking, setClaimBooking] = useState<Booking | null>(null);
 
   // Per-gig logged total (mileage + expenses) for the "$X tracked" chip.
   const [trackedByBooking, setTrackedByBooking] = useState<Record<string, number>>({});
@@ -176,6 +178,16 @@ export default function MyJobsPage() {
     if (ok) showToast({ icon: "🚀", title: "You're on the clock", message: "The poster has been notified that you started." });
   };
 
+  // H3: release the full held payment to the earner after the poster ghosts. The
+  // edge function re-checks every gate authoritatively; claimEarnerPayment toasts on failure.
+  const submitClaim = async () => {
+    if (!claimBooking) return;
+    setBusy(true);
+    await claimEarnerPayment(claimBooking.id);
+    setBusy(false);
+    setClaimBooking(null);
+  };
+
   const respondAmend = async (b: Booking, accept: boolean) => {
     await respondToAmendment(b.id, accept);
     showToast(
@@ -239,6 +251,21 @@ export default function MyJobsPage() {
     );
   };
 
+  // H3 escalation CTA — only offered once canClaimEarnerPayment is satisfied (earner
+  // did + marked the work, still confirmed/completed, and the grace window has passed).
+  // The server re-verifies every condition before releasing any money.
+  function ClaimCta({ b }: { b: Booking }) {
+    if (!canClaimEarnerPayment(b)) return null;
+    return (
+      <div className="mt-3">
+        <Button fullWidth onClick={() => setClaimBooking(b)}>
+          <DollarSign className="size-4" /> Claim your payment
+        </Button>
+        <p className="mt-1.5 text-xs text-ink-muted">The poster hasn&apos;t confirmed in time — release the full payment to yourself.</p>
+      </div>
+    );
+  }
+
   // The single, state-derived primary action + demoted secondary controls for a gig.
   function GigActions({ b }: { b: Booking }) {
     if (b.status === "pending") {
@@ -289,21 +316,28 @@ export default function MyJobsPage() {
       );
     }
 
-    // Passive waiting states — earner has nothing to do; de-emphasize.
+    // Passive waiting states — earner has nothing to do; de-emphasize. Once the poster
+    // ghosts past the grace window, the claim-payment escalation appears (H3).
     if (b.status === "confirmed" && b.earnerDone && !b.posterDone) {
       return (
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-ink-muted">You marked done — waiting for the poster to confirm.</span>
-          <MessageBtn bookingId={b.id} />
-        </div>
+        <>
+          <ClaimCta b={b} />
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-ink-muted">You marked done — waiting for the poster to confirm.</span>
+            <MessageBtn bookingId={b.id} />
+          </div>
+        </>
       );
     }
     if (b.status === "completed") {
       return (
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-ink-muted">Waiting for the poster to verify &amp; pay.</span>
-          <MessageBtn bookingId={b.id} />
-        </div>
+        <>
+          <ClaimCta b={b} />
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-ink-muted">Waiting for the poster to verify &amp; pay.</span>
+            <MessageBtn bookingId={b.id} />
+          </div>
+        </>
       );
     }
     return null;
@@ -609,6 +643,22 @@ export default function MyJobsPage() {
       </PageContainer>
 
       <TrackExpensesModal booking={trackBooking} onClose={() => setTrackBooking(null)} onSaved={loadTracked} />
+
+      <Modal
+        open={!!claimBooking}
+        onClose={() => setClaimBooking(null)}
+        title="Claim your payment?"
+        size="sm"
+        footer={
+          <Button fullWidth size="lg" loading={busy} onClick={submitClaim}>
+            <DollarSign className="size-4" /> Claim payment
+          </Button>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          The poster hasn&apos;t confirmed this finished job in time. You can release the full payment to yourself now.
+        </p>
+      </Modal>
 
       <Modal
         open={!!rateBooking}

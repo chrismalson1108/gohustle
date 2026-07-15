@@ -12,6 +12,8 @@ import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { colors, gradients } from '../theme';
 import LocationPicker from '../components/LocationPicker';
+import DobPicker, { composeDob } from '../components/DobPicker';
+import { parseDob, isAdult, MIN_AGE } from '../lib/age';
 import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
 import { pickImage } from '../lib/uploadImage';
 import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
@@ -40,12 +42,19 @@ export default function SettingsScreen({ navigation }) {
   const [savingCert, setSavingCert] = useState(false);
   const [certForm, setCertForm] = useState({ title: '', issuer: '', year: '', imageUri: null });
 
+  // Legacy DOB backfill (C08): pre-cutoff testers signed up before the onboarding DOB
+  // step existed, so date_of_birth is NULL. Offer a write-once field to set it (18+);
+  // once set the DB guard (guard_profiles_write) makes it read-only. New signups already
+  // collect it at onboarding, so this only serves that pre-cutoff cohort.
+  const [existingDob, setExistingDob] = useState(null); // ISO 'YYYY-MM-DD' or null
+  const [dobError, setDobError] = useState('');
 
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
     city: '', role: 'earner', skills: [], radiusMiles: 25, skillRates: {},
     school: '', major: '', degreeType: '', classStanding: '', gradYear: '',
     showAvailability: false,
+    dob: { month: null, day: null, year: null },
   });
 
   useEffect(() => {
@@ -55,10 +64,11 @@ export default function SettingsScreen({ navigation }) {
   const loadProfile = async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
+      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability, date_of_birth')
       .eq('id', user.id)
       .single();
     if (data) {
+      setExistingDob(data.date_of_birth || null);
       setForm({
         name: data.name || '',
         username: data.username || '',
@@ -74,6 +84,7 @@ export default function SettingsScreen({ navigation }) {
         classStanding: data.class_standing || '',
         gradYear: data.grad_year ? String(data.grad_year) : '',
         showAvailability: data.show_availability === true,
+        dob: { month: null, day: null, year: null },
       });
     }
     try { setCerts(await fetchCertifications(user.id)); } catch (_) {}
@@ -180,6 +191,18 @@ export default function SettingsScreen({ navigation }) {
     Keyboard.dismiss();
     const ok = await checkUsername();
     if (!ok) return;
+    // Write-once DOB backfill: only when not already set. If the user entered one, it
+    // must parse and be 18+; leaving it blank is allowed (pre-cutoff grace stays intact).
+    let dobIso = null;
+    if (!existingDob) {
+      const composed = composeDob(form.dob);
+      if (composed) {
+        dobIso = parseDob(composed);
+        if (!dobIso) { setDobError('Enter a valid date of birth.'); return; }
+        if (!isAdult(dobIso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return; }
+      }
+      setDobError('');
+    }
     setSaving(true);
     haptic.success();
     const avatarInitial = form.name?.trim().charAt(0).toUpperCase() || 'H';
@@ -202,12 +225,14 @@ export default function SettingsScreen({ navigation }) {
       degree_type: form.degreeType || null,
       class_standing: form.classStanding || null,
       grad_year: form.gradYear ? parseInt(form.gradYear, 10) || null : null,
+      ...(dobIso ? { date_of_birth: dobIso } : {}),
     }).eq('id', user.id);
     setSaving(false);
     if (error) {
       showToast({ icon: '❌', title: 'Save Failed', message: error.message || 'Could not save your profile. Please try again.' });
       return;
     }
+    if (dobIso) setExistingDob(dobIso); // now write-once locked
     setRole(form.role);
     await refreshProfile();
     showToast({ icon: '✅', title: 'Profile Updated!', message: 'Your settings have been saved.' });
@@ -315,6 +340,28 @@ export default function SettingsScreen({ navigation }) {
               onChange={v => set('city', v)}
               placeholder="Your city or 'Remote'"
             />
+          </Field>
+
+          <Field label="Date of birth">
+            {existingDob ? (
+              <>
+                <View style={styles.dobReadonly}>
+                  <Ionicons name="lock-closed" size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
+                  <Text style={styles.dobReadonlyText}>{formatDob(existingDob)}</Text>
+                </View>
+                <Text style={styles.hintText}>Your date of birth is set and can't be changed.</Text>
+              </>
+            ) : (
+              <>
+                <DobPicker
+                  value={form.dob}
+                  onChange={v => { set('dob', v); setDobError(''); }}
+                  error={!!dobError}
+                />
+                {dobError ? <Text style={styles.errorText}>{dobError}</Text> : null}
+                <Text style={styles.hintText}>You must be {MIN_AGE}+ to use GoHustlr. This is saved once and can't be changed later.</Text>
+              </>
+            )}
           </Field>
 
           <SectionHeader>Education</SectionHeader>
@@ -534,6 +581,14 @@ export default function SettingsScreen({ navigation }) {
   );
 }
 
+// Format a stored 'YYYY-MM-DD' DOB for the read-only display (parsed at noon UTC to
+// avoid a timezone rollback to the previous day).
+function formatDob(iso) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 function Field({ label, children }) {
   return (
     <View style={styles.field}>
@@ -577,6 +632,12 @@ const styles = StyleSheet.create({
     fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border,
   },
   inputError: { borderColor: colors.urgent },
+  dobReadonly: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  dobReadonlyText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
   textArea: { minHeight: 80, lineHeight: 22 },
   errorText: { color: colors.urgent, fontSize: 12, fontWeight: '600', marginTop: 4 },
   hintText: { fontSize: 12, color: colors.textMuted, marginTop: 4 },

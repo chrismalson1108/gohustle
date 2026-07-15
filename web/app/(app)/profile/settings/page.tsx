@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Trash2, Plus, X } from "lucide-react";
-import { CLASS_STANDINGS, DEGREE_TYPES } from "@gohustlr/shared";
+import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -16,13 +16,14 @@ import {
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
-import { Input, Textarea, Label } from "@/components/ui/Field";
+import { Input, Textarea, Label, Select } from "@/components/ui/Field";
 import LocationPicker from "@/components/LocationPicker";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
 
 const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const ROLES = [
   { id: "earner", label: "Earn" },
   { id: "poster", label: "Post jobs" },
@@ -65,6 +66,16 @@ export default function SettingsPage() {
   const [certModalOpen, setCertModalOpen] = useState(false);
   const [savingCert, setSavingCert] = useState(false);
   const [cert, setCert] = useState({ title: "", issuer: "", year: "", file: null as File | null });
+  // One-time 18+ DOB backfill for legacy accounts created before the age floor.
+  // Once a DOB exists it is write-once (server guard pins it), so we lock the field.
+  const [dobLocked, setDobLocked] = useState(false);
+  const [dobM, setDobM] = useState("");
+  const [dobD, setDobD] = useState("");
+  const [dobY, setDobY] = useState("");
+  const [dobError, setDobError] = useState("");
+  const dob = dobM && dobD && dobY ? `${dobM}/${dobD}/${dobY}` : "";
+  const dobDayCount = new Date(Number(dobY) || 2000, Number(dobM) || 12, 0).getDate();
+  const dobYears = Array.from({ length: new Date().getFullYear() - 1920 + 1 }, (_, i) => new Date().getFullYear() - i);
   const [f, setF] = useState({
     name: "", username: "", bio: "", city: "", role: "earner" as "earner" | "poster" | "both",
     skills: [] as string[], radiusMiles: 25, skillRates: {} as Record<string, string>,
@@ -78,10 +89,13 @@ export default function SettingsPage() {
     (async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability")
+        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability, date_of_birth")
         .eq("id", user.id)
         .single();
       if (data) {
+        // A legacy account may have no DOB yet — offer the one-time backfill; if it's
+        // already set, keep the field locked/omitted (write-once).
+        setDobLocked(!!data.date_of_birth);
         setF({
           name: data.name || "", username: data.username || "", bio: data.bio || "", city: data.city || "",
           role: data.role || "earner", skills: data.skills || [], radiusMiles: data.radius_miles || 25,
@@ -170,10 +184,20 @@ export default function SettingsPage() {
   const save = async () => {
     if (!user) return;
     if (!(await checkUsername())) return;
+    // One-time 18+ DOB backfill (write-once — the server guard pins it once set). Only
+    // validate/write when the account has no DOB yet and the user filled it in here.
+    let dobIso: string | null = null;
+    if (!dobLocked && dob) {
+      dobIso = parseDob(dob);
+      if (!dobIso) { setDobError("Select a valid date of birth."); return; }
+      if (!isAdult(dobIso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return; }
+      setDobError("");
+    }
     setSaving(true);
     const { error } = await supabase
       .from("profiles")
       .update({
+        ...(dobIso ? { date_of_birth: dobIso } : {}),
         name: f.name,
         avatar_initial: f.name?.trim().charAt(0).toUpperCase() || "H",
         username: f.username.trim().toLowerCase() || null,
@@ -258,6 +282,52 @@ export default function SettingsPage() {
             <Label>Location</Label>
             <LocationPicker value={f.city} onChange={(label) => set("city", label)} placeholder="Your city or 'Remote'" />
           </div>
+
+          {!dobLocked && (
+            <div>
+              <Label>Date of birth</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={dobM}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    setDobM(m);
+                    setDobError("");
+                    // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
+                    if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
+                  }}
+                  aria-label="Month"
+                  className="flex-[1.6]"
+                >
+                  <option value="">Month</option>
+                  {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                </Select>
+                <Select value={dobD} onChange={(e) => { setDobD(e.target.value); setDobError(""); }} aria-label="Day" className="flex-1">
+                  <option value="">Day</option>
+                  {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+                </Select>
+                <Select
+                  value={dobY}
+                  onChange={(e) => {
+                    const y = e.target.value;
+                    setDobY(y);
+                    setDobError("");
+                    if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
+                  }}
+                  aria-label="Year"
+                  className="flex-[1.2]"
+                >
+                  <option value="">Year</option>
+                  {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </Select>
+              </div>
+              {dobError ? (
+                <p className="mt-1 text-sm font-medium text-urgent">{dobError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-ink-muted">You must be {MIN_AGE}+ to use GoHustlr. This can only be set once.</p>
+              )}
+            </div>
+          )}
 
           {showEarnerFields && (
             <>

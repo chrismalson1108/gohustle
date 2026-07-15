@@ -44,6 +44,28 @@ Deno.serve(async (req: Request) => {
       return json({ allowed: true, skipped: 'no_key' });
     }
 
+    // Per-user rate limit (cost guard) — caps Storage egress + Anthropic vision
+    // calls so a scripted loop (e.g. re-scanning one self-uploaded image forever)
+    // can't run up the bill. Service-role table (moderation_rate); mirrors the
+    // assistant_rate pattern. Best-effort — fail open if the table is missing, but
+    // log LOUDLY so a missing cap is surfaced in monitoring. 20/min and 500/day.
+    try {
+      await supabase.from('moderation_rate').insert({ user_id: user.id });
+      const sinceMin = new Date(Date.now() - 60_000).toISOString();
+      const sinceDay = new Date(Date.now() - 86_400_000).toISOString();
+      const [{ count: perMin }, { count: perDay }] = await Promise.all([
+        supabase.from('moderation_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceMin),
+        supabase.from('moderation_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceDay),
+      ]);
+      if ((perMin ?? 0) > 20 || (perDay ?? 0) > 500) {
+        return json({ error: 'rate_limited' }, 429);
+      }
+      // Opportunistic cleanup so the table stays bounded per active user.
+      supabase.from('moderation_rate').delete().eq('user_id', user.id).lt('created_at', sinceDay).then(() => {}, () => {});
+    } catch (e) {
+      console.error('moderate-image: rate-limit check unavailable (cap NOT enforced):', e);
+    }
+
     // Download the uploaded object.
     const { data: blob, error: dlErr } = await supabase.storage.from(bucket).download(path);
     if (dlErr || !blob) {

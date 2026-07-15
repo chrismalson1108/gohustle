@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, status, earner_id, earner_done, starts_at, job:jobs!bookings_job_id_fkey(poster_id)')
+      .select('id, status, earner_id, earner_done, slot_id, job:jobs!bookings_job_id_fkey(poster_id)')
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
@@ -57,12 +57,21 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'NOT_CLAIMABLE', message: 'This booking is already finalized.' }, 409);
     }
 
-    // Ghosting gate: the scheduled time must be > GRACE_DAYS in the past. (Bookings
-    // with no scheduled slot can't be auto-claimed — route those to support.)
-    if (!booking.starts_at) {
+    // Ghosting gate: the scheduled time must be > GRACE_DAYS in the past. Derive it
+    // from the POSTER-OWNED job_slots row (via booking.slot_id) — NEVER from
+    // bookings.starts_at, which the earner can PATCH on their own booking row and
+    // thereby fast-forward this gate to drain the hold for a future gig never
+    // performed. (Bookings with no scheduled slot can't be auto-claimed — route those
+    // to support.)
+    if (!booking.slot_id) {
       return json({ error: 'NO_SCHEDULE', message: 'This booking has no scheduled time — contact support to settle it.' }, 409);
     }
-    const eligibleAt = new Date(new Date(booking.starts_at).getTime() + GRACE_MS);
+    const { data: slot } = await supabase
+      .from('job_slots').select('starts_at').eq('id', booking.slot_id).single();
+    if (!slot?.starts_at) {
+      return json({ error: 'NO_SCHEDULE', message: 'This booking has no scheduled time — contact support to settle it.' }, 409);
+    }
+    const eligibleAt = new Date(new Date(slot.starts_at).getTime() + GRACE_MS);
     if (Date.now() < eligibleAt.getTime()) {
       return json({
         error: 'TOO_EARLY',
@@ -71,21 +80,44 @@ Deno.serve(async (req: Request) => {
     }
 
     // Never settle over an active dispute or an unresolved safety/moderation report.
-    const { data: dispute } = await supabase
-      .from('disputes').select('id').eq('booking_id', bookingId).maybeSingle();
-    if (dispute) return json({ error: 'DISPUTE_OPEN', message: 'This booking has an open dispute and can\'t be auto-settled.' }, 409);
-    const { data: openReport } = await supabase
-      .from('reports').select('id').eq('booking_id', bookingId).is('resolved_at', null).maybeSingle();
-    if (openReport) return json({ error: 'UNDER_REVIEW', message: 'This booking is under review and can\'t be auto-settled yet.' }, 409);
+    // Use fail-CLOSED count queries: a single-row .maybeSingle() ERRORS when 2+ rows
+    // match (e.g. an earner files junk reports on their own booking to force the
+    // multi-row error and slip past a genuine open report), and that error was
+    // previously swallowed so the gate failed OPEN. Block when the count is > 0 OR the
+    // query errored at all.
+    const { count: disputeCount, error: disputeErr } = await supabase
+      .from('disputes').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId);
+    if (disputeErr || (disputeCount ?? 1) > 0) {
+      return json({ error: 'DISPUTE_OPEN', message: 'This booking has an open dispute and can\'t be auto-settled.' }, 409);
+    }
+    // Count ONLY genuine user safety reports/disputes — EXCLUDE source='auto' rows.
+    // Auto-moderation files content-scan flags (reports lockdown migration
+    // 20260715010000) as source='auto'; a content-moderation flag must NOT permanently
+    // block a legitimate ghosting PAYOUT for work actually performed. Still fail-CLOSED
+    // on query error and still block on any real user report.
+    const { count: reportCount, error: reportErr } = await supabase
+      .from('reports').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId).neq('source', 'auto').is('resolved_at', null);
+    if (reportErr || (reportCount ?? 1) > 0) {
+      return json({ error: 'UNDER_REVIEW', message: 'This booking is under review and can\'t be auto-settled yet.' }, 409);
+    }
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at')
       .eq('booking_id', bookingId)
       .single();
     if (pErr || !payment) return json({ error: 'NO_PAYMENT', message: 'No escrow hold found for this booking.' }, 404);
     if (payment.status === 'cancelled' || payment.status === 'failed') {
       return json({ error: 'HOLD_EXPIRED', message: 'The card hold already expired. Contact the poster or support to re-place a hold.' }, 409);
+    }
+    // Belt-and-suspenders: the escrow authorization ITSELF must have aged past the
+    // grace window. Even if the scheduled time somehow reads as past, a hold placed
+    // moments ago can never be instantly claimed.
+    if (!payment.created_at || Date.now() < new Date(payment.created_at).getTime() + GRACE_MS) {
+      return json({
+        error: 'TOO_EARLY',
+        message: `You can claim payment ${GRACE_DAYS} days after the scheduled time if the poster hasn't confirmed.`,
+      }, 409);
     }
 
     // The earner's payout account must still be live (mirrors stripe-capture-payment).
@@ -95,15 +127,6 @@ Deno.serve(async (req: Request) => {
       if (!earnerAcct?.onboarded) {
         return json({ error: 'EARNER_PAYOUTS_DISABLED', message: 'Your payout account is not active. Re-verify it, then claim again.' }, 409);
       }
-    }
-
-    // Advance a ghosted booking to 'completed' (service role bypasses the write guard).
-    if (booking.status !== 'completed') {
-      await supabase.from('bookings').update({
-        poster_done: true,
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      }).eq('id', bookingId);
     }
 
     // Capture the FULL hold if Stripe still shows it uncaptured, then settle from
@@ -148,8 +171,14 @@ Deno.serve(async (req: Request) => {
     // Credit the earner exactly once (single conditional UPDATE inside the RPC).
     await supabase.rpc('credit_earnings', { p_payment_id: payment.id });
 
-    // Close the lifecycle: settled without a poster rating (none was given).
-    await supabase.from('bookings').update({ status: 'verified' }).eq('id', bookingId);
+    // Close the lifecycle: settled without a poster rating (none was given). Advance
+    // poster_done + completed_at + status to 'verified' ONLY here — after a confirmed
+    // non-zero capture and the credit_earnings call — so a failed capture
+    // (CAPTURE_FAILED above) can never leave a booking falsely showing
+    // 'completed'/poster_done=true with no money moved.
+    const finalUpdate: Record<string, unknown> = { status: 'verified', poster_done: true };
+    if (booking.status !== 'completed') finalUpdate.completed_at = new Date().toISOString();
+    await supabase.from('bookings').update(finalUpdate).eq('id', bookingId);
 
     return json({ success: true });
   } catch (err) {

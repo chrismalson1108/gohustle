@@ -77,6 +77,14 @@ export function isUnread(
   return new Date(lastMsg.created_at).getTime() > new Date(state.last_read_at).getTime();
 }
 
+// Hub filter (H2): hide a conversation whose other party I've blocked. The server
+// also stops blocked users from messaging/booking (see the block_enforcement
+// migration); this is the UI half so my inbox doesn't keep showing them.
+export function notBlocked(convo: { otherId?: string | null }, blockedIds?: Set<string>): boolean {
+  if (!blockedIds || !convo?.otherId) return true;
+  return !blockedIds.has(convo.otherId);
+}
+
 export function previewText(m?: LastMessage | null): string {
   if (!m) return "";
   if (m.image_url && !m.text) return "📷 Photo";

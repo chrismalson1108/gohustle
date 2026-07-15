@@ -92,10 +92,19 @@ Deno.serve(async (req: Request) => {
     // events aren't categorized — treated as always-on push, never email.
     // Keep DEFAULT_PREFS in sync with notification_preferences column defaults
     // and DEFAULT_NOTIF_PREFS in src/lib/notifications.js.
+    // NOTE (marketing / "News & tips"): notification_preferences persists
+    // marketing_push/marketing_email and both clients render a working toggle, but
+    // no notification type currently resolves to the 'marketing' category, so the
+    // preference is inert today. If a marketing/news blast is ever sent, its type
+    // MUST be added to KNOWN_TYPES *and* mapped to 'marketing' here so this switch
+    // enforces the user's opt-out by construction — never send marketing through a
+    // path that skips this map (a CAN-SPAM trap). The 'marketing' entry below makes
+    // that wiring correct the moment such a type is whitelisted.
     const CATEGORY: Record<string, string | null> = {
       booking: 'bookings', amendment: 'bookings', review: 'bookings',
       message: 'messages',
       payment: 'payments', tip: 'payments',
+      marketing: 'marketing',
       update: null, system: null,
     };
     const DEFAULT_PREFS: Record<string, boolean> = {
@@ -103,6 +112,21 @@ Deno.serve(async (req: Request) => {
       messages_push: true, messages_email: false,
       payments_push: true, payments_email: true,
       marketing_push: true, marketing_email: false,
+    };
+    // SERVER-DEFINED email templates keyed on the whitelisted notification type.
+    // The branded email (platform domain) NEVER interpolates the caller-supplied
+    // title/body — those flow only to push + the in-app inbox. This closes the
+    // phishing vector where a booking counterparty could put an arbitrary subject
+    // ("Your payout failed") + lookalike-URL body into mail from gohustlr.com.
+    // Emails are deliberately generic ("there's an update, open the app"); the
+    // real detail lives behind the login. A type with no template gets no email.
+    const EMAIL_TEMPLATES: Record<string, { subject: string; heading: string; body: string }> = {
+      booking: { subject: 'Update on your GoHustlr booking', heading: 'You have a booking update', body: 'There’s a new update on one of your bookings. Open the GoHustlr app to see the details and respond.' },
+      amendment: { subject: 'A booking change needs your attention', heading: 'A booking amendment', body: 'Someone proposed or responded to a change on one of your bookings. Open the GoHustlr app to review it.' },
+      review: { subject: 'You have a new review on GoHustlr', heading: 'New review', body: 'Someone left you a new review. Open the GoHustlr app to see it.' },
+      message: { subject: 'You have a new message on GoHustlr', heading: 'New message', body: 'You have a new message waiting. Open the GoHustlr app to read and reply.' },
+      payment: { subject: 'A payment update on GoHustlr', heading: 'Payment update', body: 'There’s an update related to a payment on your account. Open the GoHustlr app for details.' },
+      tip: { subject: 'You received a tip on GoHustlr', heading: 'You got a tip', body: 'Someone sent you a tip on GoHustlr. Open the app to see the details.' },
     };
     const category = CATEGORY[safeType] ?? null;
     let prefs: Record<string, any> = DEFAULT_PREFS;
@@ -185,30 +209,65 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Email (Resend) — only for high-value categories the recipient opted
-    // into, and only when RESEND_API_KEY is configured. Best-effort: an email
-    // problem never fails the request (push/inbox already delivered). ──
+    // into, and only when RESEND_API_KEY is configured. Subject + body come from
+    // the SERVER-DEFINED EMAIL_TEMPLATES (never the caller's strings), so the
+    // branded email can't be turned into a phishing message. Best-effort: an
+    // email problem never fails the request (push/inbox already delivered). ──
     let emailed = false;
-    if (emailAllowed) {
+    const template = EMAIL_TEMPLATES[safeType];
+    if (emailAllowed && template) {
+      // Per-(caller→recipient) email throttle. The push cap above is per-caller and
+      // push-only; without this a booking counterparty could loop this endpoint to
+      // email-bomb the other party through the branded transactional path. Cap at
+      // EMAIL_CAP_PER_HR branded emails/hour to a given recipient, keyed on a UUID
+      // DERIVED from (caller, recipient) so the ledger row never collides with the
+      // real per-caller push counts above (a derived key can at worst make throttling
+      // slightly stricter — never weaker). Reuses the push_send_rate ledger (insert +
+      // windowed count + opportunistic cleanup). Fail-OPEN if the ledger is missing
+      // (house convention) but log loudly so a missing cap surfaces in monitoring.
+      const EMAIL_CAP_PER_HR = 5;
+      let emailThrottled = false;
       try {
-        const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-        if (!RESEND_API_KEY) {
-          console.error('send-push: RESEND_API_KEY unset — email skipped for', userId);
-        } else {
-          const { data: recipient } = await supabase.auth.admin.getUserById(userId);
-          const to = recipient?.user?.email;
-          if (to) {
-            const FROM = Deno.env.get('NOTIFY_FROM') || 'GoHustlr <notifications@gohustlr.com>';
-            const res = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ from: FROM, to: [to], subject: safeTitle, html: emailHtml(safeTitle, safeBody) }),
-            });
-            emailed = res.ok;
-            if (!res.ok) console.error('send-push: resend error', await res.text().catch(() => ''));
-          }
+        const emailKey = await deriveKey(user.id, userId, 'email');
+        await supabase.from('push_send_rate').insert({ user_id: emailKey });
+        const sinceHr = new Date(Date.now() - 3_600_000).toISOString();
+        const { count } = await supabase
+          .from('push_send_rate')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', emailKey)
+          .gte('created_at', sinceHr);
+        if ((count ?? 0) > EMAIL_CAP_PER_HR) {
+          emailThrottled = true;
+          console.error('send-push: email throttled (hourly cap reached) for recipient', userId);
         }
+        // Opportunistic cleanup so the derived-key rows stay bounded.
+        supabase.from('push_send_rate').delete().eq('user_id', emailKey)
+          .lt('created_at', new Date(Date.now() - 3_600_000).toISOString()).then(() => {}, () => {});
       } catch (e) {
-        console.error('send-push: email send failed', e);
+        console.error('send-push: email throttle check unavailable (cap NOT enforced):', e);
+      }
+      if (!emailThrottled) {
+        try {
+          const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+          if (!RESEND_API_KEY) {
+            console.error('send-push: RESEND_API_KEY unset — email skipped for', userId);
+          } else {
+            const { data: recipient } = await supabase.auth.admin.getUserById(userId);
+            const to = recipient?.user?.email;
+            if (to) {
+              const FROM = Deno.env.get('NOTIFY_FROM') || 'GoHustlr <notifications@gohustlr.com>';
+              const res = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from: FROM, to: [to], subject: template.subject, html: emailHtml(template.heading, template.body) }),
+              });
+              emailed = res.ok;
+              if (!res.ok) console.error('send-push: resend error', await res.text().catch(() => ''));
+            }
+          }
+        } catch (e) {
+          console.error('send-push: email send failed', e);
+        }
       }
     }
 
@@ -224,6 +283,15 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+// Deterministic UUID-format key derived from parts (SHA-256 → first 16 bytes).
+// Used to namespace the per-(caller→recipient) email throttle inside the
+// push_send_rate ledger so its rows never collide with real per-caller push counts.
+async function deriveKey(...parts: string[]): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('|')));
+  const b = [...new Uint8Array(digest).slice(0, 16)].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${b.slice(0, 8)}-${b.slice(8, 12)}-${b.slice(12, 16)}-${b.slice(16, 20)}-${b.slice(20, 32)}`;
 }
 
 // Minimal branded HTML for a notification email. Caller-supplied strings are

@@ -47,6 +47,28 @@ Deno.serve(async (req: Request) => {
       return json({ allowed: true, skipped: 'no_key' });
     }
 
+    // Per-user rate limit (cost guard) — caps Anthropic calls so a scripted loop
+    // can't run up the moderation bill or trip the fail-open branch platform-wide.
+    // Service-role table (moderation_rate); mirrors the assistant_rate pattern.
+    // Best-effort — fail open if the table is missing, but log LOUDLY so a missing
+    // cap is surfaced in monitoring, not hidden. 20/min and 500/day per user.
+    try {
+      await supabase.from('moderation_rate').insert({ user_id: user.id });
+      const sinceMin = new Date(Date.now() - 60_000).toISOString();
+      const sinceDay = new Date(Date.now() - 86_400_000).toISOString();
+      const [{ count: perMin }, { count: perDay }] = await Promise.all([
+        supabase.from('moderation_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceMin),
+        supabase.from('moderation_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceDay),
+      ]);
+      if ((perMin ?? 0) > 20 || (perDay ?? 0) > 500) {
+        return json({ error: 'rate_limited' }, 429);
+      }
+      // Opportunistic cleanup so the table stays bounded per active user.
+      supabase.from('moderation_rate').delete().eq('user_id', user.id).lt('created_at', sinceDay).then(() => {}, () => {});
+    } catch (e) {
+      console.error('moderate-text: rate-limit check unavailable (cap NOT enforced):', e);
+    }
+
     let verdict = { allow: true, categories: [] as string[], reason: '' };
     try {
       const res = await fetch(ANTHROPIC_URL, {
@@ -104,12 +126,25 @@ Deno.serve(async (req: Request) => {
     // Blocked (content is NOT written by the client). File an auto-report so the
     // admin queue can spot users probing the filter, with a short snippet.
     try {
+      // Membership check: only deep-link the admin report to a booking the caller
+      // is actually a party to (earner or the gig's poster), so a known/leaked
+      // booking UUID can't steer "view conversation" to a stranger's DMs.
+      let safeBookingId: string | null = null;
+      if (bookingId) {
+        const { data: bk } = await supabase
+          .from('bookings')
+          .select('earner_id, jobs!bookings_job_id_fkey!inner(poster_id)')
+          .eq('id', bookingId)
+          .maybeSingle();
+        const posterId = (bk as any)?.jobs?.poster_id;
+        if (bk && ((bk as any).earner_id === user.id || posterId === user.id)) safeBookingId = bookingId;
+      }
       const cats = verdict.categories.length ? verdict.categories.join(', ') : 'policy violation';
       const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 160);
       await supabase.from('reports').insert({
         reporter_id: user.id,
         reported_user_id: user.id,
-        booking_id: bookingId,
+        booking_id: safeBookingId,
         reason: 'Auto-moderation: unsafe text blocked',
         details: `Blocked ${surface} text (${cats}). "${snippet}"` + (verdict.reason ? ` — ${verdict.reason}` : ''),
         source: 'auto',

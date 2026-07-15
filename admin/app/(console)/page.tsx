@@ -32,8 +32,12 @@ export default async function DashboardPage() {
   const { data: m, error } = await ctx.service.rpc("admin_dashboard_metrics");
   const metrics = (m ?? {}) as Metrics;
 
-  // Recent signups + recent admin activity, in parallel.
-  const [recentUsers, recentAudit] = await Promise.all([
+  // The admin_dashboard_metrics RPC's reports_total counts ALL reports ever filed
+  // (no resolved_at filter, includes machine-filed source='auto' rows), so it never
+  // drops on resolve and is inflated by auto-moderation. Count OPEN genuine reports
+  // directly instead — unresolved (resolved_at IS NULL) and not auto-filed — matching
+  // the reports_open_idx partial index the moderation queue triages against.
+  const [recentUsers, recentAudit, openReportsRes] = await Promise.all([
     ctx.service
       .from("profiles")
       .select("id, name, username, created_at, verified, suspended_at")
@@ -46,7 +50,13 @@ export default async function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] as { id: number; action: string; target_id: string | null; created_at: string }[] }),
+    ctx.service
+      .from("reports")
+      .select("id", { count: "exact", head: true })
+      .is("resolved_at", null)
+      .neq("source", "auto"),
   ]);
+  const openReports = openReportsRes.count ?? 0;
 
   return (
     <div className="space-y-6">
@@ -58,10 +68,10 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Open reports"
-          value={metrics.reports_total ?? 0}
+          value={openReports}
           sub={`${metrics.reports_7d ?? 0} in last 7d`}
           href="/moderation"
-          tone={metrics.reports_total ? "red" : undefined}
+          tone={openReports ? "red" : undefined}
         />
         <StatCard
           label="Disputes"

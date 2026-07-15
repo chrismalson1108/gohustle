@@ -121,6 +121,19 @@ export default function OnboardingScreen({ onComplete }) {
     Keyboard.dismiss();
     setSaving(true);
     setFinishError('');
+    // Record acceptance of the current legal docs FIRST, and BLOCK on failure — the
+    // account must not be marked onboarded until acceptance is durably stored (it is
+    // the legal audit source of truth). recordAcceptances is idempotent, so retrying
+    // after a later error is safe. Mirrors the web onboarding's fail-closed posture.
+    // (email signups also consented at signup; OAuth signups consented via the
+    // checkbox on this screen.)
+    try {
+      await recordAcceptances(user.id, await fetchCurrentDocs());
+    } catch (_) {
+      setSaving(false);
+      setFinishError("Couldn't record your agreement to the terms — check your connection and try again.");
+      return;
+    }
     const { error } = await supabase.from('profiles').update({
       username: form.username.trim().toLowerCase(),
       date_of_birth: parseDob(composeDob(form.dob)),
@@ -145,9 +158,6 @@ export default function OnboardingScreen({ onComplete }) {
       }
       return;
     }
-    // Record acceptance of the current legal docs (email signups consented at
-    // signup; OAuth signups consented via the checkbox on this screen).
-    try { await recordAcceptances(user.id, await fetchCurrentDocs()); } catch (_) {}
     // Ensure a referral code exists + record who referred this user (from signup).
     try {
       await getReferralCode(user.id);

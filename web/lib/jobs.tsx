@@ -14,7 +14,7 @@ import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
 import { stripeEdge } from "./edge";
 import { notify } from "./push";
-import { fetchBlockedIds, blockUserDb } from "./moderation";
+import { fetchBlockedIds, blockUserDb, logModerationBlock } from "./moderation";
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from "./savedJobs";
 import { fetchLastMessages, fetchConversationState, isUnread } from "./messages";
 import { track, captureError } from "./analytics";
@@ -164,6 +164,7 @@ interface JobsValue extends State {
   cancelBooking: (bookingId: string) => Promise<void>;
   cancellationFeeFor: (bookingId: string) => number;
   startJob: (bookingId: string) => Promise<boolean>;
+  claimEarnerPayment: (bookingId: string) => Promise<boolean>;
   blockUser: (blockedId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
   markJobComplete: (bookingId: string, completionPhotos?: string[] | null, beforePhotos?: string[] | null) => Promise<boolean>;
@@ -544,7 +545,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (slotId) await supabase.from("job_slots").update({ taken: true }).eq("id", slotId);
     await loadBookings();
     if (job?.posterId)
-      notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab" });
+      notify(job.posterId, "New booking request", `Someone wants to book "${job.title}"`, { tab: "GigsTab", type: "booking" });
     track("booking_created", { jobId, counterOffer: !!counterOffer });
     return true;
   };
@@ -571,7 +572,35 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
-    if (posterId) notify(posterId, "Job started", `The worker has started "${booking.job?.title || "a gig"}".`, { tab: "GigsTab" });
+    if (posterId) notify(posterId, "Job started", `The worker has started "${booking.job?.title || "a gig"}".`, { tab: "GigsTab", type: "booking" });
+    return true;
+  };
+
+  // H3 (poster-ghosting-hold-expiry): after the poster ghosts, let the earner release
+  // the full held payment to themselves. Server-authorized (earner-claim-payment
+  // re-checks the grace window, no-open-dispute/report, and payout-account gates); this
+  // is the thin client wrapper + optimistic UI. Mirrors mobile's claimEarnerPayment.
+  const claimEarnerPayment: JobsValue["claimEarnerPayment"] = async (bookingId) => {
+    const booking = state.bookings.find((b) => b.id === bookingId);
+    try {
+      await stripeEdge.claimEarnerPayment(bookingId);
+    } catch (err) {
+      showToast({ icon: "⚠️", title: "Couldn't claim payment", message: (err as Error).message || "Please try again." });
+      return false;
+    }
+    dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "verified", posterDone: true } });
+    showToast({ icon: "✅", title: "Payment released", message: "The poster didn't confirm in time, so your payment was released to you." });
+    // The ghosting-poster case is exactly when the gig may be soft-cancelled (absent
+    // from state.jobs) and the thin booking.job embed never carries posterId — so look
+    // it up directly (mirrors ratePoster) instead of an always-undefined fallback.
+    let posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
+    if (!posterId && booking?.jobId) {
+      const { data: jobRow } = await supabase.from("jobs").select("poster_id").eq("id", booking.jobId).single();
+      posterId = jobRow?.poster_id;
+    }
+    if (posterId)
+      notify(posterId, "A gig was auto-settled", "You didn't confirm a completed gig in time, so the earner was paid the full amount.", { tab: "GigsTab", type: "payment" });
+    track("earner_claimed_payment", { bookingId });
     return true;
   };
 
@@ -602,7 +631,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
-    if (posterId) notify(posterId, "Job marked done", "The earner says the job is finished — verify and rate them.", { tab: "GigsTab" });
+    if (posterId) notify(posterId, "Job marked done", "The earner says the job is finished — verify and rate them.", { tab: "GigsTab", type: "booking" });
     return true;
   };
 
@@ -625,7 +654,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       showToast({ icon: "⚠️", title: "Couldn't mark done", message: "Something went wrong — please try again." });
       return;
     }
-    if (booking?.earner?.id) notify(booking.earner.id, "Poster confirmed completion", "The poster marked the job done on their side.", { tab: "EarnTab" });
+    if (booking?.earner?.id) notify(booking.earner.id, "Poster confirmed completion", "The poster marked the job done on their side.", { tab: "EarnTab", type: "booking" });
   };
 
   const markJobComplete = markEarnerDone;
@@ -639,7 +668,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const ratePoster: JobsValue["ratePoster"] = async (bookingId, { rating, reviewText }) => {
     // Reviews publish to a public profile — run the same content filter every other
     // free-text field uses (it was previously wired everywhere BUT reviews).
-    if (reviewText && findProhibited(reviewText)) {
+    const reviewTerm = reviewText ? findProhibited(reviewText) : null;
+    if (reviewTerm) {
+      logModerationBlock(reviewTerm, "review", reviewText);
       showToast({ icon: "🚫", title: "Review not allowed", message: "That review contains words that aren't allowed. Please edit it and try again." });
       return;
     }
@@ -679,7 +710,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         if (revErr) { console.warn("Poster review insert error:", revErr.message); return; }
       }
       await recomputeRatings(posterId);
-      notify(posterId, "You were rated", `An earner rated you ${rating}★ as an employer.`, { tab: "GigsTab" });
+      notify(posterId, "You were rated", `An earner rated you ${rating}★ as an employer.`, { tab: "GigsTab", type: "review" });
     }
   };
 
@@ -707,7 +738,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     if (booking?.earner?.id)
-      notify(booking.earner.id, "Booking accepted!", `Your booking for "${booking.job?.title || "a gig"}" was accepted. Get ready!`, { tab: "EarnTab" });
+      notify(booking.earner.id, "Booking accepted!", `Your booking for "${booking.job?.title || "a gig"}" was accepted. Get ready!`, { tab: "EarnTab", type: "booking" });
     track("booking_accepted", { bookingId });
     return true;
   };
@@ -738,7 +769,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (booking?.earner?.id)
-      notify(booking.earner.id, "Booking declined", `Your booking for "${booking.job?.title || "a gig"}" wasn't accepted this time.`, { tab: "EarnTab" });
+      notify(booking.earner.id, "Booking declined", `Your booking for "${booking.job?.title || "a gig"}" wasn't accepted this time.`, { tab: "EarnTab", type: "booking" });
   };
 
   const cancelBooking: JobsValue["cancelBooking"] = async (bookingId) => {
@@ -796,8 +827,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (booking?.slotId) await supabase.from("job_slots").update({ taken: false }).eq("id", booking.slotId);
 
     const title = booking?.job?.title || "a gig";
-    if (isPoster && booking?.earner?.id) notify(booking.earner.id, "Booking cancelled", `The poster cancelled "${title}".`, { tab: "EarnTab" });
-    else if (posterId) notify(posterId, "Booking cancelled", `The earner cancelled "${title}".`, { tab: "GigsTab" });
+    if (isPoster && booking?.earner?.id) notify(booking.earner.id, "Booking cancelled", `The poster cancelled "${title}".`, { tab: "EarnTab", type: "booking" });
+    else if (posterId) notify(posterId, "Booking cancelled", `The earner cancelled "${title}".`, { tab: "GigsTab", type: "booking" });
   };
 
   // Cancellation fee (display only) a POSTER would owe the worker for cancelling
@@ -819,7 +850,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     // Block a prohibited review BEFORE moving any money — the review publishes to the
     // earner's public profile, so it must pass the same filter as every other field.
-    if (reviewText && findProhibited(reviewText)) {
+    const reviewTerm = reviewText ? findProhibited(reviewText) : null;
+    if (reviewTerm) {
+      logModerationBlock(reviewTerm, "review", reviewText);
       showToast({ icon: "🚫", title: "Review not allowed", message: "That review contains words that aren't allowed. Please edit it and try again." });
       return;
     }
@@ -864,8 +897,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     if (booking?.earner?.id) {
       if (partial)
-        notify(booking.earner.id, "Job verified with an adjustment", `The poster reported an issue and paid ${Math.round((pct as number) * 100)}%. ${rating}★ rating.`, { tab: "EarnTab" });
-      else notify(booking.earner.id, "Job verified — you got paid!", `${rating}★ rating · paid via ${paymentMethod}.`, { tab: "EarnTab" });
+        notify(booking.earner.id, "Job verified with an adjustment", `The poster reported an issue and paid ${Math.round((pct as number) * 100)}%. ${rating}★ rating.`, { tab: "EarnTab", type: "payment" });
+      else notify(booking.earner.id, "Job verified — you got paid!", `${rating}★ rating · paid via ${paymentMethod}.`, { tab: "EarnTab", type: "payment" });
     }
     track("job_verified", { rating, paymentMethod, disputed: partial });
 
@@ -873,7 +906,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       try {
         await stripeEdge.tip(bookingId, tipCents);
         dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { tipAmount: tipCents / 100 } });
-        if (booking?.earner?.id) notify(booking.earner.id, "You got a tip!", `The poster added a $${(tipCents / 100).toFixed(2)} tip. 🎉`, { tab: "EarnTab" });
+        if (booking?.earner?.id) notify(booking.earner.id, "You got a tip!", `The poster added a $${(tipCents / 100).toFixed(2)} tip. 🎉`, { tab: "EarnTab", type: "tip" });
         track("tip_sent", { tipCents });
       } catch (e) {
         captureError(e, { op: "tip", bookingId });
@@ -1074,10 +1107,19 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   // ── Amendments ───────────────────────────────────────────────────────────--
   const proposeAmendment: JobsValue["proposeAmendment"] = async (bookingId, note) => {
+    // The amendment note is delivered to the other party — run the same content
+    // filter every other free-text field uses before writing (it was previously
+    // unfiltered here, unlike reviews/notes/messages). Mirrors mobile.
+    const noteTerm = note ? findProhibited(note) : null;
+    if (noteTerm) {
+      logModerationBlock(noteTerm, "amendment", note);
+      showToast({ icon: "🚫", title: "Change not allowed", message: "That note contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
     const booking = state.posterBookings.find((b) => b.id === bookingId);
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { amendmentNote: note, amendmentStatus: "pending" } });
     await supabase.from("bookings").update({ amendment_note: note, amendment_status: "pending" }).eq("id", bookingId);
-    if (booking?.earner?.id) notify(booking.earner.id, "Change proposed", "The poster proposed a change to your gig — review it.", { tab: "EarnTab" });
+    if (booking?.earner?.id) notify(booking.earner.id, "Change proposed", "The poster proposed a change to your gig — review it.", { tab: "EarnTab", type: "amendment" });
   };
 
   const respondToAmendment: JobsValue["respondToAmendment"] = async (bookingId, accepted) => {
@@ -1086,7 +1128,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { amendmentStatus: newStatus } });
     await supabase.from("bookings").update({ amendment_status: newStatus }).eq("id", bookingId);
     const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
-    if (posterId) notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: "GigsTab" });
+    if (posterId) notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: "GigsTab", type: "amendment" });
   };
 
   const clearAmendment: JobsValue["clearAmendment"] = async (bookingId) => {
@@ -1173,6 +1215,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         cancelBooking,
         cancellationFeeFor,
         startJob,
+        claimEarnerPayment,
         blockUser,
         refreshUnread,
         markJobComplete,

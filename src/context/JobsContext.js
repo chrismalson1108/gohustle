@@ -8,6 +8,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
+import { transformJob, transformBooking } from '../../shared/transforms.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -17,98 +18,8 @@ const JOBS_CACHE     = 'jobs_v1';
 const BOOKINGS_CACHE = 'bookings_v1';
 
 // ─── Transformers ────────────────────────────────────────────────────────────
-
-function transformJob(dbJob) {
-  return {
-    id: dbJob.id,
-    posterId: dbJob.poster_id,
-    title: dbJob.title,
-    category: dbJob.category,
-    pay: Number(dbJob.pay),
-    payType: dbJob.pay_type,
-    location: dbJob.location,
-    description: dbJob.description,
-    urgent: dbJob.urgent,
-    estimatedHours: Number(dbJob.estimated_hours),
-    status: dbJob.status,
-    photos: dbJob.photos || [],
-    recurrence: dbJob.recurrence || 'none',
-    tags: dbJob.tags || [],
-    hazards: dbJob.hazards || [],
-    lat: dbJob.lat ?? null,
-    lng: dbJob.lng ?? null,
-    createdAt: dbJob.created_at || null,
-    bumpedAt: dbJob.bumped_at || null,
-    postedAt: dbJob.created_at
-      ? new Date(dbJob.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : 'Recently',
-    poster: {
-      name: dbJob.profiles?.name || 'Anonymous',
-      avatarInitial: dbJob.profiles?.avatar_initial || 'A',
-      avatarUrl: dbJob.profiles?.avatar_url || null,
-      rating: Number(dbJob.profiles?.rating) || 5.0,
-      reviewCount: dbJob.profiles?.review_count || 0,
-      verified: dbJob.profiles?.verified || false,
-      school: dbJob.profiles?.school || null,
-      studentVerified: dbJob.profiles?.student_verified || false,
-      studentStatus: dbJob.profiles?.student_status || 'none',
-    },
-    slots: (dbJob.job_slots || []).map(s => ({ id: s.id, label: s.label, taken: s.taken, startsAt: s.starts_at || null })),
-    requirements: (dbJob.job_requirements || [])
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map(r => r.requirement),
-    reviews: (dbJob.reviews || []).map(r => ({
-      id: r.id, author: r.author, rating: Number(r.rating), text: r.text, date: r.date,
-    })),
-  };
-}
-
-function transformBooking(b) {
-  return {
-    id: b.id,
-    jobId: b.job_id,
-    slotId: b.slot_id,
-    slotLabel: b.slot_label,
-    counterOffer: b.counter_offer ? Number(b.counter_offer) : null,
-    applicationNote: b.application_note || null,
-    status: b.status || 'pending',
-    paymentMethod: b.payment_method,
-    earnerRating: b.earner_rating ? Number(b.earner_rating) : null,
-    reviewText: b.review_text,
-    completedAt: b.completed_at,
-    earnerDone: b.earner_done || false,
-    posterDone: b.poster_done || false,
-    posterRating: b.poster_rating ? Number(b.poster_rating) : null,
-    posterReview: b.poster_review || null,
-    amendmentNote: b.amendment_note || null,
-    amendmentStatus: b.amendment_status || 'none',
-    beforePhotos: b.before_photos || [],
-    completionPhotos: b.completion_photos || [],
-    startsAt: b.starts_at || null,
-    startedAt: b.started_at || null,
-    cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
-    tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
-    earner: b.earner ? {
-      id: b.earner.id,
-      name: b.earner.name,
-      avatarInitial: b.earner.avatar_initial,
-      avatarUrl: b.earner.avatar_url || null,
-      rating: Number(b.earner.rating),
-      reviewCount: b.earner.review_count,
-      skills: b.earner.skills || [],
-      school: b.earner.school || null,
-      studentVerified: b.earner.student_verified || false,
-      studentStatus: b.earner.student_status || 'none',
-    } : null,
-    job: b.job ? {
-      id: b.job.id,
-      title: b.job.title,
-      pay: Number(b.job.pay),
-      payType: b.job.pay_type,
-      location: b.job.location || null,
-    } : null,
-  };
-}
+// transformJob / transformBooking now live in shared/transforms.js and are imported
+// above so mobile and web interpret the same backend identically (no drifting copy).
 
 // ─── Cancellation-fee policy (record/display only — NO money moves) ──────────
 // 15% of the booking's effective pay (counterOffer ?? job pay; hourly is multiplied
@@ -257,14 +168,23 @@ export function JobsProvider({ children }) {
   const refreshUnread = useCallback(async () => {
     if (!user) { setUnreadMessages(0); return; }
     try {
-      const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])];
+      // Resolve each booking's counterparty the same way the Messages hub does
+      // (poster bookings → the earner; earner bookings → the job's poster) and drop
+      // conversations with a blocked party. Otherwise the badge keeps counting unread
+      // from a conversation the inbox hides — and, because it's hidden, it can never
+      // be marked read — leaving a permanent phantom badge until unblock.
+      const otherOf = {};
+      state.posterBookings.forEach(b => { if (b.earner?.id) otherOf[b.id] = b.earner.id; });
+      state.bookings.forEach(b => { const pid = state.jobs.find(j => j.id === b.jobId)?.posterId; if (pid) otherOf[b.id] = pid; });
+      const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])]
+        .filter(id => !blockedIds.has(otherOf[id]));
       if (!ids.length) { setUnreadMessages(0); return; }
       const [last, st] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
       let n = 0;
       ids.forEach(id => { const s = st[id]; if (!s?.archived && isUnread(last[id], s, user.id)) n++; });
       setUnreadMessages(n);
     } catch (_) {}
-  }, [user?.id, state.bookings, state.posterBookings]);
+  }, [user?.id, state.bookings, state.posterBookings, state.jobs, blockedIds]);
 
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
   const refreshUnreadRef = useRef(refreshUnread);
@@ -287,17 +207,22 @@ export function JobsProvider({ children }) {
   };
 
   const fetchJobs = useCallback(async () => {
+    // Browse/Earn/Gigs feed: keep this payload bounded. reviews(*) is intentionally
+    // NOT joined here — JobCard only needs the poster's rolling rating/review_count
+    // (already on the profiles embed), and JobDetail fetches per-job reviews on demand
+    // via fetchJobById. Cap the feed so open-beta growth can't turn every refresh into
+    // a multi-MB fetch + cache write.
     const { data, error } = await supabase
       .from('jobs')
       .select(`
         *,
         profiles!jobs_poster_id_fkey(name, avatar_initial, avatar_url, rating, review_count, verified, school, student_verified, student_status),
         job_slots(*),
-        job_requirements(*),
-        reviews(*)
+        job_requirements(*)
       `)
       .neq('status', 'cancelled')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
 
     if (error || !data) return;
     const transformed = data.map(transformJob);
@@ -349,6 +274,20 @@ export function JobsProvider({ children }) {
     const bookings = data.map(transformBooking);
     dispatch({ type: 'SET_BOOKINGS', bookings });
     cacheSet(BOOKINGS_CACHE, bookings);
+
+    // Arm local pre-gig reminders on (cold) load. The realtime accept handler only
+    // schedules a reminder while the app is open + connected, so a booking the poster
+    // accepted while the app was backgrounded/killed would otherwise never get its
+    // 1-hour reminder. scheduleGigReminder is idempotent per booking id (fixed
+    // `gig-<id>` identifier) and self-guards past/too-soon times; clear reminders for
+    // any booking that's since been finalized.
+    bookings.forEach(b => {
+      if (b.status === 'confirmed' && b.startsAt) {
+        scheduleGigReminder(b.id, b.startsAt, b.slotLabel);
+      } else if (['declined', 'cancelled', 'verified'].includes(b.status)) {
+        cancelGigReminder(b.id);
+      }
+    });
   };
 
   const loadPosterBookings = useCallback(async () => {
@@ -412,6 +351,7 @@ export function JobsProvider({ children }) {
           amendmentNote: b.amendment_note || null,
           tipAmount: b.tip_amount || 0,
           startedAt: b.started_at || null,
+          completedAt: b.completed_at || null,
           cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
         } });
         if (b.status === 'confirmed') {
@@ -497,9 +437,9 @@ export function JobsProvider({ children }) {
       return false;
     }
 
-    if (slotId) {
-      supabase.from('job_slots').update({ taken: true }).eq('id', slotId);
-    }
+    // NOTE: job_slots.taken is owned authoritatively by the sync_slot_taken AFTER
+    // trigger (flips on booking insert/status change) and slots_update_poster RLS
+    // would reject an earner-side write anyway — so we do NOT touch it from the client.
 
     // Replace temp booking with real one
     await loadBookings();
@@ -614,7 +554,15 @@ export function JobsProvider({ children }) {
     }
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'verified', posterDone: true } });
     showToast({ icon: '✅', title: 'Payment released', message: "The poster didn't confirm in time, so your payment was released to you." });
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId || booking?.job?.posterId;
+    // The ghosting-poster case is exactly when the gig was soft-cancelled and is
+    // therefore absent from state.jobs (fetchJobs excludes cancelled), and the thin
+    // booking.job embed never carries posterId — so look it up directly (mirrors
+    // ratePoster) instead of the old always-undefined fallback.
+    let posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    if (!posterId && booking?.jobId) {
+      const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
+      posterId = jobRow?.poster_id;
+    }
     if (posterId) {
       notify(posterId, 'A gig was auto-settled', "You didn't confirm a completed gig in time, so the earner was paid the full amount.", { tab: 'GigsTab', type: 'payment' });
     }
@@ -639,7 +587,7 @@ export function JobsProvider({ children }) {
     if (reviewTerm) {
       logModerationBlock(reviewTerm, 'review', reviewText);
       showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
-      return;
+      return false;
     }
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     const prev = { posterRating: booking?.posterRating, posterReview: booking?.posterReview };
@@ -652,7 +600,7 @@ export function JobsProvider({ children }) {
       console.warn('Rate poster error:', error.message);
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: prev }); // roll back
       showToast({ icon: '⚠️', title: "Couldn't submit rating", message: 'Something went wrong — please try again.' });
-      return;
+      return false;
     }
 
     // Record a review of the poster (as a client/employer) + recompute their rating.
@@ -676,11 +624,12 @@ export function JobsProvider({ children }) {
           text: reviewText || '',
           date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         });
-        if (revErr) { console.warn('Poster review insert error:', revErr.message); return; }
+        if (revErr) { console.warn('Poster review insert error:', revErr.message); return false; }
       }
       await recomputeRatings(posterId);
       notify(posterId, 'You were rated', `An earner rated you ${rating}★ as an employer.`, { tab: 'GigsTab', type: 'review' });
     }
+    return true;
   };
 
   // ── Poster actions ─────────────────────────────────────────────────────────
@@ -772,13 +721,13 @@ export function JobsProvider({ children }) {
     // lifecycle. The DB guard now rejects this too, but stop here for a clean message.
     if (booking && !['pending', 'confirmed'].includes(booking.status)) {
       showToast({ icon: '⚠️', title: "Can't cancel", message: 'This booking can no longer be cancelled.' });
-      return;
+      return false;
     }
     // Once the worker has started, the booking is locked — open a dispute instead
     // (belt-and-suspenders with the DB guard trg_guard_started_booking_cancel).
     if (booking?.startedAt) {
       showToast({ icon: '⚠️', title: "Can't cancel", message: 'The worker has started — open a dispute if there\'s a problem.' });
-      return;
+      return false;
     }
 
     // Cancellation-fee POLICY (record + display only — NO money moves). A poster
@@ -809,7 +758,7 @@ export function JobsProvider({ children }) {
       console.warn('Cancel error:', error.message);
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: prev.status ?? 'confirmed', cancellationFee: prev.cancellationFee } });
       showToast({ icon: '⚠️', title: "Can't cancel", message: 'The worker may have just started — open a dispute if there\'s a problem.' });
-      return;
+      return false;
     }
 
     // Booking is cancelled in the DB — now it's safe to release the hold and free the
@@ -820,7 +769,9 @@ export function JobsProvider({ children }) {
     } catch (_) {
       try { await new Promise(r => setTimeout(r, 1500)); await stripeEdge.cancelPayment(bookingId); } catch (_) { /* no/closed payment — webhook safety net */ }
     }
-    if (booking?.slotId) supabase.from('job_slots').update({ taken: false }).eq('id', booking.slotId);
+    // job_slots.taken frees itself server-side via the sync_slot_taken trigger on the
+    // status change to 'cancelled' (and the earner can't write it under RLS anyway), so
+    // no client-side slot write here.
 
     const title = booking?.job?.title || 'a gig';
     if (isPoster && booking?.earner?.id) {
@@ -828,6 +779,7 @@ export function JobsProvider({ children }) {
     } else if (posterId) {
       notify(posterId, 'Booking cancelled', `The earner cancelled "${title}".`, { tab: 'GigsTab', type: 'booking' });
     }
+    return true;
   };
 
   const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason }) => {
@@ -910,11 +862,15 @@ export function JobsProvider({ children }) {
     // Mark the job completed only when no OTHER booking on it is still active — a
     // multi-slot gig can have several earners, so verifying one shouldn't close it.
     if (booking?.jobId) {
-      const { data: others } = await supabase
+      const { data: others, error: othersErr } = await supabase
         .from('bookings').select('id')
         .eq('job_id', booking.jobId).neq('id', bookingId)
         .in('status', ['pending', 'confirmed', 'completed']).limit(1);
-      if (!others?.length) {
+      // Fail safe: only close the gig when we've CONFIRMED no other active booking
+      // exists. A transient query error must NOT be treated as "no others" — that
+      // would wrongly mark a live multi-slot gig completed (jobs.status has no
+      // server-side transition guard, so the write would stick).
+      if (!othersErr && !others?.length) {
         dispatch({ type: 'UPDATE_JOB', jobId: booking.jobId, patch: { status: 'completed' } });
         // MUST await — a bare PostgrestBuilder never fires the request, so the gig
         // would stay 'open' in the DB (bookable by others) forever.
@@ -952,6 +908,9 @@ export function JobsProvider({ children }) {
   };
 
   const updateJob = async (jobId, jobData) => {
+    // Snapshot the fields we're about to optimistically overwrite so a failed DB
+    // write can be rolled back (the caller gates its success toast on the boolean).
+    const prevJob = state.jobs.find(j => j.id === jobId);
     dispatch({ type: 'UPDATE_JOB', jobId, patch: jobData });
     const dbPatch = {
       title: jobData.title, category: jobData.category,
@@ -968,7 +927,16 @@ export function JobsProvider({ children }) {
     if (jobData.tags !== undefined) dbPatch.tags = jobData.tags;
     if (jobData.hazards !== undefined) dbPatch.hazards = jobData.hazards;
     const { error } = await supabase.from('jobs').update(dbPatch).eq('id', jobId);
-    if (error) { console.warn('Update job error:', error.message); return; }
+    if (error) {
+      console.warn('Update job error:', error.message);
+      // Roll back the optimistic patch to the pre-edit values.
+      if (prevJob) {
+        const rollback = {};
+        Object.keys(jobData).forEach(k => { rollback[k] = prevJob[k]; });
+        dispatch({ type: 'UPDATE_JOB', jobId, patch: rollback });
+      }
+      return false;
+    }
 
     if (jobData.slots) {
       await supabase.from('job_slots').delete().eq('job_id', jobId);
@@ -987,6 +955,7 @@ export function JobsProvider({ children }) {
       }
     }
     cacheSet(JOBS_CACHE, null);
+    return true;
   };
 
   const deleteJob = async (jobId) => {
@@ -998,9 +967,16 @@ export function JobsProvider({ children }) {
   // Poster bumps a slow gig to the top of the feed (refreshes bumped_at).
   const bumpJob = async (jobId) => {
     const now = new Date().toISOString();
+    const prevBumpedAt = state.jobs.find(j => j.id === jobId)?.bumpedAt ?? null;
     dispatch({ type: 'UPDATE_JOB', jobId, patch: { bumpedAt: now } });
-    await supabase.from('jobs').update({ bumped_at: now }).eq('id', jobId);
+    const { error } = await supabase.from('jobs').update({ bumped_at: now }).eq('id', jobId);
+    if (error) {
+      console.warn('Bump job error:', error.message);
+      dispatch({ type: 'UPDATE_JOB', jobId, patch: { bumpedAt: prevBumpedAt } }); // roll back
+      return false;
+    }
     cacheSet(JOBS_CACHE, null);
+    return true;
   };
 
   const addJob = async (jobData) => {
@@ -1161,23 +1137,48 @@ export function JobsProvider({ children }) {
   // ── Amendments ─────────────────────────────────────────────────────────────
 
   const proposeAmendment = async (bookingId, note) => {
+    // C29: an amendment note is published to the other party, so it must pass the
+    // SAME client prohibited-content filter every other free-text field uses. If it
+    // matches, don't write — surface a content-specific message (mirrors ratePoster)
+    // and return false so the screen's ok===false gate stops without a misleading toast.
+    const term = note && findProhibited(note);
+    if (term) {
+      logModerationBlock(term, 'amendment', note);
+      showToast({ icon: '🚫', title: 'Change not allowed', message: "That note contains words that aren't allowed. Please edit it and try again." });
+      return false;
+    }
     const booking = state.posterBookings.find(b => b.id === bookingId);
+    const prev = { amendmentNote: booking?.amendmentNote ?? null, amendmentStatus: booking?.amendmentStatus ?? 'none' };
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentNote: note, amendmentStatus: 'pending' } });
-    await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
+    const { error } = await supabase.from('bookings').update({ amendment_note: note, amendment_status: 'pending' }).eq('id', bookingId);
+    if (error) {
+      console.warn('Propose amendment error:', error.message);
+      dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: prev }); // roll back
+      showToast({ icon: '⚠️', title: "Couldn't propose change", message: 'Something went wrong — please try again.' });
+      return false;
+    }
     if (booking?.earner?.id) {
       notify(booking.earner.id, 'Change proposed', 'The poster proposed a change to your gig — review it.', { tab: 'EarnTab', type: 'amendment' });
     }
+    return true;
   };
 
   const respondToAmendment = async (bookingId, accepted) => {
     const newStatus = accepted ? 'accepted' : 'declined';
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
+    const prevStatus = booking?.amendmentStatus ?? 'none';
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: newStatus } });
-    await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
+    const { error } = await supabase.from('bookings').update({ amendment_status: newStatus }).eq('id', bookingId);
+    if (error) {
+      console.warn('Respond amendment error:', error.message);
+      dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: prevStatus } }); // roll back
+      return false;
+    }
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     if (posterId) {
       notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab', type: 'amendment' });
     }
+    return true;
   };
 
   const clearAmendment = async (bookingId) => {

@@ -6,9 +6,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useUser } from '../context/UserContext';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import { useJobs } from '../context/JobsContext';
+import { captureError } from '../lib/analytics';
 import Avatar from './Avatar';
 import { notify } from '../lib/push';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
@@ -23,9 +25,15 @@ import { markConversationRead } from '../lib/messages';
 export default function MessageSheet({ visible, bookingId, jobId, jobTitle, otherPerson, onClose, onViewProfile, onViewJob }) {
   const { user } = useAuth();
   const { blockUser, refreshUnread } = useJobs();
+  const { showToast } = useUser();
   const haptic = useHaptic();
 
   const otherName = otherPerson?.name || 'this user';
+
+  // react-native-web's Alert.alert buttons are a no-op, so any Alert-gated confirm is
+  // unreachable on the Expo web build. Use the browser's confirm() there instead.
+  const webConfirm = (message) =>
+    typeof window !== 'undefined' && typeof window.confirm === 'function' && window.confirm(message);
 
   // Report reasons are shown in a Modal, not Alert.alert: Android caps alerts at 3
   // buttons, so a 5-reason + Cancel list was truncated and trapped the user.
@@ -34,24 +42,39 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
     setReportVisible(false);
     try {
       await submitReport({ reporterId: user.id, reportedUserId: otherPerson?.id, bookingId, reason });
-      Alert.alert('Report submitted', 'Thanks — our team will review this.');
-    } catch (e) { Alert.alert('Could not submit', e.message || 'Please try again.'); }
+      showToast?.({ icon: '✅', title: 'Report submitted', message: 'Thanks — our team will review this.' });
+    } catch (e) {
+      showToast?.({ icon: '⚠️', title: 'Could not submit', message: e.message || 'Please try again.' });
+    }
+  };
+
+  const doBlock = async () => {
+    try {
+      await blockUser(otherPerson?.id);
+      showToast?.({ icon: '🚫', title: 'Blocked', message: `${otherName} has been blocked.` });
+      onClose?.();
+    } catch (e) {
+      showToast?.({ icon: '⚠️', title: 'Could not block', message: e.message || 'Please try again.' });
+    }
   };
 
   const handleBlock = () => {
-    Alert.alert(`Block ${otherName}?`, "You won't see their gigs, and they won't be able to message or book you.", [
+    const body = "You won't see their gigs, and they won't be able to message or book you.";
+    if (Platform.OS === 'web') { if (webConfirm(`Block ${otherName}?\n\n${body}`)) doBlock(); return; }
+    Alert.alert(`Block ${otherName}?`, body, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Block', style: 'destructive',
-        onPress: async () => {
-          try { await blockUser(otherPerson?.id); Alert.alert('Blocked', `${otherName} has been blocked.`); onClose?.(); }
-          catch (e) { Alert.alert('Could not block', e.message || 'Please try again.'); }
-        },
-      },
+      { text: 'Block', style: 'destructive', onPress: doBlock },
     ]);
   };
 
   const handleMenu = () => {
+    // Alert action-sheet buttons are a no-op on react-native-web; fall back to
+    // confirm() so Report/Block stay reachable on the web build.
+    if (Platform.OS === 'web') {
+      if (webConfirm(`Report ${otherName}?\n\nOK to report, Cancel for other options.`)) { handleReport(); return; }
+      handleBlock();
+      return;
+    }
     Alert.alert(otherName, undefined, [
       { text: 'Report', onPress: handleReport },
       { text: 'Block', style: 'destructive', onPress: handleBlock },
@@ -147,7 +170,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
     const kwTerm = findProhibited(text);
     if (kwTerm) {
       logModerationBlock(kwTerm, 'message', text, bookingId);
-      Alert.alert('Message blocked', "That message contains content that isn't allowed.");
+      showToast?.({ icon: '🚫', title: 'Message blocked', message: "That message contains content that isn't allowed." });
       return;
     }
     // Context-aware check (harassment, threats, scams a keyword list misses).
@@ -155,7 +178,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
     const mod = await moderateText(text, 'message', bookingId);
     setSending(false);
     if (!mod.allowed) {
-      Alert.alert('Message blocked', "That message contains content that isn't allowed.");
+      showToast?.({ icon: '🚫', title: 'Message blocked', message: "That message contains content that isn't allowed." });
       return;
     }
 
@@ -187,8 +210,21 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
       // Remove optimistic message and restore input
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setInputText(text);
-      const detail = error.message || error.code || 'Unknown error';
-      Alert.alert('Failed to send', `Your message could not be sent.\n\n${detail}\n\nPlease try again.`);
+      // Never surface raw RLS/DB text: a block-enforcement rejection returns a
+      // distinctive "row-level security" error (a block-oracle the block migration
+      // deliberately avoided), and inviting "try again" loops on a hard rejection
+      // looks broken. Map known shapes; keep the age-floor message (user-facing by
+      // design) verbatim; log the raw detail for debugging instead of showing it.
+      captureError(error, { where: 'MessageSheet.sendMessage', bookingId });
+      const raw = error.message || '';
+      const isRls = error.code === '42501' || /row-level security/i.test(raw);
+      const isAgeFloor = /18 or older/i.test(raw);
+      const message = isRls
+        ? "Your message couldn't be sent."
+        : isAgeFloor
+          ? raw
+          : "Your message couldn't be sent. Please try again.";
+      showToast?.({ icon: '⚠️', title: 'Not sent', message });
     } else {
       // Replace optimistic with confirmed message
       setMessages(prev => prev.map(m => m.id === tempId ? data : m));

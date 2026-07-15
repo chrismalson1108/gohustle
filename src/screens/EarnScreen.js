@@ -337,9 +337,13 @@ export default function EarnScreen({ navigation }) {
         { text: 'Keep', style: 'cancel' },
         {
           text: isPending ? 'Withdraw' : 'Cancel gig', style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             haptic.medium();
-            cancelBooking(booking.id);
+            // Gate success on the real result — cancelBooking refuses (returns false)
+            // when the booking can't be cancelled and emits its own failure toast, so
+            // don't assert "cancelled / hold released" over top of it.
+            const ok = await cancelBooking(booking.id);
+            if (ok === false) { haptic.error(); return; }
             showToast({ icon: '❌', title: isPending ? 'Withdrawn' : 'Booking cancelled', message: isPending ? 'Your request was removed.' : 'The gig was cancelled.' });
           },
         },
@@ -350,9 +354,13 @@ export default function EarnScreen({ navigation }) {
   const handleRatePoster = async () => {
     if (!rateTarget) return;
     setRatingLoading(true);
-    haptic.success();
-    await ratePoster(rateTarget.id, { rating: posterRating, reviewText: posterReview });
+    // Gate success on the real result — ratePoster returns false when the rating is
+    // blocked (content filter) or the write fails, emitting its own toast. Keep the
+    // modal open with the typed review preserved so nothing is silently discarded.
+    const ok = await ratePoster(rateTarget.id, { rating: posterRating, reviewText: posterReview });
     setRatingLoading(false);
+    if (ok === false) { haptic.error(); return; }
+    haptic.success();
     setRateTarget(null);
     setPosterRating(5);
     setPosterReview('');
@@ -574,16 +582,21 @@ export default function EarnScreen({ navigation }) {
               <Text style={styles.amendCardNote}>{booking.amendmentNote}</Text>
               <View style={styles.amendCardActions}>
                 <TouchableOpacity style={styles.amendAcceptBtn}
-                  onPress={() => {
-                    respondToAmendment(booking.id, true);
+                  onPress={async () => {
+                    // Gate on the real write — respondToAmendment returns false when
+                    // the DB rejects it (e.g. booking settled concurrently); don't
+                    // tell the earner the terms unlocked if they didn't.
+                    const ok = await respondToAmendment(booking.id, true);
+                    if (ok === false) { haptic.error(); showToast({ icon: '⚠️', title: "Couldn't respond", message: 'Please try again.' }); return; }
                     showToast({ icon: '✅', title: 'Amendment Accepted', message: 'The poster can now update the gig terms.' });
                   }}>
                   <Ionicons name="checkmark" size={15} color="#fff" style={{ marginRight: 4 }} />
                   <Text style={styles.amendAcceptText}>Accept</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.amendDeclineBtn}
-                  onPress={() => {
-                    respondToAmendment(booking.id, false);
+                  onPress={async () => {
+                    const ok = await respondToAmendment(booking.id, false);
+                    if (ok === false) { haptic.error(); showToast({ icon: '⚠️', title: "Couldn't respond", message: 'Please try again.' }); return; }
                     showToast({ icon: '❌', title: 'Amendment Declined', message: 'Original terms remain in effect.' });
                   }}>
                   <Ionicons name="close" size={15} color={colors.textSecondary} style={{ marginRight: 4 }} />

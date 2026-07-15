@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { X, ImagePlus, Lock, Zap } from "lucide-react";
 import { CATEGORIES, findProhibited } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
@@ -126,6 +126,9 @@ export default function GigForm({
   const [keptPhotos, setKeptPhotos] = useState<string[]>(existingPhotos);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  // Re-entry guard: setBusy is async, so two rapid clicks can both pass the busy
+  // check before a re-render. A ref flips synchronously and blocks the second call.
+  const submitting = useRef(false);
 
   const [tags, setTags] = useState<string[]>(initial?.tags || []);
   const [tagDraft, setTagDraft] = useState("");
@@ -153,7 +156,7 @@ export default function GigForm({
   const valid = title && effectiveCategory && payValid && location && description;
 
   const submit = async () => {
-    if (!user) return;
+    if (!user || submitting.current) return;
     if (!valid) {
       onError?.(!payValid && pay ? "Enter a valid pay amount." : "Please fill in all required fields.");
       return;
@@ -164,45 +167,51 @@ export default function GigForm({
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;
     }
-    // Context-aware check (catches intent a keyword list misses).
-    const mod = await moderateText([title, description].join("\n"), "gig");
-    if (!mod.allowed) {
-      onError?.("Your gig contains content that isn't allowed. Please edit it.");
-      return;
-    }
+    // Guard BEFORE the async moderation await so the button disables/spins and a
+    // double-click can't post twice. finally resets on every path.
+    submitting.current = true;
     setBusy(true);
-    let newUrls: string[] = [];
     try {
-      if (files.length) newUrls = await uploadImages(files, "job-photos", user.id);
-    } catch (e) {
+      // Context-aware check (catches intent a keyword list misses).
+      const mod = await moderateText([title, description].join("\n"), "gig");
+      if (!mod.allowed) {
+        onError?.("Your gig contains content that isn't allowed. Please edit it.");
+        return;
+      }
+      let newUrls: string[] = [];
+      try {
+        if (files.length) newUrls = await uploadImages(files, "job-photos", user.id);
+      } catch (e) {
+        onError?.((e as Error).message || "Photo upload failed.");
+        return;
+      }
+      const finalSlots = slots.length
+        ? slots
+        : [{ id: "s1", label: "Flexible — Contact to Schedule", taken: false, startsAt: null }];
+      await onSubmit({
+        title,
+        category: effectiveCategory,
+        pay: parseFloat(pay),
+        payType,
+        location,
+        description,
+        urgent,
+        estimatedHours: payType === "hourly" ? Math.max(1, parseFloat(estimatedHours) || 2) : 2,
+        requirements: requirements ? requirements.split("\n").filter(Boolean) : [],
+        slots: finalSlots,
+        photos: [...keptPhotos, ...newUrls],
+        recurrence,
+        tags,
+        hazards,
+        instantBook,
+        instantBookAudience: "all",
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+      });
+    } finally {
+      submitting.current = false;
       setBusy(false);
-      onError?.((e as Error).message || "Photo upload failed.");
-      return;
     }
-    const finalSlots = slots.length
-      ? slots
-      : [{ id: "s1", label: "Flexible — Contact to Schedule", taken: false, startsAt: null }];
-    await onSubmit({
-      title,
-      category: effectiveCategory,
-      pay: parseFloat(pay),
-      payType,
-      location,
-      description,
-      urgent,
-      estimatedHours: payType === "hourly" ? Math.max(1, parseFloat(estimatedHours) || 2) : 2,
-      requirements: requirements ? requirements.split("\n").filter(Boolean) : [],
-      slots: finalSlots,
-      photos: [...keptPhotos, ...newUrls],
-      recurrence,
-      tags,
-      hazards,
-      instantBook,
-      instantBookAudience: "all",
-      lat: coords?.lat ?? null,
-      lng: coords?.lng ?? null,
-    });
-    setBusy(false);
   };
 
   const coreNote = lockedCore ? (

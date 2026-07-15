@@ -95,7 +95,16 @@ export default async function ModerationPage({
                       ) : null}
                       by{" "}
                       {r.source === "auto" ? (
-                        <span className="text-[var(--muted)]">🤖 Auto-moderation</span>
+                        // Auto-filed by the moderation system — keep the pill, but still
+                        // link it through to the conversation (or the flagged user) so a
+                        // moderator can reach the context of an auto-filed report.
+                        r.booking_id ? (
+                          <Link href={`/bookings/${r.booking_id}`} className="text-[var(--brand)] hover:underline">🤖 Auto-moderation</Link>
+                        ) : r.reported_user_id ? (
+                          <Link href={`/users/${r.reported_user_id}`} className="text-[var(--brand)] hover:underline">🤖 Auto-moderation</Link>
+                        ) : (
+                          <span className="text-[var(--muted)]">🤖 Auto-moderation</span>
+                        )
                       ) : (
                         <Link href={`/users/${r.reporter_id}`} className="text-[var(--brand)] hover:underline">
                           {nameOf.get(r.reporter_id) ?? r.reporter_id.slice(0, 8)}

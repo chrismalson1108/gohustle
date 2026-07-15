@@ -173,6 +173,19 @@ export function UserProvider({ children }) {
   const activeUserId = useRef(null);
   const syncTimer = useRef(null);
   const pendingPatch = useRef({});
+  // Authoritative accumulators for the debounced/optimistic writes below. The DB
+  // patches must NOT be computed from render-scope `state` (a stale closure): two
+  // increments in the same tick would both read the same base and the later merge
+  // would drop the first. These refs mirror state but accumulate deltas immediately,
+  // and an effect reseeds them whenever fresh profile data lands.
+  const xpRef = useRef(state.xp);
+  const challengeProgressRef = useRef({});
+  useEffect(() => { xpRef.current = state.xp; }, [state.xp]);
+  useEffect(() => {
+    const m = {};
+    state.challenges.forEach(c => { m[c.id] = c.progress; });
+    challengeProgressRef.current = m;
+  }, [state.challenges]);
 
   useEffect(() => {
     activeUserId.current = user?.id ?? null;
@@ -254,14 +267,24 @@ export function UserProvider({ children }) {
 
   const addXP = (amount) => {
     dispatch({ type: 'ADD_XP', amount });
-    scheduleSyncProfile({ xp: state.xp + amount });
+    // Accumulate on the ref, not on stale state.xp, so two addXP calls in one tick
+    // (e.g. from a single completion flow) both land in the debounced DB write.
+    xpRef.current += amount;
+    scheduleSyncProfile({ xp: xpRef.current });
   };
 
   const updateChallenge = (id, delta) => {
     dispatch({ type: 'UPDATE_CHALLENGE', id, delta });
     if (!user) return;
+    const chal = state.challenges.find(c => c.id === id);
+    const target = chal?.target || 1;
+    // Base off the ref (accumulates same-tick deltas) rather than stale state, and
+    // clamp the same way the reducer does so the DB matches the UI.
+    const base = challengeProgressRef.current[id] ?? (chal?.progress || 0);
+    const next = Math.min(target, base + delta);
+    challengeProgressRef.current[id] = next;
     supabase.from('user_challenges')
-      .upsert({ user_id: user.id, challenge_id: id, progress: (state.challenges.find(c => c.id === id)?.progress || 0) + delta, target: state.challenges.find(c => c.id === id)?.target || 1 }, { onConflict: 'user_id,challenge_id' })
+      .upsert({ user_id: user.id, challenge_id: id, progress: next, target }, { onConflict: 'user_id,challenge_id' })
       .then(({ error }) => { if (error) console.warn('Challenge sync error:', error.message); });
   };
 

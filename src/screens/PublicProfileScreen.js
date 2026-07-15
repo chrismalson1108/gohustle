@@ -60,10 +60,23 @@ export default function PublicProfileScreen({ route, navigation }) {
   ];
   const sharedBooking = sharedBookings.find(s => ACTIVE_MSG_STATUSES.includes(s.booking.status)) || sharedBookings[0] || null;
 
-  const sendInvite = (job) => {
+  const sendInvite = async (job) => {
     haptic.success();
-    notify(userId, 'You got a gig invitation', `${myName || 'Someone'} invited you to apply to "${job.title}"`, { tab: 'HomeTab' });
     setInviteOpen(false);
+    // send-push only delivers to someone we already share a booking with; an invite to
+    // a brand-new person is silently dropped (403) with no push and no in-app row. Don't
+    // claim "Invitation sent" when it can't be delivered — mirror the server gate (any
+    // shared booking) and gate success on the real send result. (notify() is best-effort
+    // and returns undefined today; once it reports success/failure this tightens further.)
+    const canDeliver = sharedBookings.length > 0;
+    const ok = canDeliver
+      ? await notify(userId, 'You got a gig invitation', `${myName || 'Someone'} invited you to apply to "${job.title}"`, { tab: 'HomeTab' })
+      : false;
+    if (ok === false) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: "Couldn't send invite", message: 'You can only invite someone you already share a booking with. Message them to connect first.' });
+      return;
+    }
     showToast({ icon: '✅', title: 'Invitation sent', message: `${profile?.name || 'They'} were invited to "${job.title}".` });
   };
 
@@ -444,7 +457,7 @@ export default function PublicProfileScreen({ route, navigation }) {
                 <TouchableOpacity key={j.id} style={styles.inviteRow} onPress={() => sendInvite(j)}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.inviteRowTitle} numberOfLines={1}>{j.title}</Text>
-                    <Text style={styles.inviteRowMeta}>{j.payType === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {j.location}</Text>
+                    <Text style={styles.inviteRowMeta}>{j.payType === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {maskLocation(j.location)}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </TouchableOpacity>

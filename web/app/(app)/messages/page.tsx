@@ -7,10 +7,10 @@ import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { supabase } from "@/lib/supabaseClient";
-import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead, setConversationArchived } from "@/lib/messages";
+import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead, setConversationArchived, notBlocked } from "@/lib/messages";
 import { notify } from "@/lib/push";
 import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
-import { submitReport, blockUserDb, REPORT_REASONS, moderateText, logModerationBlock } from "@/lib/moderation";
+import { submitReport, REPORT_REASONS, moderateText, logModerationBlock } from "@/lib/moderation";
 import { findProhibited } from "@gohustlr/shared";
 import PageHeader, { EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
@@ -41,7 +41,7 @@ interface Msg {
 
 export default function MessagesPage() {
   const { user } = useAuth();
-  const { bookings, posterBookings, jobs, refreshUnread } = useJobs();
+  const { bookings, posterBookings, jobs, refreshUnread, blockedIds } = useJobs();
 
   // Build the conversation list from both sides of the user's bookings.
   const conversations = useMemo<Conversation[]>(() => {
@@ -69,10 +69,15 @@ export default function MessagesPage() {
         jobId: b.jobId ?? null,
       });
     });
-    // De-dupe by bookingId (a booking belongs to one conversation).
+    // De-dupe by bookingId (a booking belongs to one conversation), and hide any
+    // conversation whose other party I've blocked (H2 hub filter — mirrors mobile).
     const seen = new Set<string>();
-    return list.filter((c) => (seen.has(c.bookingId) ? false : (seen.add(c.bookingId), true)));
-  }, [bookings, posterBookings, jobs]);
+    return list.filter((c) => {
+      if (seen.has(c.bookingId)) return false;
+      seen.add(c.bookingId);
+      return notBlocked(c, blockedIds);
+    });
+  }, [bookings, posterBookings, jobs, blockedIds]);
 
   const [last, setLast] = useState<Record<string, { text: string; unread: boolean; at: string; archived: boolean }>>({});
   const [active, setActive] = useState<Conversation | null>(null);
@@ -239,9 +244,13 @@ export default function MessagesPage() {
 
 function ChatPane({ conversation, userId, onBack }: { conversation: Conversation; userId: string; onBack: () => void }) {
   const { showToast } = useUser();
+  const { blockUser, blockedIds } = useJobs();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  // Re-entry guard: setSending is async, so a double-Enter can pass the sending
+  // check twice before a re-render. A ref flips synchronously and blocks the second.
+  const sendingRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
@@ -321,7 +330,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
 
   const send = async () => {
     const body = text.trim();
-    if (!body) return;
+    if (!body || sendingRef.current) return;
     // Same chat moderation as mobile — block off-platform-payment solicitation and
     // other prohibited content before it hits the DB (web previously bypassed this).
     const kwTerm = findProhibited(body);
@@ -330,29 +339,39 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
       showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
       return;
     }
-    // Context-aware check (harassment, threats, scams a keyword list misses).
-    const mod = await moderateText(body, "message", conversation.bookingId);
-    if (!mod.allowed) {
-      showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
-      return;
-    }
+    // Guard BEFORE the async moderation await so the send button disables/spins and
+    // a double-Enter can't send twice. finally resets on every path.
+    sendingRef.current = true;
     setSending(true);
-    setText("");
-    const { data, error } = await supabase
-      .from("messages")
-      .insert({ booking_id: conversation.bookingId, sender_id: userId, text: body })
-      .select("id, booking_id, sender_id, text, image_url, created_at")
-      .single();
-    if (error || !data) {
-      // Restore the text so the message isn't silently lost, and tell the user.
-      setText(body);
-      showToast({ icon: "⚠️", title: "Message not sent", message: "Please try again." });
+    try {
+      // Context-aware check (harassment, threats, scams a keyword list misses).
+      const mod = await moderateText(body, "message", conversation.bookingId);
+      if (!mod.allowed) {
+        showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
+        return;
+      }
+      setText("");
+      const { data, error } = await supabase
+        .from("messages")
+        .insert({ booking_id: conversation.bookingId, sender_id: userId, text: body })
+        .select("id, booking_id, sender_id, text, image_url, created_at")
+        .single();
+      if (error || !data) {
+        // Restore the text so the message isn't silently lost, and tell the user.
+        setText(body);
+        // If either side blocked the other, the party-scoped messages RLS rejects the
+        // insert — surface that clearly instead of a generic "try again".
+        if (conversation.otherId && blockedIds.has(conversation.otherId))
+          showToast({ icon: "🚫", title: "Can't message", message: "You've blocked this person. Unblock them to message again." });
+        else showToast({ icon: "⚠️", title: "Message not sent", message: "Please try again." });
+        return;
+      }
+      setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
+      pingOther(body);
+    } finally {
+      sendingRef.current = false;
       setSending(false);
-      return;
     }
-    setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Msg]));
-    pingOther(body);
-    setSending(false);
   };
 
   const sendImage = async (file: File) => {
@@ -390,7 +409,9 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     setMenuOpen(false);
     if (!conversation.otherId) return;
     try {
-      await blockUserDb(userId, conversation.otherId);
+      // Use the context blockUser so blockedIds updates and this conversation drops
+      // out of the hub list immediately (H2), then close the pane.
+      await blockUser(conversation.otherId);
       showToast({ icon: "🚫", title: `${conversation.name} blocked`, message: "You won't see their gigs anymore." });
       onBack();
     } catch {

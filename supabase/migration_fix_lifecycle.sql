@@ -104,6 +104,10 @@ CREATE POLICY "messages_read" ON public.messages FOR SELECT USING (
 -- INSERT: sender must be a PARTY to the booking (not just any authenticated user) —
 -- otherwise anyone who learns a booking_id could post into a conversation they're
 -- not in. Hardened here so re-running this file can't revert the party check.
+-- The `not private.is_blocked_pair(...)` clause is the H2 block enforcement from
+-- 20260710030000_block_enforcement.sql — kept here so re-running this legacy file
+-- (per CLAUDE.md) can NEVER strip block enforcement. Requires that migration to have
+-- created private.is_blocked_pair (part of the hardened baseline).
 DROP POLICY IF EXISTS "messages_insert" ON public.messages;
 CREATE POLICY "messages_insert" ON public.messages FOR INSERT WITH CHECK (
   sender_id = auth.uid()
@@ -112,6 +116,7 @@ CREATE POLICY "messages_insert" ON public.messages FOR INSERT WITH CHECK (
     JOIN public.jobs j ON j.id = b.job_id
     WHERE b.id = booking_id
       AND (b.earner_id = auth.uid() OR j.poster_id = auth.uid())
+      AND NOT private.is_blocked_pair(b.earner_id, j.poster_id)
   )
 );
 

@@ -401,9 +401,13 @@ export function AuthProvider({ children }) {
     setOnbDone(true);
     setNeedsTerms(false);
     setPendingEmail(null);
-    // Background: push-token cleanup + refresh-token revocation ('local' scope =
-    // this device only). Fire-and-forget — failures are irrelevant to the user.
-    if (userId) unregisterPushToken(userId).catch(() => {});
+    // Push-token cleanup + refresh-token revocation ('local' scope = this device
+    // only). AWAIT the token removal (best-effort) BEFORE revoking the session so a
+    // successful sign-out actually deletes this device's token under owner RLS; the
+    // DB dedup trigger is the backstop for the offline-failure case.
+    if (userId) {
+      try { await unregisterPushToken(userId); } catch (_) { /* offline — DB dedup trigger reconciles */ }
+    }
     supabase.auth.signOut({ scope: 'local' }).catch(() => {});
     // Drop the natively cached Google account too, so the next Google sign-in
     // shows the account picker instead of silently reusing the last account.

@@ -15,9 +15,17 @@ export function statusMeta(status) {
   return BOOKING_STATUS[status] || BOOKING_STATUS.pending;
 }
 
-// Earner tab badge: bookings needing the earner's attention (accepted/paid).
+// Earner tab badge: only bookings that actually NEED the earner to act. Counting
+// ALL confirmed/verified rows left the badge permanently stuck on a finished+rated
+// gig, so this mirrors the needs-action logic both apps use inline (JobsContext /
+// web lib/jobs): a pending amendment, a confirmed gig not yet marked done, or a
+// verified gig the earner hasn't rated the poster on.
 export function earnBadgeCount(bookings) {
-  return (bookings || []).filter(b => b.status === 'confirmed' || b.status === 'verified').length;
+  return (bookings || []).filter(b =>
+    b.amendmentStatus === 'pending' ||
+    (b.status === 'confirmed' && !b.earnerDone) ||
+    (b.status === 'verified' && !b.posterRating),
+  ).length;
 }
 
 // Poster tab badge: bookings needing the poster's action (new requests / to verify).

@@ -90,6 +90,15 @@ export default function PostJobScreen({ navigation, route }) {
       haptic.error();
       return;
     }
+    // Pay must be a real, positive amount — '0'/'-5' pass the truthiness check above
+    // but would post a $0/negative gig that dead-ends at escrow (non-positive
+    // PaymentIntent). Guard it before anything else touches the value.
+    const pay = parseFloat(form.pay);
+    if (!Number.isFinite(pay) || pay <= 0 || pay > 10000) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: 'Pay must be more than $0 and no more than $10,000.' });
+      return;
+    }
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
@@ -128,7 +137,7 @@ export default function PostJobScreen({ navigation, route }) {
       await addJob({
         title: form.title,
         category: effectiveCategory,
-        pay: parseFloat(form.pay),
+        pay,
         payType: form.payType,
         location: form.location,
         description: form.description,

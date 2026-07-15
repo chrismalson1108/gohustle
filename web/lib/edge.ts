@@ -53,6 +53,10 @@ export const stripeEdge = {
     callEdgeFunction("stripe-tip", { bookingId, tipCents }),
   cancelPayment: (bookingId: string) =>
     callEdgeFunction("stripe-cancel-payment", { bookingId }),
+  // H3 (poster-ghosting): earner releases the full held payment to themselves after
+  // the grace window when the poster never confirms. Server re-checks every gate.
+  claimEarnerPayment: (bookingId: string) =>
+    callEdgeFunction("earner-claim-payment", { bookingId }),
   getPayoutOnboardingUrl: () =>
     callEdgeFunction<{ url: string }>("stripe-connect-onboard", {
       // Stripe returns the browser to <origin>/stripe/connect-return after onboarding.

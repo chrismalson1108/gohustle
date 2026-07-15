@@ -13,9 +13,13 @@ export default function SlotPicker({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  // Hide dated slots whose time has already passed (flexible/undated slots stay) —
+  // mirrors mobile so an earner can't select and book a slot that's already elapsed.
+  const now = new Date().getTime();
+  const visible = slots.filter((s) => !s.startsAt || new Date(s.startsAt).getTime() > now);
   return (
     <div className="flex flex-wrap gap-2">
-      {slots.map((s) => {
+      {visible.map((s) => {
         const active = selected === s.id;
         return (
           <button

@@ -124,12 +124,14 @@ const FUNCTIONS_URL = 'https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1';
 const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';
 
 // Fire a push to another user. Best-effort: never throws into UI flows.
+// Returns true when the send-push call succeeded (2xx), false otherwise — most
+// callers ignore this, but the invite path awaits it to confirm delivery.
 export async function notify(userId, title, body, data = {}) {
-  if (!userId || !title) return;
+  if (!userId || !title) return false;
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
-    await fetch(`${FUNCTIONS_URL}/send-push`, {
+    if (!session?.access_token) return false;
+    const res = await fetch(`${FUNCTIONS_URL}/send-push`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -138,7 +140,9 @@ export async function notify(userId, title, body, data = {}) {
       },
       body: JSON.stringify({ userId, title, body, data }),
     });
+    return res.ok;
   } catch (e) {
     console.warn('notify:', e?.message || e);
+    return false;
   }
 }

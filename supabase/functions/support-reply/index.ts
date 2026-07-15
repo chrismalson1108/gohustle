@@ -9,13 +9,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// True only for a valid Supabase user who is in admin_users.
+// Read the AAL claim straight from the (already-authenticated) access-token JWT
+// (local decode, no network round-trip). The console re-issues the token at aal2
+// after mfa.verify, so this claim is authoritative for "did this session pass MFA".
+// Mirrors admin/lib/guard.ts aalFromToken.
+function aalFromToken(token: string): string | null {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    return (JSON.parse(atob(b64 + pad)).aal as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// True only for a valid Supabase user who is in admin_users AND whose session
+// passed TOTP MFA (AAL2) — the same gate the admin console server enforces
+// (admin/lib/guard.ts). Without the AAL2 check a phished password-only (AAL1)
+// staff token could send branded email straight through this function.
 async function isAdminCaller(req: Request): Promise<boolean> {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
   if (!token) return false;
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const { data: { user } } = await admin.auth.getUser(token);
   if (!user) return false;
+  // getUser above proved the token authentic, so trusting its aal claim is sound.
+  if (aalFromToken(token) !== 'aal2') return false;
   const { data: row } = await admin.from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
   return !!row;
 }

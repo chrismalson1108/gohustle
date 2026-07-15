@@ -3,6 +3,7 @@
 import { supabase } from './supabase';
 import { uploadImage } from './uploadImage';
 import { findProhibited } from './contentFilter';
+import { logModerationBlock } from './moderation';
 
 export async function fetchCertifications(userId) {
   const { data } = await supabase
@@ -16,7 +17,10 @@ export async function fetchCertifications(userId) {
 export async function addCertification({ userId, title, issuer = null, year = null, imageUri = null }) {
   // These render on the public profile, so apply the same content filter the rest of
   // the app uses for user-visible free text.
-  if (findProhibited(`${title || ''} ${issuer || ''}`)) {
+  const certText = `${title || ''} ${issuer || ''}`;
+  const kwTerm = findProhibited(certText);
+  if (kwTerm) {
+    logModerationBlock(kwTerm, 'certification', certText.trim());
     throw new Error("That text isn't allowed — please edit the title or issuer.");
   }
   let image_url = null;

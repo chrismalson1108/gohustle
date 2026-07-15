@@ -1,14 +1,14 @@
 import { betaSignupMessage } from '../src/lib/authErrors';
 
-describe('betaSignupMessage (H1 closed-beta gate UX)', () => {
-  test('maps the generic GoTrue trigger failure to beta copy', () => {
+describe('betaSignupMessage (open-beta signup UX)', () => {
+  test('maps a generic GoTrue 500 to neutral retry copy, NOT invite-only copy', () => {
     const msg = betaSignupMessage({ message: 'Database error saving new user', status: 500 });
-    expect(msg).toMatch(/closed beta/i);
-    expect(msg).toMatch(/invited with/i);
+    expect(msg).toMatch(/try again/i);
+    expect(msg).not.toMatch(/invite|invited with/i);
   });
 
-  test('maps a leaked allowlist message to beta copy', () => {
-    expect(betaSignupMessage({ message: 'signup_not_allowlisted' })).toMatch(/closed beta/i);
+  test('maps an explicit allowlist-rejection message to invite-only copy', () => {
+    expect(betaSignupMessage({ message: 'signup_not_allowlisted' })).toMatch(/invite-only/i);
   });
 
   test('passes through unrelated auth errors unchanged', () => {

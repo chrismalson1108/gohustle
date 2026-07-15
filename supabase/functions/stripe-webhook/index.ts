@@ -3,6 +3,7 @@
 //   https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook
 // Required events: payment_intent.succeeded, payment_intent.payment_failed,
 //   payment_intent.canceled, account.updated,
+//   charge.dispute.created, charge.refunded,
 //   identity.verification_session.verified, identity.verification_session.requires_input,
 //   identity.verification_session.canceled
 import Stripe from 'npm:stripe@15';
@@ -12,6 +13,75 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, stripe-signature',
 };
+
+const NOTIFY_FROM = 'GoHustlr <notifications@gohustlr.com>';
+const ADMIN_NOTIFY = 'mainmail@gohustlr.com';
+
+function esc(s: string): string {
+  return (s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
+}
+
+// Best-effort admin alert — never throws, so a Resend outage can't wedge the webhook
+// (Stripe would otherwise retry and we'd re-run the DB writes). Logs loudly if unsent.
+async function emailAdmin(subject: string, html: string): Promise<void> {
+  try {
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+    if (!RESEND_API_KEY) {
+      console.error(`[stripe-webhook] RESEND_API_KEY unset — could not email admin: ${subject}`);
+      return;
+    }
+    const to = Deno.env.get('SAFETY_ONCALL_EMAIL') || ADMIN_NOTIFY;
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: NOTIFY_FROM, to: [to], subject, html }),
+    });
+    if (!res.ok) console.error('[stripe-webhook] resend error:', await res.text().catch(() => res.status));
+  } catch (e) {
+    console.error('[stripe-webhook] emailAdmin failed:', e);
+  }
+}
+
+// Record a payment-reversal event (chargeback / refund) against the booking as a
+// `disputes` row. An open disputes row is exactly what earner-claim-payment (and the
+// poster capture path) treat as "under dispute", so this ALSO suppresses any further
+// auto-capture on the booking. Idempotent: keyed on the Stripe object id embedded in
+// the reason, so Stripe redeliveries don't duplicate. Returns the booking_id if found.
+async function recordReversal(
+  supabase: ReturnType<typeof createClient>,
+  paymentIntentId: string | null,
+  externalId: string,
+  reason: string,
+): Promise<string | null> {
+  if (!paymentIntentId) return null;
+  const { data: payment } = await supabase
+    .from('payments').select('id, booking_id').eq('payment_intent_id', paymentIntentId).maybeSingle();
+  const bookingId = (payment as { booking_id?: string } | null)?.booking_id;
+  if (!bookingId) return null;
+
+  // raised_by is NOT NULL → attribute to the poster (the cardholder who charged back);
+  // fall back to the earner if the join is somehow unavailable.
+  const { data: bk } = await supabase
+    .from('bookings').select('earner_id, job_id').eq('id', bookingId).single();
+  let raisedBy = (bk as { earner_id?: string } | null)?.earner_id ?? null;
+  const jobId = (bk as { job_id?: string } | null)?.job_id;
+  if (jobId) {
+    const { data: job } = await supabase.from('jobs').select('poster_id').eq('id', jobId).single();
+    raisedBy = (job as { poster_id?: string } | null)?.poster_id ?? raisedBy;
+  }
+  if (!raisedBy) return bookingId;
+
+  const { data: existing } = await supabase
+    .from('disputes').select('id').eq('booking_id', bookingId).ilike('reason', `%${externalId}%`).maybeSingle();
+  if (!existing) {
+    await supabase.from('disputes').insert({
+      booking_id: bookingId,
+      raised_by: raisedBy,
+      reason: reason.slice(0, 500),
+    });
+  }
+  return bookingId;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -136,6 +206,59 @@ Deno.serve(async (req: Request) => {
         await supabase.from('stripe_accounts')
           .update({ onboarded: fullyOnboarded })
           .eq('account_id', account.id);
+        break;
+      }
+
+      case 'charge.dispute.created': {
+        // H12: a (possibly stolen-card) chargeback. Money is being clawed back from
+        // the platform while the earner may already be paid out. Record it as an open
+        // dispute on the booking — which suppresses any further auto-capture — and page
+        // the admin so a human can freeze/recover before the live-key cutover turns
+        // this into a real loss. Idempotent (Stripe redelivers).
+        const dispute = event.data.object as Stripe.Dispute;
+        const piId = typeof dispute.payment_intent === 'string'
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id ?? null;
+        const amount = ((dispute.amount ?? 0) / 100).toFixed(2);
+        const bookingId = await recordReversal(
+          supabase, piId, dispute.id,
+          `Stripe chargeback ${dispute.id} (${dispute.reason ?? 'unknown'}, ${dispute.currency ?? 'usd'} ${amount})`,
+        );
+        await emailAdmin(
+          `⚠️ Chargeback opened: ${dispute.currency ?? 'usd'} ${amount}`,
+          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+            <p style="font-size:16px;"><strong>A card dispute (chargeback) was opened.</strong></p>
+            <p><strong>Amount:</strong> ${esc((dispute.currency ?? 'usd').toUpperCase())} ${esc(amount)}</p>
+            <p><strong>Reason:</strong> ${esc(String(dispute.reason ?? 'unknown'))}</p>
+            <p><strong>Booking:</strong> ${bookingId ? esc(bookingId) : 'not matched — investigate in Stripe'}</p>
+            <p style="color:#5B5570;font-size:12px;">Dispute ${esc(dispute.id)}${piId ? ` · PI ${esc(piId)}` : ''}. The booking is flagged (auto-settlement suppressed); review and respond in Stripe.</p>
+          </div>`,
+        );
+        break;
+      }
+
+      case 'charge.refunded': {
+        // A charge was refunded (full or partial) — the poster's money went back.
+        // Record it against the booking and alert the admin so payout/ledger can be
+        // reconciled. Idempotent per charge id.
+        const charge = event.data.object as Stripe.Charge;
+        const piId = typeof charge.payment_intent === 'string'
+          ? charge.payment_intent
+          : charge.payment_intent?.id ?? null;
+        const refunded = ((charge.amount_refunded ?? 0) / 100).toFixed(2);
+        const bookingId = await recordReversal(
+          supabase, piId, charge.id,
+          `Stripe refund on charge ${charge.id} (${charge.currency ?? 'usd'} ${refunded} refunded)`,
+        );
+        await emailAdmin(
+          `Refund processed: ${charge.currency ?? 'usd'} ${refunded}`,
+          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+            <p style="font-size:16px;"><strong>A charge was refunded.</strong></p>
+            <p><strong>Refunded:</strong> ${esc((charge.currency ?? 'usd').toUpperCase())} ${esc(refunded)}</p>
+            <p><strong>Booking:</strong> ${bookingId ? esc(bookingId) : 'not matched — investigate in Stripe'}</p>
+            <p style="color:#5B5570;font-size:12px;">Charge ${esc(charge.id)}${piId ? ` · PI ${esc(piId)}` : ''}. Reconcile the earner payout/ledger if already credited.</p>
+          </div>`,
+        );
         break;
       }
 
