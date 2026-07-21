@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Platform, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORY_COLORS } from '../data/mockData';
 import { maskLocation } from '../lib/address';
 import { colors } from '../theme';
@@ -21,6 +22,7 @@ function loadMaps() {
 // Map of nearby gigs. Centers on the user (or the first gig) and drops a pin per
 // gig that has coordinates. Tapping a pin opens that gig.
 export default function JobsMap({ jobs, userCoords, onPressJob }) {
+  const insets = useSafeAreaInsets();
   if (Platform.OS === 'web') {
     return (
       <View style={styles.fallback}>
@@ -46,6 +48,9 @@ export default function JobsMap({ jobs, userCoords, onPressJob }) {
       <MapView
         provider={PROVIDER_DEFAULT}
         style={StyleSheet.absoluteFill}
+        // Keep Apple's Legal label / Google logo and bottom-band pins clear of
+        // the floating tab bar, which overlays the map instead of ending it.
+        mapPadding={{ top: 0, left: 0, right: 0, bottom: Math.max(insets.bottom, 16) + 78 }}
         showsUserLocation={!!userCoords}
         initialRegion={{
           latitude: center.lat,

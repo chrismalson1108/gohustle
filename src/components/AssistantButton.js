@@ -133,9 +133,9 @@ export default function AssistantButton() {
 
   return (
     <>
-      {/* Floating launcher — sits above the tab bar */}
+      {/* Floating launcher — sits above the floating pill tab bar */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 78 }]}
         onPress={() => { haptic?.light?.(); setOpen(true); }}
         activeOpacity={0.85}
         accessibilityLabel="Open Hustlr AI assistant"
@@ -306,7 +306,7 @@ function relTime(iso) {
 
 const styles = StyleSheet.create({
   fab: {
-    position: 'absolute', right: 16, bottom: 80, width: 56, height: 56, borderRadius: 28,
+    position: 'absolute', right: 16, width: 56, height: 56, borderRadius: 28,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadows.md,
   },
   modal: { flex: 1, backgroundColor: colors.background },

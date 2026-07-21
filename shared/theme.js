@@ -31,6 +31,17 @@ export const colors = {
   successLight: '#E7F8EE',
 };
 
+// Corner-radius system. Three sizes only — mixing 6/8/12/14/16/20/22 across one
+// screen is the "AI template" tell we're moving away from. `pill` is for true
+// pills (chips, avatars, the tab bar) and nothing else.
+export const radii = {
+  sm: 10,   // small inline chips, badges, tags
+  md: 14,   // inputs, buttons, controls
+  lg: 20,   // cards, panels
+  xl: 28,   // bottom sheets / modals
+  pill: 999,
+};
+
 export const gradients = {
   primary: ['#3F25FE', '#2B17C2'],
   earn:    ['#4733FF', '#1E2A8F'],
@@ -46,26 +57,28 @@ export const cssGradients = {
   profile: 'linear-gradient(135deg, #5538FF, #2B17C2)',
 };
 
+// Neutral (black, low-opacity) shadows only — brand-tinted shadows read as "glow"
+// and are one of the AI-generated-design tells we're moving away from.
 export const shadows = {
   sm: {
-    shadowColor: '#3F25FE',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   md: {
-    shadowColor: '#3F25FE',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: 3,
   },
   card: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
 };

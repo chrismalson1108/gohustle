@@ -22,6 +22,7 @@ import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useHaptic } from '../hooks/useHaptic';
+import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, gradients, shadows } from '../theme';
 
 
@@ -36,6 +37,7 @@ export default function ProfileScreen({ navigation }) {
   const { postedJobs, bookedJobs, bookings, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
   const { signOut, user } = useAuth();
   const haptic = useHaptic();
+  const onTabBarScroll = useTabBarScrollHandler();
   const [payReady, setPayReady] = useState(null); // { payoutReady, paymentMethodReady }
   const [editGoals, setEditGoals] = useState(false);
   const [earGoal, setEarGoal] = useState(String(weeklyEarningGoal));
@@ -207,6 +209,9 @@ export default function ProfileScreen({ navigation }) {
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 140 }}
+      onScroll={onTabBarScroll}
+      scrollEventThrottle={32}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       <GradientHeader colors={gradients.profile}>

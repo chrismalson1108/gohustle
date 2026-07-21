@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
-import GradientHeader from '../components/GradientHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import JobCard from '../components/JobCard';
 import JobsMap from '../components/JobsMap';
 import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
@@ -13,7 +13,8 @@ import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { haversineMiles, milesLabel } from '../lib/geo';
-import { colors, gradients } from '../theme';
+import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
+import { colors } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 import { matchesForYou } from '../lib/filters';
 
@@ -73,6 +74,8 @@ export default function HomeScreen({ navigation }) {
   const { name, streakDays, school, skills, city } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
+  const insets = useSafeAreaInsets();
+  const onTabBarScroll = useTabBarScrollHandler();
   const [selectedCat, setSelectedCat] = useState('all');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -242,14 +245,14 @@ export default function HomeScreen({ navigation }) {
 
   const header = (
     <>
-      <GradientHeader colors={gradients.primary} style={{ paddingBottom: 18 }}>
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.topRow}>
           <View>
             <Text style={styles.greeting}>Hey {name}</Text>
             <Text style={styles.sub}>Ready to hustle?</Text>
           </View>
           <View style={styles.streakPill}>
-            <Ionicons name="flame" size={15} color="#F59E0B" />
+            <Ionicons name="flame" size={14} color="#F59E0B" />
             {streakDays > 0 ? (
               <>
                 <Text style={styles.streakNum}>{streakDays}</Text>
@@ -280,7 +283,7 @@ export default function HomeScreen({ navigation }) {
             style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
             onPress={() => { haptic.light(); setShowFilter(true); }}
           >
-            <Ionicons name="options" size={20} color={activeFilterCount > 0 ? '#fff' : colors.primary} />
+            <Ionicons name="options" size={20} color="#fff" />
             {activeFilterCount > 0 && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
@@ -288,7 +291,7 @@ export default function HomeScreen({ navigation }) {
             )}
           </TouchableOpacity>
         </View>
-      </GradientHeader>
+      </View>
 
       <ScrollView
         horizontal showsHorizontalScrollIndicator={false}
@@ -303,7 +306,7 @@ export default function HomeScreen({ navigation }) {
               style={[styles.catChip, active && styles.catChipActive]}
               onPress={() => { haptic.light(); setSelectedCat(cat.id); }}
             >
-              <Ionicons name={cat.ion} size={14} color={active ? '#fff' : colors.primary} style={styles.catIcon} />
+              <Ionicons name={cat.ion} size={14} color={active ? '#fff' : colors.textSecondary} style={styles.catIcon} />
               <Text style={[styles.catLabel, active && styles.catLabelActive]}>
                 {cat.label}
               </Text>
@@ -326,14 +329,14 @@ export default function HomeScreen({ navigation }) {
             style={styles.viewToggle}
             onPress={() => { haptic.light(); navigation.navigate('MarketInsights'); }}
           >
-            <Ionicons name="bar-chart-outline" size={16} color={colors.primary} />
+            <Ionicons name="bar-chart-outline" size={16} color={colors.textPrimary} />
             <Text style={styles.viewToggleText} numberOfLines={1}>Insights</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.viewToggle}
-            onPress={() => { haptic.light(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
+            onPress={() => { haptic.light(); expandTabBar(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
           >
-            <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.primary} />
+            <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.textPrimary} />
             <Text style={styles.viewToggleText} numberOfLines={1}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
           </TouchableOpacity>
         </View>
@@ -379,6 +382,8 @@ export default function HomeScreen({ navigation }) {
         )}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
+        onScroll={onTabBarScroll}
+        scrollEventThrottle={32}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
@@ -393,7 +398,7 @@ export default function HomeScreen({ navigation }) {
                   : 'No gigs match your filters'}
             </Text>
             {forYouNoSkills ? (
-              <TouchableOpacity onPress={() => navigation.navigate('ProfileTab', { screen: 'Settings' })} style={styles.emptyReset}>
+              <TouchableOpacity onPress={() => navigation.navigate('ProfileTab', { screen: 'Settings', initial: false })} style={styles.emptyReset}>
                 <Text style={styles.emptyResetText}>Add your skills</Text>
               </TouchableOpacity>
             ) : activeFilterCount > 0 ? (
@@ -420,69 +425,71 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  greeting: { fontSize: 27, fontWeight: '900', color: '#fff', letterSpacing: -0.4, marginBottom: 2 },
-  sub: { fontSize: 13.5, fontWeight: '500', color: 'rgba(255,255,255,0.75)' },
+  header: {
+    backgroundColor: colors.background,
+    paddingHorizontal: 20, paddingBottom: 4,
+  },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  greeting: { fontSize: 26, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5, marginBottom: 2 },
+  sub: { fontSize: 14, color: colors.textSecondary },
   streakPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: colors.surface,
     borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
   },
-  streakNum: { fontSize: 15, fontWeight: '900', color: '#fff' },
-  streakLabel: { fontSize: 11.5, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+  streakNum: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  streakLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
   searchRow: { flexDirection: 'row', alignItems: 'center' },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 14,
-    paddingHorizontal: 14, height: 46,
+    backgroundColor: colors.surface, borderRadius: 14,
+    paddingHorizontal: 14, height: 48,
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary },
-  searchClear: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
   filterBtn: {
-    width: 46, height: 46, borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: colors.textPrimary,
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 10,
   },
-  filterBtnActive: { backgroundColor: '#fff' },
-  filterIcon: { fontSize: 20 },
+  filterBtnActive: { backgroundColor: colors.primary },
   filterBadge: {
     position: 'absolute', top: -4, right: -4,
     backgroundColor: colors.urgent, borderRadius: 8,
     minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 3,
   },
-  filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   catScroll: { flexGrow: 0, flexShrink: 0 },
   catRow: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, alignItems: 'center' },
   catChip: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: 22, backgroundColor: colors.surface,
-    borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: 999, backgroundColor: colors.surface,
     marginRight: 8,
   },
-  catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  catChipActive: { backgroundColor: colors.textPrimary },
   catIcon: { fontSize: 15, marginRight: 6 },
-  catLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  catLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   catLabelActive: { color: '#fff' },
   resultsRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, marginBottom: 8,
+    paddingHorizontal: 16, marginBottom: 8, marginTop: 4,
   },
   sectionTitle: {
-    fontSize: 13, fontWeight: '700', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.5,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
     // Yield space (and ellipsize) so the right-hand action cluster is never
     // clipped when a filter is active (Clear filters + Insights + Map/List).
     flexShrink: 1, marginRight: 8,
   },
-  clearFilters: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  clearFilters: { fontSize: 13, fontWeight: '600', color: colors.primary },
   resultsRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   viewToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewToggleText: { fontSize: 13, fontWeight: '700', color: colors.primary },
-  list: { paddingBottom: 96 },
+  viewToggleText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  // Clearance for the floating tab bar (which overlays content instead of
+  // reserving layout space like the old opaque bar did).
+  list: { paddingBottom: 148 },
   empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { fontSize: 16, color: colors.textSecondary, textAlign: 'center' },

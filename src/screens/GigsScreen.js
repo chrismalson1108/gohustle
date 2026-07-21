@@ -18,6 +18,7 @@ import MessageSheet from '../components/MessageSheet';
 import Avatar from '../components/Avatar';
 import SignedImage from '../components/SignedImage';
 import { skillFitScore } from '../lib/filters';
+import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, gradients, shadows } from '../theme';
 
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
@@ -77,6 +78,7 @@ export default function GigsScreen({ navigation }) {
   const { showToast } = useUser();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
+  const onTabBarScroll = useTabBarScrollHandler();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [tab, setTab]                   = useState('active'); // 'active' | 'past'
@@ -308,7 +310,9 @@ export default function GigsScreen({ navigation }) {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 140 }}
+        onScroll={onTabBarScroll}
+        scrollEventThrottle={32}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {!hasCard && (

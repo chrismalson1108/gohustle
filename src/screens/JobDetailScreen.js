@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PosterTrustCard from '../components/PosterTrustCard';
 import SlotPicker from '../components/SlotPicker';
 import RatingStars from '../components/RatingStars';
@@ -48,6 +49,7 @@ export default function JobDetailScreen({ route, navigation }) {
   const { addXP, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
+  const insets = useSafeAreaInsets();
 
   // Not every viewable job is in the browse list — conversation links can point
   // at past (soft-cancelled) listings, so fall back to a direct fetch.
@@ -410,7 +412,10 @@ export default function JobDetailScreen({ route, navigation }) {
         <View style={{ height: (alreadyBooked || isOwnJob) ? 230 : 130 }} />
       </ScrollView>
 
-      <View style={styles.footer}>
+      {/* The tab bar no longer reserves layout space (floating pill, hidden on
+          detail screens), so the pinned footer must clear the home indicator /
+          Android system nav itself. */}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
         {job.status === 'cancelled' ? (
           <View style={styles.ownJobBanner}>
             <Text style={styles.ownJobText}>This listing has been removed</Text>
@@ -635,7 +640,7 @@ const styles = StyleSheet.create({
   reviewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff', padding: 20, paddingBottom: 36,
+    backgroundColor: '#fff', padding: 20,
     borderTopWidth: 1, borderTopColor: colors.border,
     ...shadows.md,
   },

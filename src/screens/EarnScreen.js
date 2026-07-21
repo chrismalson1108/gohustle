@@ -27,6 +27,7 @@ import { addExpense } from '../lib/expenses';
 import { haversineMiles } from '../lib/geo';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { canClaimEarnerPayment } from '../../shared/lifecycle';
+import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, gradients, shadows } from '../theme';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
@@ -58,6 +59,7 @@ export default function EarnScreen({ navigation }) {
   const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, claimEarnerPayment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
   const haptic = useHaptic();
+  const onTabBarScroll = useTabBarScrollHandler();
   const [tab, setTab]                   = useState('active'); // 'active' | 'awaiting' | 'completed'
   const [msgTarget, setMsgTarget]       = useState(null);
   const [finishTarget, setFinishTarget] = useState(null); // booking being marked done
@@ -701,6 +703,9 @@ export default function EarnScreen({ navigation }) {
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 140 }}
+      onScroll={onTabBarScroll}
+      scrollEventThrottle={32}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       <GradientHeader colors={gradients.earn}>

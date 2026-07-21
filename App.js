@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -12,6 +13,7 @@ import { UserProvider } from './src/context/UserContext';
 import { JobsProvider, useJobs } from './src/context/JobsContext';
 import AchievementToast from './src/components/AchievementToast';
 import AssistantButton from './src/components/AssistantButton';
+import FloatingTabBar from './src/components/FloatingTabBar';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { STRIPE_PUBLISHABLE_KEY } from './src/lib/stripeClient';
 import { registerPushToken, addNotificationResponseListener } from './src/lib/push';
@@ -67,8 +69,9 @@ function PushManager() {
 
 const DETAIL_OPTS = {
   headerShown: true, title: '',
-  headerTransparent: false, headerTintColor: colors.primary,
-  headerShadowVisible: false, headerStyle: { backgroundColor: '#fff' },
+  headerTransparent: false, headerTintColor: colors.textPrimary,
+  headerShadowVisible: false, headerStyle: { backgroundColor: colors.background },
+  headerTitleStyle: { color: colors.textPrimary, fontWeight: '700', fontSize: 17 },
   headerBackButtonDisplayMode: 'minimal', // chevron only — no "GigsMain" label (RN-nav v7)
 };
 
@@ -76,16 +79,15 @@ const MANAGE_OPTS = {
   headerShown: false,
 };
 
-// Hero pattern for screens that open with their own <GradientHeader underNav>:
-// the native bar is transparent, so the gradient runs to the very top of the
-// screen and the back button floats over it (iOS 26 draws it in a frosted
-// circle, which stays legible over the gradient AND over scrolled content).
-// Opaque DETAIL_OPTS here would stack a dead white strip on top of the gradient.
+// Hero pattern for screens that open with their own <ScreenHeader underNav>:
+// the native bar is transparent, so the screen's own header runs to the very
+// top and the back button floats over it (iOS 26 draws it in a frosted circle,
+// which stays legible over content as it scrolls past).
 const HERO_OPTS = {
   ...DETAIL_OPTS,
   headerTransparent: true,
-  // DETAIL_OPTS paints the bar white — that would cover the gradient. Must be
-  // transparent here or the "floating" header renders as an opaque white strip.
+  // Must stay transparent — an opaque bar would stack a dead strip on top of
+  // the screen's own header.
   headerStyle: { backgroundColor: 'transparent' },
 };
 
@@ -170,27 +172,18 @@ function AppNavigator() {
   return (
     <NavigationContainer ref={navigationRef}>
       <Tab.Navigator
+        tabBar={(props) => <FloatingTabBar {...props} />}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarIcon: ({ focused, color, size }) => {
             const [on, off] = TAB_ICONS[route.name] || ['ellipse', 'ellipse-outline'];
             return <Ionicons name={focused ? on : off} size={size} color={color} />;
           },
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarStyle: {
-            backgroundColor: '#fff',
-            borderTopColor: colors.border,
-            paddingBottom: 6,
-            height: 64,
-          },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
           tabBarBadge:
             route.name === 'EarnTab'     && earnBadgeCount    > 0 ? earnBadgeCount    :
             route.name === 'GigsTab'     && profileBadgeCount > 0 ? profileBadgeCount :
             route.name === 'MessagesTab' && unreadMessages    > 0 ? unreadMessages    :
             undefined,
-          tabBarBadgeStyle: { backgroundColor: colors.urgent, fontSize: 10, fontWeight: '800' },
         })}
       >
         <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Browse' }} />
@@ -241,6 +234,9 @@ export default function App() {
   return (
     <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.gohustlr">
       <SafeAreaProvider>
+        {/* Every surface is light now, so dark status-bar content is the global
+            default; full-screen modals with dark headers override locally. */}
+        <StatusBar style="dark" />
         <ErrorBoundary>
           <AuthProvider>
             <RootNavigator />

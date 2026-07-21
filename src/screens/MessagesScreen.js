@@ -13,6 +13,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText, notBlocked,
 } from '../lib/messages';
+import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, gradients, shadows } from '../theme';
 
 function timeLabel(iso) {
@@ -30,6 +31,7 @@ export default function MessagesScreen({ navigation }) {
   const { user } = useAuth();
   const { bookings, posterBookings, jobs, refreshUnread, blockedIds } = useJobs();
   const haptic = useHaptic();
+  const onTabBarScroll = useTabBarScrollHandler();
   const [convos, setConvos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -122,7 +124,9 @@ export default function MessagesScreen({ navigation }) {
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingTop: 4, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 140 }}
+          onScroll={onTabBarScroll}
+          scrollEventThrottle={32}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >
           {shown.length === 0 ? (
