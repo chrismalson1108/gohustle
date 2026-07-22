@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
 import { CATEGORY_COLORS, findProhibited } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
+import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -69,6 +70,27 @@ export default function JobDetailPage() {
     return () => { live = false; };
   }, [id, listJob, fetchTried, fetchJobById]);
 
+  // jobs.location is masked server-side (migration 20260722040000); the exact address
+  // lives in job_locations, readable only by the poster/accepted earner via RLS. Fetch
+  // it for an authorized viewer so the "address after acceptance" reveal still works.
+  const [exactLocation, setExactLocation] = useState<string | null>(null);
+  useEffect(() => {
+    const cb = bookings.find((b) => b.jobId === job?.id);
+    const canSee = canSeeExactAddress({ isPoster: !!(job?.posterId && user?.id === job.posterId), bookingStatus: cb?.status });
+    if (!job?.id || !canSee) { setExactLocation(null); return; }
+    let live = true;
+    supabase
+      .from("job_locations")
+      .select("exact_location")
+      .eq("job_id", job.id)
+      .maybeSingle()
+      .then(
+        ({ data }) => { if (live) setExactLocation((data?.exact_location as string) || null); },
+        () => { if (live) setExactLocation(null); },
+      );
+    return () => { live = false; };
+  }, [job?.id, job?.posterId, bookings, user?.id]);
+
   if (!job) {
     if (!fetchTried) return <FullPageSpinner label="Loading gig…" />;
     return (
@@ -92,7 +114,9 @@ export default function JobDetailPage() {
   const currentBooking = bookings.find((b) => b.jobId === job.id);
   // Address privacy: exact location shows only to the poster or an accepted earner.
   const showExactAddress = canSeeExactAddress({ isPoster: !!isOwnJob, bookingStatus: currentBooking?.status });
-  const displayLocation = showExactAddress ? job.location : maskLocation(job.location);
+  // job.location is already the masked label from the server; the exact address (when
+  // the viewer is entitled to it) is fetched separately into exactLocation.
+  const displayLocation = showExactAddress ? (exactLocation || job.location) : maskLocation(job.location);
   const addressMasked = !showExactAddress && !String(job.location || "").toLowerCase().includes("remote");
   const jobPosterBookings = posterBookings.filter((b) => b.jobId === job.id);
   const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";

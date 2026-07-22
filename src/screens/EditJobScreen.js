@@ -12,6 +12,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
+import { supabase } from '../lib/supabase';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
@@ -57,6 +58,25 @@ export default function EditJobScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // jobs.location is masked server-side (migration 20260722040000); the exact address
+  // lives in job_locations (RLS lets the poster read it). Load it into the form so a
+  // save doesn't write the masked label back over the real address — only replace the
+  // field if the poster hasn't already edited it.
+  React.useEffect(() => {
+    if (!job?.id) return;
+    let active = true;
+    supabase.from('job_locations').select('exact_location').eq('job_id', job.id).maybeSingle()
+      .then(
+        ({ data }) => {
+          if (active && data?.exact_location) {
+            setForm(p => (p.location === (job.location || '') ? { ...p, location: data.exact_location } : p));
+          }
+        },
+        () => {},  // fetch failed — keep the form's current (masked) value
+      );
+    return () => { active = false; };
+  }, [job?.id]);
 
   const addPhotos = async () => {
     const res = await pickImages({ multiple: true });
