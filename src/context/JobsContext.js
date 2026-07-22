@@ -126,6 +126,12 @@ export function JobsProvider({ children }) {
   const myPostedIdsRef = useRef([]);
   myPostedIdsRef.current = state.myPostedIds;
 
+  // Always-current view of state for callbacks that must NOT be re-created on every
+  // list refresh (see refreshUnread) — reading through the ref keeps them correct
+  // without making the reducer's array identities part of their dependency list.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const [blockedIds, setBlockedIds] = useState(new Set());
   const [savedJobIds, setSavedJobIds] = useState(new Set());
 
@@ -165,9 +171,20 @@ export function JobsProvider({ children }) {
 
   // Unread-message count for the Messages tab badge.
   const [unreadMessages, setUnreadMessages] = useState(0);
+  // Depend on the SET of conversation ids, not on the arrays' identities. Every
+  // loadBookings()/loadPosterBookings() (pull-to-refresh, realtime, cache warm-up)
+  // hands back brand-new array objects, which used to re-create this callback and
+  // re-run the effect below — re-downloading last-messages + conversation state on
+  // every refresh even when the conversations were unchanged. These keys only move
+  // when a booking actually appears or disappears.
+  const bookingIdsKey       = state.bookings.map(b => b.id).sort().join(',');
+  const posterBookingIdsKey = state.posterBookings.map(b => b.id).sort().join(',');
   const refreshUnread = useCallback(async () => {
     if (!user) { setUnreadMessages(0); return; }
     try {
+      // Read live state through the ref — the callback is intentionally not
+      // re-created when these arrays are replaced, so a closure would go stale.
+      const state = stateRef.current;
       // Resolve each booking's counterparty the same way the Messages hub does
       // (poster bookings → the earner; earner bookings → the job's poster) and drop
       // conversations with a blocked party. Otherwise the badge keeps counting unread
@@ -184,7 +201,7 @@ export function JobsProvider({ children }) {
       ids.forEach(id => { const s = st[id]; if (!s?.archived && isUnread(last[id], s, user.id)) n++; });
       setUnreadMessages(n);
     } catch (_) {}
-  }, [user?.id, state.bookings, state.posterBookings, state.jobs, blockedIds]);
+  }, [user?.id, bookingIdsKey, posterBookingIdsKey, blockedIds]);
 
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
   const refreshUnreadRef = useRef(refreshUnread);
@@ -508,12 +525,15 @@ export function JobsProvider({ children }) {
       console.warn('Earner done error:', error.message);
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: prev }); // roll back
       showToast({ icon: '⚠️', title: "Couldn't mark done", message: 'Something went wrong — please try again.' });
-      return;
+      // Return an honest result: callers gate their "Marked Done!" toast on this, and
+      // an undefined return was indistinguishable from success after a failed write.
+      return false;
     }
     const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
     if (posterId) {
       notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab', type: 'booking' });
     }
+    return true;
   };
 
   // Poster marks their side done; if earner already done → complete
@@ -530,11 +550,13 @@ export function JobsProvider({ children }) {
       console.warn('Poster done error:', error.message);
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: prev }); // roll back
       showToast({ icon: '⚠️', title: "Couldn't mark done", message: 'Something went wrong — please try again.' });
-      return;
+      // Honest result for the caller's success gate (see markEarnerDone).
+      return false;
     }
     if (booking?.earner?.id) {
       notify(booking.earner.id, 'Poster confirmed completion', 'The poster marked the job done on their side.', { tab: 'EarnTab', type: 'booking' });
     }
+    return true;
   };
 
   // Keep old name as alias for earner side
@@ -807,14 +829,21 @@ export function JobsProvider({ children }) {
       return false;
     }
 
-    // Capture escrow payment (partial if a dispute). 'Payment not found' = a
-    // pre-Stripe booking with no hold → continue without capture.
+    // Capture escrow payment (partial if a dispute). 'Payment not found' means this
+    // booking has no escrow hold at all. We must NOT continue: guard_bookings_write
+    // only allows completed→verified when a CAPTURED payments row exists, so the
+    // status write below would be silently reverted by the trigger (PostgREST returns
+    // no error) and the booking would sit in 'completed' after we reported success.
+    // Surface an honest failure instead of a fake verify.
     try {
       await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined);
     } catch (err) {
-      if (!err.message?.includes('Payment not found')) {
-        throw err;
+      if (err.message?.includes('Payment not found')) {
+        captureError(err, { op: 'verifyAndRate.capture', bookingId });
+        showToast({ icon: '⚠️', title: "Can't verify yet", message: 'No escrow payment was found for this booking, so it can\'t be marked paid. Please contact support.' });
+        return false;
       }
+      throw err;
     }
 
     const patch = {
@@ -943,11 +972,43 @@ export function JobsProvider({ children }) {
     }
 
     if (jobData.slots) {
-      await supabase.from('job_slots').delete().eq('job_id', jobId);
-      if (jobData.slots.length) {
+      // RECONCILE — never delete-all-then-reinsert. Every job_slots row got new ids on
+      // any save, so bookings_slot_id_fkey (ON DELETE SET NULL) blanked the slot_id of
+      // live bookings: the booking lost its slot link, and the partial unique index
+      // bookings_one_active_per_slot no longer covered it, so the freshly re-inserted
+      // slot came back looking free and a second earner could book it. Keep rows whose
+      // label+starts_at is unchanged, insert only genuinely new ones, and delete only
+      // slots that NO booking references.
+      const { data: existingSlots } = await supabase
+        .from('job_slots').select('id, label, starts_at').eq('job_id', jobId);
+      // starts_at comes back from Postgres in a different string format than the
+      // client's ISO value, so compare the parsed instant, not the raw text.
+      const keyOf = (label, startsAt) => {
+        const t = startsAt ? new Date(startsAt).getTime() : NaN;
+        return `${label}|${Number.isNaN(t) ? (startsAt || '') : t}`;
+      };
+      const wanted = new Map(jobData.slots.map(s => [keyOf(s.label, s.startsAt), s]));
+      const keptKeys = new Set();
+      const staleIds = [];
+      (existingSlots || []).forEach(row => {
+        const k = keyOf(row.label, row.starts_at);
+        if (wanted.has(k) && !keptKeys.has(k)) keptKeys.add(k);
+        else staleIds.push(row.id);   // removed by the poster, or an exact duplicate
+      });
+      const toInsert = [...wanted.entries()].filter(([k]) => !keptKeys.has(k));
+      if (toInsert.length) {
         await supabase.from('job_slots').insert(
-          jobData.slots.map(s => ({ job_id: jobId, label: s.label, taken: s.taken || false, starts_at: s.startsAt || null }))
+          toInsert.map(([, s]) => ({ job_id: jobId, label: s.label, taken: s.taken || false, starts_at: s.startsAt || null }))
         );
+      }
+      if (staleIds.length) {
+        const { data: bookedSlots } = await supabase
+          .from('bookings').select('slot_id').in('slot_id', staleIds);
+        const booked = new Set((bookedSlots || []).map(b => b.slot_id));
+        // A booked slot stays put even if the poster removed it from the form —
+        // dropping it would strand the live booking with a dangling slot_id.
+        const deletable = staleIds.filter(id => !booked.has(id));
+        if (deletable.length) await supabase.from('job_slots').delete().in('id', deletable);
       }
     }
     if (jobData.requirements) {

@@ -9,6 +9,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
+import { supabase } from '../lib/supabase';
 import { useHaptic } from '../hooks/useHaptic';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
@@ -72,7 +73,7 @@ export default function GigsScreen({ navigation }) {
     acceptBooking, declineBooking, cancelBooking, cancellationFeeFor,
     markPosterDone, verifyAndRate, deleteJob, bumpJob,
     refreshJobs, refreshPosterBookings,
-    proposeAmendment, createPaymentIntent, getPaymentMethodStatus,
+    proposeAmendment, clearAmendment, createPaymentIntent, getPaymentMethodStatus,
   } = useJobs();
   const { showToast } = useUser();
   const haptic = useHaptic();
@@ -193,10 +194,28 @@ export default function GigsScreen({ navigation }) {
       }
 
       // 4. Card authorized → confirm booking in DB
-      haptic.success();
       await acceptBooking(bookingId);
+      // acceptBooking resolves the SAME WAY whether the server confirm succeeded or
+      // failed (on failure it rolls back the optimistic status and shows its own toast,
+      // then returns — there is no success/failure return value), so we can't gate on
+      // its result. Read the booking back instead: telling the poster money is held in
+      // escrow when the accept was rejected/rolled back is a money-level lie.
+      const { data: row, error: checkErr } = await supabase
+        .from('bookings')
+        .select('status')
+        .eq('id', bookingId)
+        .maybeSingle();
       const dollars = (amountCents / 100).toFixed(2);
-      showToast({ icon: '✅', title: 'Booking Accepted!', message: `$${dollars} held in escrow. Released to earner after verification.` });
+      if (checkErr) {
+        // Couldn't verify either way — don't claim a hold exists, don't claim it failed.
+        showToast({ icon: 'ℹ️', title: 'Checking booking…', message: 'Pull to refresh to confirm this booking was accepted.' });
+      } else if (row?.status !== 'confirmed') {
+        haptic.error();
+        showToast({ icon: '⚠️', title: 'Booking not accepted', message: 'The card hold was authorized but the booking could not be confirmed. Try accepting again — you have not been charged.' });
+      } else {
+        haptic.success();
+        showToast({ icon: '✅', title: 'Booking Accepted!', message: `$${dollars} held in escrow. Released to earner after verification.` });
+      }
     } catch (err) {
       const msg = err?.message || 'Something went wrong';
       if (err?.code === 'EARNER_NO_PAYOUT') {
@@ -277,6 +296,14 @@ export default function GigsScreen({ navigation }) {
     showToast({ icon: '📝', title: 'Change Proposed', message: `${amendTarget.earnerName} will be notified to approve or decline.` });
     setAmendTarget(null);
     setAmendNote('');
+  };
+
+  // A declined amendment used to stay 'declined' forever, and "Request change" only
+  // renders while amendmentStatus === 'none' — so one decline permanently locked the
+  // poster out of ever proposing another change. Acknowledging resets it to 'none'.
+  const handleDismissAmendment = async (bookingId) => {
+    haptic.light();
+    await clearAmendment(bookingId);
   };
 
   const pendingCount = posterBookings.filter(b => b.status === 'pending' || b.status === 'completed').length;
@@ -486,6 +513,7 @@ export default function GigsScreen({ navigation }) {
                           : null
                         }
                         onViewEarner={booking.earner?.id ? () => navigation.navigate('UserProfile', { userId: booking.earner.id }) : null}
+                        onDismissAmendment={() => handleDismissAmendment(booking.id)}
                       />
                     ))
                   )}
@@ -666,7 +694,7 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
   );
 }
 
-function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange, onViewEarner }) {
+function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange, onViewEarner, onDismissAmendment }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const status     = booking.status;
@@ -797,6 +825,13 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           {booking.amendmentStatus === 'declined' && (
             <View style={styles.amendDeclinedBanner}>
               <Text style={styles.amendDeclinedText} numberOfLines={2}>Change declined — original terms remain</Text>
+              {/* Acknowledging clears amendmentStatus back to 'none'; without this the
+                  booking stays 'declined' forever and "Request change" never returns. */}
+              {onDismissAmendment && (
+                <TouchableOpacity style={styles.amendDismissBtn} onPress={onDismissAmendment}>
+                  <Text style={styles.amendDismissText} numberOfLines={1}>Got it — allow a new request</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
           {status === 'confirmed' && onCancel && !booking.startedAt && (
@@ -1018,6 +1053,8 @@ const styles = StyleSheet.create({
   amendAcceptedText: { fontSize: 12, fontWeight: '500', color: colors.success, lineHeight: 17 },
   amendDeclinedBanner: { backgroundColor: colors.urgentLight, borderRadius: radii.md, padding: 12, marginTop: 8 },
   amendDeclinedText: { fontSize: 12, fontWeight: '500', color: colors.urgent, lineHeight: 17 },
+  amendDismissBtn: { alignSelf: 'flex-start', marginTop: 8 },
+  amendDismissText: { fontSize: 12, fontWeight: '700', color: colors.urgent },
 
   // ---- Amendment modal ----
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },

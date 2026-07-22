@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   ScrollView, TextInput, StyleSheet, RefreshControl, Platform,
@@ -17,6 +17,7 @@ import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
 import { colors } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 import { matchesForYou } from '../lib/filters';
+import { maskLocation } from '../lib/address';
 
 // "For You" is a pseudo-category that matches gigs to the viewer's profile skills.
 const CHIPS = [{ id: 'foryou', label: 'For You', ion: 'sparkles' }, ...CATEGORIES];
@@ -84,6 +85,15 @@ export default function HomeScreen({ navigation }) {
   const [userCoords, setUserCoords] = useState(null);
   const [profileCoords, setProfileCoords] = useState(null);
   const [geoCache, setGeoCache] = useState({});
+  // Locations we've already fired a geocode for this session. Kept in a ref (not
+  // state) so recording an attempt never re-renders / re-runs the back-fill effect.
+  const geoAttempted = useRef(new Set());
+  // Unmount-only guard for the back-fill. A per-effect `cancelled` flag would
+  // also trip on every jobs change (refresh/realtime), throwing away an in-flight
+  // geocode whose location the ref above has already marked attempted — so that
+  // location would stay uncoordinated for the rest of the session.
+  const geoMounted = useRef(true);
+  useEffect(() => () => { geoMounted.current = false; }, []);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
 
   // Best-effort device location for distance + "Nearest" sort (no prompt spam)
@@ -114,16 +124,28 @@ export default function HomeScreen({ navigation }) {
 
   // Back-fill coords for gigs posted without stored lat/lng by geocoding their
   // location string (cached) so the radius filter can place them.
+  // Each location is requested at most once per session: the effect no longer
+  // depends on geoCache (which it also sets), so a resolved request can't re-run
+  // it and re-fire the still-unresolved locations — that fanned out ~quadratically
+  // to the public geocoder. The ref guards the in-flight ones the cache can't see.
   useEffect(() => {
     const needed = [...new Set(
       jobs.filter(j => (j.lat == null || j.lng == null) && j.location && !j.location.toLowerCase().includes('remote'))
         .map(j => j.location),
-    )].filter(loc => !(loc in geoCache));
+    )].filter(loc => !geoAttempted.current.has(loc));
     if (needed.length === 0) return;
-    let cancelled = false;
-    needed.forEach(loc => geocodeOne(loc).then(c => { if (!cancelled && c) setGeoCache(p => ({ ...p, [loc]: c })); }));
-    return () => { cancelled = true; };
-  }, [jobs, geoCache]);
+    needed.forEach(loc => {
+      geoAttempted.current.add(loc);
+      // Privacy: a raw location label can be an exact street address. Send only
+      // the city-level masked form to the third-party geocoder — that's all the
+      // radius filter needs anyway. Cache stays keyed by the raw label.
+      const masked = maskLocation(loc);
+      // Nothing city-level survived the mask — geocoding the placeholder would
+      // return an unrelated place, so leave it uncoordinated (radius filter hides it).
+      if (masked === 'Nearby area') return;
+      geocodeOne(masked).then(c => { if (geoMounted.current && c) setGeoCache(p => ({ ...p, [loc]: c })); });
+    });
+  }, [jobs]);
 
   // Radius-filter center: explicitly chosen location wins, else the geocoded
   // profile city, else the device location.

@@ -502,7 +502,7 @@ async function runTool(
     case 'recommend_gigs':
       return recommendGigs(sb, userId, input);
     case 'get_gig_details':
-      return gigDetails(sb, String(input.gig_id ?? ''));
+      return gigDetails(sb, userId, String(input.gig_id ?? ''));
     case 'create_gig':
       return createGig(sb, userId, input, actions);
     case 'book_gig':
@@ -554,7 +554,10 @@ async function searchGigs(sb: SupabaseClient, userId: string, input: Json): Prom
 
   const { data, error } = await q;
   if (error) return JSON.stringify({ error: error.message });
-  const gigs = (data ?? []).map(gigSummary);
+  // Results exclude the user's own postings, so exact addresses are only for jobs
+  // they've been accepted on; everything else is masked to city level.
+  const accepted = await acceptedJobIds(sb, userId);
+  const gigs = (data ?? []).map((j: Json) => gigSummary(j, accepted.has(String(j.id))));
   return JSON.stringify({ count: gigs.length, gigs });
 }
 
@@ -563,7 +566,8 @@ async function recommendGigs(sb: SupabaseClient, userId: string, input: Json): P
 
   const [{ data: profile }, { data: myBookings }, { data: openJobs }] = await Promise.all([
     sb.rpc('my_profile'),
-    sb.from('bookings').select('jobs(category)').eq('earner_id', userId),
+    // job_id/status come along for the address-privacy check below (see gigSummary).
+    sb.from('bookings').select('job_id, status, jobs(category)').eq('earner_id', userId),
     sb
       .from('jobs')
       .select('id, title, category, pay, pay_type, location, description, urgent, estimated_hours, created_at, job_slots(label, taken)')
@@ -577,9 +581,13 @@ async function recommendGigs(sb: SupabaseClient, userId: string, input: Json): P
     ? ((profile as Json).skills as string[]).map((s) => String(s).toLowerCase())
     : [];
   const pastCats = new Set<string>();
+  // Only jobs with an ACCEPTED booking may show their exact address (mirrors
+  // canSeeExactAddress); own postings are already excluded from openJobs.
+  const accepted = new Set<string>();
   (myBookings ?? []).forEach((b: Json) => {
     const cat = (b.jobs as Json | null)?.category;
     if (cat) pastCats.add(String(cat));
+    if (['confirmed', 'completed', 'verified'].includes(String(b.status))) accepted.add(String(b.job_id));
   });
 
   const now = Date.now();
@@ -596,7 +604,7 @@ async function recommendGigs(sb: SupabaseClient, userId: string, input: Json): P
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((x) => gigSummary(x.j));
+    .map((x) => gigSummary(x.j, accepted.has(String(x.j.id))));
 
   return JSON.stringify({
     basis: { skills, past_categories: [...pastCats] },
@@ -605,7 +613,7 @@ async function recommendGigs(sb: SupabaseClient, userId: string, input: Json): P
   });
 }
 
-async function gigDetails(sb: SupabaseClient, gigId: string): Promise<string> {
+async function gigDetails(sb: SupabaseClient, userId: string, gigId: string): Promise<string> {
   if (!gigId) return JSON.stringify({ error: 'gig_id required' });
   const { data: job } = await sb
     .from('jobs')
@@ -614,13 +622,31 @@ async function gigDetails(sb: SupabaseClient, gigId: string): Promise<string> {
     .maybeSingle();
   if (!job) return JSON.stringify({ error: 'gig_not_found' });
 
-  const [{ data: poster }, { data: reviews }] = await Promise.all([
+  // Exact address only for the poster or an earner accepted on this job — the same
+  // rule JobDetailScreen applies (canSeeExactAddress); otherwise city level only.
+  const isPoster = String((job as Json).poster_id) === userId;
+  const [{ data: poster }, { data: reviews }, { data: myBooking }] = await Promise.all([
     sb.from('profiles').select('name, rating, review_count, school, student_verified').eq('id', (job as Json).poster_id).maybeSingle(),
     sb.from('reviews').select('author, rating, text').eq('job_id', gigId).order('created_at', { ascending: false }).limit(3),
+    isPoster
+      ? Promise.resolve({ data: null })
+      // An earner can hold MORE THAN ONE booking on a job (two different slots, or a
+      // declined one plus a re-book) — a bare .maybeSingle() would error on the
+      // multi-row case and wrongly mask the address from someone already accepted.
+      // Filter to the accepted statuses and take the first match instead.
+      : sb
+          .from('bookings')
+          .select('status')
+          .eq('job_id', gigId)
+          .eq('earner_id', userId)
+          .in('status', ['confirmed', 'completed', 'verified'])
+          .limit(1)
+          .maybeSingle(),
   ]);
+  const exactAddress = canSeeExactAddress(isPoster, (myBooking as Json | null)?.status as string | undefined);
 
   return JSON.stringify({
-    ...gigSummary(job),
+    ...gigSummary(job, exactAddress),
     status: (job as Json).status,
     requirements: ((job as Json).job_requirements as Json[] | null)?.map((r) => r.requirement) ?? [],
     poster: poster
@@ -1080,7 +1106,41 @@ async function removeWatch(sb: SupabaseClient, userId: string, input: Json, acti
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function gigSummary(j: Json): Json {
+// Address privacy — mirror of src/lib/address.js (maskLocation/canSeeExactAddress).
+// The location LABEL is free text, so a poster can type "123 Main St, Dallas, TX".
+// Every client surface masks it to city level until the viewer is the poster or has
+// an ACCEPTED booking; the assistant must apply the SAME rule or "ask Hustlr AI
+// where this gig is" becomes an exact-address leak. Keep in sync with address.js.
+const STREET_SUFFIX_RE =
+  /\b(st|street|ave|avenue|blvd|boulevard|rd|road|ln|lane|dr|drive|ct|court|pl|place|ter|terrace|cir|circle|hwy|highway|pkwy|parkway|trl|trail|apt|apartment|ste|suite|unit|fl|floor|rm|room)\b\.?$/i;
+
+function maskLocation(location: unknown): unknown {
+  if (!location) return location;
+  const label = String(location);
+  if (label.toLowerCase().includes('remote')) return label;
+  const parts = label.split(',').map((p) => p.trim()).filter(Boolean);
+  const safe = parts.filter((p) => !/\d/.test(p) && !STREET_SUFFIX_RE.test(p));
+  if (safe.length > 0) return safe.join(', ');
+  return 'Nearby area';
+}
+
+function canSeeExactAddress(isPoster: boolean, bookingStatus?: string | null): boolean {
+  if (isPoster) return true;
+  return ['confirmed', 'completed', 'verified'].includes(bookingStatus || '');
+}
+
+// Job ids whose exact address this user has earned: any job they hold an accepted
+// (confirmed or later) booking on. Used to un-mask gig locations in list results.
+async function acceptedJobIds(sb: SupabaseClient, userId: string): Promise<Set<string>> {
+  const { data } = await sb
+    .from('bookings')
+    .select('job_id, status')
+    .eq('earner_id', userId)
+    .in('status', ['confirmed', 'completed', 'verified']);
+  return new Set(((data ?? []) as Json[]).map((b) => String(b.job_id)));
+}
+
+function gigSummary(j: Json, exactAddress = false): Json {
   const slots = ((j.job_slots as Json[] | null) ?? []).filter((s) => !s.taken).map((s) => s.label);
   return {
     id: j.id,
@@ -1088,7 +1148,7 @@ function gigSummary(j: Json): Json {
     category: j.category,
     pay: j.pay,
     pay_type: j.pay_type,
-    location: j.location,
+    location: exactAddress ? j.location : maskLocation(j.location),
     urgent: j.urgent,
     estimated_hours: j.estimated_hours,
     open_slots: slots,

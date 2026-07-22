@@ -84,6 +84,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   // chat-photos is a private bucket — resolve each image message to a short-lived
@@ -95,7 +96,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
   userIdRef.current = user?.id;
 
   useEffect(() => {
-    if (!visible || !bookingId) { setMessages([]); return; }
+    if (!visible || !bookingId) { setMessages([]); setLoadError(false); return; }
     loadMessages();
     // Opening a chat marks it read (clears the Messages unread badge).
     if (user?.id) markConversationRead(user.id, bookingId).then(() => refreshUnread?.()).catch(() => {});
@@ -132,12 +133,27 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
 
   const loadMessages = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('messages')
       .select('*, sender:profiles!sender_id(id, name, avatar_initial, avatar_url)')
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: true });
-    if (data) setMessages(data);
+    // A failed load used to be indistinguishable from an empty chat: the error was
+    // dropped and the "No messages yet" empty state rendered, so a network/RLS
+    // failure looked like the conversation had no history (and the user could
+    // reply into what appeared to be a fresh thread). Track the error separately
+    // and offer a retry instead.
+    if (error) {
+      captureError(error, { where: 'MessageSheet.loadMessages', bookingId });
+      // Drop whatever was loaded before: when the sheet is re-pointed at a different
+      // bookingId while visible, a failed load would otherwise leave the PREVIOUS
+      // conversation's rows in state (and an optimistic send would append to them).
+      setMessages([]);
+      setLoadError(true);
+    } else {
+      setLoadError(false);
+      setMessages(data || []);
+    }
     setLoading(false);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
   };
@@ -351,6 +367,16 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={colors.primary} />
             </View>
+          ) : loadError ? (
+            <View style={styles.emptyChat}>
+              <Ionicons name="cloud-offline-outline" size={48} color={colors.textMuted} style={styles.emptyChatIcon} />
+              <Text style={styles.emptyChatText}>
+                Couldn't load this conversation.{'\n'}Check your connection and try again.
+              </Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={loadMessages}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <FlatList
               ref={listRef}
@@ -485,6 +511,11 @@ const styles = StyleSheet.create({
   emptyChat: { flex: 1, alignItems: 'center', paddingTop: 40, paddingHorizontal: 20 },
   emptyChatIcon: { marginBottom: 12 },
   emptyChatText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  retryBtn: {
+    marginTop: 16, paddingVertical: 10, paddingHorizontal: 20,
+    borderRadius: radii.pill, borderWidth: 1, borderColor: colors.border,
+  },
+  retryBtnText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 20, paddingTop: 12,

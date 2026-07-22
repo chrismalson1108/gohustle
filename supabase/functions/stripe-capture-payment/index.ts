@@ -99,7 +99,15 @@ Deno.serve(async (req: Request) => {
       const capturePct = capturePctFinal; // validated + floored above
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
-        const feeCents = Math.min(captureCents, Math.round((payment.fee_cents || 0) * capturePct));
+        // Derive the fee from the IMMUTABLE authorized amount, never from the
+        // mutable fee_cents column: this branch rewrites fee_cents below, so if a
+        // first partial attempt persisted the reduced fee and then failed (Stripe
+        // error / timeout), a retry reading fee_cents would scale the ALREADY-reduced
+        // value again (fee * pct²) — the platform under-collects and the earner is
+        // over-credited. amount_cents is never overwritten, so round(fullFee * pct)
+        // yields the same result on the first call and every retry.
+        const fullFeeCents = Math.round((payment.amount_cents || 0) * 0.10);
+        const feeCents = Math.min(captureCents, Math.round(fullFeeCents * capturePct));
         earnerAmountCents = captureCents - feeCents;
         // Persist the REDUCED net BEFORE capturing. Capturing emits
         // payment_intent.succeeded, and the webhook credits earnings from whatever

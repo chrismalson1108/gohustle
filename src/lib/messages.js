@@ -1,15 +1,33 @@
 import { supabase } from './supabase';
 
-// Latest message per booking id (one query, grouped client-side).
+// Latest message per booking id.
+// PERF: this used to be a single `.in(bookingIds)` query with no limit, which
+// downloaded the ENTIRE message history of EVERY conversation just to keep the
+// newest row of each — hundreds of rows per booking on every Messages open and
+// every unread refresh. PostgREST has no "distinct on"/per-group limit, so we
+// instead ask for exactly one row per conversation (limit 1, newest first) and
+// run those tiny queries in bounded-concurrency batches. Return shape is
+// unchanged: { [bookingId]: newestMessageRow }.
+const LAST_MSG_CONCURRENCY = 8;
+
 export async function fetchLastMessages(bookingIds) {
   if (!bookingIds?.length) return {};
-  const { data } = await supabase
-    .from('messages')
-    .select('booking_id, sender_id, text, image_url, created_at')
-    .in('booking_id', bookingIds)
-    .order('created_at', { ascending: false });
   const map = {};
-  (data || []).forEach(m => { if (!map[m.booking_id]) map[m.booking_id] = m; }); // first = newest
+  for (let i = 0; i < bookingIds.length; i += LAST_MSG_CONCURRENCY) {
+    const batch = bookingIds.slice(i, i + LAST_MSG_CONCURRENCY);
+    const results = await Promise.all(batch.map(id =>
+      supabase
+        .from('messages')
+        .select('booking_id, sender_id, text, image_url, created_at')
+        .eq('booking_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+    ));
+    results.forEach(({ data }) => {
+      const m = data?.[0];
+      if (m) map[m.booking_id] = m;
+    });
+  }
   return map;
 }
 
