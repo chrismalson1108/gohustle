@@ -97,7 +97,7 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel, at
         </View>
         <View style={styles.posterRow}>
           <Avatar url={job.poster.avatarUrl} initial={job.poster.avatarInitial} size={20} fontSize={9} style={{ marginRight: 6 }} />
-          <Text style={styles.posterName}>{job.poster.name}</Text>
+          <Text style={styles.posterName} numberOfLines={1}>{job.poster.name}</Text>
           {job.poster.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} style={styles.verified} />}
           {job.poster.studentVerified && <StudentBadge profile={job.poster} compact style={{ marginLeft: 4 }} />}
           <View style={styles.spacer} />
@@ -161,7 +161,9 @@ const styles = StyleSheet.create({
   locWrap: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginLeft: 10 },
   loc: { fontSize: 12, color: colors.textMuted, flexShrink: 1 },
   posterRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.divider },
-  posterName: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginRight: 4 },
+  // Must shrink, or a long poster name evicts the rating stars past the card's
+  // overflow:'hidden' edge and they vanish.
+  posterName: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginRight: 4, flexShrink: 1, minWidth: 0 },
   verified: { fontSize: 11, color: colors.success },
   newBadge: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
   spacer: { flex: 1 },

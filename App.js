@@ -130,7 +130,7 @@ function MessagesStack() {
       <Stack.Screen name="MessagesMain" component={MessagesScreen} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find People' }} />
+      <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
     </Stack.Navigator>
   );
 }
@@ -149,10 +149,10 @@ function ProfileStack() {
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={HERO_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
       <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved People' }} />
-      <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved Gigs' }} />
+      <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved people' }} />
+      <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved gigs' }} />
       <Stack.Screen name="JobDetail"      component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="FindPeople"     component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find People' }} />
+      <Stack.Screen name="FindPeople"     component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
     </Stack.Navigator>
   );
 }

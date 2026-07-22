@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet, Keyboard, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, StyleSheet, Keyboard, Platform, PixelRatio } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
@@ -64,7 +64,10 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
   const translateY = hiddenAnim.interpolate({ inputRange: [0, 1], outputRange: [0, bottom + 90] });
   const sideInset = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [44, 20] });
   const padV = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [8, 11] });
-  const labelH = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 15] });
+  // Scale the collapsing label row with the OS font size, or Larger Text
+  // settings clip the labels against a fixed 15pt window.
+  const labelHeight = Math.ceil(15 * Math.min(PixelRatio.getFontScale(), 1.6));
+  const labelH = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [0, labelHeight] });
 
   return (
     <Animated.View
@@ -137,8 +140,8 @@ const styles = StyleSheet.create({
   badge: {
     position: 'absolute', top: -4, right: -8,
     backgroundColor: colors.urgent, borderRadius: 8,
-    minWidth: 15, height: 15, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3,
+    minWidth: 15, minHeight: 15, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3, paddingVertical: 1,
   },
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
 });

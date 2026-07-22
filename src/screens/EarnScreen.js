@@ -1119,7 +1119,7 @@ const styles = StyleSheet.create({
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
     backgroundColor: colors.surface, borderRadius: radii.pill, padding: 4,
-    ...shadows.sm,
+    borderWidth: 1, borderColor: colors.border,
   },
   segBtn: {
     flex: 1, paddingVertical: 12,

@@ -290,7 +290,7 @@ export default function ProfileScreen({ navigation }) {
         {(postedJobs.length > 0 || posterBookings?.length > 0) && (
           <Row
             icon="briefcase-outline"
-            title="Manage My Gigs"
+            title="Manage my gigs"
             sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? 's' : ''} attention` : 'Posted gigs & booking requests'}
             badge={profileBadgeCount > 0 ? profileBadgeCount : null}
             onPress={() => { haptic.medium(); navigation.navigate('GigsTab'); }}
@@ -322,13 +322,13 @@ export default function ProfileScreen({ navigation }) {
         />
         <Row
           icon="bookmark-outline"
-          title="Saved Gigs"
+          title="Saved gigs"
           sub="Gigs you've bookmarked to book later"
           onPress={() => { haptic.medium(); navigation.navigate('SavedGigs'); }}
         />
         <Row
           icon="heart-outline"
-          title="Saved People"
+          title="Saved people"
           sub="Workers & clients you've favorited"
           onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
           last
@@ -338,13 +338,13 @@ export default function ProfileScreen({ navigation }) {
       <Group title="Preferences">
         <Row
           icon="options-outline"
-          title="Notification Settings"
+          title="Notification settings"
           sub="Push & email preferences"
           onPress={() => { haptic.medium(); navigation.navigate('NotificationSettings'); }}
         />
         <Row
           icon="time-outline"
-          title="Availability & Schedule"
+          title="Availability & schedule"
           sub="Set your work status, hours & classes"
           onPress={() => { haptic.medium(); navigation.navigate('Availability'); }}
           last
@@ -354,14 +354,14 @@ export default function ProfileScreen({ navigation }) {
       <Group title="Profile & trust">
         <Row
           icon="eye-outline"
-          title="View My Public Profile"
+          title="View my public profile"
           sub="See exactly how others see you"
           onPress={() => { haptic.medium(); if (user) navigation.navigate('UserProfile', { userId: user.id }); }}
         />
         <Row
           icon={idv.verified ? 'shield-checkmark' : idv.status === 'pending' ? 'hourglass-outline' : idv.status === 'rejected' ? 'alert-circle-outline' : 'shield-outline'}
           iconColor={idv.verified ? colors.success : idv.status === 'rejected' ? colors.urgent : colors.primary}
-          title={idv.verified ? 'Identity Verified' : idv.status === 'pending' ? 'Verification In Progress' : idv.status === 'rejected' ? 'Verification Failed' : 'Verify Your Identity'}
+          title={idv.verified ? 'Identity verified' : idv.status === 'pending' ? 'Verification in progress' : idv.status === 'rejected' ? 'Verification failed' : 'Verify your identity'}
           sub={idv.verified
             ? 'Your profile shows a Verified badge'
             : idv.status === 'pending'
@@ -386,13 +386,13 @@ export default function ProfileScreen({ navigation }) {
       <Group title="Grow">
         <Row
           icon="search-outline"
-          title="Find People"
+          title="Find people"
           sub="Search anyone by name or username"
           onPress={() => { haptic.medium(); navigation.navigate('FindPeople'); }}
         />
         <Row
           icon="gift-outline"
-          title="Invite Friends"
+          title="Invite friends"
           sub={refCount > 0 ? `${refCount} friend${refCount !== 1 ? 's' : ''} joined · share your code` : 'Share your referral code'}
           onPress={handleInvite}
           last
@@ -473,7 +473,7 @@ export default function ProfileScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.legalRow, styles.legalRowLast]} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`)}>
-            <Text style={styles.legalRowText} numberOfLines={1}>Contact Support</Text>
+            <Text style={styles.legalRowText} numberOfLines={1}>Contact support</Text>
             <Ionicons name="mail-outline" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
           </TouchableOpacity>
         </View>
@@ -483,7 +483,7 @@ export default function ProfileScreen({ navigation }) {
         style={styles.signOutBtn}
         onPress={() => { haptic.medium(); signOut(); }}
       >
-        <Text style={styles.signOutText} numberOfLines={1}>Sign Out</Text>
+        <Text style={styles.signOutText} numberOfLines={1}>Sign out</Text>
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />

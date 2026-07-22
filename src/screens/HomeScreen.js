@@ -247,19 +247,19 @@ export default function HomeScreen({ navigation }) {
     <>
       <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.topRow}>
-          <View>
-            <Text style={styles.greeting}>Hey {name}</Text>
-            <Text style={styles.sub}>Ready to hustle?</Text>
+          <View style={styles.greetingWrap}>
+            <Text style={styles.greeting} numberOfLines={1}>Hey {name}</Text>
+            <Text style={styles.sub} numberOfLines={1}>Ready to hustle?</Text>
           </View>
           <View style={styles.streakPill}>
-            <Ionicons name="flame" size={14} color="#F59E0B" />
+            <Ionicons name="flame" size={14} color={colors.accentDeep} />
             {streakDays > 0 ? (
               <>
-                <Text style={styles.streakNum}>{streakDays}</Text>
-                <Text style={styles.streakLabel}>week streak</Text>
+                <Text style={styles.streakNum} numberOfLines={1}>{streakDays}</Text>
+                <Text style={styles.streakLabel} numberOfLines={1}>week streak</Text>
               </>
             ) : (
-              <Text style={styles.streakLabel}>Start a streak</Text>
+              <Text style={styles.streakLabel} numberOfLines={1}>Start a streak</Text>
             )}
           </View>
         </View>
@@ -430,10 +430,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 4,
   },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  // A long profile name must ellipsize rather than push the streak pill off
+  // the screen — RN defaults flexShrink to 0, so the wrapper needs it explicitly.
+  greetingWrap: { flex: 1, minWidth: 0, marginRight: 12 },
   greeting: { fontSize: 26, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5, marginBottom: 2 },
   sub: { fontSize: 14, color: colors.textSecondary },
   streakPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0,
     backgroundColor: colors.surface,
     borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
   },

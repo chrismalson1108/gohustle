@@ -27,7 +27,7 @@ export default function SlotPicker({ slots, selected, onSelect }) {
             ]}
           >
             {slot.taken && (
-              <Ionicons name="lock-closed" size={13} color={colors.textMuted} style={{ marginRight: 5 }} />
+              <Ionicons name="lock-closed" size={13} color={colors.textSecondary} style={{ marginRight: 5 }} />
             )}
             <Text
               numberOfLines={1}
@@ -56,8 +56,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipTaken: { backgroundColor: colors.divider, borderColor: colors.divider, opacity: 0.6 },
+  // Disabled state reads through color alone — stacking opacity on top faded the
+  // label into the fill and made taken slots unreadable.
+  chipTaken: { backgroundColor: colors.divider, borderColor: colors.divider },
   chipText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 17, flexShrink: 1 },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
-  chipTextTaken: { color: colors.textMuted },
+  chipTextTaken: { color: colors.textSecondary },
 });

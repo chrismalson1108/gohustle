@@ -297,7 +297,7 @@ export default function GigsScreen({ navigation }) {
           activeOpacity={0.85}
         >
           <Ionicons name="add" size={20} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.postBtnText} numberOfLines={1}>Post New Gig</Text>
+          <Text style={styles.postBtnText} numberOfLines={1}>Post new gig</Text>
         </TouchableOpacity>
       </ScreenHeader>
 
@@ -332,7 +332,7 @@ export default function GigsScreen({ navigation }) {
           <View style={styles.empty}>
             <Ionicons name="briefcase-outline" size={52} color={colors.textMuted} style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No gigs posted yet</Text>
-            <Text style={styles.emptyText}>Tap "Post New Gig" above to create your first listing.</Text>
+            <Text style={styles.emptyText}>Tap "Post new gig" above to create your first listing.</Text>
           </View>
         )}
 
@@ -844,7 +844,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     marginHorizontal: 16, marginTop: 16,
     borderRadius: radii.lg, padding: 16,
-    borderWidth: 1, borderColor: colors.border,
+    ...shadows.card,
   },
   payAlertTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
   payAlertSub: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
@@ -996,7 +996,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center',
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  msgBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
+  msgBtnText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   changeBtn: {
     flexDirection: 'row', justifyContent: 'center',
     borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', marginTop: 8,

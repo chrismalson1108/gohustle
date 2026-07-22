@@ -370,9 +370,11 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   chipTextActive: { color: '#fff' },
-  dayRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  // Wraps instead of forcing 7 equal columns — at 320pt each column would leave
+  // ~27pt for the label and clip it.
+  dayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   dayBtn: {
-    flex: 1, paddingVertical: 11, paddingHorizontal: 4, borderRadius: radii.md,
+    minWidth: 44, flexGrow: 1, paddingVertical: 11, paddingHorizontal: 8, borderRadius: radii.md,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },

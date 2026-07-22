@@ -214,7 +214,7 @@ export default function ExpensesScreen() {
         <View style={styles.actions}>
           <TouchableOpacity style={styles.addBtn} onPress={() => { resetForm(); setAdding(true); }} activeOpacity={0.85}>
             <Ionicons name="add" size={20} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.addBtnText} numberOfLines={1}>{tab === 'expenses' ? 'Add Expense' : 'Add Income'}</Text>
+            <Text style={styles.addBtnText} numberOfLines={1}>{tab === 'expenses' ? 'Add expense' : 'Add income'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.exportBtn} onPress={handleExport} activeOpacity={0.85}>
             <Ionicons name="download-outline" size={18} color={colors.textPrimary} style={{ marginRight: 6 }} />
@@ -248,7 +248,7 @@ export default function ExpensesScreen() {
             <Ionicons name={tab === 'expenses' ? 'receipt-outline' : 'cash-outline'} size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
             <Text style={styles.emptyTitle}>{tab === 'expenses' ? 'No expenses yet' : 'No cash income logged'}</Text>
             <Text style={styles.emptyText}>
-              {tab === 'expenses' ? 'Tap "Add Expense" to start tracking write-offs.' : 'Tap "Add Income" to log cash payments and tips.'}
+              {tab === 'expenses' ? 'Tap "Add expense" to start tracking write-offs.' : 'Tap "Add income" to log cash payments and tips.'}
             </Text>
           </View>
         ) : tab === 'expenses' ? (
@@ -316,7 +316,7 @@ export default function ExpensesScreen() {
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>{tab === 'expenses' ? 'Add Expense' : 'Add Income'}</Text>
+              <Text style={styles.modalTitle}>{tab === 'expenses' ? 'Add expense' : 'Add income'}</Text>
 
               <Text style={styles.label}>Amount</Text>
               <View style={styles.amountRow}>
