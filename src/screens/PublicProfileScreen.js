@@ -421,7 +421,7 @@ export default function PublicProfileScreen({ route, navigation }) {
         <Text style={styles.sectionTitle}>Reviews ({reviews.length})</Text>
         {reviews.length === 0 ? (
           <Text style={styles.muted}>No reviews yet.</Text>
-        ) : reviews.map(r => (
+        ) : reviews.slice(0, 3).map(r => (
           <View key={r.id} style={styles.reviewCard}>
             <View style={styles.reviewHead}>
               <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} size={32} fontSize={13} style={{ marginRight: 10 }} />
@@ -441,6 +441,18 @@ export default function PublicProfileScreen({ route, navigation }) {
             {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
           </View>
         ))}
+        {/* Cap the inline list — a profile with 50 reviews would otherwise be
+            50 cards deep before anything below it. */}
+        {reviews.length > 3 && (
+          <TouchableOpacity
+            style={styles.seeAllRow}
+            onPress={() => navigation.navigate('Reviews', { reviews, title: profile.name })}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.seeAllText} numberOfLines={1}>See all {reviews.length} reviews</Text>
+            <Ionicons name="chevron-forward" size={15} color={colors.textPrimary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <Modal visible={inviteOpen} animationType="slide" transparent onRequestClose={() => setInviteOpen(false)}>
@@ -634,6 +646,11 @@ const styles = StyleSheet.create({
   selfBannerText: { flex: 1, fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 },
 
   // ── Reviews ───────────────────────────────────────────────────────────────
+  seeAllRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 12,
+  },
+  seeAllText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   reviewCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 12, ...shadows.card },
   reviewHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   reviewer: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 18, marginBottom: 4 },

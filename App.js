@@ -100,6 +100,7 @@ function HomeStack() {
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={HERO_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -110,6 +111,7 @@ function EarnStack() {
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -122,6 +124,7 @@ function GigsStack() {
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="EditJob"   component={EditJobScreen} options={HERO_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -133,6 +136,7 @@ function MessagesStack() {
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
     </Stack.Navigator>
   );
 }

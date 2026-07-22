@@ -16,6 +16,8 @@ const TABS = [
 // links here once a user has more reviews than it shows inline.
 export default function ReviewsScreen({ route }) {
   const all = route?.params?.reviews || [];
+  // Set when opened from someone else's public profile.
+  const who = route?.params?.title;
   const [tab, setTab] = useState('all');
   const haptic = useHaptic();
 
@@ -31,7 +33,7 @@ export default function ReviewsScreen({ route }) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
       <ScreenHeader underNav>
-        <Text style={styles.title} numberOfLines={1}>Reviews</Text>
+        <Text style={styles.title} numberOfLines={1}>{who ? `${who}'s reviews` : 'Reviews'}</Text>
         <Text style={styles.sub} numberOfLines={1}>
           {avg !== '—' ? `${avg} average · ` : ''}{shown.length} review{shown.length === 1 ? '' : 's'}
         </Text>
