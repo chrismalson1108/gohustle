@@ -53,6 +53,7 @@ export function transformBooking(b) {
   return {
     id: b.id,
     jobId: b.job_id,
+    createdAt: b.created_at || null,
     slotId: b.slot_id,
     slotLabel: b.slot_label,
     counterOffer: b.counter_offer ? Number(b.counter_offer) : null,
@@ -92,6 +93,11 @@ export function transformBooking(b) {
       pay: Number(b.job.pay),
       payType: b.job.pay_type,
       location: b.job.location || null,
+      // Needed by the badge engine (category variety, repeat-client and
+      // apply-speed rules). Nullable — older joins may not select them.
+      category: b.job.category || null,
+      posterId: b.job.poster_id || null,
+      createdAt: b.job.created_at || null,
     } : null,
   };
 }

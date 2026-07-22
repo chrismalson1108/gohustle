@@ -34,6 +34,8 @@ import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
 import FavoritesScreen      from './src/screens/FavoritesScreen';
+import TrophyCaseScreen     from './src/screens/TrophyCaseScreen';
+import ReviewsScreen        from './src/screens/ReviewsScreen';
 import SavedGigsScreen      from './src/screens/SavedGigsScreen';
 import AvailabilityScreen   from './src/screens/AvailabilityScreen';
 import NotificationsScreen  from './src/screens/NotificationsScreen';
@@ -147,6 +149,8 @@ function ProfileStack() {
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={HERO_OPTS} />
+      <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
       <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={HERO_OPTS} />
       <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved people' }} />

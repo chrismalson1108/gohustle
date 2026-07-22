@@ -10,6 +10,7 @@ import { getUnreadCount } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import ScreenHeader from '../components/ScreenHeader';
 import BadgeGrid from '../components/BadgeGrid';
+import ReviewCard from '../components/ReviewCard';
 import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
 import Avatar from '../components/Avatar';
@@ -21,6 +22,7 @@ import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useHaptic } from '../hooks/useHaptic';
+import { useBadgeSync } from '../hooks/useBadgeSync';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, radii, shadows } from '../theme';
 
@@ -158,6 +160,11 @@ export default function ProfileScreen({ navigation }) {
     await Promise.all([refreshProfile(), loadReviews()]);
     setRefreshing(false);
   };
+
+  // Evaluate the badge rules against live data and unlock anything earned.
+  // Reviews + referral count live here, so this is the one place with the full
+  // picture; unlocking is append-only so partial passes elsewhere are safe.
+  useBadgeSync({ reviews: myReviews, referrals: refCount });
 
   // Derive rating + count from actual loaded reviews (source of truth)
   const actualReviewCount = myReviews.length;
@@ -401,7 +408,13 @@ export default function ProfileScreen({ navigation }) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Badges</Text>
-        <BadgeGrid badges={badges} />
+        <BadgeGrid
+          badges={badges}
+          onPressAll={() => {
+            haptic.light();
+            navigation.navigate('TrophyCase', { reviews: myReviews, referrals: refCount });
+          }}
+        />
       </View>
 
       <View style={styles.section}>
@@ -424,36 +437,23 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
           </View>
         ) : (
-          myReviews.map(r => (
-            <View key={r.id} style={styles.reviewCard}>
-              <View style={styles.reviewHeader}>
-                <Avatar
-                  url={r.reviewer?.avatar_url}
-                  initial={r.reviewer?.avatar_initial || r.author?.[0]}
-                  size={36}
-                  fontSize={14}
-                  style={{ marginRight: 12 }}
-                />
-                <View style={styles.reviewerInfo}>
-                  <Text style={styles.reviewerName} numberOfLines={1}>{r.reviewer?.name || r.author || 'Poster'}</Text>
-                  <View style={styles.reviewStarsRow}>
-                    {[1,2,3,4,5].map(s => (
-                      <Ionicons
-                        key={s}
-                        name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
-                        size={12}
-                        color={s <= Math.round(r.rating) ? colors.accent : colors.border}
-                        style={styles.reviewStar}
-                      />
-                    ))}
-                    <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
-                  </View>
-                </View>
-                {r.date && <Text style={styles.reviewDate} numberOfLines={1}>{r.date}</Text>}
-              </View>
-              {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
-            </View>
-          ))
+          <>
+            {/* Only the most recent few — the full history lives on ReviewsScreen
+                so the profile can't grow unbounded as reviews accumulate. */}
+            {myReviews.slice(0, 3).map(r => <ReviewCard key={r.id} review={r} />)}
+            {myReviews.length > 3 && (
+              <TouchableOpacity
+                style={styles.seeAllRow}
+                onPress={() => { haptic.light(); navigation.navigate('Reviews', { reviews: myReviews }); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.seeAllText} numberOfLines={1}>
+                  See all {myReviews.length} reviews
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color={colors.textPrimary} />
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
 
@@ -662,6 +662,11 @@ const styles = StyleSheet.create({
   noReviewsIcon: { marginBottom: 8 },
   noReviewsTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
   noReviewsText: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  seeAllRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 12,
+  },
+  seeAllText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   reviewCard: {
     backgroundColor: colors.surface, borderRadius: radii.lg,
     padding: 16, marginBottom: 12,
