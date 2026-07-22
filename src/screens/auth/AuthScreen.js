@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Image,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Modal,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Logo from '../../components/Logo';
+import ScreenHeader from '../../components/ScreenHeader';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCurrentDocs } from '../../lib/legal';
-import { colors, gradients, shadows } from '../../theme';
+import { colors, radii, shadows } from '../../theme';
 
 // Password field with a show/hide (eye) toggle. Encapsulates its own reveal state.
 function PasswordField({ label, value, onChangeText, placeholder, returnKeyType, onSubmitEditing, textContentType, autoComplete }) {
@@ -158,17 +158,17 @@ export default function AuthScreen() {
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
-        <LinearGradient colors={gradients.primary} style={[styles.hero, { paddingTop: insets.top + 44 }]}>
-          <Logo light height={72} style={styles.heroLogo} />
+        <ScreenHeader style={styles.hero}>
+          <Logo height={64} style={styles.heroLogo} />
           <Text style={styles.heroSub}>Get paid to hustle. Post gigs. Earn money.</Text>
-        </LinearGradient>
+        </ScreenHeader>
 
         <View style={styles.card}>
 
           {showVerify ? (
             <View style={styles.verifyWrap}>
               <View style={styles.verifyIcon}>
-                <Ionicons name="mail-unread" size={38} color={colors.primary} />
+                <Ionicons name="mail-unread" size={38} color={colors.textPrimary} />
               </View>
               <Text style={styles.verifyTitle}>Verify your email</Text>
               <Text style={styles.verifySub}>
@@ -184,10 +184,12 @@ export default function AuthScreen() {
                 <View style={styles.errorBox}><Text style={styles.errorText}>⚠ {authError}</Text></View>
               )}
 
-              <TouchableOpacity onPress={() => { clearPending(); setResendMsg(''); switchTab('signin'); }} activeOpacity={0.85}>
-                <LinearGradient colors={gradients.primary} style={styles.submitBtn}>
-                  <Text style={styles.submitText}>I've confirmed — Sign in</Text>
-                </LinearGradient>
+              <TouchableOpacity
+                onPress={() => { clearPending(); setResendMsg(''); switchTab('signin'); }}
+                activeOpacity={0.85}
+                style={styles.submitBtn}
+              >
+                <Text style={styles.submitText} numberOfLines={1}>I've confirmed — Sign in</Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={handleResend} disabled={resending} style={styles.forgotLink}>
@@ -210,8 +212,8 @@ export default function AuthScreen() {
                   style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
                   onPress={() => switchTab(t)}
                 >
-                  <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                    {t === 'signin' ? 'Sign In' : 'Create Account'}
+                  <Text style={[styles.tabText, tab === t && styles.tabTextActive]} numberOfLines={1}>
+                    {t === 'signin' ? 'Sign in' : 'Create account'}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -220,7 +222,7 @@ export default function AuthScreen() {
 
           {tab === 'forgot' && (
             <View style={styles.forgotHeader}>
-              <Text style={styles.forgotTitle}>Reset Password</Text>
+              <Text style={styles.forgotTitle}>Reset password</Text>
               <Text style={styles.forgotSub}>Enter your email and we'll send a reset link.</Text>
             </View>
           )}
@@ -239,7 +241,7 @@ export default function AuthScreen() {
 
           {tab === 'signup' && (
             <View style={styles.field}>
-              <Text style={styles.label}>Your Name</Text>
+              <Text style={styles.label}>Your name</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Alex Johnson"
@@ -283,7 +285,7 @@ export default function AuthScreen() {
 
           {tab === 'signup' && (
             <PasswordField
-              label="Confirm Password"
+              label="Confirm password"
               placeholder="Re-enter password"
               value={confirmPw}
               onChangeText={setConfirmPw}
@@ -328,34 +330,34 @@ export default function AuthScreen() {
             </View>
           )}
 
-          <TouchableOpacity onPress={handleSubmit} disabled={!isReady || loading} activeOpacity={0.85}>
-            <LinearGradient
-              colors={isReady && !loading ? gradients.primary : ['#C4B5FD', '#A5B4FC']}
-              style={styles.submitBtn}
-            >
-              {loading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitText}>
-                    {tab === 'signin' ? 'Sign In →'
-                      : tab === 'signup' ? 'Create Account →'
-                      : 'Send Reset Link →'}
-                  </Text>
-              }
-            </LinearGradient>
+          <TouchableOpacity
+            onPress={handleSubmit}
+            disabled={!isReady || loading}
+            activeOpacity={0.85}
+            style={[styles.submitBtn, (!isReady || loading) && styles.submitBtnDisabled]}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitText} numberOfLines={1}>
+                  {tab === 'signin' ? 'Sign in'
+                    : tab === 'signup' ? 'Create account'
+                    : 'Send reset link'}
+                </Text>
+            }
           </TouchableOpacity>
 
           {tab !== 'forgot' && (
             <>
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR</Text>
+                <Text style={styles.dividerText}>or</Text>
                 <View style={styles.dividerLine} />
               </View>
               {appleAvailable && (
                 <AppleAuthentication.AppleAuthenticationButton
                   buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
                   buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                  cornerRadius={16}
+                  cornerRadius={radii.md}
                   style={styles.appleBtn}
                   onPress={handleApple}
                 />
@@ -370,7 +372,7 @@ export default function AuthScreen() {
                   ? <ActivityIndicator color={colors.primary} />
                   : <>
                       <Ionicons name="logo-google" size={20} color="#4285F4" style={{ marginRight: 10 }} />
-                      <Text style={styles.googleText}>Continue with Google</Text>
+                      <Text style={styles.googleText} numberOfLines={1}>Continue with Google</Text>
                     </>}
               </TouchableOpacity>
             </>
@@ -407,8 +409,8 @@ export default function AuthScreen() {
       <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
         <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
           <View style={styles.docHeader}>
-            <Text style={styles.docTitle}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
-            <TouchableOpacity onPress={() => setLegalDoc(null)} style={{ padding: 4 }}>
+            <Text style={styles.docTitle} numberOfLines={1}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
+            <TouchableOpacity onPress={() => setLegalDoc(null)} style={styles.docClose}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -425,83 +427,110 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flexGrow: 1 },
-  hero: { alignItems: 'center', paddingBottom: 48, paddingHorizontal: 24 },
-  heroLogo: { marginBottom: 10 },
-  heroSub: { fontSize: 15, color: 'rgba(255,255,255,0.75)', marginTop: 6, textAlign: 'center' },
+  hero: { alignItems: 'center', paddingBottom: 20 },
+  heroLogo: { marginTop: 24, marginBottom: 8 },
+  heroSub: {
+    fontSize: 15, color: colors.textSecondary, lineHeight: 21,
+    marginTop: 4, textAlign: 'center',
+  },
   card: {
-    backgroundColor: colors.surface, borderRadius: 28,
-    marginHorizontal: 16, marginTop: -24, padding: 24,
-    marginBottom: 32, ...shadows.md,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    marginHorizontal: 20, padding: 16, marginBottom: 32,
+    ...shadows.card,
   },
   tabs: {
     flexDirection: 'row', backgroundColor: colors.background,
-    borderRadius: 14, padding: 4, marginBottom: 24,
+    borderRadius: radii.pill, padding: 4, marginBottom: 24,
   },
-  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 11, alignItems: 'center' },
+  tabBtn: {
+    flex: 1, paddingVertical: 10, paddingHorizontal: 8,
+    borderRadius: radii.pill, alignItems: 'center',
+  },
   tabBtnActive: { backgroundColor: colors.surface, ...shadows.sm },
   tabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
-  tabTextActive: { color: colors.primary, fontWeight: '800' },
+  tabTextActive: { color: colors.primary, fontWeight: '700' },
   verifyWrap: { alignItems: 'center', paddingVertical: 4 },
   verifyIcon: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
+    width: 72, height: 72, borderRadius: radii.pill, backgroundColor: colors.background,
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  verifyTitle: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, marginBottom: 8 },
+  verifyTitle: {
+    fontSize: 22, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, marginBottom: 8,
+  },
   verifySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
-  verifyEmail: { fontWeight: '800', color: colors.textPrimary },
+  verifyEmail: { fontWeight: '700', color: colors.textPrimary },
   forgotHeader: { alignItems: 'center', marginBottom: 20 },
-  forgotTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
+  forgotTitle: {
+    fontSize: 20, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, marginBottom: 6,
+  },
   forgotSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  successBox: { backgroundColor: colors.successLight, borderRadius: 12, padding: 12, marginBottom: 16 },
-  successText: { fontSize: 13, color: colors.success, fontWeight: '600', lineHeight: 20 },
-  errorBox: { backgroundColor: '#FFF1F2', borderRadius: 12, padding: 12, marginBottom: 16 },
-  errorText: { fontSize: 13, color: colors.urgent, fontWeight: '600', lineHeight: 20 },
+  successBox: {
+    alignSelf: 'stretch', backgroundColor: colors.successLight,
+    borderRadius: radii.md, padding: 12, marginBottom: 16,
+  },
+  successText: { fontSize: 13, color: colors.success, fontWeight: '600', lineHeight: 19 },
+  errorBox: {
+    alignSelf: 'stretch', backgroundColor: colors.urgentLight,
+    borderRadius: radii.md, padding: 12, marginBottom: 16,
+  },
+  errorText: { fontSize: 13, color: colors.urgent, fontWeight: '600', lineHeight: 19 },
   field: { marginBottom: 16 },
   label: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.surface, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: 16, paddingVertical: 13,
+    backgroundColor: colors.background, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 14,
     fontSize: 15, color: colors.textPrimary,
   },
   pwWrap: { position: 'relative', justifyContent: 'center' },
   pwInput: { paddingRight: 48 },
   pwEye: { position: 'absolute', right: 12, padding: 4 },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18, marginBottom: 4 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.divider },
   dividerText: {
-    marginHorizontal: 12, fontSize: 12, fontWeight: '800',
-    color: colors.textMuted, letterSpacing: 0.6,
+    marginHorizontal: 12, fontSize: 12, fontWeight: '500', color: colors.textMuted,
   },
   googleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 15,
-    borderWidth: 1.5, borderColor: colors.border, marginTop: 14,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderWidth: 1, borderColor: colors.border, marginTop: 12,
   },
-  googleText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  appleBtn: { width: '100%', height: 50, marginTop: 14 },
+  googleText: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+  appleBtn: { width: '100%', height: 48, marginTop: 12 },
   acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4, marginBottom: 4 },
   checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    width: 22, height: 22, borderRadius: radii.sm, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginRight: 10, marginTop: 1,
   },
   checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  acceptText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
-  acceptLink: { color: colors.primary, fontWeight: '700' },
+  acceptText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  acceptLink: { color: colors.primary, fontWeight: '600' },
   docModal: { flex: 1, backgroundColor: colors.background },
   docHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingHorizontal: 20, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
-  docTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, flex: 1 },
+  docTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.3, flex: 1, marginRight: 12,
+  },
+  docClose: { padding: 4, flexShrink: 0 },
   docBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
-  submitBtn: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  submitBtn: {
+    alignSelf: 'stretch', backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center', marginTop: 8,
+  },
+  submitBtnDisabled: { backgroundColor: colors.textMuted },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   forgotLink: { alignItems: 'center', marginTop: 16 },
-  forgotLinkText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
+  forgotLinkText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
   switchHint: { textAlign: 'center', marginTop: 12, fontSize: 14, color: colors.textMuted },
-  switchLink: { color: colors.primary, fontWeight: '700' },
+  switchLink: { color: colors.primary, fontWeight: '600' },
 });

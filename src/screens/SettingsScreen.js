@@ -3,14 +3,13 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert, Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { colors, gradients } from '../theme';
+import { colors, radii, shadows } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import DobPicker, { composeDob } from '../components/DobPicker';
 import { parseDob, isAdult, MIN_AGE } from '../lib/age';
@@ -31,7 +30,6 @@ export default function SettingsScreen({ navigation }) {
   const { user, signOut } = useAuth();
   const { showToast, setRole, refreshProfile } = useUser();
   const haptic = useHaptic();
-  const insets = useSafeAreaInsets();
 
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
@@ -275,19 +273,19 @@ export default function SettingsScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={gradients.profile} style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <ScreenHeader>
           <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Text style={styles.backText}>‹ Back</Text>
+              <Text style={styles.backText} numberOfLines={1}>‹ Back</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Profile Settings</Text>
+          <Text style={styles.headerTitle} numberOfLines={2}>Profile settings</Text>
           <Text style={styles.headerSub}>Change your info, role, location, and skills</Text>
-        </LinearGradient>
+        </ScreenHeader>
 
         <View style={styles.form}>
           <SectionHeader first>Basics</SectionHeader>
-          <Field label="Display Name">
+          <Field label="Display name">
             <TextInput
               style={styles.input} placeholder="Your name"
               placeholderTextColor={colors.textMuted} value={form.name}
@@ -327,8 +325,8 @@ export default function SettingsScreen({ navigation }) {
                   style={[styles.roleChip, form.role === r.id && styles.roleChipActive]}
                   onPress={() => { haptic.selection(); set('role', r.id); }}
                 >
-                  <Ionicons name={r.ion} size={18} color={form.role === r.id ? '#fff' : colors.primary} style={styles.roleChipIcon} />
-                  <Text style={[styles.roleChipText, form.role === r.id && styles.roleChipTextActive]}>{r.label}</Text>
+                  <Ionicons name={r.ion} size={18} color={form.role === r.id ? '#fff' : colors.textSecondary} style={styles.roleChipIcon} />
+                  <Text style={[styles.roleChipText, form.role === r.id && styles.roleChipTextActive]} numberOfLines={1}>{r.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -347,7 +345,7 @@ export default function SettingsScreen({ navigation }) {
               <>
                 <View style={styles.dobReadonly}>
                   <Ionicons name="lock-closed" size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
-                  <Text style={styles.dobReadonlyText}>{formatDob(existingDob)}</Text>
+                  <Text style={styles.dobReadonlyText} numberOfLines={1}>{formatDob(existingDob)}</Text>
                 </View>
                 <Text style={styles.hintText}>Your date of birth is set and can't be changed.</Text>
               </>
@@ -384,7 +382,7 @@ export default function SettingsScreen({ navigation }) {
                 />
               </Field>
 
-              <Field label="Class Standing">
+              <Field label="Class standing">
                 <View style={styles.skillGrid}>
                   {CLASS_STANDINGS.map(s => (
                     <TouchableOpacity
@@ -412,7 +410,7 @@ export default function SettingsScreen({ navigation }) {
                 </View>
               </Field>
 
-              <Field label="Graduation Year">
+              <Field label="Graduation year">
                 <TextInput
                   style={styles.input} placeholder="e.g. 2027"
                   placeholderTextColor={colors.textMuted} value={form.gradYear}
@@ -425,8 +423,8 @@ export default function SettingsScreen({ navigation }) {
 
           {(form.role === 'earner' || form.role === 'both') && (
             <>
-              <SectionHeader>Work Preferences</SectionHeader>
-              <Field label="Travel Radius">
+              <SectionHeader>Work preferences</SectionHeader>
+              <Field label="Travel radius">
                 <View style={styles.radiusRow}>
                   {RADIUS_OPTIONS.map(r => (
                     <TouchableOpacity
@@ -442,7 +440,7 @@ export default function SettingsScreen({ navigation }) {
                 </View>
               </Field>
 
-              <Field label="My Skills">
+              <Field label="My skills">
                 <View style={styles.skillGrid}>
                   {SKILL_OPTIONS.map(s => (
                     <TouchableOpacity
@@ -460,7 +458,7 @@ export default function SettingsScreen({ navigation }) {
                 <Field label="Hourly rates (optional)">
                   {form.skills.map(s => (
                     <View key={s} style={styles.rateRow}>
-                      <Text style={styles.rateSkill}>{s}</Text>
+                      <Text style={styles.rateSkill} numberOfLines={1}>{s}</Text>
                       <View style={styles.rateInputWrap}>
                         <Text style={styles.rateDollar}>$</Text>
                         <TextInput
@@ -480,7 +478,7 @@ export default function SettingsScreen({ navigation }) {
 
               <View style={styles.availToggleRow}>
                 <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={styles.availToggleTitle}>Show my availability on my profile</Text>
+                  <Text style={styles.availToggleTitle} numberOfLines={2}>Show my availability on my profile</Text>
                   <Text style={styles.availToggleHint}>Lets signed-in clients see when you're free.</Text>
                 </View>
                 <Switch
@@ -501,7 +499,7 @@ export default function SettingsScreen({ navigation }) {
                   <Image source={{ uri: safeCertUrl(c.image_url) }} style={styles.certThumb} />
                 ) : (
                   <View style={styles.certThumbPlaceholder}>
-                    <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
+                    <Ionicons name="ribbon-outline" size={18} color={colors.textSecondary} />
                   </View>
                 )}
                 <View style={styles.certInfo}>
@@ -534,16 +532,21 @@ export default function SettingsScreen({ navigation }) {
                 keyboardType="number-pad" maxLength={4}
               />
               <TouchableOpacity onPress={pickCertImage} style={styles.certImageBtn} activeOpacity={0.85}>
-                <Ionicons name={certForm.imageUri ? 'checkmark-circle' : 'image-outline'} size={18} color={colors.primary} style={{ marginRight: 6 }} />
-                <Text style={styles.certImageBtnText}>{certForm.imageUri ? 'Image selected' : 'Add image (optional)'}</Text>
+                <Ionicons
+                  name={certForm.imageUri ? 'checkmark-circle' : 'image-outline'}
+                  size={18}
+                  color={certForm.imageUri ? colors.success : colors.textSecondary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.certImageBtnText} numberOfLines={1}>{certForm.imageUri ? 'Image selected' : 'Add image (optional)'}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleAddCert} disabled={savingCert} style={styles.certAddBtn} activeOpacity={0.85}>
                 {savingCert
-                  ? <ActivityIndicator color={colors.primary} />
+                  ? <ActivityIndicator color={colors.textPrimary} />
                   : (
                     <>
-                      <Ionicons name="add" size={18} color={colors.primary} style={{ marginRight: 4 }} />
-                      <Text style={styles.certAddBtnText}>Add certification</Text>
+                      <Ionicons name="add" size={18} color={colors.textPrimary} style={{ marginRight: 4 }} />
+                      <Text style={styles.certAddBtnText} numberOfLines={1}>Add certification</Text>
                     </>
                   )
                 }
@@ -551,13 +554,11 @@ export default function SettingsScreen({ navigation }) {
             </View>
           </Field>
 
-          <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85}>
-            <LinearGradient colors={gradients.profile} style={styles.saveBtn}>
-              {saving
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.saveBtnText}>Save Changes ✓</Text>
-              }
-            </LinearGradient>
+          <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85} style={styles.saveBtn}>
+            {saving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveBtnText} numberOfLines={1}>Save changes</Text>
+            }
           </TouchableOpacity>
 
           <View style={styles.dangerZone}>
@@ -568,7 +569,7 @@ export default function SettingsScreen({ navigation }) {
                 : (
                   <>
                     <Ionicons name="trash-outline" size={18} color={colors.urgent} style={{ marginRight: 8 }} />
-                    <Text style={styles.deleteBtnText}>Delete account</Text>
+                    <Text style={styles.deleteBtnText} numberOfLines={1}>Delete account</Text>
                   </>
                 )
               }
@@ -601,7 +602,7 @@ function Field({ label, children }) {
 // Larger, darker heading that chunks the long form into labeled sections.
 function SectionHeader({ children, first }) {
   return (
-    <Text style={[styles.sectionHeader, first && { marginTop: 0, paddingTop: 0, borderTopWidth: 0 }]}>
+    <Text style={[styles.sectionHeader, first && { marginTop: 0 }]}>
       {children}
     </Text>
   );
@@ -610,105 +611,124 @@ function SectionHeader({ children, first }) {
 const styles = StyleSheet.create({
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: 20, paddingBottom: 24 },
-  headerRow: { marginBottom: 12 },
-  backBtn: { padding: 4 },
-  backText: { color: 'rgba(255,255,255,0.85)', fontSize: 16, fontWeight: '700' },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  form: { padding: 20 },
-  sectionHeader: {
-    fontSize: 17, fontWeight: '900', color: colors.textPrimary,
-    marginTop: 18, marginBottom: 16,
-    borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 22,
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  backBtn: { paddingVertical: 4, paddingRight: 8, marginLeft: -2 },
+  backText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1 },
+  headerTitle: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, marginBottom: 4,
   },
-  field: { marginBottom: 22 },
+  headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  form: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  sectionHeader: {
+    fontSize: 17, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.2, marginTop: 32, marginBottom: 16,
+  },
+  field: { marginBottom: 24 },
   fieldLabel: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
-    fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
+    fontSize: 15, color: colors.textPrimary, borderWidth: 1, borderColor: colors.border,
   },
   inputError: { borderColor: colors.urgent },
   dobReadonly: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
-    borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
+    borderWidth: 1, borderColor: colors.border,
   },
-  dobReadonlyText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
-  textArea: { minHeight: 80, lineHeight: 22 },
-  errorText: { color: colors.urgent, fontSize: 12, fontWeight: '600', marginTop: 4 },
-  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
-  roleRow: { flexDirection: 'row' },
+  dobReadonlyText: { fontSize: 15, color: colors.textPrimary, fontWeight: '500', flexShrink: 1 },
+  textArea: { minHeight: 88, lineHeight: 21 },
+  errorText: { color: colors.urgent, fontSize: 12, fontWeight: '500', marginTop: 6, lineHeight: 16 },
+  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
+  // Negative right margin lets the last chip's trailing margin hang off the gutter,
+  // buying back the width the 3-up row needs for the longest label ("Post Jobs").
+  roleRow: { flexDirection: 'row', marginRight: -8 },
   roleChip: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, borderRadius: 14, marginRight: 8,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+    paddingVertical: 12, paddingHorizontal: 6, borderRadius: radii.md, marginRight: 8,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   roleChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  roleChipIcon: { fontSize: 16, marginRight: 5 },
-  roleChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  roleChipIcon: { marginRight: 5, flexShrink: 0 },
+  roleChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   roleChipTextActive: { color: '#fff' },
-  radiusRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  radiusRow: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
   radiusBtn: {
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: radii.pill, margin: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   radiusBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  radiusBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  radiusBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   radiusBtnTextActive: { color: '#fff' },
-  skillGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  skillGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
   rateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
-  rateSkill: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', flex: 1 },
-  rateInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 10, height: 38, width: 110 },
+  rateSkill: { fontSize: 14, color: colors.textPrimary, fontWeight: '500', flex: 1, marginRight: 12 },
+  rateInputWrap: {
+    flexDirection: 'row', alignItems: 'center', flexShrink: 0,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 8, minWidth: 118,
+  },
   rateDollar: { fontSize: 14, color: colors.textSecondary, marginRight: 2 },
-  rateInput: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '700' },
-  rateUnit: { fontSize: 12, color: colors.textMuted },
+  rateInput: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '600', padding: 0 },
+  rateUnit: { fontSize: 12, color: colors.textMuted, marginLeft: 2 },
   skillChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill, margin: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  skillChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  skillChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   skillChipTextActive: { color: '#fff' },
   certRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 10,
-    backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, padding: 10,
+    flexDirection: 'row', alignItems: 'center', marginTop: 12,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 12,
+    ...shadows.card,
   },
-  certThumb: { width: 40, height: 40, borderRadius: 8, marginRight: 10 },
+  certThumb: { width: 40, height: 40, borderRadius: radii.sm, marginRight: 12, backgroundColor: colors.divider },
   certThumbPlaceholder: {
-    width: 40, height: 40, borderRadius: 8, marginRight: 10,
+    width: 40, height: 40, borderRadius: radii.sm, marginRight: 12,
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background,
   },
-  certInfo: { flex: 1 },
-  certTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  certRemove: { padding: 4, marginLeft: 8 },
-  certForm: { marginTop: 12, backgroundColor: colors.background, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border },
-  certImageBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, marginTop: 8 },
-  certImageBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  certInfo: { flex: 1, marginRight: 8 },
+  certTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 19 },
+  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
+  certRemove: { padding: 4, flexShrink: 0 },
+  certForm: { marginTop: 16 },
+  certImageBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.md, marginTop: 8,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  certImageBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   certAddBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface, marginTop: 4,
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.md, marginTop: 8,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  certAddBtnText: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  certAddBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   availToggleRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 22,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: 16, paddingVertical: 14, marginBottom: 24,
+    ...shadows.card,
   },
-  availToggleTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  availToggleHint: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
-  saveBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  dangerZone: { marginTop: 36, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
-  dangerLabel: { fontSize: 12, fontWeight: '800', color: colors.urgent, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  availToggleTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 19 },
+  availToggleHint: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 17 },
+  saveBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center',
+    marginTop: 8,
+  },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  dangerZone: { marginTop: 40 },
+  dangerLabel: { fontSize: 13, fontWeight: '600', color: colors.urgent, marginBottom: 8, lineHeight: 18 },
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.urgent, backgroundColor: colors.surface,
+    paddingVertical: 14, paddingHorizontal: 20, borderRadius: radii.md,
+    backgroundColor: colors.urgentLight,
   },
-  deleteBtnText: { color: colors.urgent, fontSize: 15, fontWeight: '800' },
-  dangerHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, textAlign: 'center' },
+  deleteBtnText: { color: colors.urgent, fontSize: 15, fontWeight: '600' },
+  dangerHint: { fontSize: 12, color: colors.textMuted, marginTop: 12, textAlign: 'center', lineHeight: 17 },
 });

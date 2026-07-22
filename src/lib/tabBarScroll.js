@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { Animated } from 'react-native';
 
 // Shared scroll-direction state driving FloatingTabBar's expand/collapse.
@@ -22,6 +22,29 @@ function animateTo(v) {
 }
 
 export function expandTabBar() { animateTo(1); }
+
+// Whether the floating chrome (tab bar + assistant FAB) should be showing.
+// FloatingTabBar owns the decision — it knows the focused route and keyboard
+// state — and the FAB follows it, so neither can cover a form control or a
+// bottom-pinned CTA on a pushed screen.
+let chromeVisible = true;
+const chromeListeners = new Set();
+
+export function setChromeVisible(v) {
+  if (v === chromeVisible) return;
+  chromeVisible = v;
+  chromeListeners.forEach(fn => fn(v));
+}
+
+export function useChromeVisible() {
+  const [visible, setVisible] = useState(chromeVisible);
+  useEffect(() => {
+    chromeListeners.add(setVisible);
+    setVisible(chromeVisible);
+    return () => { chromeListeners.delete(setVisible); };
+  }, []);
+  return visible;
+}
 
 export function useTabBarScrollHandler() {
   const lastY = useRef(0);

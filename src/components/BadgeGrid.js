@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BADGE_DEFS } from '../data/mockData';
-import { colors, shadows } from '../theme';
+import { colors, radii } from '../theme';
 
 export default function BadgeGrid({ badges }) {
   return (
@@ -14,7 +14,7 @@ export default function BadgeGrid({ badges }) {
             <Ionicons
               name={unlocked ? def.ion : 'lock-closed'}
               size={22}
-              color={unlocked ? colors.gold : colors.textMuted}
+              color={unlocked ? colors.accentDeep : colors.textMuted}
               style={styles.icon}
             />
             <Text style={[styles.label, !unlocked && styles.labelLocked]} numberOfLines={2}>
@@ -36,12 +36,13 @@ const styles = StyleSheet.create({
     width: '30%',
     alignItems: 'center', justifyContent: 'flex-start', minHeight: 92,
     backgroundColor: colors.surface,
-    borderRadius: 14, padding: 10, borderWidth: 1.5, borderColor: colors.border,
-    ...shadows.sm,
+    borderRadius: radii.md, padding: 12,
+    borderWidth: 1, borderColor: colors.border,
   },
-  locked: { backgroundColor: colors.divider, borderColor: 'transparent', opacity: 0.5 },
-  icon: { fontSize: 22, marginBottom: 4 },
-  iconLocked: { opacity: 0.5 },
-  label: { fontSize: 11, lineHeight: 14, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
+  // Locked reads as "empty slot" via the cream fill + muted lock glyph. No
+  // opacity — it dropped the muted label to ~1.9:1 contrast on cream.
+  locked: { backgroundColor: colors.background },
+  icon: { marginBottom: 8 },
+  label: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
   labelLocked: { color: colors.textMuted },
 });

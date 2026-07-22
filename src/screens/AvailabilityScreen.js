@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { listClasses, addClass, deleteClass } from '../lib/schedule';
 import WorkStatusBar from '../components/WorkStatusBar';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 const STEP = 30;       // minutes
 const MIN_M = 6 * 60;  // 6:00 AM
@@ -26,11 +26,11 @@ function TimeStepper({ value, onChange }) {
   return (
     <View style={styles.stepper}>
       <TouchableOpacity onPress={() => onChange(toHHMM(Math.max(MIN_M, m - STEP)))} style={styles.stepBtn}>
-        <Ionicons name="remove" size={16} color={colors.primary} />
+        <Ionicons name="remove" size={16} color={colors.textPrimary} />
       </TouchableOpacity>
-      <Text style={styles.stepText}>{fmtTime(value)}</Text>
+      <Text style={styles.stepText} numberOfLines={1}>{fmtTime(value)}</Text>
       <TouchableOpacity onPress={() => onChange(toHHMM(Math.min(MAX_M, m + STEP)))} style={styles.stepBtn}>
-        <Ionicons name="add" size={16} color={colors.primary} />
+        <Ionicons name="add" size={16} color={colors.textPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -43,7 +43,7 @@ function DayChips({ selected, onToggle, single }) {
         const active = single ? selected === i : selected.includes(i);
         return (
           <TouchableOpacity key={i} onPress={() => onToggle(i)} style={[styles.dayChip, active && styles.dayChipActive]}>
-            <Text style={[styles.dayChipText, active && styles.dayChipTextActive]}>{d}</Text>
+            <Text style={[styles.dayChipText, active && styles.dayChipTextActive]} numberOfLines={1}>{d}</Text>
           </TouchableOpacity>
         );
       })}
@@ -111,7 +111,7 @@ export default function AvailabilityScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 14 }}
+    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 20, paddingBottom: 48, gap: 16 }}
       automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <Text style={styles.lead}>When you can work — Hustlr AI uses this to match gigs to your free time.</Text>
 
@@ -119,12 +119,12 @@ export default function AvailabilityScreen() {
 
       {/* Weekly availability */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>🕐 Weekly availability</Text>
+        <Text style={styles.cardTitle}>Weekly availability</Text>
         {(availability || []).length > 0 ? (
           (availability || []).map((w, i) => (
             <View key={i} style={styles.rowItem}>
-              <Text style={styles.rowText}>{DAYS[w.day]} · {fmtTime(w.start)}–{fmtTime(w.end)}</Text>
-              <TouchableOpacity onPress={() => removeWindow(i)}>
+              <Text style={styles.rowText} numberOfLines={1}>{DAYS[w.day]} · {fmtTime(w.start)}–{fmtTime(w.end)}</Text>
+              <TouchableOpacity onPress={() => removeWindow(i)} style={styles.rowAction}>
                 <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -140,21 +140,21 @@ export default function AvailabilityScreen() {
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={addWindow}>
           <Ionicons name="add" size={18} color="#fff" />
-          <Text style={styles.addBtnText}>Add window</Text>
+          <Text style={styles.addBtnText} numberOfLines={1}>Add window</Text>
         </TouchableOpacity>
       </View>
 
       {/* Class schedule */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>🎓 Class schedule</Text>
+        <Text style={styles.cardTitle}>Class schedule</Text>
         <Text style={styles.cardSub}>Your classes block the times you can&apos;t work.</Text>
         {classes.length > 0 ? (
           classes.map((c) => (
             <View key={c.id} style={styles.rowItem}>
-              <Text style={styles.rowText} numberOfLines={1}>
-                <Text style={{ fontWeight: '800' }}>{c.title}</Text>  {(c.days || []).map((d) => DAYS[d]).join('/')} · {fmtTime(c.start_time)}–{fmtTime(c.end_time)}
+              <Text style={styles.rowText} numberOfLines={2}>
+                <Text style={styles.rowStrong}>{c.title}</Text>  {(c.days || []).map((d) => DAYS[d]).join('/')} · {fmtTime(c.start_time)}–{fmtTime(c.end_time)}
               </Text>
-              <TouchableOpacity onPress={() => removeClass(c.id)}>
+              <TouchableOpacity onPress={() => removeClass(c.id)} style={styles.rowAction}>
                 <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -181,7 +181,7 @@ export default function AvailabilityScreen() {
           disabled={!cTitle.trim() || cDays.length === 0}
         >
           <Ionicons name="add" size={18} color="#fff" />
-          <Text style={styles.addBtnText}>Add class</Text>
+          <Text style={styles.addBtnText} numberOfLines={1}>Add class</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -190,24 +190,49 @@ export default function AvailabilityScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  lead: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
-  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, ...shadows.card },
-  cardTitle: { fontSize: 15, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 },
-  cardSub: { fontSize: 12, color: colors.textMuted, marginBottom: 8 },
-  empty: { fontSize: 13.5, color: colors.textMuted, marginBottom: 8 },
-  rowItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, backgroundColor: colors.background, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6 },
-  rowText: { flex: 1, fontSize: 13.5, color: colors.textPrimary },
-  dayRow: { flexDirection: 'row', gap: 5, marginTop: 8, marginBottom: 8 },
-  dayChip: { flex: 1, alignItems: 'center', backgroundColor: colors.background, borderRadius: 10, paddingVertical: 7 },
+  lead: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  card: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, ...shadows.card },
+  cardTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.2, marginBottom: 4 },
+  cardSub: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginBottom: 12 },
+  empty: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginBottom: 8 },
+  rowItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    backgroundColor: colors.background, borderRadius: radii.md,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8,
+  },
+  rowText: { flex: 1, flexShrink: 1, fontSize: 14, lineHeight: 19, color: colors.textPrimary },
+  rowStrong: { fontWeight: '600' },
+  rowAction: { flexShrink: 0, padding: 4 },
+  dayRow: { flexDirection: 'row', gap: 4, marginTop: 8, marginBottom: 12 },
+  dayChip: { flex: 1, alignItems: 'center', backgroundColor: colors.background, borderRadius: radii.pill, paddingVertical: 8, paddingHorizontal: 4 },
   dayChipActive: { backgroundColor: colors.primary },
-  dayChipText: { fontSize: 11, fontWeight: '800', color: colors.textSecondary },
+  dayChipText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
   dayChipTextActive: { color: '#fff' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 10 },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.background, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 4 },
-  stepBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  stepText: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, minWidth: 64, textAlign: 'center' },
-  toText: { fontSize: 13, color: colors.textMuted },
-  input: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: colors.textPrimary, marginBottom: 4 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 11 },
-  addBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  // flex:1 (not flexShrink) so both steppers always split the row evenly — the
+  // label can never push the +/- buttons off a narrow screen, and the width
+  // stays constant as the time label changes, so nothing jitters.
+  stepper: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.background, borderRadius: radii.md,
+    paddingHorizontal: 6, paddingVertical: 4,
+  },
+  stepBtn: {
+    width: 28, height: 28, borderRadius: radii.pill, flexShrink: 0,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepText: { flex: 1, fontSize: 14, lineHeight: 19, fontWeight: '600', color: colors.textPrimary, textAlign: 'center' },
+  toText: { fontSize: 13, color: colors.textMuted, flexShrink: 0 },
+  input: {
+    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: colors.textPrimary, marginBottom: 4,
+  },
+  addBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 16,
+  },
+  addBtnText: { color: '#fff', fontSize: 15, fontWeight: '600', flexShrink: 1 },
 });

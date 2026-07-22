@@ -9,7 +9,7 @@ import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from '../components/Avatar';
 import RatingStars from '../components/RatingStars';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 const DEBOUNCE_MS = 350;
 const MIN_QUERY = 2;
@@ -87,7 +87,7 @@ export default function FindPeopleScreen({ navigation }) {
       ) : results === null ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
-            <Ionicons name="people-outline" size={30} color={colors.primary} />
+            <Ionicons name="people-outline" size={30} color={colors.textSecondary} />
           </View>
           <Text style={styles.emptyTitle}>Find people on GoHustlr</Text>
           <Text style={styles.emptyText}>
@@ -97,7 +97,7 @@ export default function FindPeopleScreen({ navigation }) {
       ) : results.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
-            <Ionicons name="search-outline" size={30} color={colors.primary} />
+            <Ionicons name="search-outline" size={30} color={colors.textSecondary} />
           </View>
           <Text style={styles.emptyTitle}>No one found</Text>
           <Text style={styles.emptyText}>Nobody matches "{query.trim()}". Check the spelling or try a different name.</Text>
@@ -111,23 +111,23 @@ export default function FindPeopleScreen({ navigation }) {
           renderItem={({ item: p }) => (
             <TouchableOpacity style={styles.row} onPress={() => openProfile(p)} activeOpacity={0.85}>
               <Avatar url={p.avatar_url} initial={p.avatar_initial || p.name?.[0]} size={48} fontSize={18} style={{ marginRight: 12 }} />
-              <View style={{ flex: 1 }}>
+              <View style={styles.rowBody}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name} numberOfLines={1}>{p.name || 'GoHustlr user'}</Text>
-                  {p.verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} style={{ marginLeft: 4 }} />}
+                  {p.verified && <Ionicons name="checkmark-circle" size={14} color={colors.success} style={styles.verified} />}
                 </View>
                 {p.username ? <Text style={styles.username} numberOfLines={1}>@{p.username}</Text> : null}
                 <View style={styles.metaRow}>
                   {p.review_count > 0
                     ? <>
                         <RatingStars rating={Number(p.rating) || 0} size={11} />
-                        <Text style={styles.metaText}>  {Number(p.rating).toFixed(1)} ({p.review_count})</Text>
+                        <Text style={styles.metaText} numberOfLines={1}>  {Number(p.rating).toFixed(1)} ({p.review_count})</Text>
                       </>
-                    : <Text style={styles.metaText}>No reviews yet</Text>}
-                  {p.city ? <Text style={styles.metaText}> · {p.city}</Text> : null}
+                    : <Text style={styles.metaText} numberOfLines={1}>No reviews yet</Text>}
+                  {p.city ? <Text style={styles.metaText} numberOfLines={1}> · {p.city}</Text> : null}
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={styles.chevron} />
             </TouchableOpacity>
           )}
         />
@@ -140,26 +140,30 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 14,
-    marginHorizontal: 16, marginTop: 12, paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    marginHorizontal: 20, marginTop: 12, paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: colors.border,
   },
-  searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
+  searchInput: { flex: 1, flexShrink: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56 },
   emptyIconWrap: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+    width: 72, height: 72, borderRadius: radii.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { fontSize: 18, lineHeight: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.2, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21 },
   row: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    marginHorizontal: 16, marginTop: 8, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    marginHorizontal: 20, marginTop: 8, borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
   },
+  rowBody: { flex: 1, flexShrink: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
-  name: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, flexShrink: 1 },
-  username: { fontSize: 12, color: colors.primary, marginTop: 1 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
-  metaText: { fontSize: 12, color: colors.textMuted },
+  name: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+  verified: { marginLeft: 4, flexShrink: 0 },
+  username: { fontSize: 12, lineHeight: 16, color: colors.textMuted, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  metaText: { fontSize: 12, lineHeight: 16, color: colors.textMuted, flexShrink: 1 },
+  chevron: { marginLeft: 8, flexShrink: 0 },
 });

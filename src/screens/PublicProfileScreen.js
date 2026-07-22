@@ -12,15 +12,14 @@ import { fetchCertifications, safeCertUrl } from '../lib/certifications';
 import { computeCertifications } from '../lib/insights';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
-import GradientHeader from '../components/GradientHeader';
+import ScreenHeader from '../components/ScreenHeader';
 import Avatar from '../components/Avatar';
 import MessageSheet from '../components/MessageSheet';
 import RatingStars from '../components/RatingStars';
 import { collegeLine } from '../lib/school';
 import { DAYS, windowsForDay, fmtTime, workStatusMeta } from '../lib/availability';
 import { maskLocation } from '../lib/address';
-import { colors, gradients, shadows } from '../theme';
-import { CATEGORY_COLORS } from '../data/mockData';
+import { colors, radii, shadows } from '../theme';
 
 const avg = (arr) => arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length) : null;
 
@@ -168,38 +167,38 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      <GradientHeader colors={gradients.profile} underNav>
+      <ScreenHeader underNav>
         <View style={styles.headerRow}>
           <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} size={64} fontSize={26}
-            bg="rgba(255,255,255,0.25)" borderColor="rgba(255,255,255,0.6)" borderWidth={3} style={{ marginRight: 16 }} />
-          <View style={{ flex: 1 }}>
+            style={{ marginRight: 16 }} />
+          <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.name}>{profile.name || 'GoHustlr user'}</Text>
-              {profile.verified && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
-              {profile.student_verified && <Ionicons name="school" size={14} color="#fff" style={{ marginLeft: 6 }} />}
+              <Text style={styles.name} numberOfLines={2}>{profile.name || 'GoHustlr user'}</Text>
+              {profile.verified && <Ionicons name="checkmark-circle" size={16} color={colors.success} style={styles.nameIcon} />}
+              {profile.student_verified && <Ionicons name="school" size={14} color={colors.textSecondary} style={styles.nameIcon} />}
             </View>
             {overall != null
               ? <RatingStars rating={overall} size={14} />
-              : <Text style={styles.subWhite}>No reviews yet</Text>}
-            <Text style={styles.subWhite}>
+              : <Text style={styles.subMeta} numberOfLines={1}>No reviews yet</Text>}
+            <Text style={styles.subMeta} numberOfLines={1}>
               {reviews.length > 0 ? `${overall.toFixed(1)} · ${reviews.length} review${reviews.length !== 1 ? 's' : ''}` : ''}
               {profile.member_since ? `${reviews.length ? ' · ' : ''}Since ${profile.member_since}` : ''}
             </Text>
-            {!!collegeLine(profile) && <Text style={styles.subWhite}>{collegeLine(profile)}</Text>}
-            {profile.city ? <Text style={styles.subWhite}>{profile.city}</Text> : null}
+            {!!collegeLine(profile) && <Text style={styles.subMeta} numberOfLines={1}>{collegeLine(profile)}</Text>}
+            {profile.city ? <Text style={styles.subMeta} numberOfLines={1}>{profile.city}</Text> : null}
           </View>
           {!isSelf && user && (
             <View style={styles.headerActions}>
               <TouchableOpacity onPress={toggleFav} style={styles.favBtn} activeOpacity={0.8}>
-                <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? '#FB7185' : '#fff'} />
+                <Ionicons name={fav ? 'heart' : 'heart-outline'} size={20} color={fav ? colors.urgent : colors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.favBtn} activeOpacity={0.8} accessibilityLabel="More options">
-                <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
           )}
         </View>
-      </GradientHeader>
+      </ScreenHeader>
 
       {/* Report / block action sheet */}
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
@@ -233,21 +232,21 @@ export default function PublicProfileScreen({ route, navigation }) {
       {/* Rating breakdown */}
       <View style={styles.breakRow}>
         <View style={styles.breakItem}>
-          <Ionicons name="briefcase" size={16} color={colors.primary} />
-          <Text style={styles.breakVal}>{workerAvg != null ? workerAvg.toFixed(1) : '—'}</Text>
-          <Text style={styles.breakLabel}>As a worker ({workerReviews.length})</Text>
+          <Ionicons name="briefcase-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.breakVal} numberOfLines={1}>{workerAvg != null ? workerAvg.toFixed(1) : '—'}</Text>
+          <Text style={styles.breakLabel} numberOfLines={1}>As a worker ({workerReviews.length})</Text>
         </View>
         <View style={styles.breakDivider} />
         <View style={styles.breakItem}>
-          <Ionicons name="megaphone" size={16} color={colors.primary} />
-          <Text style={styles.breakVal}>{clientAvg != null ? clientAvg.toFixed(1) : '—'}</Text>
-          <Text style={styles.breakLabel}>As a client ({clientReviews.length})</Text>
+          <Ionicons name="megaphone-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.breakVal} numberOfLines={1}>{clientAvg != null ? clientAvg.toFixed(1) : '—'}</Text>
+          <Text style={styles.breakLabel} numberOfLines={1}>As a client ({clientReviews.length})</Text>
         </View>
       </View>
 
       {isSelf && (
         <View style={styles.selfBanner}>
-          <Ionicons name="eye-outline" size={15} color={colors.primary} style={{ marginRight: 8 }} />
+          <Ionicons name="eye-outline" size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
           <Text style={styles.selfBannerText}>This is your public profile — exactly how others see you.</Text>
         </View>
       )}
@@ -261,14 +260,14 @@ export default function PublicProfileScreen({ route, navigation }) {
               return (
                 <View style={styles.availStatusRow}>
                   <View style={[styles.availStatusDot, { backgroundColor: ws.color }]} />
-                  <Text style={styles.availStatusLabel}>{ws.label}</Text>
+                  <Text style={styles.availStatusLabel} numberOfLines={1}>{ws.label}</Text>
                 </View>
               );
             })()}
             {availDays.map(({ label, day, windows }) => (
               <View key={day} style={styles.availRow}>
-                <Text style={styles.availDay}>{label}</Text>
-                <Text style={styles.availTimes}>
+                <Text style={styles.availDay} numberOfLines={1}>{label}</Text>
+                <Text style={styles.availTimes} numberOfLines={2}>
                   {windows.map((w) => `${fmtTime(w.start)}–${fmtTime(w.end)}`).join(', ')}
                 </Text>
               </View>
@@ -286,7 +285,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               activeOpacity={0.85}
             >
               <Ionicons name="chatbubble-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-              <Text style={styles.inviteBtnText}>Message</Text>
+              <Text style={styles.inviteBtnText} numberOfLines={1}>Message</Text>
             </TouchableOpacity>
           )}
           {myOpenGigs.length > 0 && (
@@ -295,8 +294,8 @@ export default function PublicProfileScreen({ route, navigation }) {
               onPress={() => setInviteOpen(true)}
               activeOpacity={0.85}
             >
-              <Ionicons name="paper-plane-outline" size={16} color={sharedBooking ? colors.primary : '#fff'} style={{ marginRight: 6 }} />
-              <Text style={[styles.inviteBtnText, sharedBooking && { color: colors.primary }]}>Invite to a gig</Text>
+              <Ionicons name="paper-plane-outline" size={16} color={sharedBooking ? colors.textPrimary : '#fff'} style={{ marginRight: 6 }} />
+              <Text style={[styles.inviteBtnText, sharedBooking && styles.inviteBtnTextOutline]} numberOfLines={1}>Invite to a gig</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -315,7 +314,7 @@ export default function PublicProfileScreen({ route, navigation }) {
           <View style={styles.chipWrap}>
             {profile.skills.map(s => (
               <View key={s} style={styles.skillChip}>
-                <Text style={styles.skillText}>{s}{profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ''}</Text>
+                <Text style={styles.skillText} numberOfLines={1}>{s}{profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ''}</Text>
               </View>
             ))}
           </View>
@@ -329,9 +328,9 @@ export default function PublicProfileScreen({ route, navigation }) {
             {certified.map(c => (
               <View key={c.label} style={styles.certifiedBadge}>
                 <Ionicons name="shield-checkmark" size={18} color={colors.success} style={{ marginRight: 8 }} />
-                <View>
-                  <Text style={styles.certifiedTitle}>Certified · {c.label}</Text>
-                  <Text style={styles.certifiedSub}>{c.count} jobs</Text>
+                <View style={styles.certifiedTextWrap}>
+                  <Text style={styles.certifiedTitle} numberOfLines={1}>Certified · {c.label}</Text>
+                  <Text style={styles.certifiedSub} numberOfLines={1}>{c.count} jobs</Text>
                 </View>
               </View>
             ))}
@@ -345,8 +344,8 @@ export default function PublicProfileScreen({ route, navigation }) {
           <View style={styles.progressCard}>
             {progress.map(p => (
               <View key={p.label} style={styles.progressRow}>
-                <Text style={styles.progressLabel}>{p.label}</Text>
-                <Text style={styles.progressCount}>{p.count}/{p.needed}</Text>
+                <Text style={styles.progressLabel} numberOfLines={1}>{p.label}</Text>
+                <Text style={styles.progressCount} numberOfLines={1}>{p.count}/{p.needed}</Text>
               </View>
             ))}
           </View>
@@ -370,16 +369,16 @@ export default function PublicProfileScreen({ route, navigation }) {
                 <Image source={{ uri: certImg }} style={styles.certThumb} />
               ) : (
                 <View style={styles.certThumbPlaceholder}>
-                  <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
+                  <Ionicons name="ribbon-outline" size={20} color={colors.textMuted} />
                 </View>
               )}
-              <View style={{ flex: 1 }}>
+              <View style={styles.rowGrow}>
                 <Text style={styles.certTitle} numberOfLines={1}>{c.title}</Text>
                 {(c.issuer || c.year) ? (
                   <Text style={styles.certMeta} numberOfLines={1}>{[c.issuer, c.year].filter(Boolean).join(' · ')}</Text>
                 ) : null}
               </View>
-              {certImg ? <Ionicons name="open-outline" size={16} color={colors.textMuted} /> : null}
+              {certImg ? <Ionicons name="open-outline" size={16} color={colors.textMuted} style={styles.rowChevron} /> : null}
             </TouchableOpacity>
             );
           })}
@@ -389,19 +388,17 @@ export default function PublicProfileScreen({ route, navigation }) {
       {listings.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Open gigs they posted ({listings.length})</Text>
-          {listings.map(j => {
-            const cc = CATEGORY_COLORS[j.category] || colors.primary;
-            return (
-              <TouchableOpacity key={j.id} style={styles.jobRow} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })}>
-                <View style={[styles.jobAccent, { backgroundColor: cc }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.jobTitle} numberOfLines={1}>{j.title}</Text>
-                  <Text style={styles.jobMeta}>{j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {maskLocation(j.location)}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-            );
-          })}
+          {listings.map(j => (
+            <TouchableOpacity key={j.id} style={styles.jobRow} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })}>
+              <View style={styles.rowGrow}>
+                <Text style={styles.jobTitle} numberOfLines={1}>{j.title}</Text>
+                <Text style={styles.jobMeta} numberOfLines={1}>
+                  {j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {j.category} · {maskLocation(j.location)}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.rowChevron} />
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -428,18 +425,18 @@ export default function PublicProfileScreen({ route, navigation }) {
           <View key={r.id} style={styles.reviewCard}>
             <View style={styles.reviewHead}>
               <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} size={32} fontSize={13} style={{ marginRight: 10 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.reviewer}>{r.reviewer?.name || 'User'}</Text>
+              <View style={styles.rowGrow}>
+                <Text style={styles.reviewer} numberOfLines={1}>{r.reviewer?.name || 'User'}</Text>
                 <View style={styles.reviewMetaRow}>
                   <RatingStars rating={r.rating} size={11} />
-                  <View style={[styles.roleTag, r.role === 'poster' && styles.roleTagClient]}>
-                    <Text style={[styles.roleTagText, r.role === 'poster' && styles.roleTagTextClient]}>
+                  <View style={styles.roleTag}>
+                    <Text style={styles.roleTagText} numberOfLines={1}>
                       {r.role === 'poster' ? 'as a client' : 'as a worker'}
                     </Text>
                   </View>
                 </View>
               </View>
-              {r.date ? <Text style={styles.reviewDate}>{r.date}</Text> : null}
+              {r.date ? <Text style={styles.reviewDate} numberOfLines={1}>{r.date}</Text> : null}
             </View>
             {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
           </View>
@@ -455,11 +452,11 @@ export default function PublicProfileScreen({ route, navigation }) {
             <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
               {myOpenGigs.map(j => (
                 <TouchableOpacity key={j.id} style={styles.inviteRow} onPress={() => sendInvite(j)}>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.rowGrow}>
                     <Text style={styles.inviteRowTitle} numberOfLines={1}>{j.title}</Text>
-                    <Text style={styles.inviteRowMeta}>{j.payType === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {maskLocation(j.location)}</Text>
+                    <Text style={styles.inviteRowMeta} numberOfLines={1}>{j.payType === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {maskLocation(j.location)}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.rowChevron} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -487,110 +484,165 @@ export default function PublicProfileScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, padding: 24 },
-  muted: { fontSize: 14, color: colors.textMuted },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, padding: 20 },
+  muted: { fontSize: 14, color: colors.textMuted, lineHeight: 20 },
+
+  // ── Header ────────────────────────────────────────────────────────────────
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  favBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
-  },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 12, paddingBottom: 28 },
-  sheetTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, padding: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12 },
-  sheetText: { fontSize: 15.5, fontWeight: '700', color: colors.textPrimary },
+  headerInfo: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  name: { fontSize: 22, fontWeight: '900', color: '#fff' },
-  subWhite: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
+  name: { fontSize: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.4, lineHeight: 30, flexShrink: 1 },
+  nameIcon: { marginLeft: 6, flexShrink: 0 },
+  // No explicit lineHeight: the "rating · reviews · since" line can legitimately
+  // render as an empty string, and a forced line box would leave a blank gap.
+  subMeta: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, marginLeft: 8 },
+  favBtn: {
+    width: 36, height: 36, borderRadius: radii.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 6,
+  },
+
+  // ── Report / block action sheet ───────────────────────────────────────────
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    padding: 12, paddingBottom: 28,
+  },
+  sheetTitle: { fontSize: 13, fontWeight: '600', color: colors.textMuted, lineHeight: 18, padding: 12 },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: radii.md },
+  sheetText: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20, flexShrink: 1 },
+
+  // ── Rating breakdown ──────────────────────────────────────────────────────
   breakRow: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    marginHorizontal: 16, marginTop: 16, borderRadius: 16, paddingVertical: 16,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    marginHorizontal: 20, marginTop: 16, borderRadius: radii.lg, paddingVertical: 16,
+    ...shadows.card,
   },
-  breakItem: { flex: 1, alignItems: 'center' },
-  breakVal: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, marginTop: 4 },
-  breakLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600', marginTop: 2 },
-  breakDivider: { width: 1, height: 44, backgroundColor: colors.border },
+  breakItem: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  breakVal: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginTop: 4, lineHeight: 26 },
+  breakLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '500', marginTop: 4, lineHeight: 16, textAlign: 'center' },
+  breakDivider: { width: 1, height: 44, backgroundColor: colors.divider },
+
+  // ── Primary / secondary actions ───────────────────────────────────────────
+  actionRow: { flexDirection: 'row', marginHorizontal: 20, marginTop: 12 },
+  actionBtn: { flex: 1, marginHorizontal: 0, marginTop: 0 },
+  actionBtnOutline: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   inviteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 13,
-    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 16,
+    marginHorizontal: 20, marginTop: 12,
   },
-  inviteBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  actionRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12 },
-  actionBtn: { flex: 1, marginHorizontal: 0, marginTop: 0 },
-  actionBtnOutline: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary },
+  inviteBtnText: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 20, flexShrink: 1 },
+  inviteBtnTextOutline: { color: colors.textPrimary },
+
+  // ── Invite bottom sheet ───────────────────────────────────────────────────
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  inviteSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 36, ...shadows.md },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 16 },
-  inviteSheetTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 },
-  inviteRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  inviteRowTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  inviteRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  cancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 6 },
-  cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 },
-  bio: { fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  skillChip: { backgroundColor: colors.primaryLight, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8 },
-  skillText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  jobRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: 14, padding: 12, marginBottom: 8, overflow: 'hidden',
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  inviteSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 20, paddingBottom: 36, ...shadows.md,
   },
-  jobAccent: { width: 4, height: 36, borderRadius: 2, marginRight: 12 },
-  availCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  handle: { width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 16 },
+  inviteSheetTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.2, lineHeight: 24, marginBottom: 12 },
+  inviteRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  inviteRowTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20 },
+  inviteRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
+  cancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '500', lineHeight: 18 },
+
+  // ── Sections ──────────────────────────────────────────────────────────────
+  section: { paddingHorizontal: 20, marginTop: 24 },
+  sectionTitle: { fontSize: 13, fontWeight: '600', color: colors.textMuted, lineHeight: 18, marginBottom: 12 },
+  bio: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
+
+  // Shared row helpers: the text column yields space so the trailing icon /
+  // value can never be pushed off-screen.
+  rowGrow: { flex: 1, minWidth: 0, marginRight: 12 },
+  rowChevron: { flexShrink: 0 },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  skillChip: {
+    alignSelf: 'flex-start', maxWidth: '100%',
+    backgroundColor: colors.surface, borderRadius: radii.pill,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.border,
+  },
+  skillText: { fontSize: 12, fontWeight: '500', color: colors.textSecondary, lineHeight: 16, flexShrink: 1 },
+
+  // ── Availability ──────────────────────────────────────────────────────────
+  availCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, ...shadows.card },
   availStatusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  availStatusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  availStatusLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  availRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.divider },
-  availDay: { fontSize: 13, fontWeight: '800', color: colors.primary, width: 48 },
-  availTimes: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  availStatusDot: { width: 10, height: 10, borderRadius: radii.pill, marginRight: 8, flexShrink: 0 },
+  availStatusLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 18, flexShrink: 1 },
+  availRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.divider },
+  availDay: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, lineHeight: 18, width: 48, flexShrink: 0, marginRight: 12 },
+  availTimes: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 },
+
+  // ── Certifications ────────────────────────────────────────────────────────
   certCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: 14, padding: 12, marginBottom: 8,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    borderRadius: radii.lg, padding: 16, marginBottom: 8, ...shadows.card,
   },
-  certThumb: { width: 44, height: 44, borderRadius: 8, marginRight: 12 },
+  certThumb: { width: 44, height: 44, borderRadius: radii.md, marginRight: 12, backgroundColor: colors.background },
   certThumbPlaceholder: {
-    width: 44, height: 44, borderRadius: 8, marginRight: 12,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryLight,
+    width: 44, height: 44, borderRadius: radii.md, marginRight: 12,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background,
   },
-  certTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  certWrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  certTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20 },
+  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
+  certWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   certifiedBadge: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.successLight,
-    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginRight: 8, marginBottom: 8,
+    alignSelf: 'flex-start', maxWidth: '100%',
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.successLight, borderRadius: radii.md,
+    paddingHorizontal: 12, paddingVertical: 10,
   },
-  certifiedTitle: { fontSize: 13, fontWeight: '800', color: colors.success },
-  certifiedSub: { fontSize: 11, fontWeight: '600', color: colors.success, marginTop: 1 },
-  progressCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
-  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
-  progressLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
-  progressCount: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
-  jobTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-  jobMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  workRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
-  workText: { fontSize: 13, color: colors.textSecondary, flex: 1 },
-  workCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  certifiedTextWrap: { flexShrink: 1, minWidth: 0 },
+  certifiedTitle: { fontSize: 13, fontWeight: '600', color: colors.success, lineHeight: 18 },
+  certifiedSub: { fontSize: 12, fontWeight: '400', color: colors.success, marginTop: 4, lineHeight: 16 },
+
+  // ── Progress to certification ─────────────────────────────────────────────
+  progressCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, ...shadows.card },
+  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  progressLabel: { fontSize: 14, fontWeight: '500', color: colors.textPrimary, lineHeight: 18, flexShrink: 1, minWidth: 0, marginRight: 12 },
+  progressCount: { fontSize: 14, fontWeight: '600', color: colors.textMuted, lineHeight: 18, flexShrink: 0 },
+
+  // ── Open gigs ─────────────────────────────────────────────────────────────
+  jobRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
+    borderRadius: radii.lg, padding: 16, marginBottom: 8, ...shadows.card,
+  },
+  jobTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20 },
+  jobMeta: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
+
+  // ── Recent work ───────────────────────────────────────────────────────────
+  workCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 8, ...shadows.card },
   workTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  workTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-  workReview: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 4 },
-  selfBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 16, backgroundColor: colors.primaryLight, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
-  selfBannerText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.primary },
-  reviewCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border, ...shadows.sm },
+  workTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20 },
+  workReview: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginTop: 8 },
+
+  // ── Self banner ───────────────────────────────────────────────────────────
+  selfBanner: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 16,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  selfBannerText: { flex: 1, fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 },
+
+  // ── Reviews ───────────────────────────────────────────────────────────────
+  reviewCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 12, ...shadows.card },
   reviewHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  reviewer: { fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
+  reviewer: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 18, marginBottom: 4 },
   reviewMetaRow: { flexDirection: 'row', alignItems: 'center' },
-  roleTag: { backgroundColor: colors.primaryLight, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 8 },
-  roleTagClient: { backgroundColor: '#FEF3C7' },
-  roleTagText: { fontSize: 10, fontWeight: '700', color: colors.primary },
-  roleTagTextClient: { color: '#B45309' },
-  reviewDate: { fontSize: 11, color: colors.textMuted },
-  reviewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+  roleTag: {
+    alignSelf: 'flex-start', flexShrink: 1, minWidth: 0, backgroundColor: colors.background,
+    borderRadius: radii.sm, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 8,
+  },
+  roleTagText: { fontSize: 11, fontWeight: '500', color: colors.textMuted, lineHeight: 15 },
+  reviewDate: { fontSize: 12, color: colors.textMuted, lineHeight: 18, flexShrink: 0, marginLeft: 8 },
+  reviewText: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 });

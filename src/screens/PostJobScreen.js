@@ -3,12 +3,11 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Image,
   StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
+import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
@@ -16,7 +15,7 @@ import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { notify } from '../lib/push';
-import { colors, gradients } from '../theme';
+import { colors, radii } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../data/mockData';
 
@@ -60,7 +59,6 @@ export default function PostJobScreen({ navigation, route }) {
   const { showToast, name: myName } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
-  const insets = useSafeAreaInsets();
   const prefill = route?.params?.prefill;
   // Rebook flow: set when the poster tapped "Rebook <earner>" on a past booking —
   // after this gig posts, that earner gets a gig-invitation push.
@@ -179,6 +177,8 @@ export default function PostJobScreen({ navigation, route }) {
     navigation.navigate('GigsMain');
   };
 
+  const incomplete = !form.title || !effectiveCategory || !form.pay || !form.location || !form.description;
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
@@ -186,13 +186,17 @@ export default function PostJobScreen({ navigation, route }) {
         contentContainerStyle={{ paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        <LinearGradient colors={gradients.primary} style={[styles.header, { paddingTop: insets.top + 50 }]}>
-          <Text style={styles.headerTitle}>{rebookEarner ? `Rebook ${rebookEarner.name || ''}`.trim() : prefill ? 'Duplicate Gig' : 'Post a Gig'}</Text>
-          <Text style={styles.headerSub}>{prefill ? 'Review the details, then post your copy' : 'Hire a motivated college student'}</Text>
-        </LinearGradient>
+        <ScreenHeader underNav>
+          <Text style={styles.headerTitle} numberOfLines={2}>
+            {rebookEarner ? `Rebook ${rebookEarner.name || ''}`.trim() : prefill ? 'Duplicate gig' : 'Post a gig'}
+          </Text>
+          <Text style={styles.headerSub} numberOfLines={2}>
+            {prefill ? 'Review the details, then post your copy' : 'Hire a motivated college student'}
+          </Text>
+        </ScreenHeader>
 
         <View style={styles.form}>
-          <Field label="Job Title *">
+          <Field label="Job title *">
             <TextInput
               style={styles.input}
               placeholder="e.g. Lawn Mowing, Math Tutor..."
@@ -216,8 +220,8 @@ export default function PostJobScreen({ navigation, route }) {
                       setShowCustomCat(false);
                     }}
                   >
-                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
-                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -229,8 +233,8 @@ export default function PostJobScreen({ navigation, route }) {
                   setShowCustomCat(true);
                 }}
               >
-                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
-                <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
+                <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]} numberOfLines={1}>Other</Text>
               </TouchableOpacity>
             </View>
             {showCustomCat && (
@@ -265,17 +269,22 @@ export default function PostJobScreen({ navigation, route }) {
                   placeholderTextColor={colors.textMuted}
                 />
               </View>
-              {['flat', 'hourly'].map(t => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive]}
-                  onPress={() => { haptic.selection(); set('payType', t); }}
-                >
-                  <Text style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}>
-                    {t === 'flat' ? 'Flat' : '/hr'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <View style={styles.payTypeGroup}>
+                {['flat', 'hourly'].map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive]}
+                    onPress={() => { haptic.selection(); set('payType', t); }}
+                  >
+                    <Text
+                      style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}
+                      numberOfLines={1}
+                    >
+                      {t === 'flat' ? 'Flat' : '/hr'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </Field>
 
@@ -327,8 +336,8 @@ export default function PostJobScreen({ navigation, route }) {
               ))}
               {photos.length < 6 && (
                 <TouchableOpacity style={styles.addTile} onPress={addPhotos}>
-                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
-                  <Text style={styles.addTileText}>Add</Text>
+                  <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+                  <Text style={styles.addTileText} numberOfLines={1}>Add</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>
@@ -347,7 +356,7 @@ export default function PostJobScreen({ navigation, route }) {
             />
           </Field>
 
-          <Field label="Available Times">
+          <Field label="Available times">
             <DateTimePicker
               slots={form.slots}
               onChange={slots => set('slots', slots)}
@@ -369,7 +378,7 @@ export default function PostJobScreen({ navigation, route }) {
                     style={[styles.catChip, active && styles.catChipActive]}
                     onPress={() => { haptic.selection(); set('recurrence', opt.id); }}
                   >
-                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{opt.label}</Text>
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -380,26 +389,24 @@ export default function PostJobScreen({ navigation, route }) {
             style={[styles.urgentToggle, form.urgent && styles.urgentActive]}
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
-            <Text style={styles.urgentToggleText}>
-              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
+            <Text style={[styles.urgentToggleText, form.urgent && styles.urgentToggleTextActive]}>
+              {form.urgent ? 'Marked as urgent — needed ASAP' : 'Mark as urgent (optional)'}
             </Text>
           </TouchableOpacity>
 
-          {(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) && (
+          {incomplete && (
             <Text style={styles.validationNote}>* Fill in all required fields to post</Text>
           )}
 
-          <TouchableOpacity onPress={handlePost} activeOpacity={0.85} disabled={posting}>
-            <LinearGradient
-              colors={(!form.title || !effectiveCategory || !form.pay || !form.location || !form.description)
-                ? ['#C4B5FD', '#A5B4FC']
-                : gradients.primary}
-              style={styles.submitBtn}
-            >
-              {posting
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitText}>Post Gig</Text>}
-            </LinearGradient>
+          <TouchableOpacity
+            onPress={handlePost}
+            activeOpacity={0.85}
+            disabled={posting}
+            style={[styles.submitBtn, incomplete && styles.submitBtnDisabled]}
+          >
+            {posting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={[styles.submitText, incomplete && styles.submitTextDisabled]} numberOfLines={1}>Post gig</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -410,7 +417,7 @@ export default function PostJobScreen({ navigation, route }) {
 function Field({ label, children }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldLabel} numberOfLines={2}>{label}</Text>
       {children}
     </View>
   );
@@ -418,72 +425,88 @@ function Field({ label, children }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: 20, paddingBottom: 24 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  headerSub: { fontSize: 14, color: 'rgba(255,255,255,0.75)' },
-  form: { padding: 20 },
-  field: { marginBottom: 22 },
+  headerTitle: {
+    fontSize: 26, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, lineHeight: 33, marginBottom: 4,
+  },
+  headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  form: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  field: { marginBottom: 24 },
   fieldLabel: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    marginBottom: 8, lineHeight: 18,
   },
   input: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
+    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
     fontSize: 15, color: colors.textPrimary,
-    borderWidth: 1.5, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.border,
   },
-  textArea: { minHeight: 96, lineHeight: 22 },
+  textArea: { minHeight: 96, lineHeight: 21 },
   thumbWrap: { marginRight: 10 },
-  thumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: colors.border },
+  thumb: { width: 84, height: 84, borderRadius: radii.md, backgroundColor: colors.divider },
   thumbRemove: {
     position: 'absolute', top: -6, right: -6,
-    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+    width: 22, height: 22, borderRadius: radii.pill, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.surface,
   },
   addTile: {
-    width: 84, height: 84, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
+    width: 84, height: 84, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border,
     borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
   },
-  addTileText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  addTileText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 4 },
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   catChip: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: colors.surface,
-    borderWidth: 1.5, borderColor: colors.border,
-    marginRight: 8, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: radii.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  catChipIcon: { fontSize: 14, marginRight: 5 },
-  catChipText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  catChipIcon: { marginRight: 6 },
+  catChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   catChipTextActive: { color: '#fff' },
   payRow: { flexDirection: 'row', alignItems: 'center' },
   payInputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: 14, flex: 1, height: 50, marginRight: 10,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 10,
+    flex: 1, minHeight: 50, marginRight: 10,
   },
   dollar: { fontSize: 16, color: colors.textSecondary, marginRight: 4 },
   payInput: { flex: 1, fontSize: 16, color: colors.textPrimary },
+  payTypeGroup: {
+    flexDirection: 'row', flexShrink: 0,
+    backgroundColor: colors.surface, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.border, padding: 4,
+  },
   payTypeBtn: {
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderRadius: 12, backgroundColor: colors.surface,
-    borderWidth: 1.5, borderColor: colors.border, marginLeft: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: radii.pill,
   },
-  payTypeBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  payTypeBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  payTypeBtnActive: { backgroundColor: colors.primary },
+  payTypeBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   payTypeBtnTextActive: { color: '#fff' },
-  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
+  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 18 },
   urgentToggle: {
-    borderWidth: 1.5, borderColor: '#FCA5A5',
-    borderRadius: 14, padding: 14, alignItems: 'center',
-    marginBottom: 16, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radii.md, paddingVertical: 14, paddingHorizontal: 16,
+    alignItems: 'center', marginBottom: 20, backgroundColor: colors.surface,
   },
-  urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgent },
-  urgentToggleText: { fontSize: 14, fontWeight: '700', color: colors.urgent },
-  validationNote: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginBottom: 10 },
-  flexibleHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, fontStyle: 'italic' },
-  submitBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
-  submitText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgentLight },
+  urgentToggleText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, textAlign: 'center', lineHeight: 20 },
+  urgentToggleTextActive: { color: colors.urgent },
+  validationNote: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginBottom: 12, lineHeight: 17 },
+  flexibleHint: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 18 },
+  submitBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center', minHeight: 54,
+  },
+  submitBtnDisabled: { backgroundColor: colors.border },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  // textSecondary, not textMuted: on the border-grey fill textMuted lands at
+  // ~2:1, which makes the CTA all but vanish exactly when the form is incomplete.
+  submitTextDisabled: { color: colors.textSecondary },
 });

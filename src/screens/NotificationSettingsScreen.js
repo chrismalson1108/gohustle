@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Switch, StyleSheet, ActivityIndicator } from 'react-native';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { getNotificationPrefs, saveNotificationPrefs, DEFAULT_NOTIF_PREFS, NOTIF_CATEGORIES } from '../lib/notifications';
@@ -46,7 +46,7 @@ export default function NotificationSettingsScreen() {
 
       {NOTIF_CATEGORIES.map((cat) => (
         <View key={cat.key} style={styles.card}>
-          <Text style={styles.catLabel}>{cat.label}</Text>
+          <Text style={styles.catLabel} numberOfLines={2}>{cat.label}</Text>
           <Text style={styles.catHint}>{cat.hint}</Text>
           <View style={styles.togglesRow}>
             <View style={styles.toggleItem}>
@@ -56,7 +56,7 @@ export default function NotificationSettingsScreen() {
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor="#fff"
               />
-              <Text style={styles.toggleLabel}>Push</Text>
+              <Text style={styles.toggleLabel} numberOfLines={1}>Push</Text>
             </View>
             <View style={styles.toggleItem}>
               <Switch
@@ -65,7 +65,7 @@ export default function NotificationSettingsScreen() {
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor="#fff"
               />
-              <Text style={styles.toggleLabel}>Email</Text>
+              <Text style={styles.toggleLabel} numberOfLines={1}>Email</Text>
             </View>
           </View>
         </View>
@@ -77,14 +77,14 @@ export default function NotificationSettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  intro: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: 16 },
+  intro: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
   card: {
-    backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
-    padding: 16, marginBottom: 12, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: 16, marginBottom: 12, ...shadows.card,
   },
-  catLabel: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
-  catHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  togglesRow: { flexDirection: 'row', gap: 28, marginTop: 14 },
-  toggleItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  toggleLabel: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  catLabel: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.2 },
+  catHint: { fontSize: 13, lineHeight: 18, color: colors.textMuted, marginTop: 4 },
+  togglesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 24, marginTop: 16 },
+  toggleItem: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  toggleLabel: { fontSize: 14, lineHeight: 19, fontWeight: '500', color: colors.textSecondary, flexShrink: 1 },
 });

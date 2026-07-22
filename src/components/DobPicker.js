@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, FlatList, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 // Month / Day / Year dropdowns for date-of-birth entry — replaces the free-form
 // MM/DD/YYYY text input (typo-prone, awkward on mobile keyboards). Pure JS
@@ -69,7 +69,12 @@ export default function DobPicker({ value, onChange, error }) {
               initialNumToRender={31}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.option} onPress={() => pick(open, item.v)}>
-                  <Text style={[styles.optionText, item.v === selected && styles.optionTextActive]}>{item.label}</Text>
+                  <Text
+                    style={[styles.optionText, item.v === selected && styles.optionTextActive]}
+                    numberOfLines={1}
+                  >
+                    {item.label}
+                  </Text>
                   {item.v === selected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
                 </TouchableOpacity>
               )}
@@ -99,24 +104,25 @@ function Dropdown({ flex, placeholder, label, error, onPress, last }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', width: '100%' },
   dropdown: {
-    backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 14, paddingVertical: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   dropdownError: { borderColor: colors.urgent },
-  dropdownText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600', flexShrink: 1, marginRight: 4 },
+  dropdownText: { fontSize: 15, color: colors.textPrimary, fontWeight: '500', flexShrink: 1, marginRight: 8, lineHeight: 20 },
   dropdownPlaceholder: { color: colors.textMuted, fontWeight: '400' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', paddingHorizontal: 36 },
-  sheet: { backgroundColor: '#fff', borderRadius: 20, paddingVertical: 14, ...shadows.md },
+  sheet: { backgroundColor: colors.surface, borderRadius: radii.lg, paddingVertical: 16, ...shadows.md },
   sheetTitle: {
-    fontSize: 13, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase',
-    letterSpacing: 0.6, paddingHorizontal: 18, paddingBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    paddingHorizontal: 20, paddingBottom: 8, lineHeight: 17,
   },
   option: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 12, paddingHorizontal: 18,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+    paddingVertical: 12, paddingHorizontal: 20,
+    borderTopWidth: 1, borderTopColor: colors.divider,
   },
-  optionText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
-  optionTextActive: { color: colors.primary, fontWeight: '800' },
+  optionText: { fontSize: 15, color: colors.textPrimary, fontWeight: '500', flexShrink: 1, marginRight: 8, lineHeight: 20 },
+  optionTextActive: { color: colors.primary, fontWeight: '600' },
 });

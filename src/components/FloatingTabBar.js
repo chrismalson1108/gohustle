@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Animated, StyleSheet, Keyboard, Platform 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
-import { tabBarProgress, expandTabBar } from '../lib/tabBarScroll';
+import { tabBarProgress, expandTabBar, setChromeVisible } from '../lib/tabBarScroll';
 
 // Each tab stack's hub (first) screen. The bar shows only on these; any other
 // focused nested route means a pushed detail screen. Checked by NAME, not by
@@ -44,6 +44,10 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
   const nestedRoute = nested?.routes?.[nested.index ?? 0];
   const hidden = kbVisible || (nestedRoute ? !HUB_ROUTES.has(nestedRoute.name) : false);
   const hiddenAnim = useRef(new Animated.Value(0)).current;
+
+  // The assistant FAB follows the bar so it can't cover form controls or a
+  // bottom-pinned CTA on a pushed screen.
+  useEffect(() => { setChromeVisible(!hidden); }, [hidden]);
   useEffect(() => {
     Animated.spring(hiddenAnim, {
       toValue: hidden ? 1 : 0,

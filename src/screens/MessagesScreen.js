@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import GradientHeader from '../components/GradientHeader';
+import ScreenHeader from '../components/ScreenHeader';
 import Avatar from '../components/Avatar';
 import MessageSheet from '../components/MessageSheet';
 import { useAuth } from '../context/AuthContext';
@@ -14,7 +14,7 @@ import {
   fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText, notBlocked,
 } from '../lib/messages';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
-import { colors, gradients, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 function timeLabel(iso) {
   if (!iso) return '';
@@ -99,21 +99,22 @@ export default function MessagesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <GradientHeader colors={gradients.primary}>
-        <View style={[styles.titleRow, { justifyContent: 'space-between' }]}>
+      <ScreenHeader>
+        <View style={styles.headerRow}>
           <View style={styles.titleRow}>
-            <Ionicons name="chatbubbles" size={22} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.title}>Messages</Text>
+            <Ionicons name="chatbubbles" size={22} color={colors.textPrimary} style={{ marginRight: 8 }} />
+            <Text style={styles.title} numberOfLines={1}>Messages</Text>
           </View>
           <TouchableOpacity
+            style={styles.headerAction}
             onPress={() => { haptic.light(); navigation.navigate('FindPeople'); }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Find people"
           >
-            <Ionicons name="search" size={22} color="#fff" />
+            <Ionicons name="search" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
-      </GradientHeader>
+      </ScreenHeader>
 
       <View style={styles.segment}>
         <SegBtn label="Inbox" count={inboxCount} active={tab === 'inbox'} onPress={() => { haptic.selection(); setTab('inbox'); }} />
@@ -132,7 +133,7 @@ export default function MessagesScreen({ navigation }) {
           {shown.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIconWrap}>
-                <Ionicons name="chatbubbles-outline" size={30} color={colors.primary} />
+                <Ionicons name="chatbubbles-outline" size={30} color={colors.textMuted} />
               </View>
               <Text style={styles.emptyTitle}>{tab === 'archived' ? 'No archived chats' : 'No messages yet'}</Text>
               <Text style={styles.emptyText}>
@@ -152,9 +153,9 @@ export default function MessagesScreen({ navigation }) {
               <View style={{ flex: 1 }}>
                 <View style={styles.rowTop}>
                   <Text style={[styles.name, c.unread && styles.unreadText]} numberOfLines={1}>{c.other.name || 'User'}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={styles.rowMeta}>
                     {c.unread && <View style={styles.unreadDot} />}
-                    <Text style={[styles.time, c.unread && styles.timeUnread]}>{timeLabel(c.lastMsg.created_at)}</Text>
+                    <Text style={[styles.time, c.unread && styles.timeUnread]} numberOfLines={1}>{timeLabel(c.lastMsg.created_at)}</Text>
                   </View>
                 </View>
                 {c.jobTitle ? <Text style={styles.jobTitle} numberOfLines={1}>re: {c.jobTitle}</Text> : null}
@@ -163,7 +164,7 @@ export default function MessagesScreen({ navigation }) {
                 </Text>
               </View>
               <View style={styles.rowRight}>
-                <TouchableOpacity onPress={() => toggleArchive(c)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ padding: 6 }}>
+                <TouchableOpacity onPress={() => toggleArchive(c)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.archiveBtn}>
                   <Ionicons name={c.archived ? 'arrow-undo-outline' : 'archive-outline'} size={18} color={colors.textMuted} />
                 </TouchableOpacity>
               </View>
@@ -189,9 +190,9 @@ export default function MessagesScreen({ navigation }) {
 function SegBtn({ label, count, active, onPress }) {
   return (
     <TouchableOpacity style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress} activeOpacity={0.8}>
-      <Text style={[styles.segText, active && styles.segTextActive]}>
+      <Text style={[styles.segText, active && styles.segTextActive]} numberOfLines={1}>
         {label}
-        {count > 0 ? <Text style={{ fontWeight: '500' }}>{`  ${count}`}</Text> : null}
+        {count > 0 ? <Text style={styles.segCount}>{`  ${count}`}</Text> : null}
       </Text>
     </TouchableOpacity>
   );
@@ -199,37 +200,57 @@ function SegBtn({ label, count, active, onPress }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  titleRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: '800', color: '#fff' },
-  segment: {
-    flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
-    backgroundColor: colors.surface, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: colors.border,
-    ...shadows.sm,
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 12 },
+  title: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, flexShrink: 1,
   },
-  segBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
+  headerAction: {
+    width: 40, height: 40, borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  segment: {
+    flexDirection: 'row', marginHorizontal: 20, marginTop: 12,
+    backgroundColor: colors.surface, borderRadius: radii.pill, padding: 4,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  segBtn: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center', borderRadius: radii.pill },
   segBtnActive: { backgroundColor: colors.primary },
-  segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  segText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   segTextActive: { color: '#fff' },
+  segCount: { fontWeight: '500' },
+
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56 },
   emptyIconWrap: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+    width: 72, height: 72, borderRadius: radii.pill, backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.textPrimary,
+    marginBottom: 8, textAlign: 'center', lineHeight: 24,
+  },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21 },
+
   row: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    marginHorizontal: 16, marginTop: 8, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    marginHorizontal: 20, marginTop: 8, borderRadius: radii.lg,
+    paddingVertical: 14, paddingHorizontal: 16,
+    ...shadows.card,
   },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  name: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1, marginRight: 8 },
-  unreadText: { fontWeight: '800', color: colors.textPrimary },
-  time: { fontSize: 11, color: colors.textMuted },
-  timeUnread: { color: colors.primary, fontWeight: '700' },
-  jobTitle: { fontSize: 12, color: colors.primary, marginTop: 2 },
-  preview: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  rowMeta: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
+  name: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flexShrink: 1, marginRight: 8 },
+  unreadText: { fontWeight: '700', color: colors.textPrimary },
+  time: { fontSize: 11, color: colors.textMuted, lineHeight: 15 },
+  timeUnread: { color: colors.primary, fontWeight: '600' },
+  jobTitle: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
+  preview: { fontSize: 13, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
   previewUnread: { fontWeight: '600', color: colors.textPrimary },
-  rowRight: { alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginRight: 5 },
+  rowRight: { alignItems: 'center', justifyContent: 'center', marginLeft: 8, flexShrink: 0 },
+  archiveBtn: { padding: 6 },
+  unreadDot: { width: 8, height: 8, borderRadius: radii.pill, backgroundColor: colors.primary, marginRight: 6 },
 });

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WORK_STATUSES } from '../lib/availability';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 // Compact "ready to work / busy / away / offline" toggle. Mirrors the web bar.
 export default function WorkStatusBar() {
@@ -33,9 +33,7 @@ export default function WorkStatusBar() {
               <Text style={styles.emoji}>{s.emoji}</Text>
               <Text
                 style={[styles.pillText, active && styles.pillTextActive]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
+                numberOfLines={2}
               >
                 {s.label}
               </Text>
@@ -48,12 +46,30 @@ export default function WorkStatusBar() {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 12, marginHorizontal: 16, marginTop: 12, ...shadows.card },
-  label: { fontSize: 12, fontWeight: '800', color: colors.textSecondary, marginBottom: 8, marginLeft: 2 },
-  row: { flexDirection: 'row', gap: 6 },
-  pill: { flex: 1, alignItems: 'center', backgroundColor: colors.background, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 4, gap: 2 },
-  pillActive: { backgroundColor: colors.primary },
-  emoji: { fontSize: 15 },
-  pillText: { fontSize: 10.5, fontWeight: '800', color: colors.textSecondary, textAlign: 'center' },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    ...shadows.card,
+  },
+  label: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8 },
+  row: { flexDirection: 'row', gap: 8 },
+  pill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  emoji: { fontSize: 14 },
+  pillText: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
   pillTextActive: { color: '#fff' },
 });

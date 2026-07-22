@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 const REMOTE_OPTIONS = ['Remote', 'Zoom / Remote', 'Work from Home'];
 
@@ -120,7 +120,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
   return (
     <View style={styles.wrap}>
       <View style={styles.inputRow}>
-        <Ionicons name="location" size={16} color={colors.textMuted} style={styles.pin} />
+        <Ionicons name="location-outline" size={16} color={colors.textMuted} style={styles.pin} />
         <TextInput
           style={styles.input}
           value={query}
@@ -136,7 +136,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} />
           : (
             <TouchableOpacity onPress={useDeviceLocation} style={styles.gpsBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="locate" size={16} color={colors.primary} style={styles.gpsIcon} />
+              <Ionicons name="locate" size={16} color={colors.primary} />
             </TouchableOpacity>
           )
         }
@@ -144,8 +144,9 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           <TouchableOpacity
             onPress={() => { setQuery(''); onChange('', null); setResults([]); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.clearBtn}
           >
-            <Text style={styles.clear}>✕</Text>
+            <Ionicons name="close-circle" size={17} color={colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>
@@ -157,20 +158,20 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           <ScrollView keyboardShouldPersistTaps="always" style={{ maxHeight: 240 }}>
             {remoteFiltered.map(loc => (
               <TouchableOpacity key={loc} style={styles.suggestion} onPress={() => select(loc)}>
-                <Ionicons name="globe-outline" size={15} color={colors.textSecondary} style={styles.suggestIcon} />
-                <Text style={styles.suggestText}>{loc}</Text>
+                <Ionicons name="globe-outline" size={15} color={colors.textMuted} style={styles.suggestIcon} />
+                <Text style={styles.suggestText} numberOfLines={1}>{loc}</Text>
               </TouchableOpacity>
             ))}
             {searching && (
               <View style={styles.loadingRow}>
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.loadingText}>Searching cities…</Text>
+                <Text style={styles.loadingText} numberOfLines={1}>Searching cities…</Text>
               </View>
             )}
             {results.map(loc => (
               <TouchableOpacity key={loc.label} style={styles.suggestion} onPress={() => select(loc)}>
-                <Ionicons name="location" size={15} color={colors.textSecondary} style={styles.suggestIcon} />
-                <Text style={styles.suggestText}>{loc.label}</Text>
+                <Ionicons name="location-outline" size={15} color={colors.textMuted} style={styles.suggestIcon} />
+                <Text style={styles.suggestText} numberOfLines={1}>{loc.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -184,32 +185,33 @@ const styles = StyleSheet.create({
   wrap: { position: 'relative', zIndex: 100 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: 14, height: 50,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 14, minHeight: 50,
   },
-  pin:    { fontSize: 16, marginRight: 8 },
-  input:  { flex: 1, fontSize: 15, color: colors.textPrimary },
-  gpsBtn: { marginLeft: 6 },
-  gpsIcon: { fontSize: 16 },
-  clear:  { fontSize: 16, color: colors.textMuted, marginLeft: 6 },
-  errorText: { fontSize: 12, color: colors.urgent, marginTop: 4, marginLeft: 4 },
+  pin:      { marginRight: 8 },
+  input:    { flex: 1, fontSize: 15, color: colors.textPrimary, paddingVertical: 12 },
+  gpsBtn:   { marginLeft: 8, flexShrink: 0 },
+  clearBtn: { marginLeft: 8, flexShrink: 0 },
+  errorText: { fontSize: 12, color: colors.urgent, marginTop: 6, marginLeft: 4, lineHeight: 16 },
   dropdown: {
-    position: 'absolute', top: 54, left: 0, right: 0,
+    position: 'absolute', top: '100%', marginTop: 6, left: 0, right: 0,
     backgroundColor: colors.surface,
-    borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: radii.md,
     zIndex: 200, ...shadows.md,
   },
+  // No row dividers: the last row's border would draw a hard line across the
+  // panel's rounded bottom edge, and overflow:'hidden' would kill the Android
+  // elevation. Breathing room separates the rows instead.
   suggestion: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 13,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
+    paddingHorizontal: 16, paddingVertical: 14,
   },
-  suggestIcon: { fontSize: 14, marginRight: 10 },
-  suggestText: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+  suggestIcon: { marginRight: 10, flexShrink: 0 },
+  suggestText: { fontSize: 14, color: colors.textPrimary, fontWeight: '500', flexShrink: 1, lineHeight: 19 },
   loadingRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
   },
-  loadingText: { fontSize: 13, color: colors.textMuted, marginLeft: 8 },
+  loadingText: { fontSize: 13, color: colors.textMuted, marginLeft: 8, flexShrink: 1, lineHeight: 17 },
 });

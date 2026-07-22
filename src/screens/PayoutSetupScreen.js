@@ -1,11 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import { Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +11,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 // Unified "GoHustlr Payments" hub — always reachable from Profile so users can
 // add, edit, change, or remove their payment info at any time. Two role-aware cards:
@@ -153,23 +151,23 @@ export default function PayoutSetupScreen({ navigation }) {
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <LinearGradient colors={['#3F25FE', '#2B17C2']} style={styles.hero}>
+      <View style={styles.hero}>
         <View style={styles.heroIcon}>
-          <Ionicons name="card" size={44} color="#fff" />
+          <Ionicons name="card" size={26} color={colors.textPrimary} />
         </View>
-        <Text style={styles.heroTitle}>GoHustlr Payments</Text>
+        <Text style={styles.heroTitle} numberOfLines={2}>GoHustlr Payments</Text>
         <Text style={styles.heroSub}>
           Get paid for work and pay for gigs — all securely inside GoHustlr.
         </Text>
-      </LinearGradient>
+      </View>
 
       {/* Get paid (earner) */}
       {showEarn && (
         <View style={styles.section}>
           <View style={styles.sectionHead}>
-            <Ionicons name="wallet" size={20} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Get paid for work</Text>
-            {payoutDone && <View style={styles.donePill}><Text style={styles.donePillText}>Active</Text></View>}
+            <Ionicons name="wallet-outline" size={20} color={colors.textPrimary} />
+            <Text style={styles.sectionTitle} numberOfLines={1}>Get paid for work</Text>
+            {payoutDone && <View style={styles.donePill}><Text style={styles.donePillText} numberOfLines={1}>Active</Text></View>}
           </View>
           {payoutDone ? (
             <>
@@ -181,7 +179,7 @@ export default function PayoutSetupScreen({ navigation }) {
               </View>
               <TouchableOpacity style={styles.btnOutline} onPress={handleManagePayout} disabled={loadingPayout} activeOpacity={0.8}>
                 {loadingPayout ? <ActivityIndicator color={colors.primary} /> : (
-                  <Text style={styles.btnOutlineText}>Manage payout details</Text>
+                  <Text style={styles.btnOutlineText} numberOfLines={1}>Manage payout details</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -193,7 +191,7 @@ export default function PayoutSetupScreen({ navigation }) {
               </Text>
               <TouchableOpacity style={styles.btn} onPress={handleConnectPayout} disabled={loadingPayout} activeOpacity={0.85}>
                 {loadingPayout ? <ActivityIndicator color="#fff" /> : (
-                  <Text style={styles.btnText}>
+                  <Text style={styles.btnText} numberOfLines={1}>
                     {payout?.hasAccount ? 'Continue setup' : 'Connect bank account'}
                   </Text>
                 )}
@@ -207,27 +205,27 @@ export default function PayoutSetupScreen({ navigation }) {
       {showPay && (
         <View style={styles.section}>
           <View style={styles.sectionHead}>
-            <Ionicons name="card-outline" size={20} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Pay for gigs</Text>
-            {cardDone && <View style={styles.donePill}><Text style={styles.donePillText}>Ready</Text></View>}
+            <Ionicons name="card-outline" size={20} color={colors.textPrimary} />
+            <Text style={styles.sectionTitle} numberOfLines={1}>Pay for gigs</Text>
+            {cardDone && <View style={styles.donePill}><Text style={styles.donePillText} numberOfLines={1}>Ready</Text></View>}
           </View>
 
           {cardDone ? (
             <>
               <View style={styles.cardRow}>
                 <Ionicons name="card" size={20} color={colors.textPrimary} />
-                <Text style={styles.cardLabel}>{cardLabel}</Text>
+                <Text style={styles.cardLabel} numberOfLines={1}>{cardLabel}</Text>
               </View>
               <Text style={styles.sectionDesc}>
                 When you accept a booking, the amount is held securely and only charged after you verify the work.
               </Text>
               <TouchableOpacity style={styles.btnOutline} onPress={handleAddOrChangeCard} disabled={loadingCard} activeOpacity={0.8}>
                 {loadingCard ? <ActivityIndicator color={colors.primary} /> : (
-                  <Text style={styles.btnOutlineText}>Change card</Text>
+                  <Text style={styles.btnOutlineText} numberOfLines={1}>Change card</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnDanger} onPress={handleRemoveCard} disabled={loadingCard} activeOpacity={0.8}>
-                <Text style={styles.btnDangerText}>Remove card</Text>
+                <Text style={styles.btnDangerText} numberOfLines={1}>Remove card</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -237,7 +235,7 @@ export default function PayoutSetupScreen({ navigation }) {
               </Text>
               <TouchableOpacity style={styles.btn} onPress={handleAddOrChangeCard} disabled={loadingCard} activeOpacity={0.85}>
                 {loadingCard ? <ActivityIndicator color="#fff" /> : (
-                  <Text style={styles.btnText}>Add a payment method</Text>
+                  <Text style={styles.btnText} numberOfLines={1}>Add a payment method</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -247,7 +245,7 @@ export default function PayoutSetupScreen({ navigation }) {
 
       {/* Tax reassurance */}
       <View style={styles.infoCard}>
-        <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+        <Ionicons name="document-text-outline" size={18} color={colors.textSecondary} />
         <Text style={styles.infoText}>
           We handle your tax forms — eligible earners get a 1099 automatically, so you don't have to track it yourself.
         </Text>
@@ -255,7 +253,7 @@ export default function PayoutSetupScreen({ navigation }) {
 
       {/* Trust note */}
       <View style={styles.trustRow}>
-        <Ionicons name="lock-closed" size={13} color={colors.textMuted} />
+        <Ionicons name="lock-closed" size={13} color={colors.textMuted} style={styles.trustIcon} />
         <Text style={styles.trustText}>
           Bank-grade security. Payments securely processed by Stripe — GoHustlr never stores your card or bank details.
         </Text>
@@ -267,7 +265,7 @@ export default function PayoutSetupScreen({ navigation }) {
         onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProfileMain'))}
         activeOpacity={0.8}
       >
-        <Text style={styles.btnGhostText}>Done</Text>
+        <Text style={styles.btnGhostText} numberOfLines={1}>Done</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -278,74 +276,84 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 0 },
 
   hero: {
-    borderRadius: 20,
-    padding: 28,
+    paddingVertical: 8,
     marginBottom: 20,
-    alignItems: 'center',
-    marginTop: 12,
+    marginTop: 4,
   },
   heroIcon: {
-    width: 76, height: 76, borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 52, height: 52, borderRadius: radii.pill,
+    backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 8 },
-  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  heroTitle: {
+    color: colors.textPrimary, fontSize: 26, fontWeight: '700',
+    letterSpacing: -0.4, marginBottom: 8, lineHeight: 33,
+  },
+  heroSub: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
 
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: 16,
     marginBottom: 16,
     ...shadows.card,
   },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, flex: 1 },
-  sectionDesc: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, flex: 1, lineHeight: 21 },
+  sectionDesc: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
 
-  donePill: { backgroundColor: colors.successLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  donePillText: { color: colors.success, fontSize: 12, fontWeight: '800' },
+  donePill: {
+    backgroundColor: colors.successLight,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: radii.pill, flexShrink: 0, alignSelf: 'flex-start',
+  },
+  donePillText: { color: colors.success, fontSize: 12, fontWeight: '600' },
 
-  successRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 14 },
-  successText: { flex: 1, fontSize: 13.5, color: colors.textSecondary, lineHeight: 20 },
+  successRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 16 },
+  successText: { flex: 1, fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 
   cardRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: colors.background,
-    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 14,
     marginBottom: 12,
   },
-  cardLabel: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  cardLabel: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
 
   btn: {
     backgroundColor: colors.primary,
-    borderRadius: 14, height: 52,
+    borderRadius: radii.md, minHeight: 52, paddingHorizontal: 20, paddingVertical: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    ...shadows.md,
   },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
 
   btnOutline: {
-    borderRadius: 14, height: 50,
+    borderRadius: radii.md, minHeight: 50, paddingHorizontal: 20, paddingVertical: 13,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: colors.primary,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
-  btnOutlineText: { color: colors.primary, fontSize: 15, fontWeight: '700' },
+  btnOutlineText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
 
-  btnDanger: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  btnDangerText: { color: colors.urgent, fontSize: 14, fontWeight: '700' },
+  btnDanger: {
+    minHeight: 44, paddingHorizontal: 16, paddingVertical: 12,
+    alignItems: 'center', justifyContent: 'center', marginTop: 8,
+  },
+  btnDangerText: { color: colors.urgent, fontSize: 14, fontWeight: '600' },
 
   infoCard: {
     flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-    backgroundColor: colors.primaryLight,
-    borderRadius: 14, padding: 16, marginBottom: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg, padding: 16, marginBottom: 16,
+    ...shadows.card,
   },
-  infoText: { flex: 1, fontSize: 13, color: colors.textPrimary, lineHeight: 19 },
+  infoText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
 
   trustRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 20, paddingHorizontal: 4 },
+  trustIcon: { marginTop: 2 },
   trustText: { flex: 1, fontSize: 12, color: colors.textMuted, lineHeight: 17 },
 
-  btnGhost: { height: 48, alignItems: 'center', justifyContent: 'center' },
-  btnGhostText: { color: colors.textSecondary, fontSize: 15, fontWeight: '700' },
+  btnGhost: { minHeight: 48, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  btnGhostText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
 });

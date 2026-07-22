@@ -25,7 +25,7 @@ export default function SavedGigsScreen({ navigation }) {
     >
       {saved.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="bookmark-outline" size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
+          <Ionicons name="bookmark-outline" size={44} color={colors.textMuted} style={{ marginBottom: 12 }} />
           <Text style={styles.emptyTitle}>No saved gigs yet</Text>
           <Text style={styles.emptyText}>Tap the bookmark on any gig to save it here to book later.</Text>
         </View>
@@ -43,7 +43,7 @@ export default function SavedGigsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 8, letterSpacing: -0.2, lineHeight: 22 },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21 },
 });

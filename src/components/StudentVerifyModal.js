@@ -3,12 +3,11 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { isEduEmail } from '../lib/school';
 import { startStudentVerification, confirmStudentVerification } from '../lib/student';
 import { useUser } from '../context/UserContext';
-import { colors, gradients } from '../theme';
+import { colors, radii } from '../theme';
 
 // Two-step .edu verification: enter school email → enter the emailed code.
 export default function StudentVerifyModal({ visible, onClose, onVerified }) {
@@ -116,10 +115,10 @@ export default function StudentVerifyModal({ visible, onClose, onVerified }) {
 
 function PrimaryBtn({ label, busy, onPress }) {
   return (
-    <TouchableOpacity onPress={onPress} disabled={busy} activeOpacity={0.85} style={{ width: '100%', marginTop: 8 }}>
-      <LinearGradient colors={gradients.primary} style={styles.btn}>
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>{label}</Text>}
-      </LinearGradient>
+    <TouchableOpacity onPress={onPress} disabled={busy} activeOpacity={0.85} style={styles.btn}>
+      {busy
+        ? <ActivityIndicator color="#fff" />
+        : <Text style={styles.btnText} numberOfLines={1}>{label}</Text>}
     </TouchableOpacity>
   );
 }
@@ -127,16 +126,37 @@ function PrimaryBtn({ label, busy, onPress }) {
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, alignItems: 'center' },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 16 },
-  iconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  title: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 8 },
-  sub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 18 },
-  input: { width: '100%', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: colors.textPrimary },
-  codeInput: { textAlign: 'center', letterSpacing: 8, fontSize: 22, fontWeight: '800' },
-  error: { color: colors.urgent, fontSize: 13, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start' },
-  btn: { borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  linkBtn: { marginTop: 14 },
-  linkText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 20, paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+    alignItems: 'center',
+  },
+  handle: { width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border, marginBottom: 20 },
+  iconWrap: {
+    width: 56, height: 56, borderRadius: radii.pill, backgroundColor: colors.background,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  title: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.4,
+    lineHeight: 30, textAlign: 'center', marginBottom: 8,
+  },
+  sub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  input: {
+    width: '100%', backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: colors.textPrimary,
+  },
+  codeInput: { textAlign: 'center', letterSpacing: 8, fontSize: 22, fontWeight: '700' },
+  error: { color: colors.urgent, fontSize: 13, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start', lineHeight: 18 },
+  btn: {
+    width: '100%', marginTop: 12,
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  linkBtn: { marginTop: 12, paddingVertical: 10, paddingHorizontal: 12 },
+  linkText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
 });

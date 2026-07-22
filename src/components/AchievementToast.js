@@ -3,31 +3,34 @@ import { Animated, View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../context/UserContext';
+import { colors, radii, shadows } from '../theme';
 
 // Map the emoji callers pass to showToast({ icon }) onto vector icons, so toasts
 // render reliably (emoji can fail to render on some simulators/devices).
+// Colors are semantic only: success = done/paid, urgent = failed/removed,
+// accentDeep = money/energy highlight, primary = neutral app action.
 const ICONS = {
-  '✅': { name: 'checkmark-circle', color: '#10B981' },
-  '🎉': { name: 'trophy',           color: '#FFBC45' },
-  '⭐': { name: 'star',             color: '#FFBC45' },
-  '🌟': { name: 'star',             color: '#FFBC45' },
-  '🔥': { name: 'flame',            color: '#F97316' },
-  '💰': { name: 'cash',             color: '#10B981' },
-  '💵': { name: 'cash',             color: '#10B981' },
-  '💳': { name: 'card',             color: '#5538FF' },
-  '⚡': { name: 'flash',            color: '#FFBC45' },
-  '⚠️': { name: 'warning',          color: '#FFBC45' },
-  '❌': { name: 'close-circle',     color: '#EF4444' },
-  '🗑️': { name: 'trash',            color: '#EF4444' },
-  '💚': { name: 'checkmark-done-circle', color: '#10B981' },
-  '😔': { name: 'sad',              color: '#9CA3AF' },
-  '🔔': { name: 'notifications',    color: '#FFBC45' },
-  '✏️': { name: 'create',           color: '#5538FF' },
-  '🚀': { name: 'rocket',           color: '#5538FF' },
-  '📝': { name: 'document-text',    color: '#5538FF' },
-  '🔑': { name: 'key',              color: '#FFBC45' },
-  '🎯': { name: 'locate',           color: '#5538FF' },
-  '💻': { name: 'laptop',           color: '#5538FF' },
+  '✅': { name: 'checkmark-circle', color: colors.success },
+  '🎉': { name: 'trophy',           color: colors.accentDeep },
+  '⭐': { name: 'star',             color: colors.accentDeep },
+  '🌟': { name: 'star',             color: colors.accentDeep },
+  '🔥': { name: 'flame',            color: colors.accentDeep },
+  '💰': { name: 'cash',             color: colors.success },
+  '💵': { name: 'cash',             color: colors.success },
+  '💳': { name: 'card',             color: colors.primary },
+  '⚡': { name: 'flash',            color: colors.accentDeep },
+  '⚠️': { name: 'warning',          color: colors.accentDeep },
+  '❌': { name: 'close-circle',     color: colors.urgent },
+  '🗑️': { name: 'trash',            color: colors.urgent },
+  '💚': { name: 'checkmark-done-circle', color: colors.success },
+  '😔': { name: 'sad',              color: colors.textMuted },
+  '🔔': { name: 'notifications',    color: colors.accentDeep },
+  '✏️': { name: 'create',           color: colors.primary },
+  '🚀': { name: 'rocket',           color: colors.primary },
+  '📝': { name: 'document-text',    color: colors.primary },
+  '🔑': { name: 'key',              color: colors.accentDeep },
+  '🎯': { name: 'locate',           color: colors.primary },
+  '💻': { name: 'laptop',           color: colors.primary },
 };
 
 export default function AchievementToast() {
@@ -53,18 +56,18 @@ export default function AchievementToast() {
 
   if (!pendingToast) return null;
 
-  const ic = ICONS[pendingToast.icon] || { name: 'notifications', color: '#FFBC45' };
+  const ic = ICONS[pendingToast.icon] || { name: 'notifications', color: colors.primary };
 
   return (
     <Animated.View
       style={[styles.toast, { top: insets.top + 8, transform: [{ translateY: ty }], opacity: op }]}
     >
       <View style={styles.iconWrap}>
-        <Ionicons name={ic.name} size={24} color={ic.color} />
+        <Ionicons name={ic.name} size={22} color={ic.color} />
       </View>
       <View style={styles.textWrap}>
-        <Text style={styles.title}>{pendingToast.title}</Text>
-        <Text style={styles.msg}>{pendingToast.message}</Text>
+        <Text style={styles.title} numberOfLines={1}>{pendingToast.title}</Text>
+        <Text style={styles.msg} numberOfLines={2}>{pendingToast.message}</Text>
       </View>
     </Animated.View>
   );
@@ -72,21 +75,20 @@ export default function AchievementToast() {
 
 const styles = StyleSheet.create({
   toast: {
-    position: 'absolute', left: 16, right: 16,
-    backgroundColor: '#181231',
-    borderRadius: 18, padding: 16,
+    position: 'absolute', left: 20, right: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg, padding: 16,
     flexDirection: 'row', alignItems: 'center',
     zIndex: 9999,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35, shadowRadius: 20, elevation: 12,
+    ...shadows.md,
   },
   iconWrap: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    width: 38, height: 38, borderRadius: radii.pill,
+    backgroundColor: colors.background,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 12, flexShrink: 0,
   },
   textWrap: { flex: 1 },
-  title: { fontSize: 12, fontWeight: '700', color: '#FFBC45', marginBottom: 2 },
-  msg: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  title: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 2, letterSpacing: -0.2 },
+  msg: { fontSize: 13, fontWeight: '400', color: colors.textSecondary, lineHeight: 18 },
 });

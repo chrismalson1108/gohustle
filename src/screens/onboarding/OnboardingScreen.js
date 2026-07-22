@@ -3,12 +3,11 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Dimensions, Animated, Platform, KeyboardAvoidingView, Keyboard, Modal,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { colors, gradients } from '../../theme';
+import { colors, radii } from '../../theme';
 import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
 import { getReferralCode, recordReferral } from '../../lib/referrals';
 import { parseDob, isAdult, MIN_AGE } from '../../lib/age';
@@ -178,9 +177,9 @@ export default function OnboardingScreen({ onComplete }) {
         Let's set up your profile in 60 seconds.
       </Text>
       <TouchableOpacity style={styles.nextBtn} onPress={goNext}>
-        <LinearGradient colors={gradients.primary} style={styles.nextBtnGrad}>
-          <Text style={styles.nextBtnText}>Let's Go →</Text>
-        </LinearGradient>
+        <View style={styles.nextBtnFill}>
+          <Text style={styles.nextBtnText} numberOfLines={1}>Let's go</Text>
+        </View>
       </TouchableOpacity>
     </View>,
 
@@ -210,13 +209,18 @@ export default function OnboardingScreen({ onComplete }) {
       {dobError ? <Text style={[styles.errorText, { marginTop: 6 }]}>{dobError}</Text> : null}
       <Text style={[styles.hintText, { marginTop: 6 }]}>You must be {MIN_AGE}+ to use GoHustlr.</Text>
       <TouchableOpacity
-        style={[styles.nextBtn, (!form.username || !dobComplete) && styles.nextBtnDisabled]}
+        style={styles.nextBtn}
         disabled={!form.username || !dobComplete}
         onPress={handleUsernameNext}
       >
-        <LinearGradient colors={form.username && dobComplete ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
-          <Text style={styles.nextBtnText}>Continue →</Text>
-        </LinearGradient>
+        <View style={[styles.nextBtnFill, !(form.username && dobComplete) && styles.nextBtnFillDisabled]}>
+          <Text
+            style={[styles.nextBtnText, !(form.username && dobComplete) && styles.nextBtnTextDisabled]}
+            numberOfLines={1}
+          >
+            Continue
+          </Text>
+        </View>
       </TouchableOpacity>
     </View>,
 
@@ -233,20 +237,22 @@ export default function OnboardingScreen({ onComplete }) {
         >
           <Ionicons name={r.ion} size={24} color={form.role === r.id ? colors.primary : colors.textSecondary} style={styles.roleIcon} />
           <View style={styles.roleInfo}>
-            <Text style={[styles.roleLabel, form.role === r.id && styles.roleLabelActive]}>{r.label}</Text>
-            <Text style={styles.roleDesc}>{r.desc}</Text>
+            <Text style={[styles.roleLabel, form.role === r.id && styles.roleLabelActive]} numberOfLines={1}>{r.label}</Text>
+            <Text style={styles.roleDesc} numberOfLines={2}>{r.desc}</Text>
           </View>
-          {form.role === r.id && <Text style={styles.roleCheck}>✓</Text>}
+          {form.role === r.id && (
+            <Ionicons name="checkmark" size={18} color={colors.primary} style={styles.roleCheck} />
+          )}
         </TouchableOpacity>
       ))}
       <TouchableOpacity
-        style={[styles.nextBtn, !form.role && styles.nextBtnDisabled]}
+        style={styles.nextBtn}
         disabled={!form.role}
         onPress={goNext}
       >
-        <LinearGradient colors={form.role ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
-          <Text style={styles.nextBtnText}>Continue →</Text>
-        </LinearGradient>
+        <View style={[styles.nextBtnFill, !form.role && styles.nextBtnFillDisabled]}>
+          <Text style={[styles.nextBtnText, !form.role && styles.nextBtnTextDisabled]} numberOfLines={1}>Continue</Text>
+        </View>
       </TouchableOpacity>
     </View>,
 
@@ -263,16 +269,16 @@ export default function OnboardingScreen({ onComplete }) {
         />
       </View>
       <TouchableOpacity
-        style={[styles.nextBtn, !form.city && styles.nextBtnDisabled]}
+        style={styles.nextBtn}
         disabled={!form.city}
         onPress={goNext}
       >
-        <LinearGradient colors={form.city ? gradients.primary : [colors.border, colors.border]} style={styles.nextBtnGrad}>
-          <Text style={styles.nextBtnText}>Continue →</Text>
-        </LinearGradient>
+        <View style={[styles.nextBtnFill, !form.city && styles.nextBtnFillDisabled]}>
+          <Text style={[styles.nextBtnText, !form.city && styles.nextBtnTextDisabled]} numberOfLines={1}>Continue</Text>
+        </View>
       </TouchableOpacity>
       <TouchableOpacity style={styles.skipLink} onPress={goNext}>
-        <Text style={styles.skipText}>Skip for now</Text>
+        <Text style={styles.skipText} numberOfLines={1}>Skip for now</Text>
       </TouchableOpacity>
     </View>,
 
@@ -290,7 +296,7 @@ export default function OnboardingScreen({ onComplete }) {
                 style={[styles.skillChip, form.skills.includes(s) && styles.skillChipActive]}
                 onPress={() => toggleSkill(s)}
               >
-                <Text style={[styles.skillChipText, form.skills.includes(s) && styles.skillChipTextActive]}>{s}</Text>
+                <Text style={[styles.skillChipText, form.skills.includes(s) && styles.skillChipTextActive]} numberOfLines={1}>{s}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -302,7 +308,7 @@ export default function OnboardingScreen({ onComplete }) {
                 style={[styles.radiusBtn, form.radiusMiles === r && styles.radiusBtnActive]}
                 onPress={() => set('radiusMiles', r)}
               >
-                <Text style={[styles.radiusBtnText, form.radiusMiles === r && styles.radiusBtnTextActive]}>
+                <Text style={[styles.radiusBtnText, form.radiusMiles === r && styles.radiusBtnTextActive]} numberOfLines={1}>
                   {r} mi
                 </Text>
               </TouchableOpacity>
@@ -328,12 +334,12 @@ export default function OnboardingScreen({ onComplete }) {
         </>
       )}
       <TouchableOpacity style={styles.nextBtn} onPress={goNext}>
-        <LinearGradient colors={gradients.primary} style={styles.nextBtnGrad}>
-          <Text style={styles.nextBtnText}>Almost done →</Text>
-        </LinearGradient>
+        <View style={styles.nextBtnFill}>
+          <Text style={styles.nextBtnText} numberOfLines={1}>Almost done</Text>
+        </View>
       </TouchableOpacity>
       <TouchableOpacity style={styles.skipLink} onPress={goNext}>
-        <Text style={styles.skipText}>Skip for now</Text>
+        <Text style={styles.skipText} numberOfLines={1}>Skip for now</Text>
       </TouchableOpacity>
     </View>,
 
@@ -362,22 +368,26 @@ export default function OnboardingScreen({ onComplete }) {
           </Text>
         </View>
       )}
-      <TouchableOpacity onPress={handleFinish} disabled={saving || (needsConsent && !accepted)}>
-        <LinearGradient
-          colors={(needsConsent && !accepted) ? [colors.border, colors.border] : gradients.earn}
-          style={styles.finishBtn}
-        >
-          <Text style={styles.finishBtnText}>{saving ? 'Setting up...' : 'Enter GoHustlr'}</Text>
-        </LinearGradient>
+      <TouchableOpacity
+        style={styles.finishBtnWrap}
+        onPress={handleFinish}
+        disabled={saving || (needsConsent && !accepted)}
+      >
+        <View style={[styles.finishBtn, (needsConsent && !accepted) && styles.finishBtnDisabled]}>
+          <Text
+            style={[styles.finishBtnText, (needsConsent && !accepted) && styles.finishBtnTextDisabled]}
+            numberOfLines={1}
+          >
+            {saving ? 'Setting up...' : 'Enter GoHustlr'}
+          </Text>
+        </View>
       </TouchableOpacity>
-      {finishError ? <Text style={[styles.errorText, { alignSelf: 'center', marginTop: 12 }]}>{finishError}</Text> : null}
+      {finishError ? <Text style={[styles.errorText, { marginTop: 12, textAlign: 'center' }]}>{finishError}</Text> : null}
     </View>,
   ];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={['#F7F3EC', '#E9E6FF', '#fff']} style={StyleSheet.absoluteFill} />
-
       {/* Progress dots */}
       {step > 0 && step < STEPS.length - 1 && (
         <View style={styles.progressRow}>
@@ -414,8 +424,8 @@ export default function OnboardingScreen({ onComplete }) {
       <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
         <View style={[styles.docModal, { paddingTop: insets.top + 8 }]}>
           <View style={styles.docHeader}>
-            <Text style={styles.docTitle}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
-            <TouchableOpacity onPress={() => setLegalDoc(null)} style={{ padding: 4 }}>
+            <Text style={styles.docTitle} numberOfLines={1}>{legalDoc ? (legalDocs[legalDoc]?.title || '') : ''}</Text>
+            <TouchableOpacity onPress={() => setLegalDoc(null)} style={styles.docClose}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -430,81 +440,119 @@ export default function OnboardingScreen({ onComplete }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: colors.background },
   progressRow: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     paddingVertical: 16,
   },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border, marginHorizontal: 4 },
-  dotActive: { backgroundColor: colors.primary, opacity: 0.5 },
+  dot: {
+    width: 8, height: 8, borderRadius: radii.pill,
+    backgroundColor: colors.border, marginHorizontal: 4,
+  },
+  dotActive: { backgroundColor: colors.primary, opacity: 0.4 },
   dotCurrent: { backgroundColor: colors.primary, opacity: 1, width: 20 },
   slideContainer: { flex: 1 },
   slide: { position: 'absolute', width, flex: 1, top: 0, bottom: 0 },
-  slideScroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 20 },
+  slideScroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 24 },
   stepWrap: { alignItems: 'center' },
-  emoji: { fontSize: 64, marginBottom: 16 },
-  stepTitle: { fontSize: 26, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 10 },
-  stepSub: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  emoji: { marginBottom: 20 },
+  stepTitle: {
+    fontSize: 26, fontWeight: '700', color: colors.textPrimary,
+    textAlign: 'center', letterSpacing: -0.4, lineHeight: 33, marginBottom: 8,
+  },
+  stepSub: {
+    fontSize: 15, color: colors.textSecondary, textAlign: 'center',
+    lineHeight: 22, marginBottom: 28,
+  },
   input: {
-    backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: colors.textPrimary,
     width: '100%', marginBottom: 4,
   },
   inputError: { borderColor: colors.urgent },
-  textArea: { minHeight: 100, lineHeight: 22 },
-  errorText: { color: colors.urgent, fontSize: 13, fontWeight: '600', marginBottom: 6, alignSelf: 'flex-start' },
-  hintText: { fontSize: 12, color: colors.textMuted, marginBottom: 24, alignSelf: 'flex-start' },
-  dobLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, alignSelf: 'flex-start', marginTop: 14, marginBottom: 8 },
-  nextBtn: { width: '100%', marginTop: 12 },
-  nextBtnDisabled: { opacity: 0.6 },
-  nextBtnGrad: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
-  nextBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  skipLink: { marginTop: 16 },
-  skipText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  textArea: { minHeight: 104, lineHeight: 22 },
+  errorText: {
+    color: colors.urgent, fontSize: 13, fontWeight: '600',
+    lineHeight: 18, marginBottom: 8, alignSelf: 'stretch',
+  },
+  hintText: {
+    fontSize: 12, color: colors.textMuted, lineHeight: 16,
+    marginBottom: 24, alignSelf: 'stretch',
+  },
+  dobLabel: {
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    lineHeight: 18, alignSelf: 'stretch', marginTop: 12, marginBottom: 8,
+  },
+  nextBtn: { width: '100%', marginTop: 16 },
+  nextBtnFill: {
+    borderRadius: radii.md, paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  nextBtnFillDisabled: { backgroundColor: colors.border },
+  nextBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  nextBtnTextDisabled: { color: colors.textMuted },
+  skipLink: { marginTop: 16, paddingVertical: 8, paddingHorizontal: 12 },
+  skipText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600', lineHeight: 19 },
   roleCard: {
     width: '100%', flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 2, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: colors.border,
   },
   roleCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  roleIcon: { fontSize: 28, marginRight: 14 },
-  roleInfo: { flex: 1 },
-  roleLabel: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 },
+  roleIcon: { marginRight: 14 },
+  roleInfo: { flex: 1, marginRight: 8 },
+  roleLabel: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, lineHeight: 21, marginBottom: 2 },
   roleLabelActive: { color: colors.primary },
-  roleDesc: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
-  roleCheck: { fontSize: 18, color: colors.primary, fontWeight: '900' },
+  roleDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  roleCheck: { flexShrink: 0 },
   skillGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: '100%' },
   skillChip: {
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, margin: 4,
-    backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.border,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: radii.pill, margin: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  skillChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  skillChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, lineHeight: 17 },
   skillChipTextActive: { color: '#fff' },
   radiusRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', width: '100%' },
   radiusBtn: {
-    paddingHorizontal: 18, paddingVertical: 11, borderRadius: 12, margin: 5,
-    backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.border,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 18, paddingVertical: 10, borderRadius: radii.pill, margin: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   radiusBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  radiusBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  radiusBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary, lineHeight: 19 },
   radiusBtnTextActive: { color: '#fff' },
-  finishBtn: { borderRadius: 18, paddingVertical: 20, paddingHorizontal: 48, alignItems: 'center', marginTop: 12 },
-  finishBtnText: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, paddingHorizontal: 4 },
+  finishBtnWrap: { width: '100%', marginTop: 4 },
+  finishBtn: {
+    borderRadius: radii.md, paddingVertical: 16, paddingHorizontal: 24,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  finishBtnDisabled: { backgroundColor: colors.border },
+  finishBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  finishBtnTextDisabled: { color: colors.textMuted },
+  acceptRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20, width: '100%' },
   checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    width: 22, height: 22, borderRadius: radii.sm, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginRight: 10, marginTop: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface, flexShrink: 0,
   },
   checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  acceptText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18, textAlign: 'left' },
-  acceptLink: { color: colors.primary, fontWeight: '700' },
+  acceptText: { flex: 1, flexShrink: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19, textAlign: 'left' },
+  acceptLink: { color: colors.primary, fontWeight: '600' },
   docModal: { flex: 1, backgroundColor: colors.background },
   docHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingHorizontal: 20, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
-  docTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary, flex: 1 },
+  docTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.3, lineHeight: 24, flexShrink: 1, marginRight: 8,
+  },
+  docClose: { padding: 4, flexShrink: 0 },
   docBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
 });

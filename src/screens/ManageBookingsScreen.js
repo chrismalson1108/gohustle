@@ -3,8 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
@@ -12,15 +11,16 @@ import { useHaptic } from '../hooks/useHaptic';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import CompletionModal from '../components/CompletionModal';
 import MessageSheet from '../components/MessageSheet';
-import { colors, gradients, shadows } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
+import { colors, radii, shadows } from '../theme';
 
 const SECTION_ORDER  = ['pending', 'completed', 'confirmed', 'verified', 'declined'];
 const SECTION_TITLES = {
-  pending:   '⏳ Action Needed — New Requests',
-  completed: '🔄 Both Marked Done — Verify Now',
-  confirmed: '✅ Confirmed — In Progress',
-  verified:  '💚 Completed',
-  declined:  '❌ Declined',
+  pending:   'Action needed — new requests',
+  completed: 'Both marked done — verify now',
+  confirmed: 'Confirmed — in progress',
+  verified:  'Completed',
+  declined:  'Declined',
 };
 const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'completed']);
 
@@ -29,7 +29,6 @@ export default function ManageBookingsScreen() {
   const { showToast } = useUser();
   const navigation = useNavigation();
   const haptic = useHaptic();
-  const insets = useSafeAreaInsets();
   const [verifyTarget, setVerifyTarget] = useState(null);
   const [msgTarget, setMsgTarget]       = useState(null);
   const [loadingId, setLoadingId]       = useState(null);
@@ -80,14 +79,14 @@ export default function ManageBookingsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={gradients.profile} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>Manage Bookings</Text>
-        <Text style={styles.headerSub}>
+      <ScreenHeader>
+        <Text style={styles.headerTitle} numberOfLines={1}>Manage bookings</Text>
+        <Text style={styles.headerSub} numberOfLines={2}>
           {posterBookings.length === 0
             ? 'No bookings yet on your gigs'
             : `${posterBookings.length} booking${posterBookings.length !== 1 ? 's' : ''} across your gigs`}
         </Text>
-      </LinearGradient>
+      </ScreenHeader>
 
       <ScrollView
         style={styles.scroll}
@@ -96,7 +95,9 @@ export default function ManageBookingsScreen() {
       >
         {isEmpty && (
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📬</Text>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="mail-open-outline" size={26} color={colors.textMuted} />
+            </View>
             <Text style={styles.emptyTitle}>No bookings yet</Text>
             <Text style={styles.emptyText}>When students book your gigs they'll appear here for you to accept or decline.</Text>
           </View>
@@ -107,7 +108,7 @@ export default function ManageBookingsScreen() {
           if (!items) return null;
           return (
             <View key={status} style={styles.section}>
-              <Text style={styles.sectionTitle}>{SECTION_TITLES[status]}</Text>
+              <Text style={styles.sectionTitle} numberOfLines={2}>{SECTION_TITLES[status]}</Text>
               {items.map(booking => (
                 <BookingItem
                   key={booking.id}
@@ -167,31 +168,33 @@ function BookingItem({ booking, loading, onAccept, onDecline, onMarkDone, onVeri
           <Text style={styles.avatarText}>{initial}</Text>
         </View>
         <View style={styles.earnerInfo}>
-          <Text style={styles.earnerName}>{earnerName}</Text>
+          <Text style={styles.earnerName} numberOfLines={1}>{earnerName}</Text>
           {booking.earner?.reviewCount > 0
-            ? <Text style={styles.earnerRating}>⭐ {Number(rating).toFixed(1)}</Text>
-            : <Text style={styles.earnerRating}>New</Text>}
+            ? <Text style={styles.earnerRating} numberOfLines={1}>{Number(rating).toFixed(1)} rating</Text>
+            : <Text style={styles.earnerRating} numberOfLines={1}>New</Text>}
         </View>
-        <BookingStatusBadge status={status} compact />
+        <View style={styles.badgeWrap}>
+          <BookingStatusBadge status={status} compact />
+        </View>
       </View>
 
       {/* Job info */}
       <View style={styles.jobRow}>
-        <Text style={styles.jobTitle}>{jobTitle}</Text>
+        <Text style={styles.jobTitle} numberOfLines={2}>{jobTitle}</Text>
         {pay ? (
-          <Text style={styles.jobPay}>{payType === 'hourly' ? `$${pay}/hr` : `$${pay} flat`}</Text>
+          <Text style={styles.jobPay} numberOfLines={1}>{payType === 'hourly' ? `$${pay}/hr` : `$${pay} flat`}</Text>
         ) : null}
       </View>
 
       {booking.slotLabel && (
         <View style={styles.infoRow}>
-          <Text style={styles.infoIcon}>📅</Text>
+          <Ionicons name="calendar-outline" size={13} color={colors.textMuted} style={styles.infoIcon} />
           <Text style={styles.infoText}>{booking.slotLabel}</Text>
         </View>
       )}
       {booking.counterOffer && (
         <View style={styles.infoRow}>
-          <Text style={styles.infoIcon}>💬</Text>
+          <Ionicons name="chatbubble-ellipses-outline" size={13} color={colors.textMuted} style={styles.infoIcon} />
           <Text style={styles.infoText}>
             Counter-offer: <Text style={styles.counterValue}>
               ${booking.counterOffer}{payType === 'hourly' ? '/hr' : ' flat'}
@@ -204,46 +207,62 @@ function BookingItem({ booking, loading, onAccept, onDecline, onMarkDone, onVeri
       {/* In-progress banner */}
       {status === 'confirmed' && (
         <View style={styles.inProgressBanner}>
-          <Text style={styles.inProgressText}>🟢 In Progress</Text>
+          <Text style={styles.inProgressText} numberOfLines={1}>In progress</Text>
         </View>
       )}
 
       {/* Done-flag indicators */}
       {status === 'confirmed' && (booking.earnerDone || booking.posterDone) && (
         <View style={styles.doneFlags}>
-          <Text style={[styles.doneFlagItem, booking.earnerDone && styles.doneFlagDone]}>
-            {booking.earnerDone ? '✅' : '⬜'} Earner confirmed done
-          </Text>
-          <Text style={[styles.doneFlagItem, booking.posterDone && styles.doneFlagDone]}>
-            {booking.posterDone ? '✅' : '⬜'} You confirmed done
-          </Text>
+          <View style={styles.doneFlagRow}>
+            <Ionicons
+              name={booking.earnerDone ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={booking.earnerDone ? colors.success : colors.textMuted}
+              style={styles.doneFlagIcon}
+            />
+            <Text style={[styles.doneFlagItem, booking.earnerDone && styles.doneFlagDone]} numberOfLines={1}>
+              Earner confirmed done
+            </Text>
+          </View>
+          <View style={styles.doneFlagRow}>
+            <Ionicons
+              name={booking.posterDone ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={booking.posterDone ? colors.success : colors.textMuted}
+              style={styles.doneFlagIcon}
+            />
+            <Text style={[styles.doneFlagItem, booking.posterDone && styles.doneFlagDone]} numberOfLines={1}>
+              You confirmed done
+            </Text>
+          </View>
         </View>
       )}
 
       {/* Waiting banner — poster marked done but earner hasn't */}
       {status === 'confirmed' && booking.posterDone && !booking.earnerDone && (
         <View style={styles.waitingBanner}>
-          <Text style={styles.waitingText}>⏳ Waiting for earner to confirm…</Text>
+          <Text style={styles.waitingText} numberOfLines={2}>Waiting for earner to confirm…</Text>
         </View>
       )}
 
       {/* Verified result */}
       {status === 'verified' && booking.earnerRating && (
         <View style={styles.verifiedRow}>
-          <Text style={styles.verifiedText}>
-            You rated {earnerName} {'⭐'.repeat(Math.round(booking.earnerRating))}
+          <Text style={styles.verifiedText} numberOfLines={2}>
+            You rated {earnerName} {Math.round(booking.earnerRating)} out of 5
           </Text>
           {booking.paymentMethod && (
-            <Text style={styles.paymentText}>
+            <Text style={styles.paymentText} numberOfLines={1}>
               Paid via {booking.paymentMethod.charAt(0).toUpperCase() + booking.paymentMethod.slice(1)}
             </Text>
           )}
         </View>
       )}
       {status === 'verified' && booking.posterRating && (
-        <View style={[styles.verifiedRow, { marginTop: 6 }]}>
-          <Text style={styles.verifiedText}>
-            {earnerName} rated you {booking.posterRating} ⭐
+        <View style={[styles.verifiedRow, { marginTop: 8 }]}>
+          <Text style={styles.verifiedText} numberOfLines={2}>
+            {earnerName} rated you {booking.posterRating} out of 5
           </Text>
           {booking.posterReview ? (
             <Text style={styles.reviewQuote}>"{booking.posterReview}"</Text>
@@ -258,35 +277,33 @@ function BookingItem({ booking, loading, onAccept, onDecline, onMarkDone, onVeri
         <>
           {status === 'pending' && (
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.acceptBtn} onPress={onAccept}>
-                <Text style={styles.acceptText}>✓ Accept</Text>
+              <TouchableOpacity style={styles.acceptBtn} onPress={onAccept} activeOpacity={0.85}>
+                <Text style={styles.acceptText} numberOfLines={1}>Accept</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.declineBtn} onPress={onDecline}>
-                <Text style={styles.declineText}>✕ Decline</Text>
+              <TouchableOpacity style={styles.declineBtn} onPress={onDecline} activeOpacity={0.85}>
+                <Text style={styles.declineText} numberOfLines={1}>Decline</Text>
               </TouchableOpacity>
             </View>
           )}
 
           {/* Mark Done — poster side, when confirmed and poster hasn't marked yet */}
           {status === 'confirmed' && !booking.posterDone && (
-            <TouchableOpacity style={styles.markDoneBtn} onPress={onMarkDone}>
-              <Text style={styles.markDoneText}>✓ Mark Job Done</Text>
+            <TouchableOpacity style={styles.markDoneBtn} onPress={onMarkDone} activeOpacity={0.85}>
+              <Text style={styles.markDoneText} numberOfLines={1}>Mark job done</Text>
             </TouchableOpacity>
           )}
 
           {/* Verify & Rate — when both marked done (completed) */}
           {status === 'completed' && (
-            <TouchableOpacity onPress={onVerify} activeOpacity={0.85}>
-              <LinearGradient colors={gradients.earn} style={styles.verifyBtn}>
-                <Text style={styles.verifyText}>⭐ Verify & Rate {earnerName}</Text>
-              </LinearGradient>
+            <TouchableOpacity style={styles.verifyBtn} onPress={onVerify} activeOpacity={0.85}>
+              <Text style={styles.verifyText} numberOfLines={1}>{`Verify & rate ${earnerName}`}</Text>
             </TouchableOpacity>
           )}
 
           {/* Message — all active statuses */}
           {ACTIVE_STATUSES.has(status) && (
-            <TouchableOpacity style={styles.msgBtn} onPress={onMessage}>
-              <Text style={styles.msgBtnText}>💬 Message {earnerName}</Text>
+            <TouchableOpacity style={styles.msgBtn} onPress={onMessage} activeOpacity={0.85}>
+              <Text style={styles.msgBtnText} numberOfLines={1}>Message {earnerName}</Text>
             </TouchableOpacity>
           )}
         </>
@@ -297,83 +314,102 @@ function BookingItem({ booking, loading, onAccept, onDecline, onMarkDone, onVeri
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: 20, paddingBottom: 24 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.75)' },
+  headerTitle: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, marginBottom: 4,
+  },
+  headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
   scroll: { flex: 1 },
-  section: { paddingHorizontal: 16, marginTop: 24 },
+  section: { paddingHorizontal: 20, marginTop: 24 },
   sectionTitle: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    marginBottom: 12, lineHeight: 18,
   },
   card: {
-    backgroundColor: colors.surface, borderRadius: 18,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
     padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    ...shadows.card,
   },
   earnerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   avatar: {
-    width: 42, height: 42, borderRadius: 21,
+    width: 42, height: 42, borderRadius: radii.pill,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
   },
-  avatarText: { color: '#fff', fontWeight: '900', fontSize: 17 },
-  earnerInfo: { flex: 1 },
-  earnerName: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  avatarText: { color: '#fff', fontWeight: '700', fontSize: 17 },
+  earnerInfo: { flex: 1, marginRight: 8 },
+  earnerName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   earnerRating: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  badgeWrap: { flexShrink: 0 },
   jobRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  jobTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, flex: 1 },
-  jobPay: { fontSize: 14, fontWeight: '800', color: colors.success, marginLeft: 8 },
+  jobTitle: {
+    fontSize: 14, fontWeight: '600', color: colors.textPrimary,
+    flexShrink: 1, marginRight: 8, lineHeight: 19,
+  },
+  jobPay: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, flexShrink: 0 },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
-  infoIcon: { fontSize: 12, marginRight: 6, marginTop: 1 },
+  infoIcon: { marginRight: 6, marginTop: 2 },
   infoText: { fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 },
-  counterValue: { fontWeight: '800', color: colors.primary },
+  counterValue: { fontWeight: '700', color: colors.textPrimary },
   inProgressBanner: {
-    backgroundColor: '#ECFDF5', borderRadius: 8,
+    backgroundColor: colors.successLight, borderRadius: radii.sm,
     paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, alignSelf: 'flex-start',
   },
-  inProgressText: { fontSize: 12, fontWeight: '700', color: colors.success },
+  inProgressText: { fontSize: 12, fontWeight: '600', color: colors.success },
   doneFlags: { marginTop: 8 },
-  doneFlagItem: { fontSize: 12, color: colors.textMuted, marginBottom: 3 },
-  doneFlagDone: { color: colors.success, fontWeight: '700' },
+  doneFlagRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  doneFlagIcon: { marginRight: 6 },
+  doneFlagItem: { fontSize: 12, color: colors.textMuted, flex: 1, lineHeight: 17 },
+  doneFlagDone: { color: colors.success, fontWeight: '600' },
   waitingBanner: {
-    backgroundColor: '#FFF7ED', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 6, marginTop: 6,
+    backgroundColor: colors.background, borderRadius: radii.sm,
+    paddingHorizontal: 10, paddingVertical: 8, marginTop: 8, alignSelf: 'flex-start',
   },
-  waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
+  waitingText: { fontSize: 12, fontWeight: '500', color: colors.textSecondary, lineHeight: 17 },
   verifiedRow: {
-    backgroundColor: colors.successLight, borderRadius: 10,
-    padding: 10, marginTop: 8,
+    backgroundColor: colors.successLight, borderRadius: radii.md,
+    padding: 12, marginTop: 8,
   },
-  verifiedText: { fontSize: 13, fontWeight: '700', color: colors.success, marginBottom: 2 },
-  paymentText: { fontSize: 12, color: colors.textMuted },
-  reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
-  actionRow: { flexDirection: 'row', marginTop: 14 },
+  verifiedText: { fontSize: 13, fontWeight: '600', color: colors.success, marginBottom: 2, lineHeight: 18 },
+  paymentText: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
+  reviewQuote: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, lineHeight: 17 },
+  actionRow: { flexDirection: 'row', marginTop: 16 },
   acceptBtn: {
-    flex: 1, backgroundColor: colors.successLight, borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center', marginRight: 8,
+    flex: 1, backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 13, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center',
+    marginRight: 8,
   },
-  acceptText: { fontSize: 14, fontWeight: '800', color: colors.success },
+  acceptText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   declineBtn: {
-    flex: 1, backgroundColor: '#FEE2E2', borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, backgroundColor: colors.surface, borderRadius: radii.md,
+    paddingVertical: 13, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
   },
-  declineText: { fontSize: 14, fontWeight: '800', color: colors.urgent },
+  declineText: { fontSize: 15, fontWeight: '600', color: colors.urgent },
   markDoneBtn: {
-    backgroundColor: colors.primaryLight, borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center', marginTop: 12,
-    borderWidth: 1.5, borderColor: colors.primary,
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 13, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
-  markDoneText: { fontSize: 14, fontWeight: '800', color: colors.primary },
-  verifyBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
-  verifyText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  markDoneText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  verifyBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 12,
+  },
+  verifyText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   msgBtn: {
-    borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginTop: 8,
-    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+    borderRadius: radii.md, minHeight: 44, paddingVertical: 12, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 8,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  msgBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
-  emptyIcon: { fontSize: 52, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
+  emptyIcon: {
+    width: 56, height: 56, borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
 });

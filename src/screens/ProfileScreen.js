@@ -8,8 +8,7 @@ import { getReferralCode, fetchReferralCount } from '../lib/referrals';
 import { fetchVerificationStatus, requestVerification } from '../lib/verification';
 import { getUnreadCount } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
-import { LinearGradient } from 'expo-linear-gradient';
-import GradientHeader from '../components/GradientHeader';
+import ScreenHeader from '../components/ScreenHeader';
 import BadgeGrid from '../components/BadgeGrid';
 import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
@@ -23,7 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useHaptic } from '../hooks/useHaptic';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
-import { colors, gradients, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 
 export default function ProfileScreen({ navigation }) {
@@ -179,25 +178,23 @@ export default function ProfileScreen({ navigation }) {
   // failed load must look like a load problem, not like a blank account.
   if (profileStatus !== 'ready') {
     return (
-      <View style={[styles.container, { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
+      <View style={[styles.container, styles.stateWrap]}>
         {profileStatus === 'loading' ? (
           <>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ marginTop: 14, fontSize: 14, color: colors.textSecondary }}>Loading your profile…</Text>
+            <Text style={styles.stateLoadingText}>Loading your profile…</Text>
           </>
         ) : (
           <>
             <Ionicons name="cloud-offline-outline" size={44} color={colors.textMuted} />
-            <Text style={{ marginTop: 12, fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>
+            <Text style={styles.stateTitle}>
               Couldn't load your profile
             </Text>
-            <Text style={{ marginTop: 6, fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+            <Text style={styles.stateBody}>
               Check your connection and try again — your account and data are safe.
             </Text>
-            <TouchableOpacity onPress={retryProfile} style={{ marginTop: 18 }} activeOpacity={0.85}>
-              <LinearGradient colors={gradients.primary} style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32 }}>
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Try again</Text>
-              </LinearGradient>
+            <TouchableOpacity onPress={retryProfile} style={styles.stateBtn} activeOpacity={0.85}>
+              <Text style={styles.stateBtnText} numberOfLines={1}>Try again</Text>
             </TouchableOpacity>
           </>
         )}
@@ -214,7 +211,7 @@ export default function ProfileScreen({ navigation }) {
       scrollEventThrottle={32}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
-      <GradientHeader colors={gradients.profile}>
+      <ScreenHeader>
         <View style={styles.profileRow}>
           <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8} style={styles.avatarWrap}>
             <Avatar
@@ -222,9 +219,6 @@ export default function ProfileScreen({ navigation }) {
               initial={avatarInitial}
               size={64}
               fontSize={26}
-              bg="rgba(255,255,255,0.25)"
-              borderColor="rgba(255,255,255,0.6)"
-              borderWidth={3}
             />
             <View style={styles.avatarBadge}>
               {uploadingAvatar
@@ -234,25 +228,25 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
           <View style={styles.profileInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.profileName}>{name}</Text>
+              <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
               {idv.verified && (
-                <Ionicons name="shield-checkmark" size={18} color="#fff" style={{ marginLeft: 6 }} />
+                <Ionicons name="shield-checkmark" size={18} color={colors.success} style={styles.nameIcon} />
               )}
               {studentVerified && (
-                <Ionicons name="school" size={16} color="#fff" style={{ marginLeft: 6 }} />
+                <Ionicons name="school" size={16} color={colors.primary} style={styles.nameIcon} />
               )}
             </View>
             {actualReviewCount > 0 && <RatingStars rating={actualRating} size={14} />}
-            {!!college && <Text style={styles.profileCollege}>{college}</Text>}
-            <Text style={styles.profileSub}>
+            {!!college && <Text style={styles.profileCollege} numberOfLines={1}>{college}</Text>}
+            <Text style={styles.profileSub} numberOfLines={2}>
               {actualReviewCount > 0
                 ? `${actualReviewCount} review${actualReviewCount !== 1 ? 's' : ''}`
                 : 'No reviews yet'} · Member since {memberSince}
             </Text>
           </View>
         </View>
-        <XPBar levelInfo={levelInfo} xp={xp} dark />
-      </GradientHeader>
+        <XPBar levelInfo={levelInfo} xp={xp} dark={false} />
+      </ScreenHeader>
 
       {paymentAlert && (
         <TouchableOpacity
@@ -261,12 +255,13 @@ export default function ProfileScreen({ navigation }) {
           activeOpacity={0.85}
         >
           <View style={styles.payAlertIcon}>
-            <Ionicons name="card" size={18} color="#fff" />
+            <Ionicons name="card" size={18} color={colors.primary} />
           </View>
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.payAlertTitle}>{paymentAlert.title}</Text>
-            <Text style={styles.payAlertSub}>{paymentAlert.sub}</Text>
+          <View style={styles.payAlertText}>
+            <Text style={styles.payAlertTitle} numberOfLines={2}>{paymentAlert.title}</Text>
+            <Text style={styles.payAlertSub} numberOfLines={2}>{paymentAlert.sub}</Text>
           </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={styles.payAlertChevron} />
         </TouchableOpacity>
       )}
 
@@ -274,11 +269,11 @@ export default function ProfileScreen({ navigation }) {
           verified) — never pending/confirmed applications, which used to bump
           the stat the moment a gig was booked. */}
       <View style={styles.statsRow}>
-        <Stat label="Jobs Done" value={bookings.filter(b => b.status === 'completed' || b.status === 'verified').length} />
+        <Stat label="Jobs done" value={bookings.filter(b => b.status === 'completed' || b.status === 'verified').length} />
         <View style={styles.statDiv} />
-        <Stat label="Total Earned" value={`$${earningsTotal.toLocaleString()}`} />
+        <Stat label="Total earned" value={`$${earningsTotal.toLocaleString()}`} />
         <View style={styles.statDiv} />
-        <Stat label="Avg Rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
+        <Stat label="Avg rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
       </View>
 
       {/* Primary action — edit the identity shown in the header above */}
@@ -287,11 +282,11 @@ export default function ProfileScreen({ navigation }) {
         onPress={() => { haptic.medium(); navigation.navigate('Settings'); }}
         activeOpacity={0.85}
       >
-        <Ionicons name="create-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-        <Text style={styles.editProfileText}>Edit Profile & Settings</Text>
+        <Ionicons name="create-outline" size={18} color="#fff" style={styles.editProfileIcon} />
+        <Text style={styles.editProfileText} numberOfLines={1}>Edit Profile & Settings</Text>
       </TouchableOpacity>
 
-      <Group title="Gigs & Earnings">
+      <Group title="Gigs & earnings">
         {(postedJobs.length > 0 || posterBookings?.length > 0) && (
           <Row
             icon="briefcase-outline"
@@ -316,7 +311,7 @@ export default function ProfileScreen({ navigation }) {
         />
       </Group>
 
-      <Group title="Saved & Alerts">
+      <Group title="Saved & alerts">
         <Row
           icon="notifications-outline"
           title="Alerts"
@@ -356,7 +351,7 @@ export default function ProfileScreen({ navigation }) {
         />
       </Group>
 
-      <Group title="Profile & Trust">
+      <Group title="Profile & trust">
         <Row
           icon="eye-outline"
           title="View My Public Profile"
@@ -410,21 +405,21 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Reviews I've Received</Text>
+        <Text style={styles.sectionTitle}>Reviews I've received</Text>
         {myReviews.length > 0 && (() => {
           const w = myReviews.filter(r => r.role === 'earner');
           const c = myReviews.filter(r => r.role === 'poster');
           const a = (arr) => arr.length ? (arr.reduce((s, r) => s + (r.rating || 0), 0) / arr.length).toFixed(1) : '—';
           return (
             <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownItem}>As a worker: <Text style={styles.breakdownVal}>{a(w)}</Text> ({w.length})</Text>
-              <Text style={styles.breakdownItem}>As a client: <Text style={styles.breakdownVal}>{a(c)}</Text> ({c.length})</Text>
+              <Text style={styles.breakdownItem} numberOfLines={1}>As a worker: <Text style={styles.breakdownVal}>{a(w)}</Text> ({w.length})</Text>
+              <Text style={styles.breakdownItem} numberOfLines={1}>As a client: <Text style={styles.breakdownVal}>{a(c)}</Text> ({c.length})</Text>
             </View>
           );
         })()}
         {myReviews.length === 0 ? (
           <View style={styles.noReviewsCard}>
-            <Ionicons name="star-outline" size={30} color={colors.gold} style={styles.noReviewsIcon} />
+            <Ionicons name="star-outline" size={30} color={colors.accent} style={styles.noReviewsIcon} />
             <Text style={styles.noReviewsTitle}>No reviews yet</Text>
             <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
           </View>
@@ -437,24 +432,24 @@ export default function ProfileScreen({ navigation }) {
                   initial={r.reviewer?.avatar_initial || r.author?.[0]}
                   size={36}
                   fontSize={14}
-                  style={{ marginRight: 10 }}
+                  style={{ marginRight: 12 }}
                 />
                 <View style={styles.reviewerInfo}>
-                  <Text style={styles.reviewerName}>{r.reviewer?.name || r.author || 'Poster'}</Text>
+                  <Text style={styles.reviewerName} numberOfLines={1}>{r.reviewer?.name || r.author || 'Poster'}</Text>
                   <View style={styles.reviewStarsRow}>
                     {[1,2,3,4,5].map(s => (
                       <Ionicons
                         key={s}
                         name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
                         size={12}
-                        color={s <= Math.round(r.rating) ? colors.gold : colors.border}
+                        color={s <= Math.round(r.rating) ? colors.accent : colors.border}
                         style={styles.reviewStar}
                       />
                     ))}
                     <Text style={styles.reviewRatingNum}>{Number(r.rating).toFixed(1)}</Text>
                   </View>
                 </View>
-                {r.date && <Text style={styles.reviewDate}>{r.date}</Text>}
+                {r.date && <Text style={styles.reviewDate} numberOfLines={1}>{r.date}</Text>}
               </View>
               {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
             </View>
@@ -463,30 +458,32 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <View style={styles.legalSection}>
-        <Text style={styles.legalHeader}>Legal & Support</Text>
-        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'terms' })}>
-          <Text style={styles.legalRowText}>Terms of Service</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'privacy' })}>
-          <Text style={styles.legalRowText}>Privacy Policy</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'contractor' })}>
-          <Text style={styles.legalRowText}>Independent Contractor Agreement</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.legalRow, { borderBottomWidth: 0 }]} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`)}>
-          <Text style={styles.legalRowText}>Contact Support</Text>
-          <Ionicons name="mail-outline" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
+        <Text style={styles.legalHeader}>Legal & support</Text>
+        <View style={styles.legalCard}>
+          <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'terms' })}>
+            <Text style={styles.legalRowText} numberOfLines={1}>Terms of Service</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'privacy' })}>
+            <Text style={styles.legalRowText} numberOfLines={1}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.legalRow} onPress={() => navigation.navigate('Legal', { doc: 'contractor' })}>
+            <Text style={styles.legalRowText} numberOfLines={1}>Independent Contractor Agreement</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.legalRow, styles.legalRowLast]} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`)}>
+            <Text style={styles.legalRowText} numberOfLines={1}>Contact Support</Text>
+            <Ionicons name="mail-outline" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <TouchableOpacity
         style={styles.signOutBtn}
         onPress={() => { haptic.medium(); signOut(); }}
       >
-        <Text style={styles.signOutText}>Sign Out</Text>
+        <Text style={styles.signOutText} numberOfLines={1}>Sign Out</Text>
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
@@ -502,8 +499,8 @@ export default function ProfileScreen({ navigation }) {
 function Stat({ label, value }) {
   return (
     <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue} numberOfLines={1}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
     </View>
   );
 }
@@ -529,204 +526,179 @@ function Row({ icon, iconColor, title, sub, badge, badgeColor, onPress, disabled
       disabled={disabled}
       activeOpacity={0.6}
     >
-      <View style={[styles.rowIconTile, { backgroundColor: tint + '18' }]}>
+      <View style={styles.rowIconTile}>
         <Ionicons name={icon} size={18} color={tint} />
       </View>
       <View style={styles.rowText}>
         <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
-        {sub ? <Text style={styles.rowSub} numberOfLines={1}>{sub}</Text> : null}
+        {sub ? <Text style={styles.rowSub} numberOfLines={2}>{sub}</Text> : null}
       </View>
       {badge ? (
         <View style={[styles.rowBadge, badgeColor ? { backgroundColor: badgeColor } : null]}>
-          <Text style={styles.rowBadgeText}>{badge}</Text>
+          <Text style={styles.rowBadgeText} numberOfLines={1}>{badge}</Text>
         </View>
       ) : null}
-      {!disabled && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: 4 }} />}
+      {!disabled && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={styles.rowChevron} />}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  // Grouped-list profile menu (iOS-Settings style)
-  editProfileBtn: {
-    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
-    paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary, ...shadows.sm,
+  container: { flex: 1, backgroundColor: colors.background },
+
+  // Loading / failed-load state
+  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  stateLoadingText: { marginTop: 16, fontSize: 14, color: colors.textSecondary },
+  stateTitle: { marginTop: 12, fontSize: 17, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  stateBody: { marginTop: 8, fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 },
+  stateBtn: {
+    marginTop: 20, backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 32,
   },
-  editProfileText: { fontSize: 15, fontWeight: '800', color: '#fff' },
-  group: { marginHorizontal: 16, marginTop: 22 },
+  stateBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Header
+  profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  avatarWrap: { marginRight: 16 },
+  avatarBadge: {
+    position: 'absolute', right: -2, bottom: -2,
+    width: 24, height: 24, borderRadius: radii.pill,
+    backgroundColor: colors.primary, borderWidth: 1, borderColor: colors.background,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  profileInfo: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  nameIcon: { marginLeft: 6, flexShrink: 0 },
+  profileName: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, flexShrink: 1,
+  },
+  profileCollege: { fontSize: 12, color: colors.textSecondary, marginTop: 4, fontWeight: '600' },
+  profileSub: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
+
+  // Payment nudge
+  payAlert: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surface,
+    marginHorizontal: 20, marginTop: 12,
+    borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
+  },
+  payAlertIcon: {
+    width: 36, height: 36, borderRadius: radii.md,
+    backgroundColor: colors.background,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  payAlertText: { flex: 1, marginLeft: 12 },
+  payAlertTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
+  payAlertSub: { color: colors.textMuted, fontSize: 12, marginTop: 2, lineHeight: 16 },
+  payAlertChevron: { marginLeft: 8, flexShrink: 0 },
+
+  // Stats
+  statsRow: {
+    backgroundColor: colors.surface, marginHorizontal: 20, marginTop: 12,
+    borderRadius: radii.lg, flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 16, paddingHorizontal: 8,
+    ...shadows.card,
+  },
+  stat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  statValue: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  statLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
+  statDiv: { width: 1, height: 32, backgroundColor: colors.border, flexShrink: 0 },
+
+  // Primary CTA
+  editProfileBtn: {
+    marginHorizontal: 20, marginTop: 16, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  editProfileIcon: { marginRight: 8, flexShrink: 0 },
+  editProfileText: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1 },
+
+  // Grouped-list profile menu (iOS-Settings style)
+  group: { marginHorizontal: 20, marginTop: 24 },
   groupTitle: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8, marginLeft: 4,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    marginBottom: 8,
   },
   groupCard: {
-    backgroundColor: colors.surface, borderRadius: 16,
-    borderWidth: 1, borderColor: colors.border, overflow: 'hidden', ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    ...shadows.card,
   },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14 },
-  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.divider },
   rowIconTile: {
-    width: 32, height: 32, borderRadius: 9,
+    width: 32, height: 32, borderRadius: radii.sm,
+    backgroundColor: colors.background,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
+    flexShrink: 0,
   },
-  rowText: { flex: 1 },
-  rowTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  rowSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowText: { flex: 1, marginRight: 8 },
+  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  rowSub: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
   rowBadge: {
-    backgroundColor: colors.urgent, borderRadius: 10, minWidth: 20,
-    paddingHorizontal: 7, paddingVertical: 2, alignItems: 'center', marginLeft: 6,
+    backgroundColor: colors.urgent, borderRadius: radii.pill, minWidth: 20,
+    paddingHorizontal: 8, paddingVertical: 2, alignItems: 'center',
+    alignSelf: 'center', flexShrink: 0,
   },
-  rowBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  manageBtn: {
-    marginHorizontal: 16, marginTop: 12, borderRadius: 14,
-    backgroundColor: colors.surface, paddingVertical: 14, paddingHorizontal: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  rowBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  rowChevron: { marginLeft: 4, flexShrink: 0 },
+
+  // Sections (Badges, Reviews)
+  section: { paddingHorizontal: 20, marginTop: 24 },
+  sectionTitle: {
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8,
   },
-  manageBtnLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  manageBtnIcon: { fontSize: 22, marginRight: 12 },
-  manageBtnTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  manageBtnSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  manageBadge: {
-    backgroundColor: colors.urgent, borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, gap: 12 },
+  breakdownItem: { fontSize: 12, color: colors.textMuted, fontWeight: '500', flexShrink: 1 },
+  breakdownVal: { color: colors.textPrimary, fontWeight: '700' },
+  noReviewsCard: {
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 20,
+    alignItems: 'center',
+    ...shadows.card,
   },
-  manageBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  alertBadge: {
-    backgroundColor: colors.primary, borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 3, marginRight: 8,
+  noReviewsIcon: { marginBottom: 8 },
+  noReviewsTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  noReviewsText: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  reviewCard: {
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: 16, marginBottom: 12,
+    ...shadows.card,
   },
-  alertBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  manageBtnArrow: { fontSize: 20, color: colors.textMuted, fontWeight: '400' },
-  settingsBtn: {
-    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
-  },
-  settingsBtnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  settingsBtnText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  legalSection: {
-    marginHorizontal: 16, marginTop: 16, borderRadius: 14,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 16, paddingTop: 10,
-  },
+  reviewHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+  reviewerInfo: { flex: 1, marginRight: 8 },
+  reviewerName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 4 },
+  reviewStarsRow: { flexDirection: 'row', alignItems: 'center' },
+  reviewStar: { marginRight: 1 },
+  reviewRatingNum: { fontSize: 11, color: colors.textMuted, marginLeft: 4, fontWeight: '600' },
+  reviewDate: { fontSize: 11, color: colors.textMuted, flexShrink: 0 },
+  reviewText: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+
+  // Legal & support — same label-above-card pattern as Group
+  legalSection: { marginHorizontal: 20, marginTop: 24 },
   legalHeader: {
-    fontSize: 13, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8,
+  },
+  legalCard: {
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: 16,
+    ...shadows.card,
   },
   legalRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
-  legalRowText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
+  legalRowLast: { borderBottomWidth: 0 },
+  legalRowText: { fontSize: 14, color: colors.textPrimary, fontWeight: '500', flexShrink: 1, marginRight: 12 },
+  legalRowIcon: { flexShrink: 0 },
+
+  // Sign out
   signOutBtn: {
-    marginHorizontal: 16, marginTop: 12, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: '#FCA5A5',
+    marginHorizontal: 20, marginTop: 16, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center',
+    backgroundColor: colors.urgentLight,
   },
-  signOutText: { fontSize: 15, fontWeight: '700', color: colors.urgent },
-  container: { flex: 1, backgroundColor: colors.background },
-  profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  avatarWrap: { marginRight: 16 },
-  avatarBadge: {
-    position: 'absolute', right: -2, bottom: -2,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: colors.primary, borderWidth: 2, borderColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatar: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.6)',
-    alignItems: 'center', justifyContent: 'center', marginRight: 16,
-  },
-  avatarText: { color: '#fff', fontWeight: '900', fontSize: 26 },
-  profileInfo: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  profileName: { fontSize: 22, fontWeight: '900', color: '#fff' },
-  profileSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  profileCollege: { fontSize: 12, color: 'rgba(255,255,255,0.92)', marginTop: 4, fontWeight: '700' },
-  roleToggle: {
-    backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16,
-    borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
-  },
-  roleLabel: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
-  roleRight: { flexDirection: 'row', alignItems: 'center' },
-  roleHint: { fontSize: 12, color: colors.textMuted, marginRight: 10 },
-  payAlert: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.primary,
-    marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, padding: 14,
-    ...shadows.sm,
-  },
-  payAlertIcon: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  payAlertTitle: { color: '#fff', fontSize: 13.5, fontWeight: '800' },
-  payAlertSub: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 1 },
-  statsRow: {
-    backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 12,
-    borderRadius: 16, flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 16, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
-  },
-  stat: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 },
-  statLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  statDiv: { width: 1, height: 32, backgroundColor: colors.border },
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: {
-    fontSize: 13, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
-  },
-  postedJobCard: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  postedJobInfo: { flex: 1, marginRight: 10 },
-  postedJobTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
-  postedJobMeta: { fontSize: 12, color: colors.textMuted },
-  postedJobActions: { flexDirection: 'row' },
-  editBtn: {
-    backgroundColor: colors.primaryLight, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 7,
-    borderWidth: 1, borderColor: colors.primary + '40',
-  },
-  editBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  emptyText: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  breakdownItem: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  breakdownVal: { color: colors.textPrimary, fontWeight: '800' },
-  noReviewsCard: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 20,
-    alignItems: 'center', borderWidth: 1, borderColor: colors.border,
-  },
-  noReviewsIcon: { fontSize: 30, marginBottom: 8 },
-  noReviewsTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 },
-  noReviewsText: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
-  reviewCard: {
-    backgroundColor: colors.surface, borderRadius: 14,
-    padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
-  },
-  reviewHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  reviewerAvatar: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10,
-  },
-  reviewerAvatarText: { color: '#fff', fontWeight: '900', fontSize: 14 },
-  reviewerInfo: { flex: 1 },
-  reviewerName: { fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
-  reviewStarsRow: { flexDirection: 'row', alignItems: 'center' },
-  reviewStar: { fontSize: 12, color: colors.border, marginRight: 1 },
-  reviewStarFilled: { color: '#F59E0B' },
-  reviewRatingNum: { fontSize: 11, color: colors.textMuted, marginLeft: 4, fontWeight: '700' },
-  reviewDate: { fontSize: 11, color: colors.textMuted },
-  reviewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+  signOutText: { fontSize: 15, fontWeight: '600', color: colors.urgent },
 });

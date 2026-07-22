@@ -5,10 +5,9 @@ import {
   RefreshControl, Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import GradientHeader from '../components/GradientHeader';
+import ScreenHeader from '../components/ScreenHeader';
 import ChallengeCard from '../components/ChallengeCard';
 import JobCard from '../components/JobCard';
 import XPBar from '../components/XPBar';
@@ -28,7 +27,7 @@ import { haversineMiles } from '../lib/geo';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { canClaimEarnerPayment } from '../../shared/lifecycle';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
-import { colors, gradients, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -386,7 +385,7 @@ export default function EarnScreen({ navigation }) {
       })}
     >
       <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
-      <Text style={styles.msgBtnText}>Message</Text>
+      <Text style={styles.msgBtnText} numberOfLines={1}>Message</Text>
     </TouchableOpacity>
   );
 
@@ -397,11 +396,11 @@ export default function EarnScreen({ navigation }) {
       {driveBookingId === booking.id ? (
         <View style={styles.driveTrackingBanner}>
           <View style={styles.driveTrackingLeft}>
-            <Ionicons name="navigate" size={16} color="#fff" style={{ marginRight: 7 }} />
-            <Text style={styles.driveTrackingText}>Tracking drive · {driveMiles.toFixed(1)} mi</Text>
+            <Ionicons name="navigate" size={16} color={colors.primary} style={{ marginRight: 7 }} />
+            <Text style={styles.driveTrackingText} numberOfLines={1}>Tracking drive · {driveMiles.toFixed(1)} mi</Text>
           </View>
           <TouchableOpacity style={styles.driveEndBtn} onPress={() => handleEndDrive(booking, j.title)}>
-            <Text style={styles.driveEndBtnText}>End drive</Text>
+            <Text style={styles.driveEndBtnText} numberOfLines={1}>End drive</Text>
           </TouchableOpacity>
         </View>
       ) : !driveBookingId ? (
@@ -411,11 +410,11 @@ export default function EarnScreen({ navigation }) {
           disabled={driveStarting}
         >
           {driveStarting ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
             <>
-              <Ionicons name="car-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-              <Text style={styles.driveStartBtnText}>Start drive · auto-log mileage</Text>
+              <Ionicons name="car-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={styles.driveStartBtnText} numberOfLines={1}>Start drive · auto-log mileage</Text>
             </>
           )}
         </TouchableOpacity>
@@ -427,10 +426,10 @@ export default function EarnScreen({ navigation }) {
           <View style={styles.returnPromptActions}>
             <TouchableOpacity style={styles.returnPromptBtn} onPress={() => handleLogReturnDrive(booking, returnPrompt)}>
               <Ionicons name="repeat" size={14} color="#fff" style={{ marginRight: 5 }} />
-              <Text style={styles.returnPromptBtnText}>Log return</Text>
+              <Text style={styles.returnPromptBtnText} numberOfLines={1}>Log return</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.returnPromptDismiss} onPress={() => setReturnPrompt(null)}>
-              <Text style={styles.returnPromptDismissText}>No thanks</Text>
+              <Text style={styles.returnPromptDismissText} numberOfLines={1}>No thanks</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -457,7 +456,7 @@ export default function EarnScreen({ navigation }) {
       <>
         <TouchableOpacity style={styles.ctaPrimary} onPress={() => handleClaim(booking)}>
           <Ionicons name="cash-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.ctaPrimaryText}>Claim your payment</Text>
+          <Text style={styles.ctaPrimaryText} numberOfLines={1}>Claim your payment</Text>
         </TouchableOpacity>
         <Text style={styles.helperText}>The poster hasn't confirmed in time — release the full payment to yourself.</Text>
       </>
@@ -472,8 +471,8 @@ export default function EarnScreen({ navigation }) {
       return (
         <View style={styles.secondaryRow}>
           {messageButton(j, booking)}
-          <TouchableOpacity onPress={() => handleCancel(booking)}>
-            <Text style={styles.cancelLinkText}>Withdraw application</Text>
+          <TouchableOpacity style={styles.cancelLinkBtn} onPress={() => handleCancel(booking)}>
+            <Text style={styles.cancelLinkText} numberOfLines={1}>Withdraw application</Text>
           </TouchableOpacity>
         </View>
       );
@@ -484,14 +483,14 @@ export default function EarnScreen({ navigation }) {
         <>
           <TouchableOpacity style={styles.ctaGreen} onPress={() => handleStartJob(booking)}>
             <Ionicons name="play" size={16} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.ctaPrimaryText}>Start Job · I'm On Site</Text>
+            <Text style={styles.ctaPrimaryText} numberOfLines={1}>Start job · I'm on site</Text>
           </TouchableOpacity>
           <Text style={styles.helperText}>Next: tap when you arrive on site.</Text>
           {renderDrive(j, booking)}
           <View style={styles.secondaryRow}>
             {messageButton(j, booking)}
-            <TouchableOpacity onPress={() => handleCancel(booking)}>
-              <Text style={styles.cancelLinkText}>Cancel booking</Text>
+            <TouchableOpacity style={styles.cancelLinkBtn} onPress={() => handleCancel(booking)}>
+              <Text style={styles.cancelLinkText} numberOfLines={1}>Cancel booking</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -503,17 +502,17 @@ export default function EarnScreen({ navigation }) {
         <>
           <View style={styles.inProgressBanner}>
             <Ionicons name="ellipse" size={9} color={colors.success} style={{ marginRight: 5 }} />
-            <Text style={styles.inProgressText}>In Progress</Text>
+            <Text style={styles.inProgressText} numberOfLines={1}>In progress</Text>
           </View>
           <TouchableOpacity style={styles.ctaPrimary} onPress={() => handleMarkDone(booking)}>
             <Ionicons name="checkmark-done" size={16} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.ctaPrimaryText}>I Finished This Job</Text>
+            <Text style={styles.ctaPrimaryText} numberOfLines={1}>I finished this job</Text>
           </TouchableOpacity>
           <Text style={styles.helperText}>Next: mark the job done when you've finished.</Text>
           {renderDrive(j, booking)}
           <View style={styles.secondaryRow}>
             {messageButton(j, booking)}
-            <Text style={styles.cancelLockedText}>Can't cancel — you've started.</Text>
+            <Text style={styles.cancelLockedText} numberOfLines={2}>Can't cancel — you've started.</Text>
           </View>
         </>
       );
@@ -523,8 +522,8 @@ export default function EarnScreen({ navigation }) {
       return (
         <>
           <View style={styles.waitingBanner}>
-            <Ionicons name="hourglass-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
-            <Text style={styles.waitingText}>Waiting for poster to confirm done…</Text>
+            <Ionicons name="hourglass-outline" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Text style={styles.waitingText} numberOfLines={2}>Waiting for poster to confirm done…</Text>
           </View>
           {renderClaimCta(booking)}
           <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
@@ -536,8 +535,8 @@ export default function EarnScreen({ navigation }) {
       return (
         <>
           <View style={styles.waitingBanner}>
-            <Ionicons name="sync-outline" size={13} color="#D97706" style={{ marginRight: 5 }} />
-            <Text style={styles.waitingText}>Waiting for the poster to verify & pay.</Text>
+            <Ionicons name="sync-outline" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Text style={styles.waitingText} numberOfLines={2}>Waiting for the poster to verify & pay.</Text>
           </View>
           {renderClaimCta(booking)}
           <View style={styles.secondaryRow}>{messageButton(j, booking)}</View>
@@ -578,8 +577,8 @@ export default function EarnScreen({ navigation }) {
           {booking.amendmentStatus === 'pending' && (
             <View style={styles.amendCard}>
               <View style={styles.amendCardTitleRow}>
-                <Ionicons name="document-text-outline" size={14} color="#D97706" style={{ marginRight: 6 }} />
-                <Text style={styles.amendCardTitle}>Change Proposed by Poster</Text>
+                <Ionicons name="document-text-outline" size={14} color={colors.accentDeep} style={{ marginRight: 6 }} />
+                <Text style={styles.amendCardTitle} numberOfLines={1}>Change proposed by poster</Text>
               </View>
               <Text style={styles.amendCardNote}>{booking.amendmentNote}</Text>
               <View style={styles.amendCardActions}>
@@ -593,7 +592,7 @@ export default function EarnScreen({ navigation }) {
                     showToast({ icon: '✅', title: 'Amendment Accepted', message: 'The poster can now update the gig terms.' });
                   }}>
                   <Ionicons name="checkmark" size={15} color="#fff" style={{ marginRight: 4 }} />
-                  <Text style={styles.amendAcceptText}>Accept</Text>
+                  <Text style={styles.amendAcceptText} numberOfLines={1}>Accept</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.amendDeclineBtn}
                   onPress={async () => {
@@ -602,7 +601,7 @@ export default function EarnScreen({ navigation }) {
                     showToast({ icon: '❌', title: 'Amendment Declined', message: 'Original terms remain in effect.' });
                   }}>
                   <Ionicons name="close" size={15} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                  <Text style={styles.amendDeclineText}>Decline</Text>
+                  <Text style={styles.amendDeclineText} numberOfLines={1}>Decline</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -613,8 +612,8 @@ export default function EarnScreen({ navigation }) {
             </View>
           )}
           {booking.amendmentStatus === 'declined' && (
-            <View style={[styles.amendStatusBanner, { backgroundColor: '#FEF2F2' }]}>
-              <Text style={[styles.amendStatusText, { color: '#DC2626' }]}>Change declined — original terms apply</Text>
+            <View style={[styles.amendStatusBanner, { backgroundColor: colors.urgentLight }]}>
+              <Text style={[styles.amendStatusText, { color: colors.urgent }]}>Change declined — original terms apply</Text>
             </View>
           )}
 
@@ -631,7 +630,7 @@ export default function EarnScreen({ navigation }) {
     const canRate = status === 'verified' && !booking.posterRating;
     const pay = booking.counterOffer || j.pay;
     return (
-      <View key={j.id} style={[styles.histRow, canRate && styles.histRowRate]}>
+      <View key={j.id} style={styles.histRow}>
         <View style={styles.histTop}>
           <TouchableOpacity style={styles.histMain} onPress={() => navigation.navigate('JobDetail', { jobId: j.id })} activeOpacity={0.7}>
             <Text style={styles.histTitle} numberOfLines={1}>{j.title}</Text>
@@ -639,11 +638,16 @@ export default function EarnScreen({ navigation }) {
               {booking.slotLabel || 'Flexible'} · ${pay}{j.payType === 'hourly' ? '/hr' : ''}
             </Text>
           </TouchableOpacity>
-          <BookingStatusBadge status={status} compact />
+          {/* BookingStatusBadge sets alignSelf:'flex-start', which overrides this
+              row's alignItems:'center' and pins it to the top of the two-line
+              title block. The wrapper re-centres it without touching the badge. */}
+          <View style={styles.histBadgeWrap}>
+            <BookingStatusBadge status={status} compact />
+          </View>
           {canRate && (
             <TouchableOpacity style={styles.histRateBtn} onPress={() => openRate(booking)}>
               <Ionicons name="star" size={13} color="#fff" style={{ marginRight: 4 }} />
-              <Text style={styles.histRateText}>Rate</Text>
+              <Text style={styles.histRateText} numberOfLines={1}>Rate</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.histChevron} onPress={() => setExpandedId(expanded ? null : booking.id)}>
@@ -659,7 +663,7 @@ export default function EarnScreen({ navigation }) {
                   {[1,2,3,4,5].map(s => (
                     <Ionicons key={s} name={s <= Math.round(booking.earnerRating) ? 'star' : 'star-outline'} size={13} color={colors.success} style={{ marginRight: 1 }} />
                   ))}
-                  <Text style={styles.verifiedText}>
+                  <Text style={styles.verifiedText} numberOfLines={2}>
                     {'  '}{Number(booking.earnerRating).toFixed(1)} from poster
                     {booking.paymentMethod ? ` · Paid via ${booking.paymentMethod}` : ''}
                   </Text>
@@ -708,26 +712,26 @@ export default function EarnScreen({ navigation }) {
       scrollEventThrottle={32}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
-      <GradientHeader colors={gradients.earn}>
+      <ScreenHeader>
         <View style={styles.titleRow}>
-          <Ionicons name="briefcase" size={22} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.screenTitle}>My Jobs</Text>
+          <Ionicons name="briefcase-outline" size={22} color={colors.textPrimary} style={{ marginRight: 8 }} />
+          <Text style={styles.screenTitle} numberOfLines={1}>My Jobs</Text>
         </View>
         <View style={styles.headerChipsRow}>
           <View style={styles.weekChip}>
-            <Text style={styles.weekChipValue}>${earningsWeek}</Text>
-            <Text style={styles.weekChipLabel}>this week</Text>
+            <Text style={styles.weekChipValue} numberOfLines={1}>${earningsWeek}</Text>
+            <Text style={styles.weekChipLabel} numberOfLines={1}>this week</Text>
           </View>
           <View style={styles.streakPill}>
-            <Ionicons name="flame" size={15} color="#FB923C" style={{ marginRight: 5 }} />
-            <Text style={styles.streakText}>{streakDays}-week streak</Text>
+            <Ionicons name="flame" size={15} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Text style={styles.streakText} numberOfLines={1}>{streakDays}-week streak</Text>
           </View>
           <View style={styles.lvChip}>
-            <Ionicons name="star" size={13} color="#FCD34D" style={{ marginRight: 5 }} />
-            <Text style={styles.lvChipText}>Lv {levelInfo?.current?.level ?? 1}</Text>
+            <Ionicons name="star" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Text style={styles.lvChipText} numberOfLines={1}>Lv {levelInfo?.current?.level ?? 1}</Text>
           </View>
         </View>
-      </GradientHeader>
+      </ScreenHeader>
 
       {/* Action-needed band — payout setup (blocks earning) + decision nudges */}
       {!payoutReady && (
@@ -736,12 +740,12 @@ export default function EarnScreen({ navigation }) {
           onPress={() => navigation.navigate('ProfileTab', { screen: 'PayoutSetup', initial: false })}
           activeOpacity={0.85}
         >
-          <Ionicons name="wallet-outline" size={20} color="#fff" />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.payoutBannerTitle}>Set up payouts to get paid</Text>
-            <Text style={styles.payoutBannerSub}>Connect your bank to receive earnings →</Text>
+          <Ionicons name="wallet-outline" size={20} color={colors.primary} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.payoutBannerTitle} numberOfLines={2}>Set up payouts to get paid</Text>
+            <Text style={styles.payoutBannerSub} numberOfLines={2}>Connect your bank to receive earnings</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
       )}
 
@@ -750,7 +754,7 @@ export default function EarnScreen({ navigation }) {
           {pendingAmendCount > 0 && (
             <TouchableOpacity style={[styles.nudge, styles.nudgeAmend]} onPress={() => { haptic.selection(); setTab('active'); }} activeOpacity={0.85}>
               <Ionicons name="document-text-outline" size={18} color={colors.primary} style={{ marginRight: 10 }} />
-              <Text style={[styles.nudgeText, { color: colors.primary }]}>
+              <Text style={[styles.nudgeText, { color: colors.primary }]} numberOfLines={2}>
                 {pendingAmendCount} change {pendingAmendCount === 1 ? 'request' : 'requests'} to respond to
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.primary} />
@@ -758,11 +762,11 @@ export default function EarnScreen({ navigation }) {
           )}
           {unratedCount > 0 && tab !== 'completed' && (
             <TouchableOpacity style={[styles.nudge, styles.nudgeRate]} onPress={() => { haptic.selection(); setTab('completed'); }} activeOpacity={0.85}>
-              <Ionicons name="star" size={18} color="#D97706" style={{ marginRight: 10 }} />
-              <Text style={[styles.nudgeText, { color: '#D97706' }]}>
+              <Ionicons name="star" size={18} color={colors.accentDeep} style={{ marginRight: 10 }} />
+              <Text style={[styles.nudgeText, { color: colors.accentDeep }]} numberOfLines={2}>
                 Rate {unratedCount} completed {unratedCount === 1 ? 'gig' : 'gigs'} to finish up
               </Text>
-              <Ionicons name="chevron-forward" size={16} color="#D97706" />
+              <Ionicons name="chevron-forward" size={16} color={colors.accentDeep} />
             </TouchableOpacity>
           )}
         </View>
@@ -792,8 +796,8 @@ export default function EarnScreen({ navigation }) {
                 { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
               ].map(s => (
                 <View key={s.label} style={styles.breakdownTile}>
-                  <Text style={styles.breakdownVal}>{s.value}</Text>
-                  <Text style={styles.breakdownLabel}>{s.label}</Text>
+                  <Text style={styles.breakdownVal} numberOfLines={1}>{s.value}</Text>
+                  <Text style={styles.breakdownLabel} numberOfLines={1}>{s.label}</Text>
                 </View>
               ))}
             </View>
@@ -853,8 +857,8 @@ export default function EarnScreen({ navigation }) {
         </View>
         <View style={styles.goalsCard}>
           <GoalBar label="Earnings"  value={`$${earningsWeek}`}  max={`$${weeklyEarningGoal}`} pct={earningPct} color={colors.accent} />
-          <View style={{ height: 14 }} />
-          <GoalBar label="Jobs Done" value={`${weeklyJobsDone}`} max={`${weeklyJobsGoal} gigs`} pct={jobsPct} color={colors.primary} />
+          <View style={{ height: 16 }} />
+          <GoalBar label="Jobs done" value={`${weeklyJobsDone}`} max={`${weeklyJobsGoal} gigs`} pct={jobsPct} color={colors.primary} />
         </View>
         <View style={styles.challengesWrap}>
           {challenges.map(c => <ChallengeCard key={c.id} challenge={c} />)}
@@ -877,7 +881,7 @@ export default function EarnScreen({ navigation }) {
           <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setRateTarget(null)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Rate the Poster</Text>
+            <Text style={styles.modalTitle} numberOfLines={2}>Rate the poster</Text>
             <Text style={styles.modalSub}>
               How was {rateTarget?.job?.title || 'this gig'} as an employer?
             </Text>
@@ -886,7 +890,7 @@ export default function EarnScreen({ navigation }) {
             <View style={styles.starRow}>
               {[1,2,3,4,5].map(s => (
                 <TouchableOpacity key={s} onPress={() => { haptic.selection(); setPosterRating(s); }} style={{ marginRight: 4 }}>
-                  <Ionicons name={s <= posterRating ? 'star' : 'star-outline'} size={34} color={s <= posterRating ? '#F59E0B' : colors.border} />
+                  <Ionicons name={s <= posterRating ? 'star' : 'star-outline'} size={34} color={s <= posterRating ? colors.accent : colors.border} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -906,13 +910,11 @@ export default function EarnScreen({ navigation }) {
               maxLength={280}
             />
 
-            <TouchableOpacity onPress={handleRatePoster} disabled={ratingLoading} activeOpacity={0.85}>
-              <LinearGradient colors={gradients.earn} style={styles.submitBtn}>
-                {ratingLoading
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.submitBtnText}>Submit Rating</Text>
-                }
-              </LinearGradient>
+            <TouchableOpacity onPress={handleRatePoster} disabled={ratingLoading} activeOpacity={0.85} style={styles.submitBtn}>
+              {ratingLoading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitBtnText} numberOfLines={1}>Submit rating</Text>
+              }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setRateTarget(null)} style={styles.cancelBtn}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -927,7 +929,7 @@ export default function EarnScreen({ navigation }) {
           <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => !finishing && setFinishTarget(null)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Finish this job</Text>
+            <Text style={styles.modalTitle} numberOfLines={2}>Finish this job</Text>
             <Text style={styles.modalSub}>
               Add before & after photos of your work (optional). The poster sees these when verifying.
             </Text>
@@ -947,8 +949,8 @@ export default function EarnScreen({ navigation }) {
               ))}
               {finishBeforePhotos.length < 6 && (
                 <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddBeforePhotos}>
-                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
-                  <Text style={styles.addPhotoText}>Add</Text>
+                  <Ionicons name="camera-outline" size={24} color={colors.textSecondary} />
+                  <Text style={styles.addPhotoText} numberOfLines={1}>Add</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>
@@ -968,19 +970,17 @@ export default function EarnScreen({ navigation }) {
               ))}
               {finishPhotos.length < 6 && (
                 <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddFinishPhotos}>
-                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
-                  <Text style={styles.addPhotoText}>Add</Text>
+                  <Ionicons name="camera-outline" size={24} color={colors.textSecondary} />
+                  <Text style={styles.addPhotoText} numberOfLines={1}>Add</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>
 
-            <TouchableOpacity onPress={handleConfirmFinish} disabled={finishing} activeOpacity={0.85}>
-              <LinearGradient colors={gradients.earn} style={styles.submitBtn}>
-                {finishing
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.submitBtnText}>{(finishPhotos.length || finishBeforePhotos.length) ? 'Submit & Mark Complete' : 'Mark Complete'}</Text>
-                }
-              </LinearGradient>
+            <TouchableOpacity onPress={handleConfirmFinish} disabled={finishing} activeOpacity={0.85} style={styles.submitBtn}>
+              {finishing
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitBtnText} numberOfLines={1}>{(finishPhotos.length || finishBeforePhotos.length) ? 'Submit & mark complete' : 'Mark complete'}</Text>
+              }
             </TouchableOpacity>
             <TouchableOpacity onPress={() => !finishing && setFinishTarget(null)} style={styles.cancelBtn}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -996,7 +996,7 @@ function CollapsibleSection({ title, open, onToggle, children }) {
   return (
     <View>
       <TouchableOpacity style={styles.collapseHeader} onPress={onToggle} activeOpacity={0.7}>
-        <Text style={styles.collapseTitle}>{title}</Text>
+        <Text style={styles.collapseTitle} numberOfLines={1}>{title}</Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
       </TouchableOpacity>
       {open && <View style={styles.collapseBody}>{children}</View>}
@@ -1007,7 +1007,7 @@ function CollapsibleSection({ title, open, onToggle, children }) {
 function SegmentBtn({ label, count, active, onPress }) {
   return (
     <TouchableOpacity style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress} activeOpacity={0.8}>
-      <Text style={[styles.segText, active && styles.segTextActive]}>
+      <Text style={[styles.segText, active && styles.segTextActive]} numberOfLines={1}>
         {label}{count > 0 ? ` (${count})` : ''}
       </Text>
     </TouchableOpacity>
@@ -1017,8 +1017,8 @@ function SegmentBtn({ label, count, active, onPress }) {
 function InsightTile({ icon, label, value }) {
   return (
     <View style={styles.insightTile}>
-      <Ionicons name={icon} size={16} color={colors.primary} style={{ marginBottom: 4 }} />
-      <Text style={styles.insightLabel}>{label}</Text>
+      <Ionicons name={icon} size={16} color={colors.textSecondary} style={{ marginBottom: 4 }} />
+      <Text style={styles.insightLabel} numberOfLines={1}>{label}</Text>
       <Text style={styles.insightValue} numberOfLines={1}>{value}</Text>
     </View>
   );
@@ -1028,8 +1028,8 @@ function GoalBar({ label, value, max, pct, color }) {
   return (
     <View>
       <View style={styles.goalHeader}>
-        <Text style={styles.goalLabel}>{label}</Text>
-        <Text style={[styles.goalValue, { color }]}>{value} / {max}</Text>
+        <Text style={styles.goalLabel} numberOfLines={1}>{label}</Text>
+        <Text style={styles.goalValue} numberOfLines={1}>{value} / {max}</Text>
       </View>
       <View style={styles.goalTrack}>
         <View style={[styles.goalFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: color }]} />
@@ -1038,115 +1038,136 @@ function GoalBar({ label, value, max, pct, color }) {
   );
 }
 
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  screenTitle: {
+    fontSize: 25, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, flexShrink: 1,
+  },
+  headerChipsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  weekChip: {
+    flexDirection: 'row', alignItems: 'baseline', flexShrink: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  weekChipValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, flexShrink: 1 },
+  weekChipLabel: { fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginLeft: 6, flexShrink: 1 },
+  streakPill: {
+    flexDirection: 'row', alignItems: 'center', flexShrink: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  streakText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+  lvChip: {
+    flexDirection: 'row', alignItems: 'center', flexShrink: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  lvChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+
+  // ── Action-needed band ────────────────────────────────────────────────────
   payoutBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#3F25FE',
+    backgroundColor: colors.surface,
     marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, padding: 14,
+    borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
   },
-  payoutBannerTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  payoutBannerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  screenTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
-  // Header chips (replaces the old 4-tile earnings wall + full XP bar)
-  headerChipsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
-  weekChip: {
-    flexDirection: 'row', alignItems: 'baseline',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8,
-  },
-  weekChipValue: { fontSize: 17, fontWeight: '900', color: '#fff' },
-  weekChipLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginLeft: 6 },
-  streakPill: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8,
-  },
-  streakText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  lvChip: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8,
-  },
-  lvChipText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  // Action-needed nudge band
+  payoutBannerTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '700', lineHeight: 19 },
+  payoutBannerSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
   nudgeBand: { marginHorizontal: 16, marginTop: 12, gap: 8 },
-  nudge: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  nudge: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12,
+  },
   nudgeAmend: { backgroundColor: colors.primaryLight },
-  nudgeRate: { backgroundColor: colors.goldLight },
-  nudgeText: { flex: 1, fontSize: 13, fontWeight: '800' },
+  nudgeRate: { backgroundColor: colors.accentLight },
+  nudgeText: { flex: 1, fontSize: 13, fontWeight: '600', lineHeight: 18, marginRight: 8 },
+
+  // ── "Your month" panels ───────────────────────────────────────────────────
   insightsCard: {
     marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
   },
-  insightsTitle: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
-  },
+  insightsTitle: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 12 },
   insightsRow: { flexDirection: 'row', gap: 8 },
   insightTile: {
-    flex: 1, backgroundColor: colors.surfaceAlt || colors.background,
-    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 10,
-    borderWidth: 1, borderColor: colors.border,
+    flex: 1, backgroundColor: colors.background,
+    borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 12,
   },
-  insightLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: 2 },
-  insightValue: { fontSize: 13, fontWeight: '800', color: colors.textPrimary },
-  // Earnings breakdown grid (moved out of the header into "Your month")
+  insightLabel: { fontSize: 11, fontWeight: '500', color: colors.textMuted, marginBottom: 4 },
+  insightValue: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   breakdownCard: {
     marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
   },
   breakdownRow: { flexDirection: 'row', gap: 8 },
-  breakdownTile: { flex: 1, backgroundColor: colors.background, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  breakdownVal: { fontSize: 15, fontWeight: '900', color: colors.textPrimary },
-  breakdownLabel: { fontSize: 10.5, color: colors.textMuted, marginTop: 2 },
+  breakdownTile: {
+    flex: 1, backgroundColor: colors.background, borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 4, alignItems: 'center',
+  },
+  breakdownVal: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  breakdownLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
+
+  // ── Segmented control ─────────────────────────────────────────────────────
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
-    backgroundColor: colors.surface, borderRadius: 14, padding: 4,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.pill, padding: 4,
+    ...shadows.sm,
   },
-  segBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
+  segBtn: {
+    flex: 1, paddingVertical: 12,
+    alignItems: 'center', borderRadius: radii.pill,
+  },
   segBtnActive: { backgroundColor: colors.primary },
-  segText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  // No weight change between states — the pill fill carries the active signal, and
+  // a 600→700 bump would re-measure the label ("Completed (12)") and clip it on
+  // narrow (320pt) screens the moment the tab is selected.
+  segText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   segTextActive: { color: '#fff' },
-  section: { paddingHorizontal: 16, marginTop: 16 },
-  // Collapsible secondary sections
+  section: { marginTop: 16 },
+
+  // ── Collapsible secondary sections ────────────────────────────────────────
   collapseHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginHorizontal: 16, marginTop: 24,
-    backgroundColor: colors.surface, borderRadius: 14,
+    backgroundColor: colors.surface, borderRadius: radii.md,
     paddingHorizontal: 16, paddingVertical: 14,
     borderWidth: 1, borderColor: colors.border,
   },
-  collapseTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-  collapseBody: { marginTop: 2, marginBottom: 4 },
+  collapseTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, flexShrink: 1, marginRight: 12 },
+  collapseBody: { marginTop: 4, marginBottom: 4 },
   goalsXp: {
     marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
+    ...shadows.card,
   },
   goalsCard: {
     marginHorizontal: 16, marginTop: 12, padding: 16,
-    backgroundColor: colors.surface, borderRadius: 18,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    ...shadows.card,
   },
   challengesWrap: { paddingHorizontal: 16, marginTop: 12 },
-  goalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  goalLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
-  goalValue: { fontSize: 13, fontWeight: '700' },
-  goalTrack: { height: 10, borderRadius: 5, backgroundColor: colors.divider, overflow: 'hidden' },
-  goalFill: { height: 10, borderRadius: 5 },
+  goalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  goalLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1, marginRight: 12 },
+  goalValue: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, flexShrink: 0 },
+  goalTrack: { height: 8, borderRadius: radii.pill, backgroundColor: colors.divider, overflow: 'hidden' },
+  goalFill: { height: 8, borderRadius: radii.pill },
+
+  // ── Booked-gig cards ──────────────────────────────────────────────────────
   bookedItem: { marginBottom: 0 },
   // Sits flush under an attached JobCard (square bottom) so the pair reads as ONE
   // card: rounded top (card) + rounded bottom (this panel). Width must match the
   // card's marginHorizontal, and only a hairline divider separates the two.
   bookingMeta: {
-    backgroundColor: colors.surface, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: 16, paddingVertical: 16,
     marginHorizontal: 16, marginBottom: 16,
     borderTopWidth: 1, borderTopColor: colors.divider,
     borderTopLeftRadius: 0, borderTopRightRadius: 0,
@@ -1154,164 +1175,202 @@ const styles = StyleSheet.create({
   },
   bookingRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 8 },
   bookingIcon: { marginRight: 6, marginTop: 2 },
-  bookingText: { fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 },
-  bookingBold: { fontWeight: '800', color: colors.primary },
-  // Compact completed-history rows
+  bookingText: { fontSize: 13, color: colors.textSecondary, flex: 1, lineHeight: 18 },
+  bookingBold: { fontWeight: '700', color: colors.textPrimary },
+
+  // ── Compact completed-history rows ────────────────────────────────────────
   histRow: {
-    backgroundColor: colors.surface, borderRadius: 16,
-    marginBottom: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    marginHorizontal: 16, marginBottom: 12,
+    ...shadows.card,
   },
-  histRowRate: { borderLeftWidth: 4, borderLeftColor: colors.gold },
-  histTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+  histTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   histMain: { flex: 1, minWidth: 0 },
-  histTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
-  histSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
+  histBadgeWrap: { justifyContent: 'center', flexShrink: 0 },
+  histTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, lineHeight: 20 },
+  histSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
   histRateBtn: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary,
-    borderRadius: 10, paddingVertical: 9, paddingHorizontal: 10,
+    borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 12, flexShrink: 0,
   },
-  histRateText: { fontSize: 12, fontWeight: '800', color: '#fff' },
-  histChevron: { paddingVertical: 10, paddingHorizontal: 8, marginRight: -8 },
-  histDetail: { borderTopWidth: 1, borderTopColor: colors.divider, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
-  histEmptyText: { fontSize: 13, color: colors.textMuted },
+  histRateText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  histChevron: { paddingVertical: 10, paddingHorizontal: 8, marginRight: -8, flexShrink: 0 },
+  histDetail: {
+    borderTopWidth: 1, borderTopColor: colors.divider,
+    paddingHorizontal: 16, paddingVertical: 12, gap: 12,
+  },
+  histEmptyText: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
+
+  // ── Inline status banners ─────────────────────────────────────────────────
   inProgressBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#ECFDF5', borderRadius: 8,
+    backgroundColor: colors.successLight, borderRadius: radii.sm,
     paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, alignSelf: 'flex-start',
   },
-  inProgressText: { fontSize: 12, fontWeight: '700', color: colors.success },
-  amendCard: {
-    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginTop: 10,
-    borderWidth: 1.5, borderColor: '#FCD34D',
-  },
-  amendCardTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  amendCardTitle: { fontSize: 13, fontWeight: '800', color: '#D97706' },
-  amendCardNote: { fontSize: 13, color: colors.textPrimary, lineHeight: 19, marginBottom: 10 },
-  amendCardActions: { flexDirection: 'row', gap: 10 },
-  amendAcceptBtn: {
-    flex: 1, flexDirection: 'row', backgroundColor: colors.success, borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center', justifyContent: 'center',
-  },
-  amendAcceptText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  amendDeclineBtn: {
-    flex: 1, flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: colors.border,
-  },
-  amendDeclineText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  amendStatusBanner: {
-    backgroundColor: '#ECFDF5', borderRadius: 8, padding: 9, marginTop: 8,
-  },
-  amendStatusText: { fontSize: 12, fontWeight: '600', color: '#059669' },
+  inProgressText: { fontSize: 12, fontWeight: '600', color: colors.success },
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#FFF7ED', borderRadius: 8,
+    backgroundColor: colors.accentLight, borderRadius: radii.sm,
     paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, alignSelf: 'flex-start',
   },
-  waitingText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
-  // One primary CTA per gig
+  waitingText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep, flexShrink: 1, lineHeight: 16 },
+
+  // ── Amendment (change request) ────────────────────────────────────────────
+  amendCard: {
+    backgroundColor: colors.accentLight, borderRadius: radii.md, padding: 16, marginTop: 12,
+  },
+  amendCardTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  amendCardTitle: { fontSize: 13, fontWeight: '700', color: colors.accentDeep, flexShrink: 1 },
+  amendCardNote: { fontSize: 13, color: colors.textPrimary, lineHeight: 19, marginBottom: 12 },
+  amendCardActions: { flexDirection: 'row', gap: 12 },
+  amendAcceptBtn: {
+    flex: 1, flexDirection: 'row', backgroundColor: colors.success, borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center',
+  },
+  amendAcceptText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  amendDeclineBtn: {
+    flex: 1, flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  amendDeclineText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  amendStatusBanner: {
+    backgroundColor: colors.successLight, borderRadius: radii.md,
+    paddingHorizontal: 12, paddingVertical: 8, marginTop: 8,
+  },
+  amendStatusText: { fontSize: 12, fontWeight: '500', color: colors.success, lineHeight: 16 },
+
+  // ── One primary CTA per gig ───────────────────────────────────────────────
   ctaPrimary: {
-    flexDirection: 'row', backgroundColor: colors.primary, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+    flexDirection: 'row', backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
   ctaGreen: {
-    flexDirection: 'row', backgroundColor: colors.success, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12,
+    flexDirection: 'row', backgroundColor: colors.success, borderRadius: radii.md,
+    paddingVertical: 14, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 12,
   },
-  ctaPrimaryText: { fontSize: 14, fontWeight: '800', color: '#fff' },
-  helperText: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
-  secondaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12 },
+  ctaPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff', flexShrink: 1 },
+  helperText: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 16 },
+  secondaryRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, marginTop: 12,
+  },
+
+  // ── Drive mileage tracker ─────────────────────────────────────────────────
   driveStartBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 12, marginTop: 10,
+    flexDirection: 'row', borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 16, marginTop: 12,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primaryLight,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  driveStartBtnText: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  driveStartBtnText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   driveTrackingBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10,
+    backgroundColor: colors.primaryLight, borderRadius: radii.md,
+    paddingVertical: 10, paddingHorizontal: 12, marginTop: 12,
   },
-  driveTrackingLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  driveTrackingText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  driveTrackingLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
+  driveTrackingText: { fontSize: 13, fontWeight: '600', color: colors.primary, flexShrink: 1 },
   driveEndBtn: {
-    backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 9,
-    paddingVertical: 6, paddingHorizontal: 12,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    paddingVertical: 8, paddingHorizontal: 12, flexShrink: 0,
   },
-  driveEndBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  driveEndBtnText: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
   returnPrompt: {
-    backgroundColor: colors.primaryLight, borderRadius: 12, padding: 12, marginTop: 10,
-    borderWidth: 1, borderColor: colors.primary + '40',
+    backgroundColor: colors.primaryLight, borderRadius: radii.md, padding: 12, marginTop: 12,
   },
-  returnPromptText: { fontSize: 12.5, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
-  returnPromptActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  returnPromptText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 12, lineHeight: 18 },
+  returnPromptActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   returnPromptBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexShrink: 1,
+    backgroundColor: colors.primary, borderRadius: radii.md, paddingVertical: 10, paddingHorizontal: 16,
   },
-  returnPromptBtnText: { fontSize: 12.5, fontWeight: '800', color: '#fff' },
-  returnPromptDismiss: { paddingVertical: 9, paddingHorizontal: 8 },
-  returnPromptDismissText: { fontSize: 12.5, fontWeight: '700', color: colors.textMuted },
-  verifiedRow: {
-    backgroundColor: colors.successLight, borderRadius: 10,
-    padding: 10,
-  },
+  returnPromptBtnText: { fontSize: 13, fontWeight: '700', color: '#fff', flexShrink: 1 },
+  returnPromptDismiss: { paddingVertical: 10, paddingHorizontal: 8, flexShrink: 1 },
+  returnPromptDismissText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+
+  // ── Completed detail ──────────────────────────────────────────────────────
+  verifiedRow: { backgroundColor: colors.successLight, borderRadius: radii.md, padding: 12 },
   verifiedStarsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  verifiedText: { fontSize: 13, fontWeight: '700', color: colors.success },
-  reviewQuote: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 3 },
-  posterRatedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
+  verifiedText: { fontSize: 13, fontWeight: '600', color: colors.success, flexShrink: 1, lineHeight: 18 },
+  reviewQuote: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, lineHeight: 17 },
+  posterRatedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', lineHeight: 16 },
   msgBtn: {
-    flexDirection: 'row', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+    flexDirection: 'row', borderRadius: radii.md,
+    paddingVertical: 12, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  msgBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-  cancelLinkText: { fontSize: 13, fontWeight: '700', color: colors.urgent, paddingVertical: 10 },
-  cancelLockedText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic', flexShrink: 1, textAlign: 'right' },
+  msgBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  cancelLinkBtn: { flexShrink: 1, paddingVertical: 8 },
+  cancelLinkText: { fontSize: 13, fontWeight: '600', color: colors.urgent, textAlign: 'right' },
+  cancelLockedText: {
+    fontSize: 12, color: colors.textMuted, fontStyle: 'italic',
+    flexShrink: 1, textAlign: 'right', lineHeight: 16,
+  },
   photoStrip: {},
-  photoStripLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
-  photoThumb: { width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: colors.border },
-  finishThumbWrap: { marginRight: 10 },
-  finishThumb: { width: 80, height: 80, borderRadius: 12, backgroundColor: colors.border },
+  photoStripLabel: { fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 8 },
+  photoThumb: { width: 64, height: 64, borderRadius: radii.md, marginRight: 8, backgroundColor: colors.divider },
+
+  // ── Finish-job sheet thumbnails ───────────────────────────────────────────
+  finishThumbWrap: { marginRight: 12 },
+  finishThumb: { width: 80, height: 80, borderRadius: radii.md, backgroundColor: colors.divider },
   finishThumbRemove: {
     position: 'absolute', top: -6, right: -6,
-    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+    width: 24, height: 24, borderRadius: radii.pill, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.surface,
   },
   addPhotoTile: {
-    width: 80, height: 80, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
-    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryLight,
+    width: 80, height: 80, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background,
   },
-  addPhotoText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
+  addPhotoText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginTop: 4 },
+
+  // ── Empty state ───────────────────────────────────────────────────────────
   noGigsCard: {
-    backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 36, paddingHorizontal: 24,
-    alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    marginHorizontal: 16, paddingVertical: 36, paddingHorizontal: 24,
+    alignItems: 'center', ...shadows.card,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 },
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  // Rate poster modal
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21 },
+
+  // ── Bottom sheets (rate poster / finish job) ──────────────────────────────
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingBottom: 40, ...shadows.md,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 20, paddingBottom: 40, ...shadows.md,
   },
   modalHandle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border,
+    width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border,
     alignSelf: 'center', marginTop: 12, marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
-  modalSub: { fontSize: 14, color: colors.textSecondary, marginBottom: 20 },
-  finishPhotoLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalTitle: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, lineHeight: 30, marginBottom: 8,
+  },
+  modalSub: { fontSize: 14, color: colors.textSecondary, marginBottom: 20, lineHeight: 20 },
+  finishPhotoLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8 },
   starRow: { flexDirection: 'row', marginBottom: 8 },
   ratingLabel: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic', marginBottom: 16 },
   reviewInput: {
-    backgroundColor: colors.background, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.background, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: colors.textPrimary, minHeight: 80, marginBottom: 20,
+    fontSize: 15, color: colors.textPrimary, minHeight: 80, marginBottom: 20,
   },
-  submitBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  submitBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cancelBtn: { paddingVertical: 14, alignItems: 'center' },
   cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
 });

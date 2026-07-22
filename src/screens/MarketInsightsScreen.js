@@ -4,13 +4,12 @@ import {
   RefreshControl, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import GradientHeader from '../components/GradientHeader';
+import ScreenHeader from '../components/ScreenHeader';
 import JobsMap from '../components/JobsMap';
 import { useJobs } from '../context/JobsContext';
 import { supabase } from '../lib/supabase';
 import { computeAreaInsights } from '../lib/insights';
-import { colors, gradients } from '../theme';
-import { CATEGORY_COLORS } from '../data/mockData';
+import { colors, radii, shadows } from '../theme';
 
 // Coerce a value (number or numeric string from Postgres) to a finite number or null.
 function num(v) {
@@ -84,18 +83,18 @@ export default function MarketInsightsScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientHeader colors={gradients.primary} underNav>
+      <ScreenHeader underNav>
         <View style={styles.topRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Market Insights</Text>
-            <Text style={styles.sub}>Where the demand is — by area</Text>
+          <View style={styles.topRowText}>
+            <Text style={styles.title} numberOfLines={2}>Market Insights</Text>
+            <Text style={styles.sub} numberOfLines={2}>Where the demand is — by area</Text>
           </View>
           <View style={styles.proPill}>
-            <Ionicons name="sparkles" size={12} color={colors.textPrimary} />
-            <Text style={styles.proText}>PRO</Text>
+            <Ionicons name="sparkles" size={12} color={colors.accentDeep} />
+            <Text style={styles.proText} numberOfLines={1}>Pro</Text>
           </View>
         </View>
-      </GradientHeader>
+      </ScreenHeader>
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -121,19 +120,18 @@ export default function MarketInsightsScreen() {
           </View>
         ) : (
           display.map((r, i) => {
-            const catColor = (r.topCategory && CATEGORY_COLORS[r.topCategory]) || colors.primary;
             return (
               <View key={r.area} style={styles.card}>
                 <View style={styles.cardTop}>
                   <View style={styles.rankRow}>
                     <View style={styles.rank}>
-                      <Text style={styles.rankText}>{i + 1}</Text>
+                      <Text style={styles.rankText} numberOfLines={1}>{i + 1}</Text>
                     </View>
                     <Ionicons name="location-outline" size={15} color={colors.textMuted} />
                     <Text style={styles.area} numberOfLines={1}>{r.area}</Text>
                   </View>
                   <View style={styles.gigPill}>
-                    <Text style={styles.gigPillText}>
+                    <Text style={styles.gigPillText} numberOfLines={1}>
                       {r.jobCount} gig{r.jobCount !== 1 ? 's' : ''}
                     </Text>
                   </View>
@@ -142,26 +140,26 @@ export default function MarketInsightsScreen() {
                 <View style={styles.statsRow}>
                   {r.avgPay != null && (
                     <View style={styles.stat}>
-                      <Ionicons name="trending-up" size={15} color={colors.accent} />
-                      <Text style={styles.statText}>avg {money(r.avgPay)}</Text>
+                      <Ionicons name="trending-up" size={15} color={colors.accentDeep} />
+                      <Text style={[styles.statText, styles.statTextMoney]} numberOfLines={1}>avg {money(r.avgPay)}</Text>
                     </View>
                   )}
                   {r.topCategory && (
                     <View style={styles.stat}>
-                      <View style={[styles.dot, { backgroundColor: catColor }]} />
-                      <Text style={styles.statText}>mostly {r.topCategory}</Text>
+                      <Ionicons name="pricetag-outline" size={15} color={colors.textMuted} />
+                      <Text style={styles.statText} numberOfLines={1}>mostly {r.topCategory}</Text>
                     </View>
                   )}
                   {r.avgTip != null && (
                     <View style={styles.stat}>
-                      <Ionicons name="cash-outline" size={15} color={colors.gold} />
-                      <Text style={styles.statText}>avg tip {money(r.avgTip)}</Text>
+                      <Ionicons name="cash-outline" size={15} color={colors.textMuted} />
+                      <Text style={styles.statText} numberOfLines={1}>avg tip {money(r.avgTip)}</Text>
                     </View>
                   )}
                   {r.workerCount != null && (
                     <View style={styles.stat}>
                       <Ionicons name="people-outline" size={15} color={colors.textMuted} />
-                      <Text style={styles.statText}>
+                      <Text style={styles.statText} numberOfLines={1}>
                         {r.workerCount} worker{r.workerCount !== 1 ? 's' : ''}
                       </Text>
                     </View>
@@ -179,38 +177,48 @@ export default function MarketInsightsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  title: { fontSize: 24, fontWeight: '900', color: '#fff' },
-  sub: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  proPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.gold, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  topRowText: { flex: 1 },
+  title: {
+    fontSize: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.4, lineHeight: 30,
   },
-  proText: { fontSize: 11, fontWeight: '900', color: colors.textPrimary, letterSpacing: 0.5 },
+  sub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
+  proPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', flexShrink: 0,
+    backgroundColor: colors.accentLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.pill,
+  },
+  proText: { fontSize: 11, fontWeight: '700', color: colors.accentDeep, lineHeight: 15 },
 
-  content: { padding: 16, paddingBottom: 32 },
-  mapWrap: { height: 240, borderRadius: 20, overflow: 'hidden', marginBottom: 16 },
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  mapWrap: { height: 240, borderRadius: radii.lg, overflow: 'hidden', marginBottom: 16, backgroundColor: colors.surface },
   center: { paddingVertical: 48, alignItems: 'center' },
   empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginTop: 12 },
-  emptyBody: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 6 },
+  emptyTitle: {
+    fontSize: 16, fontWeight: '700', color: colors.textPrimary,
+    marginTop: 12, textAlign: 'center', lineHeight: 22,
+  },
+  emptyBody: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
 
   card: {
-    backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 12,
+    ...shadows.card,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   rank: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primaryLight,
+    minWidth: 26, height: 26, paddingHorizontal: 6, borderRadius: radii.pill,
+    backgroundColor: colors.background, flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  rankText: { fontSize: 13, fontWeight: '900', color: colors.primary },
-  area: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
-  gigPill: { backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  gigPillText: { fontSize: 12, fontWeight: '900', color: colors.primary },
+  rankText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, lineHeight: 16 },
+  area: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+  gigPill: {
+    backgroundColor: colors.background, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radii.pill, alignSelf: 'flex-start', flexShrink: 0,
+  },
+  gigPillText: { fontSize: 12, fontWeight: '600', color: colors.textPrimary, lineHeight: 16 },
 
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 12 },
-  stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12 },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  statText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary, flexShrink: 1, lineHeight: 18 },
+  statTextMoney: { fontWeight: '600', color: colors.textPrimary },
 });

@@ -3,10 +3,9 @@ import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   StyleSheet, Switch,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import LocationPicker from './LocationPicker';
-import { colors, gradients, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
 export const DEFAULT_FILTERS = {
@@ -47,7 +46,7 @@ export function countActiveFilters(f) {
 const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const PAY_OPTIONS = [
-  { id: 'any',      label: 'Any Pay' },
+  { id: 'any',      label: 'Any pay' },
   { id: 'under25',  label: 'Under $25' },
   { id: '25-50',    label: '$25 – $50' },
   { id: '50-100',   label: '$50 – $100' },
@@ -103,16 +102,16 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Filter Gigs</Text>
-            <TouchableOpacity onPress={reset}>
-              <Text style={styles.resetText}>Reset All</Text>
+            <Text style={styles.title} numberOfLines={1}>Filter gigs</Text>
+            <TouchableOpacity onPress={reset} style={styles.resetBtn}>
+              <Text style={styles.resetText} numberOfLines={1}>Reset all</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
 
             {/* Sort */}
-            <Section title="Sort By">
+            <Section title="Sort by">
               <View style={styles.chipRow}>
                 {SORT_OPTIONS.map(o => (
                   <Chip
@@ -127,7 +126,7 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             </Section>
 
             {/* Pay Range */}
-            <Section title="Pay Range">
+            <Section title="Pay range">
               <View style={styles.chipRow}>
                 {PAY_OPTIONS.map(o => (
                   <Chip
@@ -141,11 +140,11 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             </Section>
 
             {/* Pay Type */}
-            <Section title="Pay Type">
+            <Section title="Pay type">
               <View style={styles.chipRow}>
                 {[
                   { id: 'any',     label: 'Any' },
-                  { id: 'flat',    ion: 'cash',  label: 'Flat Rate' },
+                  { id: 'flat',    ion: 'cash',  label: 'Flat rate' },
                   { id: 'hourly',  ion: 'time',  label: 'Hourly' },
                 ].map(o => (
                   <Chip
@@ -160,7 +159,7 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             </Section>
 
             {/* Availability */}
-            <Section title="Available Days">
+            <Section title="Available days">
               <Text style={styles.sectionHint}>Tap days you're free — shows gigs with matching slots</Text>
               <View style={styles.dayRow}>
                 {DAY_OPTIONS.map(d => (
@@ -169,7 +168,7 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
                     style={[styles.dayBtn, local.days.includes(d) && styles.dayBtnActive]}
                     onPress={() => toggleDay(d)}
                   >
-                    <Text style={[styles.dayText, local.days.includes(d) && styles.dayTextActive]}>{d}</Text>
+                    <Text style={[styles.dayText, local.days.includes(d) && styles.dayTextActive]} numberOfLines={1}>{d}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -208,13 +207,13 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             <Section title="Location">
               <View style={styles.chipRow}>
                 <Chip
-                  label="Any Location"
+                  label="Any location"
                   ion="location"
                   active={local.location === 'any'}
                   onPress={() => { haptic.selection(); set('location', 'any'); }}
                 />
                 <Chip
-                  label="Remote Only"
+                  label="Remote only"
                   ion="laptop"
                   active={local.location === 'remote'}
                   onPress={() => { haptic.selection(); set('location', 'remote'); }}
@@ -240,12 +239,12 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             {/* Urgent only */}
             <Section title="Urgency">
               <View style={styles.toggleRow}>
-                <View>
+                <View style={styles.toggleTextWrap}>
                   <View style={styles.toggleLabelRow}>
-                    <Ionicons name="flash" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
-                    <Text style={styles.toggleLabel}>Urgent gigs only</Text>
+                    <Ionicons name="flash" size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                    <Text style={styles.toggleLabel} numberOfLines={1}>Urgent gigs only</Text>
                   </View>
-                  <Text style={styles.toggleSub}>Needed ASAP — higher chance of quick earnings</Text>
+                  <Text style={styles.toggleSub} numberOfLines={2}>Needed ASAP — higher chance of quick earnings</Text>
                 </View>
                 <Switch
                   value={local.urgentOnly}
@@ -259,12 +258,12 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
             {/* Trust */}
             <Section title="Trust">
               <View style={styles.toggleRow}>
-                <View>
+                <View style={styles.toggleTextWrap}>
                   <View style={styles.toggleLabelRow}>
-                    <Ionicons name="school" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
-                    <Text style={styles.toggleLabel}>Verified students only</Text>
+                    <Ionicons name="school" size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                    <Text style={styles.toggleLabel} numberOfLines={1}>Verified students only</Text>
                   </View>
-                  <Text style={styles.toggleSub}>Only show gigs from posters with a Verified Student badge</Text>
+                  <Text style={styles.toggleSub} numberOfLines={2}>Only show gigs from posters with a Verified Student badge</Text>
                 </View>
                 <Switch
                   value={local.verifiedStudentsOnly}
@@ -274,13 +273,13 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
                 />
               </View>
               {!!mySchool && (
-                <View style={[styles.toggleRow, { marginTop: 10 }]}>
-                  <View>
+                <View style={[styles.toggleRow, { marginTop: 12 }]}>
+                  <View style={styles.toggleTextWrap}>
                     <View style={styles.toggleLabelRow}>
-                      <Ionicons name="business" size={14} color={colors.textPrimary} style={{ marginRight: 5 }} />
-                      <Text style={styles.toggleLabel}>My campus only</Text>
+                      <Ionicons name="business" size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                      <Text style={styles.toggleLabel} numberOfLines={1}>My campus only</Text>
                     </View>
-                    <Text style={styles.toggleSub}>Only gigs from posters at {mySchool}</Text>
+                    <Text style={styles.toggleSub} numberOfLines={2}>Only gigs from posters at {mySchool}</Text>
                   </View>
                   <Switch
                     value={local.campusOnly}
@@ -296,12 +295,10 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
 
           {/* Apply button */}
           <View style={styles.footer}>
-            <TouchableOpacity onPress={apply} activeOpacity={0.85} style={{ flex: 1 }}>
-              <LinearGradient colors={gradients.primary} style={styles.applyBtn}>
-                <Text style={styles.applyText}>
-                  Show Results{activeCount > 0 ? ` · ${activeCount} filter${activeCount !== 1 ? 's' : ''} active` : ''}
-                </Text>
-              </LinearGradient>
+            <TouchableOpacity onPress={apply} activeOpacity={0.85} style={styles.applyBtn}>
+              <Text style={styles.applyText} numberOfLines={1}>
+                Show results{activeCount > 0 ? ` · ${activeCount} filter${activeCount !== 1 ? 's' : ''} active` : ''}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -330,10 +327,10 @@ function Chip({ label, ion, active, onPress }) {
           name={ion}
           size={14}
           color={active ? '#fff' : colors.textSecondary}
-          style={{ marginRight: 5 }}
+          style={{ marginRight: 6 }}
         />
       )}
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -342,57 +339,62 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
     maxHeight: '90%', ...shadows.md,
   },
   handle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border,
-    alignSelf: 'center', marginTop: 12, marginBottom: 6,
+    width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border,
+    alignSelf: 'center', marginTop: 12, marginBottom: 8,
   },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingHorizontal: 20, paddingVertical: 12,
   },
-  title: { fontSize: 18, fontWeight: '900', color: colors.textPrimary },
-  resetText: { fontSize: 14, fontWeight: '700', color: colors.urgent },
-  body: { paddingHorizontal: 20, paddingBottom: 16 },
-  section: { marginTop: 22 },
+  title: { fontSize: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.4, flexShrink: 1, marginRight: 12 },
+  resetBtn: { flexShrink: 0, paddingVertical: 10, paddingLeft: 8 },
+  resetText: { fontSize: 14, fontWeight: '600', color: colors.primary },
+  body: { paddingHorizontal: 20, paddingBottom: 20 },
+  section: { marginTop: 24 },
   sectionTitle: {
-    fontSize: 12, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 12,
   },
-  sectionHint: { fontSize: 12, color: colors.textMuted, marginBottom: 8 },
+  sectionHint: { fontSize: 12, color: colors.textMuted, marginBottom: 8, lineHeight: 17 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
   chip: {
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: radii.pill,
+    marginRight: 8, marginBottom: 8, alignSelf: 'flex-start',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     flexDirection: 'row', alignItems: 'center',
   },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   chipTextActive: { color: '#fff' },
-  dayRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  dayRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
   dayBtn: {
-    flex: 1, marginHorizontal: 3, paddingVertical: 11, borderRadius: 12,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center',
+    flex: 1, paddingVertical: 11, paddingHorizontal: 4, borderRadius: radii.md,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
   dayBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  dayText: { fontSize: 12, fontWeight: '800', color: colors.textSecondary },
+  dayText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   dayTextActive: { color: '#fff' },
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 16,
-    padding: 14, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.background, borderRadius: radii.lg,
+    padding: 16,
   },
-  toggleLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  toggleLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  toggleSub: { fontSize: 12, color: colors.textMuted, maxWidth: 240 },
+  toggleTextWrap: { flex: 1, minWidth: 0, marginRight: 12 },
+  toggleLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
+  toggleSub: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
   footer: {
-    flexDirection: 'row', padding: 16, paddingBottom: 32,
-    borderTopWidth: 1, borderTopColor: colors.border,
+    flexDirection: 'row', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32,
   },
-  applyBtn: { borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
-  applyText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  applyBtn: {
+    flex: 1, backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  applyText: { color: '#fff', fontSize: 16, fontWeight: '600', flexShrink: 1 },
 });

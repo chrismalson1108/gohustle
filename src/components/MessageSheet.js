@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
-import { colors, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import { useJobs } from '../context/JobsContext';
 import { captureError } from '../lib/analytics';
@@ -325,7 +325,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
                     disabled={!onViewJob || !jobId}
                     onPress={() => onViewJob?.(jobId)}
                     activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                    style={styles.headerSubRow}
                   >
                     <Text style={[styles.headerSub, onViewJob && jobId ? styles.headerSubLink : null]} numberOfLines={1}>
                       re: {jobTitle}
@@ -398,7 +398,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
             >
               {sending
                 ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.sendIcon}>↑</Text>
+                : <Ionicons name="arrow-up" size={20} color="#fff" />
               }
             </TouchableOpacity>
           </View>
@@ -409,7 +409,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
       <Modal visible={reportVisible} animationType="fade" transparent onRequestClose={() => setReportVisible(false)}>
         <TouchableOpacity style={styles.reportOverlay} activeOpacity={1} onPress={() => setReportVisible(false)}>
           <View style={styles.reportCard}>
-            <Text style={styles.reportTitle}>Report {otherName}</Text>
+            <Text style={styles.reportTitle} numberOfLines={1}>Report {otherName}</Text>
             <Text style={styles.reportSub}>Why are you reporting this user?</Text>
             {REPORT_REASONS.map((reason) => (
               <TouchableOpacity key={reason} style={styles.reportRow} onPress={() => submitReportReason(reason)}>
@@ -428,76 +428,85 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
 
 const styles = StyleSheet.create({
   reportOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  reportCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
-  reportTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
-  reportSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, marginBottom: 12 },
-  reportRow: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: colors.border },
-  reportRowText: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
-  reportCancel: { marginTop: 12, paddingVertical: 14, alignItems: 'center', borderRadius: 12, backgroundColor: colors.background },
-  reportCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '700' },
+  reportCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32,
+  },
+  reportTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.3 },
+  reportSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, marginBottom: 12, lineHeight: 18 },
+  reportRow: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: colors.divider },
+  reportRowText: { fontSize: 15, color: colors.textPrimary, fontWeight: '500', lineHeight: 20 },
+  reportCancel: {
+    marginTop: 16, paddingVertical: 14, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: radii.md, backgroundColor: colors.background,
+  },
+  reportCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
     height: '75%', ...shadows.md,
   },
-  header: { paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  header: { paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.divider },
   handle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border,
-    alignSelf: 'center', marginTop: 12, marginBottom: 14,
+    width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border,
+    alignSelf: 'center', marginTop: 12, marginBottom: 16,
   },
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerPerson: { flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
-  headerSub: { fontSize: 12, color: colors.textMuted, marginTop: 2, maxWidth: 260 },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, flexShrink: 1, letterSpacing: -0.2 },
+  headerSubRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  headerSub: { fontSize: 12, color: colors.textMuted, flexShrink: 1, lineHeight: 16 },
   headerSubLink: { color: colors.primary, fontWeight: '600' },
-  closeBtn: { padding: 4 },
-  closeBtnText: { fontSize: 17, color: colors.textMuted, fontWeight: '700' },
+  closeBtn: { padding: 8 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  msgList: { paddingHorizontal: 16, paddingVertical: 12, flexGrow: 1 },
+  msgList: { paddingHorizontal: 20, paddingVertical: 16, flexGrow: 1 },
   msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
   msgRowMine: { justifyContent: 'flex-end' },
-  msgAvatar: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-    marginRight: 8, marginBottom: 2,
-  },
-  msgAvatarText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   msgBubble: {
-    backgroundColor: colors.background, borderRadius: 18, borderBottomLeftRadius: 4,
-    paddingHorizontal: 14, paddingVertical: 9, maxWidth: '75%',
+    backgroundColor: colors.background, borderRadius: radii.lg, borderBottomLeftRadius: radii.sm,
+    paddingHorizontal: 14, paddingVertical: 10, maxWidth: '75%',
   },
-  msgBubbleMine: { backgroundColor: colors.primary, borderBottomLeftRadius: 18, borderBottomRightRadius: 4 },
+  msgBubbleMine: {
+    backgroundColor: colors.primary,
+    borderBottomLeftRadius: radii.lg, borderBottomRightRadius: radii.sm,
+  },
   msgBubblePending: { opacity: 0.6 },
   msgText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
   msgTextMine: { color: '#fff' },
-  msgImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 4, backgroundColor: colors.border },
-  msgTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end' },
-  msgTimeMine: { color: 'rgba(255,255,255,0.6)' },
-  emptyChat: { flex: 1, alignItems: 'center', paddingTop: 40 },
-  emptyChatIcon: { fontSize: 40, marginBottom: 12 },
+  // maxWidth keeps the photo inside the bubble on narrow devices (320pt), where
+  // the bubble's 75% cap is narrower than the 200pt intrinsic width.
+  msgImage: { width: 200, maxWidth: '100%', height: 200, borderRadius: radii.md, marginBottom: 6, backgroundColor: colors.divider },
+  msgTime: { fontSize: 11, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end', lineHeight: 15 },
+  msgTimeMine: { color: 'rgba(255,255,255,0.72)' },
+  emptyChat: { flex: 1, alignItems: 'center', paddingTop: 40, paddingHorizontal: 20 },
+  emptyChatIcon: { marginBottom: 12 },
   emptyChatText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: colors.border,
+    paddingHorizontal: 20, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: colors.divider,
     paddingBottom: Platform.OS === 'ios' ? 28 : 16,
   },
   attachBtn: {
-    width: 42, height: 42, borderRadius: 21,
+    width: 42, height: 42, borderRadius: radii.pill,
     alignItems: 'center', justifyContent: 'center', marginRight: 6,
   },
   input: {
-    flex: 1, backgroundColor: colors.background, borderRadius: 22,
-    borderWidth: 1.5, borderColor: colors.border,
+    flex: 1, backgroundColor: colors.surface, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 16, paddingVertical: 10,
-    fontSize: 14, color: colors.textPrimary, maxHeight: 100,
-    marginRight: 10,
+    fontSize: 14, color: colors.textPrimary, maxHeight: 100, lineHeight: 19,
+    marginRight: 8,
   },
   sendBtn: {
-    width: 42, height: 42, borderRadius: 21,
+    width: 42, height: 42, borderRadius: radii.pill,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
   },
-  sendBtnDisabled: { backgroundColor: colors.border },
-  sendIcon: { color: '#fff', fontSize: 18, fontWeight: '900', lineHeight: 22 },
+  // Keep the brand fill (and therefore the white glyph's contrast) and fade the
+  // whole control — a colors.border fill made the white arrow invisible.
+  sendBtnDisabled: { opacity: 0.4 },
 });

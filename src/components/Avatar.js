@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import { colors } from '../theme';
+import { colors, radii } from '../theme';
 
 // Renders a user's photo when `url` is set, otherwise the initial-letter circle.
 // Drop-in for every avatar site (sizes/colors vary by caller).
@@ -15,15 +15,24 @@ export default function Avatar({
   borderWidth = 0,
   style,
 }) {
-  const radius = size / 2;
-  const base = { width: size, height: size, borderRadius: radius, borderColor, borderWidth };
+  // Avatars are true circles — radii.pill clamps to a circle for a square box.
+  const base = {
+    width: size,
+    height: size,
+    borderRadius: radii.pill,
+    borderColor,
+    borderWidth: Math.min(borderWidth, 1),
+  };
 
   if (url) {
     return <Image source={{ uri: url }} style={[base, styles.img, style]} />;
   }
   return (
     <View style={[base, styles.fallback, { backgroundColor: bg }, style]}>
-      <Text style={{ color: textColor, fontWeight: '900', fontSize: fontSize || Math.round(size * 0.42) }}>
+      <Text
+        numberOfLines={1}
+        style={{ color: textColor, fontWeight: '700', fontSize: fontSize || Math.round(size * 0.42) }}
+      >
         {(initial || '?').toString().toUpperCase().slice(0, 1)}
       </Text>
     </View>
@@ -31,6 +40,6 @@ export default function Avatar({
 }
 
 const styles = StyleSheet.create({
-  img: { backgroundColor: colors.border },
+  img: { backgroundColor: colors.divider },
   fallback: { alignItems: 'center', justifyContent: 'center' },
 });

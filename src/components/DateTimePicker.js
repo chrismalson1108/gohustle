@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, shadows } from '../theme';
+import { colors, radii } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -98,17 +98,20 @@ export default function DateTimePicker({ slots = [], onChange }) {
         activeOpacity={hasFlexible ? 1 : 0.75}
       >
         <Ionicons
-          name={hasFlexible ? 'checkmark' : 'calendar'}
+          name={hasFlexible ? 'checkmark' : 'calendar-outline'}
           size={15}
-          color={hasFlexible ? colors.success : colors.textSecondary}
+          color={hasFlexible ? colors.primary : colors.textSecondary}
           style={{ marginRight: 6 }}
         />
-        <Text style={[styles.flexBtnText, hasFlexible && styles.flexBtnTextActive]}>
+        <Text
+          style={[styles.flexBtnText, hasFlexible && styles.flexBtnTextActive]}
+          numberOfLines={1}
+        >
           Flexible — Contact to Schedule
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.orDivider}>— or pick specific times below —</Text>
+      <Text style={styles.orDivider} numberOfLines={2}>or pick specific times below</Text>
 
       {/* Day picker */}
       <Text style={styles.subLabel}>Select a date</Text>
@@ -132,7 +135,7 @@ export default function DateTimePicker({ slots = [], onChange }) {
       {/* Time grid — tap to instantly add */}
       {selectedDay && (
         <>
-          <Text style={[styles.subLabel, { marginTop: 14 }]}>
+          <Text style={[styles.subLabel, { marginTop: 16 }]}>
             Tap a time to add it
           </Text>
           <View style={styles.timeGrid}>
@@ -149,9 +152,12 @@ export default function DateTimePicker({ slots = [], onChange }) {
                   activeOpacity={added || past ? 1 : 0.7}
                 >
                   {added && (
-                    <Ionicons name="checkmark" size={12} color={colors.success} style={{ marginRight: 4 }} />
+                    <Ionicons name="checkmark" size={12} color="#fff" style={{ marginRight: 4 }} />
                   )}
-                  <Text style={[styles.timeText, added && styles.timeTextAdded, past && styles.timeTextPast]}>
+                  <Text
+                    style={[styles.timeText, added && styles.timeTextAdded, past && styles.timeTextPast]}
+                    numberOfLines={1}
+                  >
                     {t}
                   </Text>
                 </TouchableOpacity>
@@ -164,12 +170,12 @@ export default function DateTimePicker({ slots = [], onChange }) {
       {/* Added slots list */}
       {slots.length > 0 && (
         <View style={styles.slotList}>
-          <Text style={styles.addedLabel}>Added slots:</Text>
+          <Text style={styles.addedLabel}>Added slots</Text>
           {slots.map(s => (
             <View key={s.id} style={styles.slotTag}>
               <View style={styles.slotTagLabel}>
-                <Ionicons name="calendar" size={13} color={colors.success} style={{ marginRight: 6 }} />
-                <Text style={styles.slotTagText}>{s.label}</Text>
+                <Ionicons name="calendar-outline" size={13} color={colors.textMuted} style={{ marginRight: 8 }} />
+                <Text style={styles.slotTagText} numberOfLines={1}>{s.label}</Text>
               </View>
               <TouchableOpacity onPress={() => removeSlot(s.id)} style={styles.slotRemove}>
                 <Ionicons name="close" size={14} color={colors.textMuted} />
@@ -190,56 +196,58 @@ export default function DateTimePicker({ slots = [], onChange }) {
 
 const styles = StyleSheet.create({
   flexBtn: {
-    backgroundColor: colors.surface, borderRadius: 12,
-    padding: 14, alignItems: 'center', marginBottom: 8,
-    borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    paddingHorizontal: 16, paddingVertical: 14,
+    alignItems: 'center', marginBottom: 12,
+    borderWidth: 1, borderColor: colors.border,
     flexDirection: 'row', justifyContent: 'center',
   },
-  flexBtnActive: { backgroundColor: colors.successLight, borderColor: colors.success },
-  flexBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
-  flexBtnTextActive: { color: colors.success },
+  flexBtnActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
+  flexBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary, flexShrink: 1, lineHeight: 18 },
+  flexBtnTextActive: { color: colors.primary },
   orDivider: {
-    fontSize: 11, color: colors.textMuted, textAlign: 'center',
-    marginBottom: 14, fontStyle: 'italic',
+    fontSize: 12, color: colors.textMuted, textAlign: 'center',
+    marginBottom: 16, lineHeight: 16,
   },
-  subLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 8 },
+  subLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8, lineHeight: 17 },
   dayRow: { paddingBottom: 4 },
   dayChip: {
-    alignItems: 'center', width: 56, paddingVertical: 10, marginRight: 8,
-    borderRadius: 14, backgroundColor: colors.surface,
-    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', minWidth: 56, paddingHorizontal: 8, paddingVertical: 10, marginRight: 8,
+    borderRadius: radii.md, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
   dayChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  dayName: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
-  dayNameActive: { color: 'rgba(255,255,255,0.8)' },
-  dayNum: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, lineHeight: 24 },
+  dayName: { fontSize: 11, fontWeight: '600', color: colors.textMuted, lineHeight: 15 },
+  dayNameActive: { color: 'rgba(255,255,255,0.85)' },
+  dayNum: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, lineHeight: 26 },
   dayNumActive: { color: '#fff' },
-  dayMonth: { fontSize: 10, fontWeight: '600', color: colors.textMuted },
-  dayMonthActive: { color: 'rgba(255,255,255,0.75)' },
+  dayMonth: { fontSize: 11, fontWeight: '500', color: colors.textMuted, lineHeight: 15 },
+  dayMonthActive: { color: 'rgba(255,255,255,0.85)' },
   timeGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   timeChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
-    marginRight: 8, marginBottom: 8,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    marginRight: 8, marginBottom: 8, alignSelf: 'flex-start',
     flexDirection: 'row', alignItems: 'center',
   },
-  timeChipAdded: { backgroundColor: colors.successLight, borderColor: colors.success },
-  timeChipPast: { backgroundColor: colors.divider, borderColor: 'transparent', opacity: 0.45 },
-  timeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  timeTextAdded: { color: colors.success, fontWeight: '700' },
+  timeChipAdded: { backgroundColor: colors.primary, borderColor: colors.primary },
+  timeChipPast: { backgroundColor: colors.divider, borderColor: colors.divider, opacity: 0.6 },
+  timeText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 17 },
+  timeTextAdded: { color: '#fff', fontWeight: '600' },
   timeTextPast: { color: colors.textMuted, textDecorationLine: 'line-through' },
-  slotList: { marginTop: 12 },
+  slotList: { marginTop: 16 },
   addedLabel: {
-    fontSize: 11, fontWeight: '700', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    marginBottom: 8, lineHeight: 17,
   },
   slotTag: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.successLight, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8,
   },
-  slotTagLabel: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  slotTagText: { fontSize: 13, fontWeight: '600', color: colors.success },
-  slotRemove: { padding: 4 },
-  hint: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: 8, fontStyle: 'italic' },
+  slotTagLabel: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  slotTagText: { fontSize: 14, fontWeight: '500', color: colors.textPrimary, flexShrink: 1, lineHeight: 18 },
+  slotRemove: { padding: 4, flexShrink: 0 },
+  hint: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: 12, lineHeight: 18 },
 });

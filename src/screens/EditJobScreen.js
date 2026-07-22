@@ -3,20 +3,19 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Image,
   StyleSheet, KeyboardAvoidingView, Platform, Alert, Keyboard, ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
+import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
-import { colors, gradients } from '../theme';
+import { colors, radii } from '../theme';
 import { CATEGORIES } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
@@ -33,7 +32,6 @@ export default function EditJobScreen({ route, navigation }) {
   const { showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
-  const insets = useSafeAreaInsets();
 
   const job = jobs.find(j => j.id === jobId);
   const isKnownCategory = job ? CATS.some(c => c.id === job.category) : false;
@@ -101,12 +99,12 @@ export default function EditJobScreen({ route, navigation }) {
 
   if (!job) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.background }}>
-        <Text style={{ fontSize: 15, color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }}>
+      <View style={styles.missingWrap}>
+        <Text style={styles.missingText}>
           This gig is no longer available.
         </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, backgroundColor: colors.primary }}>
-          <Text style={{ color: '#fff', fontWeight: '800' }}>Go back</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.missingBtn}>
+          <Text style={styles.missingBtnText} numberOfLines={1}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -225,22 +223,22 @@ export default function EditJobScreen({ route, navigation }) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={gradients.profile} style={[styles.header, { paddingTop: insets.top + 50 }]}>
+        <ScreenHeader underNav>
           <View style={styles.headerRow}>
-            {/* Back is the floating frosted nav button (HERO_OPTS); only Delete lives in the header. */}
+            {/* Back is the floating nav button (HERO_OPTS); only Delete lives in the header. */}
             <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-              <Text style={styles.deleteBtnText}>Delete</Text>
+              <Text style={styles.deleteBtnText} numberOfLines={1}>Delete</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Edit Gig</Text>
-          <Text style={styles.headerSub}>{job.title}</Text>
-        </LinearGradient>
+          <Text style={styles.headerTitle} numberOfLines={1}>Edit gig</Text>
+          <Text style={styles.headerSub} numberOfLines={2}>{job.title}</Text>
+        </ScreenHeader>
 
         {isLocked && !amendmentAccepted && (
           <View style={styles.lockBanner}>
-            <Ionicons name="lock-closed" size={20} color="#D97706" style={styles.lockIcon} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lockTitle}>Core Terms Locked</Text>
+            <Ionicons name="lock-closed" size={18} color={colors.accentDeep} style={styles.lockIcon} />
+            <View style={styles.bannerBody}>
+              <Text style={styles.lockTitle} numberOfLines={2}>Core terms locked</Text>
               <Text style={styles.lockDesc}>
                 Pay, location, and time slots are locked — an earner has committed to this gig. Use "Request Change" in the Gigs tab to propose an update. Both parties must agree before core terms can change.
               </Text>
@@ -249,9 +247,9 @@ export default function EditJobScreen({ route, navigation }) {
         )}
         {amendmentAccepted && (
           <View style={styles.amendBanner}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} style={styles.lockIcon} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.amendTitle}>Amendment Accepted</Text>
+            <Ionicons name="checkmark-circle" size={18} color={colors.success} style={styles.lockIcon} />
+            <View style={styles.bannerBody}>
+              <Text style={styles.amendTitle} numberOfLines={2}>Amendment accepted</Text>
               <Text style={styles.lockDesc}>
                 The earner approved your proposed change. Edit the terms below and save — this unlock is used once. Pay stays locked: it's backed by an escrow hold. To change pay, cancel the booking (releasing the hold) and have the earner re-book.
               </Text>
@@ -260,7 +258,7 @@ export default function EditJobScreen({ route, navigation }) {
         )}
 
         <View style={styles.form}>
-          <Field label="Job Title *">
+          <Field label="Job title *">
             <TextInput
               style={styles.input} placeholder="e.g. Lawn Mowing, Math Tutor..."
               placeholderTextColor={colors.textMuted} value={form.title}
@@ -277,8 +275,8 @@ export default function EditJobScreen({ route, navigation }) {
                     style={[styles.catChip, active && styles.catChipActive]}
                     onPress={() => { haptic.selection(); set('category', cat.id); setShowCustomCat(false); }}
                   >
-                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.primary} style={styles.catChipIcon} />
-                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{cat.label}</Text>
+                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{cat.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -286,8 +284,8 @@ export default function EditJobScreen({ route, navigation }) {
                 style={[styles.catChip, form.category === 'other' && styles.catChipActive]}
                 onPress={() => { haptic.selection(); set('category', 'other'); setShowCustomCat(true); }}
               >
-                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.primary} style={styles.catChipIcon} />
-                <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]}>Other</Text>
+                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
+                <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]} numberOfLines={1}>Other</Text>
               </TouchableOpacity>
             </View>
             {showCustomCat && (
@@ -315,16 +313,21 @@ export default function EditJobScreen({ route, navigation }) {
                   placeholderTextColor={colors.textMuted} editable={canEditPay}
                 />
               </View>
-              {['flat', 'hourly'].map(t => (
-                <TouchableOpacity key={t}
-                  style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive, !canEditPay && styles.payTypeBtnLocked]}
-                  onPress={() => { if (!canEditPay) return; haptic.selection(); set('payType', t); }}
-                >
-                  <Text style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}>
-                    {t === 'flat' ? 'Flat' : '/hr'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <View style={styles.payTypeGroup}>
+                {['flat', 'hourly'].map(t => (
+                  <TouchableOpacity key={t}
+                    style={[styles.payTypeBtn, form.payType === t && styles.payTypeBtnActive]}
+                    onPress={() => { if (!canEditPay) return; haptic.selection(); set('payType', t); }}
+                  >
+                    <Text
+                      style={[styles.payTypeBtnText, form.payType === t && styles.payTypeBtnTextActive]}
+                      numberOfLines={1}
+                    >
+                      {t === 'flat' ? 'Flat' : '/hr'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </Field>
 
@@ -354,8 +357,8 @@ export default function EditJobScreen({ route, navigation }) {
               ))}
               {photos.length < 6 && (
                 <TouchableOpacity style={styles.addTile} onPress={addPhotos}>
-                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
-                  <Text style={styles.addTileText}>Add</Text>
+                  <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+                  <Text style={styles.addTileText} numberOfLines={1}>Add</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>
@@ -368,7 +371,7 @@ export default function EditJobScreen({ route, navigation }) {
               onChangeText={v => set('requirements', v)} />
           </Field>
 
-          <Field label={`Available Times${isLocked && !canEditCore ? '  (locked)' : ''}`}>
+          <Field label={`Available times${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
               ? <DateTimePicker slots={form.slots} onChange={slots => set('slots', slots)} />
               : (
@@ -392,7 +395,7 @@ export default function EditJobScreen({ route, navigation }) {
                     style={[styles.catChip, active && styles.catChipActive]}
                     onPress={() => { haptic.selection(); set('recurrence', opt.id); }}
                   >
-                    <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{opt.label}</Text>
+                    <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -403,17 +406,15 @@ export default function EditJobScreen({ route, navigation }) {
             style={[styles.urgentToggle, form.urgent && styles.urgentActive]}
             onPress={() => { haptic.light(); set('urgent', !form.urgent); }}
           >
-            <Text style={styles.urgentToggleText}>
-              {form.urgent ? 'Marked as Urgent — Needed ASAP' : 'Mark as Urgent (optional)'}
+            <Text style={[styles.urgentToggleText, form.urgent && styles.urgentToggleTextActive]}>
+              {form.urgent ? 'Marked as urgent — needed ASAP' : 'Mark as urgent (optional)'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleSave} activeOpacity={0.85} disabled={saving}>
-            <LinearGradient colors={gradients.profile} style={styles.submitBtn}>
-              {saving
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitText}>Save Changes ✓</Text>}
-            </LinearGradient>
+          <TouchableOpacity onPress={handleSave} activeOpacity={0.85} disabled={saving} style={styles.submitBtn}>
+            {saving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitText} numberOfLines={1}>Save changes</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -424,7 +425,7 @@ export default function EditJobScreen({ route, navigation }) {
 function Field({ label, children }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldLabel} numberOfLines={2}>{label}</Text>
       {children}
     </View>
   );
@@ -432,73 +433,130 @@ function Field({ label, children }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: 20, paddingBottom: 24 },
+  missingWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: 24, backgroundColor: colors.background,
+  },
+  missingText: {
+    fontSize: 15, color: colors.textSecondary, lineHeight: 21,
+    marginBottom: 16, textAlign: 'center',
+  },
+  missingBtn: {
+    paddingVertical: 13, paddingHorizontal: 24,
+    borderRadius: radii.md, backgroundColor: colors.primary,
+  },
+  missingBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 },
-  deleteBtn: { backgroundColor: 'rgba(239,68,68,0.2)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 },
-  deleteBtnText: { color: '#FCA5A5', fontSize: 14, fontWeight: '800' },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
+  deleteBtn: {
+    backgroundColor: colors.urgentLight, borderRadius: radii.pill,
+    paddingHorizontal: 14, paddingVertical: 7, flexShrink: 0,
+  },
+  deleteBtnText: { color: colors.urgent, fontSize: 13, fontWeight: '600' },
+  headerTitle: {
+    fontSize: 26, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.4, lineHeight: 33, marginBottom: 4,
+  },
+  headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
   lockBanner: {
     flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: '#FFF7ED', margin: 16, marginBottom: 0,
-    borderRadius: 14, padding: 14,
-    borderWidth: 1.5, borderColor: '#FED7AA',
+    backgroundColor: colors.accentLight,
+    marginHorizontal: 20, marginTop: 4,
+    borderRadius: radii.lg, padding: 16,
   },
   amendBanner: {
     flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: '#ECFDF5', margin: 16, marginBottom: 0,
-    borderRadius: 14, padding: 14,
-    borderWidth: 1.5, borderColor: '#6EE7B7',
+    backgroundColor: colors.successLight,
+    marginHorizontal: 20, marginTop: 4,
+    borderRadius: radii.lg, padding: 16,
   },
-  lockIcon: { fontSize: 20, marginRight: 12, marginTop: 1 },
-  lockTitle: { fontSize: 13, fontWeight: '800', color: '#D97706', marginBottom: 3 },
-  amendTitle: { fontSize: 13, fontWeight: '800', color: '#059669', marginBottom: 3 },
-  lockDesc: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
-  form: { padding: 20 },
-  field: { marginBottom: 22 },
-  fieldLabel: { fontSize: 12, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
-  input: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border },
-  textArea: { minHeight: 96, lineHeight: 22 },
+  bannerBody: { flex: 1, minWidth: 0 },
+  lockIcon: { marginRight: 12, marginTop: 1 },
+  lockTitle: { fontSize: 14, fontWeight: '700', color: colors.accentDeep, marginBottom: 4, lineHeight: 19 },
+  amendTitle: { fontSize: 14, fontWeight: '700', color: colors.success, marginBottom: 4, lineHeight: 19 },
+  lockDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  form: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
+  field: { marginBottom: 24 },
+  fieldLabel: {
+    fontSize: 13, fontWeight: '600', color: colors.textMuted,
+    marginBottom: 8, lineHeight: 18,
+  },
+  input: {
+    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
+    fontSize: 15, color: colors.textPrimary,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  textArea: { minHeight: 96, lineHeight: 21 },
   thumbWrap: { marginRight: 10 },
-  thumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: colors.border },
+  thumb: { width: 84, height: 84, borderRadius: radii.md, backgroundColor: colors.divider },
   thumbRemove: {
     position: 'absolute', top: -6, right: -6,
-    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.urgent,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+    width: 22, height: 22, borderRadius: radii.pill, backgroundColor: colors.urgent,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.surface,
   },
   addTile: {
-    width: 84, height: 84, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
+    width: 84, height: 84, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border,
     borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
   },
-  addTileText: { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 },
-  lockedInput: { opacity: 0.6 },
-  lockedValue: { fontSize: 15, color: colors.textSecondary },
+  addTileText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 4 },
+  // Locked read-only values are dimmed with a divider fill rather than opacity —
+  // 0.6-opacity body text on cream drops under 3:1, and the poster still has to
+  // read the value they can no longer edit.
+  lockedInput: { backgroundColor: colors.divider, borderColor: colors.divider },
+  lockedValue: { fontSize: 15, color: colors.textSecondary, lineHeight: 20 },
   lockedRow: { opacity: 0.6 },
   lockedSlots: { marginTop: 4 },
   lockedSlotTag: {
-    backgroundColor: colors.surface, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
-    borderWidth: 1.5, borderColor: colors.border, opacity: 0.7,
+    backgroundColor: colors.divider, borderRadius: radii.md,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8,
+    borderWidth: 1, borderColor: colors.divider,
   },
-  lockedSlotText: { fontSize: 13, color: colors.textSecondary },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  catChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, marginRight: 8, marginBottom: 8 },
+  lockedSlotText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  catChip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: radii.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+  },
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  catChipIcon: { fontSize: 14, marginRight: 5 },
-  catChipText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  catChipIcon: { marginRight: 6 },
+  catChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   catChipTextActive: { color: '#fff' },
   payRow: { flexDirection: 'row', alignItems: 'center' },
-  payInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 14, flex: 1, height: 50, marginRight: 10 },
+  payInputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 10,
+    flex: 1, minHeight: 50, marginRight: 10,
+  },
   dollar: { fontSize: 16, color: colors.textSecondary, marginRight: 4 },
   payInput: { flex: 1, fontSize: 16, color: colors.textPrimary },
-  payTypeBtn: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, marginLeft: 6 },
-  payTypeBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  payTypeBtnLocked: { opacity: 0.5 },
-  payTypeBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  payTypeGroup: {
+    flexDirection: 'row', flexShrink: 0,
+    backgroundColor: colors.surface, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.border, padding: 4,
+  },
+  payTypeBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: radii.pill,
+  },
+  payTypeBtnActive: { backgroundColor: colors.primary },
+  payTypeBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   payTypeBtnTextActive: { color: '#fff' },
-  urgentToggle: { borderWidth: 1.5, borderColor: '#FCA5A5', borderRadius: 14, padding: 14, alignItems: 'center', marginBottom: 16, backgroundColor: colors.surface },
-  urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgent },
-  urgentToggleText: { fontSize: 14, fontWeight: '700', color: colors.urgent },
-  submitBtn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
-  submitText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  urgentToggle: {
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radii.md, paddingVertical: 14, paddingHorizontal: 16,
+    alignItems: 'center', marginBottom: 20, backgroundColor: colors.surface,
+  },
+  urgentActive: { backgroundColor: colors.urgentLight, borderColor: colors.urgentLight },
+  urgentToggleText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, textAlign: 'center', lineHeight: 20 },
+  urgentToggleTextActive: { color: colors.urgent },
+  submitBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center', minHeight: 54,
+  },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

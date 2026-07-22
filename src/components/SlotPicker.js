@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScrollView, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { colors, radii } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
 export default function SlotPicker({ slots, selected, onSelect }) {
@@ -29,11 +29,14 @@ export default function SlotPicker({ slots, selected, onSelect }) {
             {slot.taken && (
               <Ionicons name="lock-closed" size={13} color={colors.textMuted} style={{ marginRight: 5 }} />
             )}
-            <Text style={[
-              styles.chipText,
-              isSelected && styles.chipTextSelected,
-              slot.taken && styles.chipTextTaken,
-            ]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.chipText,
+                isSelected && styles.chipTextSelected,
+                slot.taken && styles.chipTextTaken,
+              ]}
+            >
               {slot.label}
             </Text>
           </TouchableOpacity>
@@ -44,16 +47,17 @@ export default function SlotPicker({ slots, selected, onSelect }) {
 }
 
 const styles = StyleSheet.create({
-  row: { paddingVertical: 4 },
+  row: { paddingVertical: 4, alignItems: 'center' },
   chip: {
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.surface, marginRight: 10,
+    borderRadius: radii.pill, paddingHorizontal: 16, paddingVertical: 10,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, marginRight: 8,
+    maxWidth: 280,
     flexDirection: 'row', alignItems: 'center',
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipTaken: { backgroundColor: colors.divider, borderColor: colors.divider, opacity: 0.6 },
-  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  chipTextSelected: { color: '#fff' },
+  chipText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 17, flexShrink: 1 },
+  chipTextSelected: { color: '#fff', fontWeight: '600' },
   chipTextTaken: { color: colors.textMuted },
 });

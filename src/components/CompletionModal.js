@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, Image,
+  Modal, View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, gradients, shadows } from '../theme';
+import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
 import SignedImage from './SignedImage';
@@ -31,7 +30,7 @@ function StarPicker({ value, onChange }) {
           <Ionicons
             name={star <= value ? 'star' : 'star-outline'}
             size={34}
-            color={star <= value ? '#F59E0B' : colors.border}
+            color={star <= value ? colors.accent : colors.textMuted}
           />
         </TouchableOpacity>
       ))}
@@ -98,7 +97,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
           <View style={styles.handle} />
 
           {/* Header */}
-          <Text style={styles.heading}>Verify Job Completion</Text>
+          <Text style={styles.heading}>Verify job completion</Text>
           <Text style={styles.subheading}>
             Confirm that <Text style={styles.nameHighlight}>{earnerName}</Text> completed "{jobTitle}"
           </Text>
@@ -113,10 +112,10 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                 fontSize={20}
                 style={{ marginRight: 14 }}
               />
-              <View>
-                <Text style={styles.earnerName}>{earnerName}</Text>
+              <View style={styles.earnerInfo}>
+                <Text style={styles.earnerName} numberOfLines={1}>{earnerName}</Text>
                 {pay && (
-                  <Text style={styles.earnerJob}>
+                  <Text style={styles.earnerJob} numberOfLines={2}>
                     {payType === 'hourly' ? `$${pay}/hr` : `$${pay} flat`} · {jobTitle}
                   </Text>
                 )}
@@ -164,7 +163,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             </View>
 
             {/* Review text */}
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Leave a Review</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Leave a review</Text>
             <TextInput
               style={styles.reviewInput}
               placeholder={`How did ${earnerName} do?`}
@@ -177,7 +176,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             />
 
             {/* Tip */}
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Add a Tip (optional)</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Add a tip (optional)</Text>
             <View style={styles.payRow}>
               {TIPS.map(c => (
                 <TouchableOpacity
@@ -185,7 +184,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   style={[styles.payChip, tipCents === c && styles.payChipActive]}
                   onPress={() => { haptic.selection(); setTipCents(c); }}
                 >
-                  <Text style={[styles.payLabel, tipCents === c && styles.payLabelActive]}>
+                  <Text style={[styles.payLabel, tipCents === c && styles.payLabelActive]} numberOfLines={1}>
                     {c === 0 ? 'No tip' : `$${(c / 100).toFixed(0)}`}
                   </Text>
                 </TouchableOpacity>
@@ -195,7 +194,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
 
             {/* Report a problem → partial payment */}
             <TouchableOpacity
-              style={[styles.problemToggle, disputed && styles.problemToggleOn]}
+              style={styles.problemToggle}
               onPress={() => { haptic.selection(); setDisputed(d => !d); }}
             >
               <Ionicons name={disputed ? 'checkbox' : 'square-outline'} size={18} color={disputed ? colors.urgent : colors.textMuted} style={{ marginRight: 8 }} />
@@ -210,7 +209,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                       style={[styles.payChip, pct === p && styles.payChipActive]}
                       onPress={() => { haptic.selection(); setPct(p); }}
                     >
-                      <Text style={[styles.payLabel, pct === p && styles.payLabelActive]}>Pay {Math.round(p * 100)}%</Text>
+                      <Text style={[styles.payLabel, pct === p && styles.payLabelActive]} numberOfLines={1}>Pay {Math.round(p * 100)}%</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -229,18 +228,23 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             )}
 
             {/* Confirm button */}
-            <TouchableOpacity onPress={handleConfirm} disabled={loading || reasonMissing} activeOpacity={0.85} style={{ marginTop: 24 }}>
-              <LinearGradient colors={gradients.earn} style={[styles.confirmBtn, reasonMissing && { opacity: 0.5 }]}>
-                {loading
-                  ? <ActivityIndicator color="#fff" />
-                  : (
-                    <View style={styles.confirmRow}>
-                      <Ionicons name="checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
-                      <Text style={styles.confirmText}>{reasonMissing ? 'Add a reason to continue' : 'Confirm Job Complete'}</Text>
-                    </View>
-                  )
-                }
-              </LinearGradient>
+            <TouchableOpacity
+              onPress={handleConfirm}
+              disabled={loading || reasonMissing}
+              activeOpacity={0.85}
+              style={[styles.confirmBtn, reasonMissing && styles.confirmBtnDisabled]}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : (
+                  <View style={styles.confirmRow}>
+                    <Ionicons name="checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.confirmText} numberOfLines={1}>
+                      {reasonMissing ? 'Add a reason to continue' : 'Confirm job complete'}
+                    </Text>
+                  </View>
+                )
+              }
             </TouchableOpacity>
 
             <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
@@ -257,71 +261,67 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingBottom: 40, maxHeight: '90%',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 20, paddingBottom: 40, maxHeight: '90%',
     ...shadows.md,
   },
   handle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border,
+    width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border,
     alignSelf: 'center', marginTop: 12, marginBottom: 20,
   },
-  heading: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, marginBottom: 6 },
+  heading: { fontSize: 24, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.4, marginBottom: 6 },
   subheading: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 20 },
-  nameHighlight: { fontWeight: '800', color: colors.primary },
+  nameHighlight: { fontWeight: '600', color: colors.textPrimary },
   earnerRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.background, borderRadius: 16,
-    padding: 14, marginBottom: 24,
+    backgroundColor: colors.background, borderRadius: radii.lg,
+    padding: 16, marginBottom: 24,
   },
-  earnerAvatar: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-    marginRight: 14,
-  },
-  earnerInitial: { color: '#fff', fontWeight: '900', fontSize: 20 },
-  earnerName: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  earnerJob: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  earnerInfo: { flex: 1, minWidth: 0 },
+  earnerName: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  earnerJob: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
   escrowBox: {
     flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: colors.successLight, borderRadius: 14,
+    backgroundColor: colors.successLight, borderRadius: radii.md,
     padding: 12, marginBottom: 20,
   },
-  escrowText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
+  escrowText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   sectionLabel: {
-    fontSize: 11, fontWeight: '800', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10,
+    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 10,
   },
-  completionPhoto: { width: 84, height: 84, borderRadius: 12, marginRight: 8, backgroundColor: colors.border },
-  starRow: { flexDirection: 'row', marginBottom: 6 },
-  starBtn: { marginRight: 6 },
-  star: { fontSize: 34, color: colors.border },
-  starFilled: { color: '#F59E0B' },
+  completionPhoto: { width: 84, height: 84, borderRadius: radii.md, marginRight: 8, backgroundColor: colors.divider },
+  starRow: { flexDirection: 'row', marginBottom: 8 },
+  starBtn: { marginRight: 8 },
   ratingLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  ratingLabel: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+  ratingLabel: { fontSize: 13, color: colors.textMuted, flexShrink: 1 },
   reviewInput: {
-    backgroundColor: colors.background, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: colors.textPrimary, minHeight: 80,
+    fontSize: 14, color: colors.textPrimary, minHeight: 80, lineHeight: 20,
   },
   payRow: { flexDirection: 'row', flexWrap: 'wrap' },
   payChip: {
-    flexDirection: 'row', alignItems: 'center',
-    borderRadius: 20, borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    borderRadius: radii.pill, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 8,
     marginRight: 8, marginBottom: 8,
   },
   payChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  payIcon: { fontSize: 14, marginRight: 5 },
-  payLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  payLabel: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   payLabelActive: { color: '#fff' },
-  tipNote: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
-  problemToggle: { flexDirection: 'row', alignItems: 'center', marginTop: 20, paddingVertical: 4 },
-  problemToggleOn: {},
-  problemText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flex: 1 },
-  confirmBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
+  tipNote: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 17 },
+  problemToggle: { flexDirection: 'row', alignItems: 'center', marginTop: 20, paddingVertical: 8 },
+  problemText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, flex: 1, lineHeight: 19 },
+  confirmBtn: {
+    backgroundColor: colors.primary, borderRadius: radii.md,
+    paddingVertical: 16, paddingHorizontal: 20,
+    alignItems: 'center', justifyContent: 'center', marginTop: 24,
+  },
+  confirmBtnDisabled: { opacity: 0.5 },
   confirmRow: { flexDirection: 'row', alignItems: 'center' },
-  confirmText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  confirmText: { color: '#fff', fontSize: 16, fontWeight: '600', flexShrink: 1 },
   cancelBtn: { paddingVertical: 14, alignItems: 'center' },
   cancelText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
 });

@@ -11,7 +11,8 @@ import { listThreads, loadThread, deleteThread } from '../lib/assistantThreads';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { colors, shadows } from '../theme';
+import { useChromeVisible } from '../lib/tabBarScroll';
+import { colors, radii, shadows } from '../theme';
 
 const GREETING =
   "Hey! I'm Hustlr AI 👋 I can find gigs for you, post a gig (just describe it — tap the 🎤 on your keyboard to talk), book work, and check how you're doing. What do you need?";
@@ -36,6 +37,9 @@ export default function AssistantButton() {
   const scrollRef = useRef(null);
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
+  // Hidden alongside the tab bar on pushed screens and while the keyboard is
+  // up, so the FAB never sits on top of a form control or a pinned CTA.
+  const chromeVisible = useChromeVisible();
 
   const { refreshJobs, refreshBookings, refreshPosterBookings } = useJobs();
   const { refreshProfile, showToast } = useUser();
@@ -134,36 +138,38 @@ export default function AssistantButton() {
   return (
     <>
       {/* Floating launcher — sits above the floating pill tab bar */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 78 }]}
-        onPress={() => { haptic?.light?.(); setOpen(true); }}
-        activeOpacity={0.85}
-        accessibilityLabel="Open Hustlr AI assistant"
-      >
-        <Ionicons name="sparkles" size={26} color="#fff" />
-      </TouchableOpacity>
+      {(chromeVisible || open) && (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 78 }]}
+          onPress={() => { haptic?.light?.(); setOpen(true); }}
+          activeOpacity={0.85}
+          accessibilityLabel="Open Hustlr AI assistant"
+        >
+          <Ionicons name="sparkles" size={26} color="#fff" />
+        </TouchableOpacity>
+      )}
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.modal}>
-          <StatusBar style="light" />
+          <StatusBar style="dark" />
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             {/* Header */}
             <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
               <View style={styles.headerIcon}>
-                <Ionicons name="sparkles" size={20} color="#fff" />
+                <Ionicons name="sparkles" size={20} color={colors.textPrimary} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.headerTitle}>Hustlr AI</Text>
-                <Text style={styles.headerSub}>Your gig sidekick</Text>
+              <View style={styles.headerText}>
+                <Text style={styles.headerTitle} numberOfLines={1}>Hustlr AI</Text>
+                <Text style={styles.headerSub} numberOfLines={1}>Your gig sidekick</Text>
               </View>
               <TouchableOpacity onPress={newChat} disabled={busy} accessibilityLabel="New chat" style={[styles.headerBtn, busy && { opacity: 0.4 }]}>
-                <Ionicons name="add" size={24} color="#fff" />
+                <Ionicons name="add" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={openHistory} disabled={busy} accessibilityLabel="Past conversations" style={[styles.headerBtn, busy && { opacity: 0.4 }]}>
-                <Ionicons name="time-outline" size={23} color="#fff" />
+                <Ionicons name="time-outline" size={23} color={colors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setOpen(false)} accessibilityLabel="Close" style={styles.headerBtn}>
-                <Ionicons name="close" size={26} color="#fff" />
+                <Ionicons name="close" size={26} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -179,7 +185,7 @@ export default function AssistantButton() {
             ) : (
               <>
                 {/* Messages */}
-                <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ padding: 14, gap: 10 }}>
+                <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ padding: 20, gap: 12 }}>
                   {messages.map((m, i) => (
                     <Bubble key={i} role={m.role} content={m.content} />
                   ))}
@@ -192,8 +198,8 @@ export default function AssistantButton() {
                   {messages.length <= 1 && !busy && (
                     <View style={styles.chips}>
                       {SUGGESTIONS.map((s) => (
-                        <TouchableOpacity key={s} style={styles.chip} onPress={() => send(s)}>
-                          <Text style={styles.chipText}>{s}</Text>
+                        <TouchableOpacity key={s} style={styles.chip} onPress={() => send(s)} activeOpacity={0.85}>
+                          <Text style={styles.chipText} numberOfLines={1}>{s}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -202,7 +208,7 @@ export default function AssistantButton() {
 
                 {/* Composer */}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                <View style={[styles.composer, { paddingBottom: insets.bottom + 10 }]}>
+                <View style={[styles.composer, { paddingBottom: insets.bottom + 12 }]}>
                   <TextInput
                     style={styles.input}
                     value={input}
@@ -249,11 +255,11 @@ function renderRich(text, isUser) {
     const body = bullet ? line.replace(/^\s*[-•]\s+/, '') : line;
     const segs = body.split(/(\*\*[^*]+\*\*)/g).map((seg, j) =>
       seg.startsWith('**') && seg.endsWith('**')
-        ? <Text key={j} style={{ fontWeight: '800' }}>{seg.slice(2, -2)}</Text>
+        ? <Text key={j} style={{ fontWeight: '700' }}>{seg.slice(2, -2)}</Text>
         : <Text key={j}>{seg}</Text>,
     );
     return (
-      <Text key={i} style={{ color, fontSize: 14.5, lineHeight: 21, flexDirection: 'row' }}>
+      <Text key={i} style={{ color, fontSize: 14.5, lineHeight: 21 }}>
         {bullet ? '•  ' : ''}{segs}
       </Text>
     );
@@ -263,11 +269,11 @@ function renderRich(text, isUser) {
 function HistoryPanel({ threads, loading, activeId, onBack, onPick, onDelete }) {
   return (
     <View style={styles.histPanel}>
-      <TouchableOpacity onPress={onBack} style={styles.histBack}>
+      <TouchableOpacity onPress={onBack} style={styles.histBack} activeOpacity={0.85}>
         <Ionicons name="arrow-back" size={18} color={colors.primary} />
-        <Text style={styles.histBackText}>Back to chat</Text>
+        <Text style={styles.histBackText} numberOfLines={1}>Back to chat</Text>
       </TouchableOpacity>
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 6 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}>
         {loading ? (
           <View style={styles.thinking}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -278,9 +284,9 @@ function HistoryPanel({ threads, loading, activeId, onBack, onPick, onDelete }) 
         ) : (
           threads.map((t) => (
             <View key={t.id} style={[styles.histRow, t.id === activeId && styles.histRowActive]}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => onPick(t)}>
+              <TouchableOpacity style={styles.histMain} onPress={() => onPick(t)} activeOpacity={0.85}>
                 <Text style={styles.histTitle} numberOfLines={1}>{t.title || 'Conversation'}</Text>
-                <Text style={styles.histTime}>{relTime(t.updated_at)}</Text>
+                <Text style={styles.histTime} numberOfLines={1}>{relTime(t.updated_at)}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => onDelete(t.id)} style={styles.histDelete} accessibilityLabel="Delete conversation">
                 <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
@@ -306,58 +312,65 @@ function relTime(iso) {
 
 const styles = StyleSheet.create({
   fab: {
-    position: 'absolute', right: 16, width: 56, height: 56, borderRadius: 28,
+    position: 'absolute', right: 20, width: 56, height: 56, borderRadius: radii.pill,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadows.md,
   },
   modal: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: colors.primary,
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingBottom: 12,
+    backgroundColor: colors.background,
   },
   headerIcon: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: radii.pill, backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '900' },
-  headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
+  headerText: { flex: 1, marginRight: 4, minWidth: 0 },
+  headerTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', letterSpacing: -0.4 },
+  headerSub: { color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  headerBtn: { padding: 4, flexShrink: 0 },
   scroll: { flex: 1, backgroundColor: colors.background },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
-  thinkingText: { color: colors.textMuted, fontSize: 13 },
+  thinkingText: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 4 },
   chip: {
-    borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff', borderRadius: 999,
-    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radii.pill,
+    paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', maxWidth: '100%',
   },
-  chipText: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   bubbleRow: { flexDirection: 'row' },
-  bubble: { maxWidth: '86%', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9 },
-  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 6 },
-  bubbleBot: { backgroundColor: '#fff', borderBottomLeftRadius: 6, borderWidth: 1, borderColor: colors.border },
+  bubble: { maxWidth: '86%', borderRadius: radii.lg, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: radii.sm },
+  bubbleBot: {
+    backgroundColor: colors.surface, borderBottomLeftRadius: radii.sm,
+    borderWidth: 1, borderColor: colors.border,
+  },
   composer: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10,
-    borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    paddingHorizontal: 16, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: colors.divider, backgroundColor: colors.surface,
   },
   input: {
-    flex: 1, maxHeight: 110, minHeight: 42, backgroundColor: colors.background, borderRadius: 18,
+    flex: 1, maxHeight: 110, minHeight: 44, backgroundColor: colors.background, borderRadius: radii.md,
     borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10,
     fontSize: 14.5, color: colors.textPrimary,
   },
   sendBtn: {
-    width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
+    width: 44, height: 44, borderRadius: radii.pill, backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  headerBtn: { padding: 4 },
-  errorText: { color: colors.urgent, fontSize: 12.5, fontWeight: '700', paddingHorizontal: 14, paddingTop: 8 },
+  errorText: { color: colors.urgent, fontSize: 13, fontWeight: '600', paddingHorizontal: 20, paddingTop: 8 },
   histPanel: { flex: 1, backgroundColor: colors.background },
-  histBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 12 },
-  histBackText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
+  histBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 20, paddingVertical: 12 },
+  histBackText: { color: colors.primary, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   histEmpty: { textAlign: 'center', color: colors.textMuted, fontSize: 14, paddingVertical: 24 },
   histRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 14,
-    paddingHorizontal: 12, paddingVertical: 11, borderWidth: 1, borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface,
+    borderRadius: radii.lg, paddingHorizontal: 16, paddingVertical: 12,
+    borderWidth: 1, borderColor: colors.border,
   },
   histRowActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  histTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  histTime: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
-  histDelete: { padding: 4 },
+  histMain: { flex: 1, marginRight: 4 },
+  histTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  histTime: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  histDelete: { padding: 4, flexShrink: 0 },
 });
