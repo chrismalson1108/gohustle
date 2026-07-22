@@ -63,6 +63,37 @@ function findProhibited(text: string | null | undefined): string | null {
   return null;
 }
 
+// Context-aware moderation PARITY with the manual write paths. PostJob/Settings run
+// TWO layers: the keyword filter findProhibited AND the moderate-text edge function
+// (a Claude classifier that catches harassment/threats/grooming/scams and banned
+// INTENT phrased in clean words the keyword list can't). The assistant's create_gig
+// and update_profile must run the SAME second layer or "ask Hustlr AI to post…"
+// becomes a way around it. Calls moderate-text with the caller's own JWT; FAILS OPEN
+// on any error/timeout, exactly like the client wrapper (src/lib/moderation.js), so a
+// provider hiccup never wedges posting — the keyword filter + DB trigger remain the
+// hard backstop.
+async function moderateViaEdge(token: string, text: string, surface: string): Promise<boolean> {
+  const clean = String(text ?? '').trim();
+  if (!clean) return true;
+  try {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/moderate-text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      },
+      body: JSON.stringify({ text: clean, surface }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return true; // fail open (mirror the client wrapper)
+    const data = await res.json().catch(() => ({}));
+    return (data as { allowed?: boolean })?.allowed !== false;
+  } catch {
+    return true; // fail open on network/timeout
+  }
+}
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 // Model routing — use the cheapest model that still nails the task (the owner
 // opted into cost-saving routing). Routine tool turns run on Sonnet; genuinely
@@ -245,7 +276,7 @@ Deno.serve(async (req: Request) => {
           const input = (tu.input ?? {}) as Json;
           let result: string;
           try {
-            result = await runTool(sb, user.id, name, input, actions);
+            result = await runTool(sb, user.id, name, input, actions, token);
           } catch (err) {
             result = JSON.stringify({ error: 'Something went wrong. Please try again.' || 'tool_failed' });
           }
@@ -495,6 +526,7 @@ async function runTool(
   name: string,
   input: Json,
   actions: Action[],
+  token: string,
 ): Promise<string> {
   switch (name) {
     case 'search_gigs':
@@ -504,13 +536,13 @@ async function runTool(
     case 'get_gig_details':
       return gigDetails(sb, userId, String(input.gig_id ?? ''));
     case 'create_gig':
-      return createGig(sb, userId, input, actions);
+      return createGig(sb, userId, input, actions, token);
     case 'book_gig':
       return bookGig(sb, userId, input, actions);
     case 'get_my_activity':
       return myActivity(sb, userId);
     case 'update_profile':
-      return updateProfile(sb, userId, input, actions);
+      return updateProfile(sb, userId, input, actions, token);
     case 'get_earnings_plan':
       return earningsPlan(sb, userId);
     case 'suggest_price':
@@ -645,8 +677,18 @@ async function gigDetails(sb: SupabaseClient, userId: string, gigId: string): Pr
   ]);
   const exactAddress = canSeeExactAddress(isPoster, (myBooking as Json | null)?.status as string | undefined);
 
+  // jobs.location is masked server-side (20260722040000); the exact address lives in
+  // job_locations, readable only by the poster/accepted earner via RLS. Fetch it for
+  // an authorized viewer so the reveal parity holds; otherwise the masked label stands.
+  let jobForSummary: Json = job as Json;
+  if (exactAddress) {
+    const { data: loc } = await sb.from('job_locations').select('exact_location').eq('job_id', gigId).maybeSingle();
+    const exact = (loc as Json | null)?.exact_location as string | undefined;
+    if (exact) jobForSummary = { ...(job as Json), location: exact };
+  }
+
   return JSON.stringify({
-    ...gigSummary(job, exactAddress),
+    ...gigSummary(jobForSummary, exactAddress),
     status: (job as Json).status,
     requirements: ((job as Json).job_requirements as Json[] | null)?.map((r) => r.requirement) ?? [],
     poster: poster
@@ -656,19 +698,27 @@ async function gigDetails(sb: SupabaseClient, userId: string, gigId: string): Pr
   });
 }
 
-async function createGig(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
+async function createGig(sb: SupabaseClient, userId: string, input: Json, actions: Action[], token: string): Promise<string> {
   const title = String(input.title ?? '').trim();
   const category = normalizeCategory(String(input.category ?? ''));
   const pay = Number(input.pay);
   const payType = input.pay_type === 'hourly' ? 'hourly' : 'flat';
   const location = String(input.location ?? '').trim();
   const description = String(input.description ?? '').trim();
+  const requirements = Array.isArray(input.requirements)
+    ? (input.requirements as unknown[]).map((r) => String(r).trim()).filter(Boolean)
+    : [];
   if (!title || !category || !location || !description || !(pay > 0)) {
     return JSON.stringify({ error: 'missing_fields', message: 'Need a title, category, pay, location, and description.' });
   }
-  // Same moderation guard the manual PostJob path enforces — no bypass via the AI.
-  const badGig = findProhibited(`${title} ${description}`);
+  // Same moderation guards the manual PostJob path enforces — no bypass via the AI.
+  // Layer 1: keyword filter (includes the requirements free-text, as PostJob does).
+  const badGig = findProhibited(`${title} ${description} ${requirements.join(' ')}`);
   if (badGig) {
+    return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
+  }
+  // Layer 2: context-aware moderate-text (catches clean-worded harassment/scam/etc).
+  if (!(await moderateViaEdge(token, `${title}\n${description}`, 'gig'))) {
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
   if (actions.filter((a) => a.type === 'gig_created').length >= 3) {
@@ -705,12 +755,9 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
     return JSON.stringify({ error: 'slots_failed', message: 'Could not save the time slots, so the gig was not posted. Please try again.' });
   }
 
-  const reqs = Array.isArray(input.requirements)
-    ? (input.requirements as unknown[]).map((r) => String(r).trim()).filter(Boolean)
-    : [];
   let requirementsSaved = true;
-  if (reqs.length > 0) {
-    const { error: reqErr } = await sb.from('job_requirements').insert(reqs.map((requirement, i) => ({ job_id: jobId, requirement, sort_order: i })));
+  if (requirements.length > 0) {
+    const { error: reqErr } = await sb.from('job_requirements').insert(requirements.map((requirement, i) => ({ job_id: jobId, requirement, sort_order: i })));
     requirementsSaved = !reqErr;
   }
 
@@ -845,7 +892,7 @@ async function myActivity(sb: SupabaseClient, userId: string): Promise<string> {
   });
 }
 
-async function updateProfile(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
+async function updateProfile(sb: SupabaseClient, userId: string, input: Json, actions: Action[], token: string): Promise<string> {
   // Legacy fields that exist on every deployment.
   const legacy: Json = {};
   if (input.role === 'earner' || input.role === 'poster' || input.role === 'both') legacy.role = input.role;
@@ -872,9 +919,14 @@ async function updateProfile(sb: SupabaseClient, userId: string, input: Json, ac
   const all = { ...legacy, ...suite };
   if (Object.keys(all).length === 0) return JSON.stringify({ error: 'nothing_to_update' });
 
-  // Moderate free-text profile fields the same way the manual Settings save does.
-  const badProfile = findProhibited([legacy.bio, suite.work_status_note].filter(Boolean).join(' '));
+  // Moderate free-text profile fields the same way the manual Settings save does:
+  // keyword filter (layer 1) + context-aware moderate-text (layer 2).
+  const profileText = [legacy.bio, suite.work_status_note].filter(Boolean).join(' ');
+  const badProfile = findProhibited(profileText);
   if (badProfile) {
+    return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+  }
+  if (profileText.trim() && !(await moderateViaEdge(token, profileText, 'bio'))) {
     return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
   }
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -20,10 +21,34 @@ export default function EditGigPage() {
   const { user } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // jobs.location is masked server-side (migration 20260722040000); the exact address
+  // lives in job_locations (RLS lets the poster read it). Load it before rendering the
+  // form so a save doesn't write the masked label back over the real address.
+  const [exactLoc, setExactLoc] = useState<string | null>(null);
+  const [locTried, setLocTried] = useState(false);
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    supabase
+      .from("job_locations")
+      .select("exact_location")
+      .eq("job_id", id)
+      .maybeSingle()
+      .then(
+        ({ data }) => { if (live) { setExactLoc((data?.exact_location as string) || null); setLocTried(true); } },
+        // On a network-level rejection, still release the render gate (fall back to the
+        // masked job.location) instead of stranding the edit screen on the spinner.
+        () => { if (live) setLocTried(true); },
+      );
+    return () => { live = false; };
+  }, [id]);
+
   const job = jobs.find((j) => j.id === id);
   // The jobs feed loads async — don't flash "not found" before it resolves.
   if (!job) return jobs.length === 0 ? <FullPageSpinner /> : <EmptyState title="Gig not found" />;
   if (user && job.posterId !== user.id) return <EmptyState title="You can only edit your own gigs." />;
+  // Wait for the exact-address lookup so the form initializes with the real address.
+  if (!locTried) return <FullPageSpinner />;
 
   // Lock core terms once a booking is confirmed/completed (unless an amendment
   // was accepted) — mirrors the mobile EditJob rule.
@@ -62,7 +87,7 @@ export default function EditGigPage() {
             category: job.category,
             pay: job.pay,
             payType: job.payType,
-            location: job.location,
+            location: exactLoc ?? job.location,
             lat: job.lat,
             lng: job.lng,
             description: job.description,

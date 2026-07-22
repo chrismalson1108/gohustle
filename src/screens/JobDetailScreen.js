@@ -92,6 +92,22 @@ export default function JobDetailScreen({ route, navigation }) {
   const currentBooking = bookings.find(b => b.jobId === jobId);
   const jobPosterBookings = posterBookings.filter(b => b.jobId === jobId);
 
+  // jobs.location is masked server-side (migration 20260722040000); the exact address
+  // lives in job_locations, readable only by the poster or an accepted earner via RLS.
+  // Fetch it for an authorized viewer so the "address after acceptance" reveal holds.
+  const [exactLocation, setExactLocation] = useState(null);
+  React.useEffect(() => {
+    const canSee = canSeeExactAddress({ isPoster: !!isOwnJob, bookingStatus: currentBooking?.status });
+    if (!job?.id || !canSee) { setExactLocation(null); return; }
+    let active = true;
+    supabase.from('job_locations').select('exact_location').eq('job_id', job.id).maybeSingle()
+      .then(
+        ({ data }) => { if (active) setExactLocation(data?.exact_location || null); },
+        () => { if (active) setExactLocation(null); },
+      );
+    return () => { active = false; };
+  }, [job?.id, isOwnJob, currentBooking?.status]);
+
   if (!job) {
     return (
       <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
@@ -108,8 +124,13 @@ export default function JobDetailScreen({ route, navigation }) {
   // Address privacy: exact street address only for the poster or an accepted
   // earner; everyone else sees the city-level label (coords are already ~1km).
   const showExactAddress = canSeeExactAddress({ isPoster: isOwnJob, bookingStatus: currentBooking?.status });
-  const displayLocation = showExactAddress ? job.location : maskLocation(job.location);
-  const addressMasked = !showExactAddress && displayLocation !== job.location;
+  // job.location is already the masked label from the server; the exact address (when
+  // the viewer is entitled to it) is fetched separately into exactLocation.
+  const displayLocation = showExactAddress ? (exactLocation || job.location) : maskLocation(job.location);
+  // Mirror web: hint that a precise address exists for any non-remote gig the viewer
+  // isn't yet entitled to (the exact value is withheld server-side, so we can't detect
+  // it from the already-masked label).
+  const addressMasked = !showExactAddress && !String(job.location || '').toLowerCase().includes('remote');
 
   // Prefer reviews loaded on demand; fall back to whatever came with the job (the
   // fetchJobById path still embeds them) until the direct load resolves.
