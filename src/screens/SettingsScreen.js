@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { findProhibited } from '../lib/contentFilter';
+import { moderateText, logModerationBlock } from '../lib/moderation';
 import { colors, radii, shadows } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
@@ -201,6 +203,27 @@ export default function SettingsScreen({ navigation }) {
       }
       setDobError('');
     }
+
+    // Name, username and bio are PUBLIC user-generated text (they render on the
+    // public profile), so they get the same two-layer check as gigs and chat:
+    // the keyword list, then the context-aware pass. App Store Guideline 1.2
+    // requires filtering objectionable material on every UGC surface, and these
+    // were the only public free-text fields that skipped it.
+    const profileText = [form.name, form.username, form.bio].filter(Boolean).join(' ');
+    const kwTerm = findProhibited(profileText);
+    if (kwTerm) {
+      logModerationBlock(kwTerm, 'profile', profileText);
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Check your wording', message: "Your profile contains content that isn't allowed. Please edit it." });
+      return;
+    }
+    const mod = await moderateText([form.name, form.bio].filter(Boolean).join('\n'), 'profile');
+    if (!mod.allowed) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Check your wording', message: "Your profile contains content that isn't allowed. Please edit it." });
+      return;
+    }
+
     setSaving(true);
     haptic.success();
     const avatarInitial = form.name?.trim().charAt(0).toUpperCase() || 'H';

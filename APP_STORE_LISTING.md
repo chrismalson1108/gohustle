@@ -5,6 +5,36 @@ Prepared for App Store Connect (app Apple ID `6790460957`, bundle `com.gohustlr.
 
 ---
 
+## ⚠️ Must change before PUBLIC submission (fine while TestFlight-only)
+
+This draft is written for the **closed TestFlight beta** and is deliberately left that way
+while testing continues on Stripe test keys. Every item below must be resolved before
+hitting *Submit for Review* on a public listing:
+
+- [ ] **Remove the beta framing from the description.** The line *"GoHustlr is currently in
+      beta…"* violates Guideline **2.2 (Beta Testing)** — App Store listings may not present
+      the app as a trial or beta. Keep it only while this doc serves TestFlight.
+- [ ] **Replace the test-card instructions.** Review notes referencing `4242 4242 4242 4242`
+      only work on Stripe **test** keys. Live mode rejects test cards, so a reviewer cannot
+      complete the payment lifecycle Guideline **2.1** expects them to exercise. Decide how
+      review completes a booking end-to-end before submitting.
+- [ ] **Demo accounts pre-provisioned**, with `Sign-in required` ON in App Store Connect →
+      App Review Information. Both a poster and an earner, with Stripe Connect onboarding and
+      any identity verification **already completed** — never send a reviewer into a Stripe
+      onboarding form.
+- [ ] **Beta allowlist open.** `beta_allowlist` must retain its `'*'` row through review, or
+      the reviewer cannot sign up at all (Guideline 2.1, app completeness).
+- [ ] **Seed visible gig inventory** so Browse is never empty for a reviewer in California.
+- [ ] **Decide iPad support deliberately.** The app currently declares it, which makes a
+      13-inch iPad screenshot mandatory and puts iPad layout in scope for review. Either test
+      it properly or drop the declaration.
+- [ ] **Sign in with Apple token revocation on account deletion** — see `KNOWN_RISKS.md`.
+
+Screenshots required for 2026: 6.9-inch iPhone `1320 × 2868`, plus 13-inch iPad
+`2064 × 2752` while iPad support is declared.
+
+---
+
 ## App Information
 
 - **Name:** GoHustlr

@@ -11,6 +11,8 @@ import { colors, radii } from '../../theme';
 import { fetchCurrentDocs, recordAcceptances } from '../../lib/legal';
 import { getReferralCode, recordReferral } from '../../lib/referrals';
 import { parseDob, isAdult, MIN_AGE } from '../../lib/age';
+import { findProhibited } from '../../lib/contentFilter';
+import { moderateText, logModerationBlock } from '../../lib/moderation';
 import LocationPicker from '../../components/LocationPicker';
 import DobPicker, { composeDob } from '../../components/DobPicker';
 
@@ -120,6 +122,27 @@ export default function OnboardingScreen({ onComplete }) {
     Keyboard.dismiss();
     setSaving(true);
     setFinishError('');
+
+    // Username and bio become PUBLIC profile text, so they get the same two-layer
+    // check as gigs and chat (Guideline 1.2 requires filtering on every UGC
+    // surface). Checked before anything is written so a blocked profile never
+    // lands in the DB.
+    const profileText = [form.username, form.bio].filter(Boolean).join(' ');
+    const kwTerm = findProhibited(profileText);
+    if (kwTerm) {
+      logModerationBlock(kwTerm, 'profile', profileText);
+      setSaving(false);
+      setFinishError("Your username or bio contains content that isn't allowed. Please edit it.");
+      return;
+    }
+    if (form.bio) {
+      const mod = await moderateText(form.bio, 'profile');
+      if (!mod.allowed) {
+        setSaving(false);
+        setFinishError("Your bio contains content that isn't allowed. Please edit it.");
+        return;
+      }
+    }
     // Record acceptance of the current legal docs FIRST, and BLOCK on failure — the
     // account must not be marked onboarded until acceptance is durably stored (it is
     // the legal audit source of truth). recordAcceptances is idempotent, so retrying
