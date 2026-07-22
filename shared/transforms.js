@@ -49,6 +49,56 @@ export function transformJob(dbJob) {
   };
 }
 
+// A booking can reference a job that isn't in the browse feed — the poster
+// soft-cancelled it, or it simply fell outside the capped/most-recent window.
+// Synthesize a JobCard-safe job from the thin embed on the booking so the earner
+// never loses sight of work they committed to. Every field JobCard touches must
+// be present here (notably `poster`, which it dereferences unguarded).
+export function fallbackJobFromBooking(b) {
+  if (!b?.jobId) return null;
+  const j = b.job || {};
+  return {
+    id: b.jobId,
+    posterId: j.posterId ?? null,
+    title: j.title || 'Gig no longer listed',
+    category: j.category || 'Odd Jobs',
+    pay: Number(j.pay) || 0,
+    payType: j.payType || 'flat',
+    location: j.location || '',
+    description: '',
+    urgent: false,
+    estimatedHours: 1,
+    status: 'cancelled',
+    photos: [],
+    recurrence: 'none',
+    tags: [],
+    hazards: [],
+    instantBook: false,
+    instantBookAudience: 'all',
+    bumpedAt: null,
+    createdAt: j.createdAt || null,
+    lat: null,
+    lng: null,
+    postedAt: j.createdAt
+      ? new Date(j.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : 'Recently',
+    poster: {
+      name: 'Poster',
+      avatarInitial: 'P',
+      avatarUrl: null,
+      rating: 5.0,
+      reviewCount: 0,
+      verified: false,
+      school: null,
+      studentVerified: false,
+      studentStatus: 'none',
+    },
+    slots: [],
+    requirements: [],
+    reviews: [],
+  };
+}
+
 export function transformBooking(b) {
   return {
     id: b.id,

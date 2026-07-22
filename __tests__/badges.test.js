@@ -1,5 +1,5 @@
 import { BADGE_DEFS, BADGE_GROUPS } from '../shared/constants.js';
-import { badgeStatus, evaluateBadges, newlyEarned, BADGE_KEYS } from '../shared/badges.js';
+import { badgeStatus, evaluateBadges, newlyEarned, BADGE_KEYS, emptyBadgeMap } from '../shared/badges.js';
 
 const done = (over = {}) => ({ status: 'verified', ...over });
 
@@ -23,6 +23,24 @@ describe('badge catalog integrity', () => {
 
   it('awards nothing to a brand-new user', () => {
     expect(evaluateBadges({})).toEqual([]);
+  });
+
+  // Regression: UserContext seeded state from a hand-written list of 5 keys, so
+  // every badge added later was dropped when loading from the DB — they
+  // re-unlocked and re-toasted on every session.
+  it('emptyBadgeMap covers the WHOLE catalogue, so no unlocked badge is dropped on load', () => {
+    const map = emptyBadgeMap();
+    expect(Object.keys(map).sort()).toEqual([...BADGE_KEYS].sort());
+    BADGE_KEYS.forEach(k => expect(map[k]).toEqual({ unlocked: false }));
+  });
+
+  it('a persisted unlock for any badge survives a reload', () => {
+    BADGE_KEYS.forEach(key => {
+      const restored = { ...emptyBadgeMap(), [key]: { unlocked: true } };
+      // newlyEarned must not re-report a badge already recorded as unlocked.
+      const ctx = { earningsTotal: 999999, streakDays: 99, verified: true };
+      expect(newlyEarned(ctx, restored)).not.toContain(key);
+    });
   });
 
   it('never throws on malformed rows', () => {

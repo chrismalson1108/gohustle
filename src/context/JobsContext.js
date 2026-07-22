@@ -8,7 +8,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
-import { transformJob, transformBooking } from '../../shared/transforms.js';
+import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -791,7 +791,7 @@ export function JobsProvider({ children }) {
     if (reviewTerm) {
       logModerationBlock(reviewTerm, 'review', reviewText);
       showToast({ icon: '🚫', title: 'Review not allowed', message: "That review contains words that aren't allowed. Please edit it and try again." });
-      return;
+      return false;
     }
 
     // Validate state BEFORE moving any money: capture/verify only makes sense on a
@@ -800,11 +800,11 @@ export function JobsProvider({ children }) {
     const booking = state.posterBookings.find(b => b.id === bookingId);
     if (!booking) {
       showToast({ icon: '⚠️', title: "Can't verify", message: 'Booking not found — pull to refresh.' });
-      return;
+      return false;
     }
     if (['verified', 'declined', 'cancelled'].includes(booking.status)) {
       showToast({ icon: '⚠️', title: 'Already finalized', message: 'This booking can no longer be verified.' });
-      return;
+      return false;
     }
 
     // Capture escrow payment (partial if a dispute). 'Payment not found' = a
@@ -905,6 +905,10 @@ export function JobsProvider({ children }) {
     // Earner earnings are credited server-side in stripe-capture-payment (service
     // role, exempt from the profiles write-guard trigger) — the single source of
     // truth, so we don't double-credit here.
+
+    // Callers gate their success toast on this — the abort paths above return
+    // false, which is otherwise indistinguishable from a completed verify.
+    return true;
   };
 
   const updateJob = async (jobId, jobData) => {
@@ -1068,8 +1072,14 @@ export function JobsProvider({ children }) {
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const isBooked       = (jobId) => state.bookings.some(b => b.jobId === jobId);
-  const bookedJobIds   = state.bookings.map(b => b.jobId);
-  const bookedJobs     = state.jobs.filter(j => bookedJobIds.includes(j.id));
+  // Unique booked jobs, preferring the full row from the browse feed but falling
+  // back to the booking's own embed. Filtering state.jobs alone silently dropped
+  // any booking whose gig was soft-cancelled or had aged out of the capped feed,
+  // stranding the earner with no way to mark done, cancel or claim payment.
+  const bookedJobs = [...new Set(state.bookings.map(b => b.jobId).filter(Boolean))]
+    .map(id => state.jobs.find(j => j.id === id)
+      || fallbackJobFromBooking(state.bookings.find(b => b.jobId === id)))
+    .filter(Boolean);
   // Derive directly from posterId so it works immediately on cache warm-up and after addJob
   const postedJobs     = user ? state.jobs.filter(j => j.posterId === user.id) : [];
 

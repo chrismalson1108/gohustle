@@ -37,17 +37,26 @@ export function useBadgeSync(extra = {}) {
     if (fresh.length === 0) { primed.current = true; return; }
 
     const announce = primed.current;
-    fresh.forEach(key => {
-      unlockBadge(key);
-      if (announce) {
-        const def = BADGE_DEFS[key];
-        showToast?.({
-          icon: def?.icon || '🏅',
-          title: `Badge unlocked — ${def?.label || key}!`,
-          message: def?.desc || '',
-        });
-      }
-    });
+    fresh.forEach(key => unlockBadge(key));
+
+    // showToast is a single slot, not a queue — firing one per badge would let
+    // each overwrite the last. Collapse a multi-unlock into one message.
+    if (announce) {
+      const first = BADGE_DEFS[fresh[0]];
+      showToast?.(
+        fresh.length === 1
+          ? {
+            icon: first?.icon || '🏅',
+            title: `Badge unlocked — ${first?.label || fresh[0]}!`,
+            message: first?.desc || '',
+          }
+          : {
+            icon: '🏅',
+            title: `${fresh.length} badges unlocked!`,
+            message: fresh.map(k => BADGE_DEFS[k]?.label || k).join(' · '),
+          },
+      );
+    }
     primed.current = true;
   }, [
     bookings, posterBookings, postedJobs,

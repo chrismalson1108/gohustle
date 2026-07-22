@@ -255,8 +255,12 @@ export default function GigsScreen({ navigation }) {
   const handleVerify = async (data) => {
     if (!verifyTarget) return;
     try {
-      await verifyAndRate(verifyTarget.id, data);
-      showToast({ icon: '⭐', title: 'Job Verified!', message: 'Rating submitted and job marked complete.' });
+      // Gate on the real result — verifyAndRate returns false when it aborts
+      // (blocked review, booking missing, already finalized) and has already
+      // explained why, so claiming success here would contradict it.
+      const ok = await verifyAndRate(verifyTarget.id, data);
+      if (ok === false) return;
+      showToast({ icon: '⭐', title: 'Job verified!', message: 'Rating submitted and job marked complete.' });
     } catch (e) {
       showToast({ icon: '⚠️', title: 'Could not verify', message: e?.message || 'Please try again.' });
       throw e; // keep the modal open so the poster can retry

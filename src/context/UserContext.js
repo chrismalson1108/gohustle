@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { useAuth } from './AuthContext';
 import { BADGE_DEFS, LEVELS } from '../data/mockData';
+import { emptyBadgeMap } from '../../shared/badges.js';
 
 const UserContext = createContext(null);
 
@@ -47,6 +48,8 @@ const DEFAULT_STATE = {
   availability: [],
   skills: [],
   city: null,
+  bio: null,
+  verified: false,
   school: null,
   schoolDomain: null,
   major: null,
@@ -55,13 +58,10 @@ const DEFAULT_STATE = {
   gradYear: null,
   studentStatus: 'none',
   studentVerified: false,
-  badges: {
-    firstHustle: { unlocked: false },
-    onFire:      { unlocked: false },
-    bigEarner:   { unlocked: false },
-    topRated:    { unlocked: false },
-    speedDemon:  { unlocked: false },
-  },
+  // Derived from the catalogue, never hand-listed — a hardcoded subset silently
+  // discarded every badge added later, so they re-unlocked (and re-toasted)
+  // on every single load.
+  badges: emptyBadgeMap(),
   challenges: [
     { id: 'c1', icon: '🎯', ion: 'locate', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50  },
     { id: 'c2', icon: '💵', ion: 'cash',   title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150 },
@@ -73,7 +73,11 @@ const DEFAULT_STATE = {
 function dbToState(profile, badges = [], challenges = []) {
   const badgeMap = { ...DEFAULT_STATE.badges };
   badges.forEach(b => {
-    if (badgeMap[b.badge_key] !== undefined) badgeMap[b.badge_key] = { unlocked: b.unlocked };
+    // Keep rows for retired badge keys out of state, but accept every key the
+    // current catalogue knows about.
+    if (b?.badge_key && badgeMap[b.badge_key] !== undefined) {
+      badgeMap[b.badge_key] = { unlocked: !!b.unlocked };
+    }
   });
 
   const challengeMap = {};
@@ -106,6 +110,9 @@ function dbToState(profile, badges = [], challenges = []) {
     availability: Array.isArray(profile.availability) ? profile.availability : [],
     skills: Array.isArray(profile.skills) ? profile.skills : [],
     city: profile.city || null,
+    // Consumed by the badge rules (allStar needs bio, idVerified needs verified).
+    bio: profile.bio || null,
+    verified: !!profile.verified,
     school: profile.school || null,
     schoolDomain: profile.school_domain || null,
     major: profile.major || null,

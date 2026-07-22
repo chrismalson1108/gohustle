@@ -138,6 +138,15 @@ function flag(ok) {
 export const BADGE_KEYS = Object.keys(BADGE_DEFS);
 
 /**
+ * A fully-populated locked map covering the WHOLE catalogue.
+ * State must be seeded from this — a hand-listed subset silently drops rows
+ * loaded from the DB, so those badges re-unlock (and re-toast) every session.
+ */
+export function emptyBadgeMap() {
+  return Object.fromEntries(BADGE_KEYS.map(k => [k, { unlocked: false }]));
+}
+
+/**
  * Evaluate one badge against a snapshot.
  * @returns {{earned:boolean,current:number,target:number|null}}
  */

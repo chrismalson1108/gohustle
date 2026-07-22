@@ -70,13 +70,17 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
     haptic.success();
     setLoading(true);
     try {
-      await onConfirm({
+      const ok = await onConfirm({
         rating, reviewText, paymentMethod: 'card', // escrow — funds authorized to the card at accept
         tipCents: tipCents || 0,
         pct: disputed ? pct : 1,
         disputeReason: disputed ? (disputeReason || null) : null,
       });
-      onClose();           // only close on success
+      // Only close on success. An explicit `false` means the verify aborted (e.g. a
+      // blocked review) — stay open so the poster can edit and retry rather than
+      // having the sheet vanish as if it worked.
+      if (ok === false) return;
+      onClose();
     } catch (e) {
       // Keep the modal open so the poster can retry; the parent surfaces the error.
       console.warn('Completion confirm failed:', e?.message);
