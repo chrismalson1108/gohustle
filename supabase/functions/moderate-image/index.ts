@@ -17,7 +17,20 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5'; // fast + cheap + vision — ideal for moderation
 
 // Only the app's image buckets are moderatable (defense-in-depth).
-const ALLOWED_BUCKETS = new Set(['chat-photos', 'job-photos', 'completion-photos', 'avatars']);
+// `certificates` was missing, which made certificate images effectively unmoderated:
+// both clients DO route cert uploads through moderateOrThrow (src/lib/uploadImage.js
+// uploadImage -> certifications.js, and the web uploadToBucket equivalent), but this
+// allowlist rejected the bucket with 400, and moderateOrThrow deliberately fails open
+// on invocation errors so a moderation outage can't block legitimate uploads. Net
+// effect: every credential image sailed through unchecked while appearing to be
+// moderated — and they render on public profiles. Adding the bucket activates the
+// path that was already wired.
+//
+// `receipts` is intentionally NOT here: those are the user's own tax documents,
+// private to them and never rendered to another user.
+const ALLOWED_BUCKETS = new Set([
+  'chat-photos', 'job-photos', 'completion-photos', 'avatars', 'certificates',
+]);
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });

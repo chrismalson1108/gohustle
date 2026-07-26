@@ -144,9 +144,17 @@ Deno.serve(async (req: Request) => {
 
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
+        // Status precondition, mirroring payment_intent.canceled below. Stripe
+        // delivers at-least-once and retries for up to ~3 days, so a stale or
+        // redelivered payment_failed can arrive AFTER the intent succeeded and was
+        // captured. Without this guard that late event stamped a settled row
+        // 'failed', which makes a paid booking look unpaid to both UIs and to
+        // stripe-capture-payment's HOLD_EXPIRED branch. Only a not-yet-settled row
+        // can fail.
         await supabase.from('payments')
           .update({ status: 'failed' })
-          .eq('payment_intent_id', pi.id);
+          .eq('payment_intent_id', pi.id)
+          .in('status', ['pending', 'authorized']);
         const { data: payment } = await supabase
           .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
         if (payment) {
@@ -154,9 +162,16 @@ Deno.serve(async (req: Request) => {
           // the work is already done (completed/verified) this is a CAPTURE failure
           // — don't undo a finished job; leave the status so the poster can retry
           // capture rather than silently resurfacing a completed gig as a request.
+          //
+          // earner_done is checked too: a 'confirmed' booking where the earner has
+          // already marked the work done is performed work that simply has not
+          // reached mutual completion yet. Demoting it to 'pending' would strip the
+          // confirmation, let sync_slot_taken re-open the slot to a second earner,
+          // and erase the state earner-claim-payment settles against — for someone
+          // who has actually done the job.
           const { data: bk } = await supabase
-            .from('bookings').select('status').eq('id', payment.booking_id).single();
-          if (bk && ['pending', 'confirmed'].includes(bk.status)) {
+            .from('bookings').select('status, earner_done').eq('id', payment.booking_id).single();
+          if (bk && ['pending', 'confirmed'].includes(bk.status) && !bk.earner_done) {
             await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
           }
         }
@@ -183,9 +198,19 @@ Deno.serve(async (req: Request) => {
           // hold — stripe-create-payment-intent permits a re-hold once the prior
           // payment is cancelled/failed). Leave completed/verified bookings alone;
           // those surface a HOLD_EXPIRED at capture instead.
+          //
+          // earner_done gates this too. Stripe auto-cancels an uncaptured hold ~7
+          // days out, which is well past a typical gig — so this fires precisely on
+          // bookings where the work has usually already happened and the poster
+          // simply never verified. Demoting such a booking to 'pending' stripped the
+          // confirmation, let sync_slot_taken re-open the slot to a second earner,
+          // and destroyed the state earner-claim-payment reads — leaving someone who
+          // did the work with a gig that looks like an unaccepted request. Leave it
+          // 'confirmed' instead: the lapsed hold surfaces as HOLD_EXPIRED at capture,
+          // which is a recoverable, visible state that support can settle from.
           const { data: bk } = await supabase
-            .from('bookings').select('status').eq('id', payment.booking_id).single();
-          if (bk && bk.status === 'confirmed') {
+            .from('bookings').select('status, earner_done').eq('id', payment.booking_id).single();
+          if (bk && bk.status === 'confirmed' && !bk.earner_done) {
             await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
           }
         }
