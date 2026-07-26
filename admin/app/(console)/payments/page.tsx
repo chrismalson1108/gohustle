@@ -123,7 +123,13 @@ export default async function PaymentsPage({
               <tr className="text-left text-xs uppercase tracking-wide text-[var(--muted)]">
                 <th className="py-1 pr-4">Gig</th>
                 <th className="py-1 pr-4">Status</th>
-                <th className="py-1 pr-4">Charged</th>
+                {/* "Charged" was wrong: amount_cents is the AUTHORIZED hold and is
+                    deliberately never rewritten (stripe-capture-payment keeps it as
+                    the audit record). After a partial/dispute capture the poster pays
+                    less than that — as little as half — so labelling it "Charged"
+                    overstated what was actually collected, by up to 2x. */}
+                <th className="py-1 pr-4">Authorized</th>
+                <th className="py-1 pr-4">Captured</th>
                 <th className="py-1 pr-4">Fee</th>
                 <th className="py-1 pr-4">To earner</th>
                 <th className="py-1 pr-4">When</th>
@@ -143,6 +149,15 @@ export default async function PaymentsPage({
                     </td>
                     <td className="py-2 pr-4"><Pill tone={statusTone(p.status)}>{p.status}</Pill></td>
                     <td className="py-2 pr-4">{fmtCents(p.amount_cents)}</td>
+                    {/* Actually collected. stripe-capture-payment documents the
+                        captured total as earner_amount_cents + fee_cents (amount_cents
+                        stays at the original authorization), so this is the honest
+                        figure for a partial capture. Only meaningful once captured. */}
+                    <td className="py-2 pr-4">
+                      {p.status === "captured"
+                        ? fmtCents((p.earner_amount_cents ?? 0) + (p.fee_cents ?? 0))
+                        : "—"}
+                    </td>
                     <td className="py-2 pr-4">{fmtCents(p.fee_cents)}</td>
                     <td className="py-2 pr-4">{fmtCents(p.earner_amount_cents)}</td>
                     <td className="py-2 pr-4">{fmtDate(p.captured_at ?? p.created_at)}</td>
