@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { REQUIRED_SLUGS, fetchCurrentDocs, recordAcceptances, type LegalDoc } from "@/lib/legal";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import BrandShell from "@/components/brand/BrandShell";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 
 export default function ConsentPage() {
@@ -50,11 +51,12 @@ export default function ConsentPage() {
   const ordered = REQUIRED_SLUGS.map((s) => docs?.[s]).filter(Boolean) as LegalDoc[];
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <BrandShell>
+      <div className="min-h-screen bg-canvas">
       <div className="bg-brand flex flex-col items-center px-6 pb-9 pt-16 text-center text-white">
         <FileText className="mb-3 size-11" />
-        <h1 className="text-2xl font-black">We&apos;ve updated our terms</h1>
-        <p className="mt-1.5 text-white/75">Please review and accept to keep using GoHustlr.</p>
+        <h1 className="text-[26px] font-semibold">We&apos;ve updated our terms</h1>
+        <p className="mt-1.5 text-white/75">Please review and accept to keep using Hustlr.</p>
       </div>
 
       <div className="mx-auto w-full max-w-md p-6">
@@ -94,6 +96,7 @@ export default function ConsentPage() {
       <Modal open={!!openDoc} onClose={() => setOpenDoc(null)} title={openDoc?.title} size="lg">
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{openDoc?.body}</p>
       </Modal>
-    </div>
+      </div>
+    </BrandShell>
   );
 }

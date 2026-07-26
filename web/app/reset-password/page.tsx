@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
 import { getRecoveryClient } from "@/lib/supabaseClient";
 import { friendlyAuthError } from "@/lib/authErrors";
-import Logo from "@/components/Logo";
+import BrandShell, { BrandLockup } from "@/components/brand/BrandShell";
 import Button from "@/components/ui/Button";
 import { Label, FieldError } from "@/components/ui/Field";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -106,15 +106,16 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-10">
+    <BrandShell>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-10">
       <Link href="/" className="mb-6">
-        <Logo />
+        <BrandLockup />
       </Link>
       <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line">
         <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
           <KeyRound className="size-7" />
         </div>
-        <h1 className="text-2xl font-black text-ink">Set a new password</h1>
+        <h1 className="text-[26px] font-semibold text-ink">Set a new password</h1>
 
         {done ? (
           <p className="mt-3 font-medium text-success" role="status">
@@ -163,6 +164,7 @@ export default function ResetPasswordPage() {
           Back to sign in
         </Link>
       </div>
-    </div>
+      </div>
+    </BrandShell>
   );
 }

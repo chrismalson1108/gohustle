@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { SUPPORT_EMAIL } from "@/lib/legal";
-import Logo from "@/components/Logo";
+import BrandShell, { BrandLockup } from "@/components/brand/BrandShell";
 import { buttonClasses } from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 
@@ -53,10 +53,11 @@ export default function LegalDocPage() {
   }, [doc]);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <BrandShell>
+      <div className="min-h-screen bg-canvas">
       <header className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5">
         <Link href="/">
-          <Logo />
+          <BrandLockup />
         </Link>
         <button onClick={goBack} className="flex items-center gap-1 text-sm font-bold text-primary">
           <ArrowLeft className="size-4" /> Back
@@ -68,13 +69,13 @@ export default function LegalDocPage() {
           <FullPageSpinner />
         ) : data ? (
           <article className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <h1 className="text-2xl font-black text-ink">{data.title}</h1>
+            <h1 className="text-[28px] font-semibold text-ink">{data.title}</h1>
             <p className="mt-1 text-xs text-ink-muted">Version {data.version}</p>
             <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.body}</div>
           </article>
         ) : (
           <div className="rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <h1 className="text-xl font-black text-ink">Document not available</h1>
+            <h1 className="text-[22px] font-semibold text-ink">Document not available</h1>
             <p className="mt-2 text-ink-soft">
               We couldn&apos;t find that document. Questions? Email{" "}
               <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-primary">{SUPPORT_EMAIL}</a>.
@@ -90,6 +91,7 @@ export default function LegalDocPage() {
           <Link href="/legal/contractor" className="hover:text-primary">Contractor Agreement</Link>
         </div>
       </main>
-    </div>
+      </div>
+    </BrandShell>
   );
 }

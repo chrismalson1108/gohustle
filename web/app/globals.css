@@ -73,6 +73,14 @@ h2 {
   letter-spacing: -0.02em;
 }
 
+/* Brand Guidelines v1.0 surfaces (components/brand/BrandShell.tsx). Akshar carries
+   display/headlines there. This has to be a stylesheet rule rather than a Tailwind
+   utility because the `h1, h2` rule above is unlayered and would otherwise win. */
+.brand-v1 :is(h1, h2, h3) {
+  font-family: var(--font-akshar), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
 /* Brand gradient helpers used across hero/header surfaces. All three are in the
    Electric Blue family and carry white text. */
 .bg-brand {

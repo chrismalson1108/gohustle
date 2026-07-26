@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { FUNCTIONS_URL, SUPABASE_ANON_KEY } from "@/lib/config";
 import { SUPPORT_EMAIL } from "@/lib/legal";
-import Logo from "@/components/Logo";
+import BrandShell, { BrandLockup } from "@/components/brand/BrandShell";
 
 const CATEGORIES = ["General", "Payments", "A gig or booking", "My account", "Trust & safety", "Other"];
 
@@ -61,16 +61,17 @@ export default function ContactPage() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <BrandShell>
+      <div className="min-h-screen bg-canvas">
       <header className="mx-auto flex w-full max-w-2xl items-center justify-between px-5 py-5">
         <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
           <ArrowLeft size={18} /> <span className="text-sm">Back</span>
         </Link>
-        <Logo />
+        <BrandLockup />
       </header>
 
       <main className="mx-auto w-full max-w-2xl px-5 pb-20">
-        <h1 className="font-display text-3xl font-bold text-ink">Contact support</h1>
+        <h1 className="text-[34px] font-semibold text-ink">Contact support</h1>
         <p className="mt-2 text-ink-soft">
           Have a question or a problem with a gig, booking, or payment? Send us a message and we&apos;ll get back
           to you by email. You can also reach us at{" "}
@@ -85,7 +86,7 @@ export default function ContactPage() {
               Thanks! We&apos;ll reply to <strong>{email}</strong> as soon as we can.
             </p>
             <Link href="/" className="mt-6 inline-block rounded-xl bg-primary px-5 py-2.5 font-semibold text-white">
-              Back to GoHustlr
+              Back to Hustlr
             </Link>
           </div>
         ) : (
@@ -154,6 +155,7 @@ export default function ContactPage() {
           </form>
         )}
       </main>
-    </div>
+      </div>
+    </BrandShell>
   );
 }

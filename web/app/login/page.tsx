@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import Logo from "@/components/Logo";
+import BrandShell, { BrandLockup } from "@/components/brand/BrandShell";
 import Button from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { Input, Label, FieldError } from "@/components/ui/Field";
@@ -121,7 +121,7 @@ function LoginInner() {
           <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
             <Mail className="size-7" />
           </div>
-          <h1 className="mt-5 text-2xl font-black text-ink">Check your email</h1>
+          <h1 className="mt-5 text-[26px] font-semibold text-ink">Check your email</h1>
           <p className="mt-2 text-ink-soft">
             We sent a confirmation link to <span className="font-bold text-ink">{pendingEmail}</span>.
             Click it, then come back to sign in.
@@ -151,14 +151,14 @@ function LoginInner() {
 
   return (
     <Card>
-      <h1 className="text-2xl font-black text-ink">
+      <h1 className="text-[26px] font-semibold text-ink">
         {mode === "signin" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset your password"}
       </h1>
       <p className="mt-1 text-ink-soft">
         {mode === "signin"
           ? "Sign in to find gigs and get paid."
           : mode === "signup"
-            ? "Join GoHustlr — it's free."
+            ? "Join Hustlr — it's free."
             : "We'll email you a reset link."}
       </p>
 
@@ -305,12 +305,14 @@ function GoogleG({ className = "" }: { className?: string }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-10">
-      <Link href="/" className="mb-6">
-        <Logo />
-      </Link>
-      <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line/70">{children}</div>
-    </div>
+    <BrandShell>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-10">
+        <Link href="/" className="mb-6">
+          <BrandLockup />
+        </Link>
+        <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line/70">{children}</div>
+      </div>
+    </BrandShell>
   );
 }
 
