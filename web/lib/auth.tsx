@@ -168,6 +168,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       if (!next?.user) {
+        // Clear cached profile/jobs/bookings here too, not just in signOut(). A
+        // session can end WITHOUT the user pressing sign out — token expiry, or an
+        // admin revoking it via forceSignOut/suspend — and this is the only handler
+        // those paths reach. Previously cacheClearAll() lived solely in signOut(), so
+        // an expired or revoked session left the previous user's data sitting in
+        // localStorage for whoever opened the browser next. That matters most for the
+        // admin path: revoking a bad actor's session is a moderation action, and it
+        // should not leave their data readable on a shared machine.
+        cacheClearAll();
         setOnbDone(true);
         setNeedsTerms(false);
         setOnbResolved(true);
