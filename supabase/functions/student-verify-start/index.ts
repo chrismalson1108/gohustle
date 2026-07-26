@@ -58,26 +58,7 @@ Deno.serve(async (req: Request) => {
     const cleanEmail = normalizeEduEmail(email);     // canonical key for dedup/storage
     const domain = cleanEmail.split('@')[1];
 
-    // Rate limit: max 5 codes in the last 15 minutes for this user.
     const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const { count } = await supabase
-      .from('student_email_verifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .gte('created_at', since);
-    if ((count ?? 0) >= 5) return json({ error: 'rate_limited', message: 'Too many attempts. Try again later.' }, 429);
-
-    // Per-TARGET-email throttle: cap how often any single inbox can be emailed (even
-    // from rotating accounts), so this branded-OTP endpoint can't be used to bomb /
-    // phish an arbitrary .edu address. Max 3 sends to a given address per 15 min.
-    const { count: emailCount } = await supabase
-      .from('student_email_verifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('email', cleanEmail)
-      .gte('created_at', since);
-    if ((emailCount ?? 0) >= 3) {
-      return json({ error: 'rate_limited', message: 'Too many attempts for that email. Try again later.' }, 429);
-    }
 
     // If this inbox already verified ANOTHER account, silently stop — don't send a
     // dead-end code, but return the SAME neutral response as success so this endpoint
@@ -95,6 +76,19 @@ Deno.serve(async (req: Request) => {
     const codeHash = await sha256(`${code}:${user.id}`);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
+    // INSERT BEFORE COUNTING — the throttles below are only meaningful if the row
+    // exists first.
+    //
+    // These were previously check-then-act: count, decide, then insert. Under
+    // concurrency every request in a burst read the same pre-burst count, all passed,
+    // and all sent — so firing N requests in parallel delivered N branded OTP emails
+    // to an arbitrary .edu inbox, which is exactly what the per-target-email cap was
+    // added to prevent. Inserting first makes concurrent requests visible to each
+    // other, the same ordering send-push relies on for its own cap.
+    //
+    // A row inserted here and then rate-limited is harmless: its code is never emailed,
+    // it is consumed=false, and it expires in 15 minutes. It does count toward the
+    // window, which makes the cap very slightly stricter — the safe direction.
     await supabase.from('student_email_verifications').insert({
       user_id: user.id,
       email: cleanEmail,
@@ -102,6 +96,26 @@ Deno.serve(async (req: Request) => {
       code_hash: codeHash,
       expires_at: expiresAt,
     });
+
+    // Per-user: max 5 codes per 15 minutes.
+    const { count } = await supabase
+      .from('student_email_verifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gte('created_at', since);
+    if ((count ?? 0) > 5) return json({ error: 'rate_limited', message: 'Too many attempts. Try again later.' }, 429);
+
+    // Per-TARGET-email: cap how often any single inbox can be emailed (even from
+    // rotating accounts), so this branded-OTP endpoint can't be used to bomb or phish
+    // an arbitrary .edu address. Max 3 sends to a given address per 15 min.
+    const { count: emailCount } = await supabase
+      .from('student_email_verifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('email', cleanEmail)
+      .gte('created_at', since);
+    if ((emailCount ?? 0) > 3) {
+      return json({ error: 'rate_limited', message: 'Too many attempts for that email. Try again later.' }, 429);
+    }
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {

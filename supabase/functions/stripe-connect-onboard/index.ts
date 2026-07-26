@@ -27,6 +27,21 @@ const ALLOWED_WEB_HOSTS = new Set([
   'gohustlr.com',
   'www.gohustlr.com',
 ]);
+
+// Answered on the earner's behalf so hosted onboarding never asks a student for
+// their "industry" and "company website". Every earner on the platform does the
+// same thing — short-term local gig work as an independent contractor — so this is
+// genuinely uniform, not a guess we're papering over.
+//   mcc 7299 = Miscellaneous Personal Services, the standard code for errand /
+//   task / odd-job labor marketplaces.
+//   url points at the platform: earners have no site of their own, and Stripe
+//   accepts a marketplace URL plus a product_description for exactly this case.
+const BUSINESS_PROFILE = {
+  mcc: '7299',
+  product_description:
+    'Independent contractor performing short-term local gig work (errands, moving help, cleaning, yard work, tutoring and similar tasks) booked through the GoHustlr marketplace.',
+  url: 'https://gohustlr.com',
+};
 function resolveWebBase(origin: unknown): string {
   if (typeof origin === 'string' && origin) {
     try {
@@ -90,6 +105,21 @@ Deno.serve(async (req: Request) => {
         if (status.onboarded || status.state === 'pending' || status.state === 'restricted') {
           return json({ alreadyOnboarded: status.onboarded, status });
         }
+
+        // Backfill business_profile on accounts created before we prefilled it.
+        // Otherwise those earners stay parked on the "Additional information / Your
+        // website" step forever, answering a question we can answer for them.
+        // Only fills what's blank — never overwrites something the earner set.
+        const bp = account.business_profile;
+        if (!bp?.product_description || !bp?.mcc || !bp?.url) {
+          await stripe.accounts.update(existing.account_id, {
+            business_profile: {
+              mcc: bp?.mcc || BUSINESS_PROFILE.mcc,
+              product_description: bp?.product_description || BUSINESS_PROFILE.product_description,
+              url: bp?.url || BUSINESS_PROFILE.url,
+            },
+          });
+        }
       } catch (e) {
         console.error('stripe-connect-onboard: live account re-check failed:', e);
       }
@@ -123,6 +153,14 @@ Deno.serve(async (req: Request) => {
           ...(firstName && { first_name: firstName }),
           ...(lastName && { last_name: lastName }),
         },
+        // Prefilled so hosted onboarding never shows the "Additional information /
+        // Your website" step. Without it Stripe has to stop and ask each earner for
+        // their industry and company website — a question a student mowing lawns
+        // cannot sensibly answer, and it lands in currently_due as "a short
+        // description of the work you do", blocking payouts. Stripe accepts a
+        // product_description in place of a URL (its own form offers exactly that
+        // fallback), so we answer on the earner's behalf. See BUSINESS_PROFILE.
+        business_profile: BUSINESS_PROFILE,
         settings: {
           // Automatic daily payouts: once a payment is captured to the earner's
           // connected account, Stripe pays their bank on its standard rolling

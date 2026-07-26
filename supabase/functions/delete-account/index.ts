@@ -72,6 +72,39 @@ Deno.serve(async (req: Request) => {
         .from('bookings').select('id').in('job_id', ownedJobIds).in('status', UNSETTLED_STATUSES);
       posterUnsettled = data ?? [];
     }
+    // Open safety report = evidence hold. Self-deletion cascades away the bookings,
+    // messages, reviews and photos a moderator would need to act on a report filed
+    // ABOUT this user, so someone under investigation could erase the case against
+    // them at will — on a platform where the reports in question are things like
+    // harassment or a no-show at someone's home.
+    //
+    // Scoped narrowly so this can't be weaponised: only UNRESOLVED reports, only ones
+    // naming this user as the REPORTED party (being a reporter never blocks your own
+    // deletion), and source='auto' content flags are excluded so an automated
+    // moderation hit cannot trap an account. Reports are rate-limited to 10/hr
+    // (20260726020000), so this cannot be spammed to pin someone indefinitely, and an
+    // admin resolving the report clears the hold.
+    const { count: openReports, error: reportErr } = await admin
+      .from('reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('reported_user_id', user.id)
+      .neq('source', 'auto')
+      .is('resolved_at', null);
+    if (reportErr) {
+      // Fail CLOSED: if we cannot tell whether evidence is under review, do not
+      // destroy it. Support can complete the deletion manually.
+      return json({
+        error: 'REVIEW_CHECK_FAILED',
+        message: 'We could not verify your account status. Please contact support to delete your account.',
+      }, 503);
+    }
+    if ((openReports ?? 0) > 0) {
+      return json({
+        error: 'UNDER_REVIEW',
+        message: 'Your account is under review and can\'t be deleted right now. Contact support if you think this is a mistake.',
+      }, 409);
+    }
+
     const unsettledCount = (earnerBookings?.length ?? 0) + posterUnsettled.length;
     if (unsettledCount > 0) {
       return json({
