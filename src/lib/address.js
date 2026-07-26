@@ -14,7 +14,13 @@ const STREET_SUFFIX_RE =
 export function maskLocation(location) {
   if (!location) return location;
   const label = String(location);
-  if (label.toLowerCase().includes('remote')) return label;
+  // NOTE: there is deliberately no "contains 'remote' -> return unmasked" shortcut.
+  // It used to be here and it leaked street addresses: the substring matches inside
+  // real labels like "1234 Remote Ridge Rd, Dallas, TX" and "123 Main St, Dallas, TX
+  // (remote possible)", both of which were published in full to every signed-in user.
+  // The shortcut was also unnecessary — a "Remote" segment carries no digits and no
+  // street suffix, so the normal filter below preserves it anyway ("Remote" ->
+  // "Remote", "Remote, Dallas, TX" -> "Remote, Dallas, TX").
   const parts = label.split(',').map((p) => p.trim()).filter(Boolean);
   // Street lines are the segments containing digits ("123 Main St", "Apt 4",
   // "Ste 100") OR ending in a street/unit keyword ("One Main Street", "Apt Four").
