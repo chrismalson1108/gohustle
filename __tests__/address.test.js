@@ -47,3 +47,25 @@ describe('canSeeExactAddress', () => {
     expect(canSeeExactAddress({ isPoster: false, bookingStatus: undefined })).toBe(false);
   });
 });
+
+// Regression: mask_location used to open with a substring test —
+//   if (label.toLowerCase().includes('remote')) return label;
+// — intended as "a remote gig has no address to hide". Because it tested the WHOLE
+// label, any physical address containing those six letters was published verbatim to
+// every signed-in user, which is exactly what the server-side masking work
+// (20260722040000) existed to prevent. Both inputs below are ordinary, not contrived:
+// "Remote Ridge Rd" is a real street-name shape, and noting "(remote possible)" on a
+// physical gig is a natural thing for a poster to type.
+describe('maskLocation does not fail open on the word "remote"', () => {
+  test('a street address containing "remote" is still masked', () => {
+    expect(maskLocation('1234 Remote Ridge Rd, Dallas, TX')).toBe('Dallas, TX');
+  });
+  test('a street address annotated "(remote possible)" is still masked', () => {
+    expect(maskLocation('123 Main St, Dallas, TX (remote possible)'))
+      .toBe('Dallas, TX (remote possible)');
+  });
+  test('genuinely remote labels are preserved (why the shortcut was unnecessary)', () => {
+    expect(maskLocation('Remote')).toBe('Remote');
+    expect(maskLocation('Remote, Dallas, TX')).toBe('Remote, Dallas, TX');
+  });
+});

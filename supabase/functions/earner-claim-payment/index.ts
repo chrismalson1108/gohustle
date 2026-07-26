@@ -22,6 +22,13 @@ const corsHeaders = {
 // MUST match EARNER_CLAIM_GRACE_DAYS in shared/lifecycle.js.
 const GRACE_DAYS = 3;
 const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
+// Stripe auto-cancels an uncaptured manual-capture authorization ~7 days after it is
+// placed. The claim gate has to know this, because the hold ages from ACCEPT time
+// while the grace counts from SLOT time — see the eligibility comment below.
+const HOLD_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+// Unlock the claim this far before the hold dies, so the earner has a real chance to
+// act rather than racing Stripe's cancellation to the second.
+const HOLD_EXPIRY_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -71,8 +78,48 @@ Deno.serve(async (req: Request) => {
     if (!slot?.starts_at) {
       return json({ error: 'NO_SCHEDULE', message: 'This booking has no scheduled time — contact support to settle it.' }, 409);
     }
-    const eligibleAt = new Date(new Date(slot.starts_at).getTime() + GRACE_MS);
-    if (Date.now() < eligibleAt.getTime()) {
+    // When the escrow hold was placed. Needed by the eligibility gate below (the hold
+    // ages from ACCEPT time, the grace counts from SLOT time). The full payments row
+    // is re-read further down for the capture itself; this is just the timestamp.
+    const { data: holdRow } = await supabase
+      .from('payments').select('created_at').eq('booking_id', bookingId).maybeSingle();
+    const payment_created_at_hint = holdRow?.created_at
+      ? new Date(holdRow.created_at).getTime()
+      : null;
+    // The slot-time grace is the NORMAL anchor, but it cannot be the only one.
+    // Stripe auto-cancels an uncaptured authorization ~7 days after it is placed, and
+    // the hold is placed at ACCEPT time while this gate counts from SLOT time — so for
+    // a gig scheduled well after acceptance the two windows never overlap:
+    //
+    //   slot 1-3 days out : hold dies day 7, claim opens day 4-6  -> window exists
+    //   slot 4 days out   : hold dies day 7, claim opens day 7    -> NO window
+    //   slot 5+ days out  : hold dies day 7, claim opens day 8+   -> NO window
+    //
+    // i.e. every gig booked 4+ days ahead had no self-service payout path at all: the
+    // earner does the work, the poster ghosts, and the hold silently expires before
+    // the claim ever unlocks. Booking a week or two ahead is completely ordinary.
+    //
+    // Second anchor: once the scheduled time has actually PASSED (so the work was
+    // due) and the hold is within HOLD_EXPIRY_MARGIN_MS of dying, the claim unlocks
+    // early. Both conditions are required — "hold is about to expire" alone would let
+    // an earner drain the hold for a gig that has not happened yet.
+    //
+    // RESIDUAL, deliberately not papered over: for a slot 7+ days after acceptance the
+    // hold is already dead by the time the work is due, so there is nothing left to
+    // capture and no gate change can conjure it. That needs the hold to be placed (or
+    // re-authorized) closer to the gig — a payments-architecture change, not a patch.
+    // Those bookings fall through to the HOLD_EXPIRED branch below, which is at least
+    // explicit and routes to support.
+    const slotStart = new Date(slot.starts_at).getTime();
+    const eligibleAt = new Date(slotStart + GRACE_MS);
+    const holdPlacedAt = payment_created_at_hint;
+    const holdNearlyExpired =
+      holdPlacedAt !== null &&
+      Date.now() >= holdPlacedAt + (HOLD_LIFETIME_MS - HOLD_EXPIRY_MARGIN_MS);
+    const scheduledTimePassed = Date.now() >= slotStart;
+    const claimUnlocked =
+      Date.now() >= eligibleAt.getTime() || (scheduledTimePassed && holdNearlyExpired);
+    if (!claimUnlocked) {
       return json({
         error: 'TOO_EARLY',
         message: `You can claim payment ${GRACE_DAYS} days after the scheduled time if the poster hasn't confirmed.`,

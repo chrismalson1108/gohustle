@@ -126,6 +126,11 @@ export default function JobDetailPage() {
       : `${money(job.pay)} flat rate`;
   // A slot is bookable only if it isn't taken and isn't already in the past (matches
   // the SlotPicker's past-slot filter) — otherwise the CTA would gate on stale slots.
+  // Drives BOTH the CTA's disabled state and the handleBook guard. Previously the
+  // button was disabled only on `!selectedSlot && hasAvailableSlot`, which left it
+  // enabled and labelled "Book this gig" once every slot was taken or past — booking
+  // with slot_id = null, outside the one-active-booking-per-slot unique index and
+  // with no schedule for earner-claim-payment to settle against.
   const nowMs = new Date().getTime();
   const hasAvailableSlot = job.slots?.some((s) => !s.taken && (!s.startsAt || Date.parse(s.startsAt) > nowMs));
 
@@ -135,7 +140,23 @@ export default function JobDetailPage() {
   const net = gross - fee;
 
   const handleBook = async () => {
-    if (!selectedSlot && hasAvailableSlot) return;
+    // Every gig always carries at least one bookable slot (PostJob/EditJob attach a
+    // "Flexible — Contact to Schedule" slot when the poster picks no times), so
+    // "nothing available" means every slot is taken or in the past — i.e. this gig is
+    // not bookable right now. The old guard read `!selectedSlot && hasAvailableSlot`,
+    // which SKIPPED itself in exactly that case and booked with slot_id = null: a
+    // phantom booking outside the one-active-booking-per-slot unique index (so the
+    // slot could be double-booked), with no schedule for earner-claim-payment to
+    // settle against. Refuse instead.
+    if (!hasAvailableSlot) {
+      showToast({
+        icon: "⚠️",
+        title: "No times available",
+        message: "Every time slot for this gig is taken or has passed.",
+      });
+      return;
+    }
+    if (!selectedSlot) return;
     const note = applicationNote.trim() || null;
     const noteTerm = note && findProhibited(note);
     if (noteTerm) {
@@ -393,12 +414,20 @@ export default function JobDetailPage() {
               )}
             </div>
           ) : (
-            <Button fullWidth size="lg" loading={booking} disabled={!selectedSlot && hasAvailableSlot} onClick={handleBook}>
-              {selectedSlot || !hasAvailableSlot
-                ? Number.isFinite(parseFloat(counterPrice)) && parseFloat(counterPrice) > 0
-                  ? `Book · counter ${money(parseFloat(counterPrice))}`
-                  : "Book this gig"
-                : "Select a time slot first"}
+            <Button
+              fullWidth
+              size="lg"
+              loading={booking}
+              disabled={!hasAvailableSlot || !selectedSlot}
+              onClick={handleBook}
+            >
+              {!hasAvailableSlot
+                ? "No times available"
+                : selectedSlot
+                  ? Number.isFinite(parseFloat(counterPrice)) && parseFloat(counterPrice) > 0
+                    ? `Book · counter ${money(parseFloat(counterPrice))}`
+                    : "Book this gig"
+                  : "Select a time slot first"}
             </Button>
           )}
         </div>
