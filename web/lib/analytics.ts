@@ -14,11 +14,38 @@ export function track(event: string, props: Record<string, unknown> = {}): void 
   }
 }
 
-export function captureError(error: unknown, context: Record<string, unknown> = {}): void {
+export function captureError(
+  error: unknown,
+  context: Record<string, unknown> = {},
+  { fatal = false }: { fatal?: boolean } = {},
+): void {
   try {
     const message = error instanceof Error ? error.message : String(error);
     if (isDev) console.warn("[error]", message, context);
+    // Forward to the server-side sink (client_errors -> admin console) so a
+    // production error is observable at all. Mirrors src/lib/analytics.js.
+    //
+    // Deliberately not awaited and never throws: the caller is already handling a
+    // failure, so telemetry must not add latency or a second error. Signed-out
+    // callers are dropped by the function (401), which is fine.
+    reportError(message, context, fatal);
   } catch {
     /* ignore */
+  }
+}
+
+// Fire-and-forget POST to the log-client-error edge function. Imported lazily so this
+// module has no import cycle with the Supabase client.
+function reportError(message: string, context: Record<string, unknown>, fatal: boolean): void {
+  try {
+    void import("./supabaseClient")
+      .then(({ supabase }) =>
+        supabase.functions.invoke("log-client-error", {
+          body: { message, context, platform: "web", appVersion: null, fatal },
+        }),
+      )
+      .catch(() => {});
+  } catch {
+    /* never let telemetry break the caller */
   }
 }

@@ -213,6 +213,39 @@ Deno.serve(async (req: Request) => {
           if (bk && bk.status === 'confirmed' && !bk.earner_done) {
             await supabase.from('bookings').update({ status: 'pending' }).eq('id', payment.booking_id);
           }
+
+          // A hold that lapses on work ALREADY PERFORMED is an unpaid worker, and it
+          // was previously silent — nobody was told, on either side.
+          //
+          // This is the visible half of the known architectural gap: the hold ages
+          // from ACCEPT time and Stripe voids it ~7 days later, so a gig scheduled
+          // more than a week after acceptance has its escrow die before the work is
+          // even due. earner-claim-payment gained a second anchor that recovers the
+          // 4-6 day window, but beyond that there is genuinely nothing left to
+          // capture. Re-authorizing closer to the gig is the real fix and is a
+          // payments-architecture change.
+          //
+          // Until then this must not fail silently. Page a human with the booking id
+          // so support can settle it manually — Stripe still holds the PI metadata
+          // (booking_id, job_id, earner_id, poster_id) needed to reconcile, and the
+          // booking row now survives (it is no longer demoted), so there is a record
+          // to act on. Best-effort: emailAdmin never throws, so a Resend outage cannot
+          // wedge the webhook into a Stripe retry loop.
+          if (bk && bk.earner_done && ['confirmed', 'completed'].includes(bk.status)) {
+            await emailAdmin(
+              `Escrow hold expired on completed work — booking ${payment.booking_id}`,
+              `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+                 <p><strong>The card hold expired before this booking was paid out.</strong></p>
+                 <p>The earner marked this job done, so work was almost certainly performed
+                    and there is now nothing left to capture.</p>
+                 <p>Booking: <code>${esc(payment.booking_id)}</code><br/>
+                    PaymentIntent: <code>${esc(pi.id)}</code><br/>
+                    Booking status: <code>${esc(bk.status)}</code></p>
+                 <p>Settle this manually: the PaymentIntent metadata carries booking_id,
+                    job_id, earner_id and poster_id.</p>
+               </div>`,
+            );
+          }
         }
         break;
       }

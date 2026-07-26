@@ -8,6 +8,7 @@
 //     in track()/identify(). Native SDKs require a dev-client rebuild.
 // Until then everything degrades to a safe no-op so the app never breaks.
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 export const SENTRY_DSN = null;      // ← paste your Sentry DSN to enable crash reports
 export const ANALYTICS_KEY = null;   // ← paste your PostHog/Amplitude key to enable analytics
@@ -33,11 +34,39 @@ export function track(event, props = {}) {
   } catch (_) {}
 }
 
-export function captureError(error, context = {}) {
+export function captureError(error, context = {}, { fatal = false } = {}) {
   try {
     const message = error?.message || String(error);
     remember('error', message, context);
     if (__DEV__) console.warn('[error]', message, context, Platform.OS);
-    // TODO: if (SENTRY_DSN) Sentry.captureException(error, { extra: { ...context, userId: currentUserId } });
+    // Forward to the server-side sink so a production error lands somewhere a human
+    // can see it (client_errors -> admin console) rather than only in the in-memory
+    // ring buffer above, which dies with the process. This is what makes the 15
+    // captureError call sites — accept booking, verify+capture, tip, complete job,
+    // post gig — actually observable in beta.
+    //
+    // Deliberately NOT awaited and never throws: the caller is already handling a
+    // failure, so telemetry must not add latency or a second error. Signed-out
+    // callers are dropped by the function (401) and that is fine.
+    reportError(message, context, fatal);
+    // Real Sentry remains the eventual answer for native crash capture (it needs a
+    // dev-client rebuild, which is why SENTRY_DSN is still null):
+    // if (SENTRY_DSN) Sentry.captureException(error, { extra: { ...context, userId: currentUserId } });
   } catch (_) {}
+}
+
+// Fire-and-forget POST to the log-client-error edge function. Imported lazily so this
+// module stays dependency-free for the pure-logic unit tests that import it.
+function reportError(message, context, fatal) {
+  try {
+    const { supabase } = require('./supabase');
+    const appVersion = Constants?.expoConfig?.version ?? null;
+    supabase.functions
+      .invoke('log-client-error', {
+        body: { message, context, platform: Platform.OS, appVersion, fatal },
+      })
+      .catch(() => {});
+  } catch (_) {
+    /* never let telemetry break the caller */
+  }
 }

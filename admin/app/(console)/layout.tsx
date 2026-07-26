@@ -23,6 +23,7 @@ export default async function ConsoleLayout({
             <Link href="/payments" className="hover:text-[var(--brand)]">Payments</Link>
             <Link href="/jobs" className="hover:text-[var(--brand)]">Jobs</Link>
             <Link href="/support" className="hover:text-[var(--brand)]">Support</Link>
+            <Link href="/errors" className="hover:text-[var(--brand)]">Errors</Link>
             {ctx.role === "admin" && (
               <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
             )}

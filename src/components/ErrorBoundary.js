@@ -14,7 +14,9 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    captureError(error, { componentStack: info?.componentStack, boundary: 'root' });
+    // fatal: this is a render crash that replaced the whole UI with the fallback, not
+    // a recoverable operation failure — worth distinguishing in the admin error list.
+    captureError(error, { componentStack: info?.componentStack, boundary: 'root' }, { fatal: true });
   }
 
   reset = () => this.setState({ hasError: false });
