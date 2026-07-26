@@ -304,14 +304,14 @@ export default function SettingsPage() {
       try {
         const body = await (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } })
           .context?.json?.();
-        if (body?.error === "UNSETTLED_BOOKINGS" && body?.message) message = body.message;
+        if (body?.message && ["UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED"].includes(body.error ?? "")) message = body.message;
       } catch {
         /* keep the generic message */
       }
       showToast({ icon: "❌", title: "Could not delete", message });
       return;
     }
-    if (data?.error === "UNSETTLED_BOOKINGS") {
+    if (["UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED"].includes(data?.error ?? "")) {
       setDeleting(false);
       setConfirmDelete(false);
       showToast({ icon: "❌", title: "Could not delete", message: data.message });
