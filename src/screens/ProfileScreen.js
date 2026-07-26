@@ -136,12 +136,21 @@ export default function ProfileScreen({ navigation }) {
   // Everyone can both earn and hire, so prompt for both payment sides.
   const showEarn = true;
   const showPay  = true;
-  const needsPayout = showEarn && payReady && !payReady.payoutReady;
+  const payoutState = payReady?.payout?.state ?? 'none';
+  // 'pending' = Stripe is reviewing; the user has nothing to do, so it must NOT be
+  // nagged about like an unfinished setup (that circular prompt is the bug we fixed).
+  const payoutWaiting = payoutState === 'pending';
+  const needsPayout = showEarn && payReady && !payReady.payoutReady && !payoutWaiting;
   const needsCard   = showPay && payReady && !payReady.paymentMethodReady;
+  const payoutAlertCopy = payoutState === 'restricted'
+    ? { title: "There's a problem with your payout account", sub: 'Tap for details and support →' }
+    : payReady?.payout?.hasAccount
+      ? { title: 'Finish your payout setup', sub: 'Stripe still needs a few details →' }
+      : { title: 'Set up payouts to get paid', sub: 'Connect your bank to receive earnings →' };
   const paymentAlert = (needsPayout && needsCard)
     ? { title: 'Finish setting up payments', sub: 'Connect a bank and add a card →' }
     : needsPayout
-      ? { title: 'Set up payouts to get paid', sub: 'Connect your bank to receive earnings →' }
+      ? payoutAlertCopy
       : needsCard
         ? { title: 'Add a payment method to hire', sub: 'Save a card so you can book gigs →' }
         : null;
@@ -152,7 +161,11 @@ export default function ProfileScreen({ navigation }) {
     : (showPay && !showEarn)
       ? (payReady.paymentMethodReady ? 'Card on file · tap to change' : 'Add a payment method')
       : (showEarn && !showPay)
-        ? (payReady.payoutReady ? 'Payouts active · tap to manage' : 'Set up payouts to get paid')
+        ? (payReady.payoutReady
+            ? 'Payouts active · tap to manage'
+            : payoutWaiting
+              ? 'Stripe is verifying your details'
+              : payoutAlertCopy.title)
         : 'Manage payout & payment methods';
 
   const onRefresh = async () => {

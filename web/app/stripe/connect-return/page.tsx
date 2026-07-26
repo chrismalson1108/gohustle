@@ -1,6 +1,4 @@
-import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
-import { buttonClasses } from "@/components/ui/Button";
+import ConnectReturnStatus from "./ConnectReturnStatus";
 
 export const metadata = { title: "Payout Setup • GoHustlr" };
 
@@ -8,21 +6,13 @@ export const metadata = { title: "Payout Setup • GoHustlr" };
 // Lives on the web app (NOT a Supabase Edge Function) because the functions
 // gateway forces text/plain + nosniff on browser responses, so HTML served from
 // /functions/v1/* renders as raw source. Vercel serves real text/html.
+//
+// This stays a Server Component purely to keep the `metadata` export (only Server
+// Components may export it — Next 16). All the live status logic is in the client
+// child, which is where the real fix lives: this page used to hard-code "Payout
+// setup complete — your bank account is connected", which was a lie whenever the
+// user tapped "Skip for now" during onboarding. Stripe redirects here either way,
+// so they'd read a success screen and then find payouts still off one tap later.
 export default function ConnectReturnPage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
-        <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-success-light text-success">
-          <CheckCircle2 className="size-9" />
-        </div>
-        <h1 className="font-display text-2xl font-black text-ink">Payout setup complete</h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-          Your bank account is connected. Earnings are deposited automatically after a job is verified.
-        </p>
-        <Link href="/profile/payouts" className={buttonClasses("primary", "lg", "mt-7 w-full")}>
-          Return to GoHustlr
-        </Link>
-      </div>
-    </main>
-  );
+  return <ConnectReturnStatus />;
 }

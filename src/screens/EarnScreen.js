@@ -70,7 +70,10 @@ export default function EarnScreen({ navigation }) {
   const [posterReview, setPosterReview] = useState('');
   const [ratingLoading, setRatingLoading] = useState(false);
   const [refreshing, setRefreshing]     = useState(false);
-  const [payoutReady, setPayoutReady]   = useState(true); // optimistic until checked
+  // Keep the whole ConnectStatus, not just a boolean: "you skipped a step" and
+  // "Stripe is reviewing your ID" both read as not-ready but need opposite copy.
+  const [payoutStatus, setPayoutStatus] = useState(null); // null = not checked yet
+  const payoutReady = payoutStatus ? payoutStatus.onboarded : true; // optimistic until checked
   // Collapsible secondary sections + completed-history expansion.
   // Open by default: it renders only on the Completed tab now, where the month
   // recap is the point of the visit.
@@ -91,7 +94,7 @@ export default function EarnScreen({ navigation }) {
   const driveTimeoutRef = useRef(null); // safety auto-pause timer
 
   useEffect(() => {
-    getPayoutStatus().then(s => setPayoutReady(s.onboarded));
+    getPayoutStatus().then(setPayoutStatus).catch(() => {});
   }, []);
 
   // Stop tracking + tear down the GPS subscription. Safe to call multiple times.
@@ -740,10 +743,32 @@ export default function EarnScreen({ navigation }) {
           onPress={() => navigation.navigate('ProfileTab', { screen: 'PayoutSetup', initial: false })}
           activeOpacity={0.85}
         >
-          <Ionicons name="wallet-outline" size={20} color={colors.primary} />
+          <Ionicons
+            name={payoutStatus?.state === 'pending' ? 'time-outline' : 'wallet-outline'}
+            size={20}
+            color={colors.primary}
+          />
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.payoutBannerTitle} numberOfLines={2}>Set up payouts to get paid</Text>
-            <Text style={styles.payoutBannerSub} numberOfLines={2}>Connect your bank to receive earnings</Text>
+            {/* State-aware: a user waiting on Stripe's review has nothing to action,
+                so telling them to "set up payouts" sends them in a pointless circle. */}
+            <Text style={styles.payoutBannerTitle} numberOfLines={2}>
+              {payoutStatus?.state === 'pending'
+                ? 'Stripe is verifying your details'
+                : payoutStatus?.state === 'restricted'
+                  ? "There's a problem with your payout account"
+                  : payoutStatus?.hasAccount
+                    ? 'Finish your payout setup'
+                    : 'Set up payouts to get paid'}
+            </Text>
+            <Text style={styles.payoutBannerSub} numberOfLines={2}>
+              {payoutStatus?.state === 'pending'
+                ? 'Payouts switch on automatically — nothing to do'
+                : payoutStatus?.state === 'restricted'
+                  ? 'Tap for details and support'
+                  : payoutStatus?.hasAccount
+                    ? 'You skipped a step — Stripe still needs a few details'
+                    : 'Connect your bank to receive earnings'}
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>

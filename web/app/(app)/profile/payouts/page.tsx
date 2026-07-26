@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Wallet, CreditCard, CheckCircle2, Trash2 } from "lucide-react";
+import { ArrowLeft, Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2 } from "lucide-react";
+import { NO_PAYOUT_ACCOUNT, type ConnectStatus } from "@/lib/connectStatus";
+import { SUPPORT_EMAIL } from "@/lib/legal";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
-import Button from "@/components/ui/Button";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import AddCardModal from "@/components/AddCardModal";
 import { FullPageSpinner } from "@/components/ui/Spinner";
@@ -17,6 +19,8 @@ type Readiness = {
   paymentMethodReady: boolean;
   cardBrand?: string | null;
   cardLast4?: string | null;
+  /** Full payout state — `payoutReady` alone can't tell "unfinished" from "under review". */
+  payout: ConnectStatus;
 };
 
 export default function PayoutsPage() {
@@ -35,7 +39,9 @@ export default function PayoutsPage() {
   }, [getPaymentReadiness]);
 
   useEffect(() => {
-    refreshReadiness().catch(() => setReady({ payoutReady: false, paymentMethodReady: false }));
+    refreshReadiness().catch(() =>
+      setReady({ payoutReady: false, paymentMethodReady: false, payout: NO_PAYOUT_ACCOUNT }),
+    );
   }, [refreshReadiness]);
 
   // Keep the page honest when the user comes back to it:
@@ -101,6 +107,7 @@ export default function PayoutsPage() {
       const res = (which === "onboard" ? await getPayoutOnboardingUrl() : await getPayoutLoginLink()) as {
         url?: string;
         alreadyOnboarded?: boolean;
+        status?: ConnectStatus;
       };
       if (res?.url) {
         if (dash) dash.location.replace(res.url);
@@ -108,10 +115,16 @@ export default function PayoutsPage() {
         return;
       }
       dash?.close();
+      // No link is the NORMAL answer for pending/restricted accounts — the server
+      // withholds one because a fresh onboarding session would have nothing to ask
+      // for. Reflect the real status instead of the old "no setup link was returned"
+      // error, which made a healthy under-review account look broken.
+      const r = await getPaymentReadiness();
+      setReady(r);
       if (res?.alreadyOnboarded) {
-        const r = await getPaymentReadiness();
-        setReady(r);
         showToast({ icon: "✅", title: "Payouts already active", message: "Your payout account is set up." });
+      } else if (res?.status) {
+        showToast({ icon: res.status.state === "pending" ? "⏳" : "⚠️", title: res.status.title, message: res.status.message });
       } else {
         showToast({ icon: "⚠️", title: "Couldn't open payout setup", message: "No setup link was returned — please try again." });
       }
@@ -146,22 +159,63 @@ export default function PayoutsPage() {
               <p className="text-sm text-ink-soft">Connect a bank to receive card earnings.</p>
             </div>
           </div>
-          {ready.payoutReady ? (
+          {/* Four distinct outcomes. Collapsing them into payoutReady ? active : "set
+              up payouts" is what made a skipped verification step unexplainable — and
+              would nag a user whose ID is merely under review to go re-do setup. */}
+          {ready.payout.state === "active" ? (
             <div className="mt-4">
               <p className="mb-3 flex items-center gap-1.5 text-sm font-bold text-success">
-                <CheckCircle2 className="size-4" /> Payouts are active
+                <CheckCircle2 className="size-4" /> {ready.payout.title}
               </p>
               <Button variant="outline" fullWidth loading={busy === "manage"} onClick={() => go("manage")}>
                 Manage payout details
               </Button>
             </div>
+          ) : ready.payout.state === "pending" ? (
+            <div className="mt-4">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
+                <Clock className="size-4 text-primary" /> {ready.payout.title}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{ready.payout.message}</p>
+              <Button variant="outline" fullWidth className="mt-4" loading={busy === "manage"} onClick={() => go("manage")}>
+                View payout details
+              </Button>
+            </div>
+          ) : ready.payout.state === "restricted" ? (
+            <div className="mt-4">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-urgent">
+                <AlertTriangle className="size-4" /> {ready.payout.title}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{ready.payout.message}</p>
+              <a href={`mailto:${SUPPORT_EMAIL}`} className={buttonClasses("outline", "md", "mt-4 w-full")}>
+                Contact support
+              </a>
+            </div>
           ) : (
             <>
+              {ready.payout.hasAccount && (
+                <div className="mt-4 rounded-2xl bg-urgent-light p-3 ring-1 ring-urgent/20">
+                  <p className="flex items-center gap-1.5 text-sm font-bold text-urgent">
+                    <AlertTriangle className="size-4" /> {ready.payout.title}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-soft">{ready.payout.message}</p>
+                  {ready.payout.requirements.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {ready.payout.requirements.map((r) => (
+                        <li key={r} className="flex items-start gap-2 text-xs font-semibold text-ink">
+                          <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-urgent" />
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               <Button fullWidth className="mt-4" loading={busy === "onboard"} onClick={() => go("onboard")}>
-                Set up payouts
+                {ready.payout.hasAccount ? "Finish setup" : "Set up payouts"}
               </Button>
               <p className="mt-2 text-xs leading-relaxed text-ink-muted">
-                No business needed — choose <span className="font-semibold">Individual</span>. Stripe just verifies it&apos;s you (name, date of birth, and a bank account) so it can send your money.
+                No business needed — choose <span className="font-semibold">Individual</span>. Stripe just verifies it&apos;s you (name, date of birth, and a bank account) so it can send your money. Complete every step — skipping one leaves payouts switched off.
               </p>
             </>
           )}

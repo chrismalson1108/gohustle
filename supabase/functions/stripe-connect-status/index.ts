@@ -9,8 +9,14 @@
 // break the payouts UI; it makes stripe-create-payment-intent / capture / tip reject
 // the earner (EARNER_NO_PAYOUT), blocking the whole escrow flow. A live retrieve is
 // authoritative and webhook-independent.
+//
+// It now returns the FULL status (see _shared/connectStatus.ts), not just a boolean,
+// so the UI can tell "you skipped a step, go finish it" apart from "Stripe is
+// reviewing your ID, just wait" — states that look identical through `onboarded`
+// alone but call for opposite user action.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { deriveConnectStatus, NO_ACCOUNT_STATUS } from '../_shared/connectStatus.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,22 +45,21 @@ Deno.serve(async (req: Request) => {
       .eq('user_id', user.id)
       .single();
 
-    if (!acct?.account_id) return json({ hasAccount: false, onboarded: false });
+    if (!acct?.account_id) return json(NO_ACCOUNT_STATUS);
 
     // Authoritative, live status — no webhook dependency.
     const account = await stripe.accounts.retrieve(acct.account_id);
-    const onboarded = !!(
-      account.details_submitted &&
-      account.charges_enabled &&
-      account.payouts_enabled
-    );
+    const status = deriveConnectStatus(account);
 
     // Keep the cached flag in sync — it's read by create-payment-intent/capture/tip.
-    if (onboarded !== acct.onboarded) {
-      await supabase.from('stripe_accounts').update({ onboarded }).eq('account_id', acct.account_id);
+    if (status.onboarded !== acct.onboarded) {
+      await supabase
+        .from('stripe_accounts')
+        .update({ onboarded: status.onboarded })
+        .eq('account_id', acct.account_id);
     }
 
-    return json({ hasAccount: true, onboarded });
+    return json(status);
   } catch (err: any) {
     console.error('stripe-connect-status:', err);
     return json({ error: 'Something went wrong. Please try again.' }, 500);

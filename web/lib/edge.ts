@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { FUNCTIONS_URL, SUPABASE_ANON_KEY } from "./config";
+import type { ConnectStatus } from "./connectStatus";
 
 // Calls a Supabase Edge Function with the current user's bearer token.
 // Mirror of src/lib/stripeClient.js `callEdgeFunction` — the backend is shared.
@@ -57,16 +58,23 @@ export const stripeEdge = {
   // the grace window when the poster never confirms. Server re-checks every gate.
   claimEarnerPayment: (bookingId: string) =>
     callEdgeFunction("earner-claim-payment", { bookingId }),
+  // Returns `{ url }` to send the user into hosted onboarding, OR `{ alreadyOnboarded,
+  // status }` when there is nothing for them to do there — note that includes the
+  // pending/restricted states, where alreadyOnboarded is FALSE but no url is issued.
   getPayoutOnboardingUrl: () =>
-    callEdgeFunction<{ url: string }>("stripe-connect-onboard", {
+    callEdgeFunction<{
+      url?: string;
+      accountId?: string;
+      alreadyOnboarded?: boolean;
+      status?: ConnectStatus;
+    }>("stripe-connect-onboard", {
       // Stripe returns the browser to <origin>/stripe/connect-return after onboarding.
       origin: typeof window !== "undefined" ? window.location.origin : undefined,
     }),
   // Live Connect status (retrieves the account from Stripe + syncs the cached flag) —
   // does NOT depend on the account.updated webhook, which for connected accounts may
   // never fire.
-  getPayoutStatus: () =>
-    callEdgeFunction<{ hasAccount: boolean; onboarded: boolean }>("stripe-connect-status"),
+  getPayoutStatus: () => callEdgeFunction<ConnectStatus>("stripe-connect-status"),
   // NOTE: the edge function returns the SetupIntent secret as `setupIntentClientSecret`
   // (see src/screens/PayoutSetupScreen.js + supabase/functions/stripe-create-setup-intent).
   createSetupIntent: () =>

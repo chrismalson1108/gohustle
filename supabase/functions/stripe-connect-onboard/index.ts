@@ -2,6 +2,7 @@
 // Called from PayoutSetupScreen. Idempotent — resumable if onboarding was interrupted.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { deriveConnectStatus } from '../_shared/connectStatus.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,15 +61,38 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    // Already fully onboarded
     const { data: existing } = await supabase
       .from('stripe_accounts')
       .select('account_id, onboarded')
       .eq('user_id', user.id)
       .single();
 
-    if (existing?.onboarded) {
-      return json({ alreadyOnboarded: true });
+    // Re-check LIVE before short-circuiting. The cached flag can be stale in BOTH
+    // directions: stale-false is handled by stripe-connect-status, but a stale-TRUE
+    // (account later restricted, or a requirement newly past_due) would return
+    // alreadyOnboarded and leave the user with no way back into onboarding to fix it.
+    if (existing?.account_id) {
+      // Deliberately non-fatal: the account can be unretrievable (deleted in Stripe, a
+      // sandbox reset, a transient API blip). Setting up payouts must not hard-fail on
+      // that — fall through and let the account-link step below do its normal thing,
+      // exactly as it did before this live re-check existed.
+      try {
+        const account = await stripe.accounts.retrieve(existing.account_id);
+        const status = deriveConnectStatus(account);
+        if (status.onboarded !== existing.onboarded) {
+          await supabase
+            .from('stripe_accounts')
+            .update({ onboarded: status.onboarded })
+            .eq('account_id', existing.account_id);
+        }
+        // Genuinely done, or waiting on Stripe's review — either way there is nothing
+        // for the user to do in a fresh onboarding session, so don't send them into one.
+        if (status.onboarded || status.state === 'pending' || status.state === 'restricted') {
+          return json({ alreadyOnboarded: status.onboarded, status });
+        }
+      } catch (e) {
+        console.error('stripe-connect-onboard: live account re-check failed:', e);
+      }
     }
 
     let accountId = existing?.account_id;

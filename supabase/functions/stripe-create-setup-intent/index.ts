@@ -52,10 +52,17 @@ Deno.serve(async (req: Request) => {
       { apiVersion: '2024-06-20' },
     );
 
-    // SetupIntent saves the card for future off-session escrow charges
+    // SetupIntent saves the card for future off-session escrow charges.
+    // payment_method_types is PINNED to card: without it Stripe's automatic payment
+    // methods also offer Bank / Cash App / Klarna / Pix, none of which we can charge
+    // off-session for a manual-capture escrow hold — and every read path
+    // (stripe-payment-method-status, stripe-detach-payment-method) filters
+    // type:'card', so saving one of those "succeeds" and then shows as
+    // "No card on file yet" forever, with no way to accept a booking.
     const si = await stripe.setupIntents.create({
       customer: customerId,
       usage: 'off_session',
+      payment_method_types: ['card'],
       metadata: { supabase_uid: user.id },
     });
 

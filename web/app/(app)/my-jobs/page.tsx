@@ -26,6 +26,7 @@ import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
 import { computeEarnerInsights, canClaimEarnerPayment } from "@gohustlr/shared";
 import type { Booking, BookingStatus } from "@/lib/types";
+import type { ConnectStatus } from "@/lib/connectStatus";
 
 // Lifecycle buckets — mirror of mobile EarnScreen so web/mobile stay in parity.
 const ACTIVE_STATUSES = new Set<BookingStatus>(["confirmed", "completed"]); // in progress / needs action
@@ -62,10 +63,13 @@ export default function MyJobsPage() {
 
   // Payout readiness — earners need a Connect account before they can be paid. Show a
   // reminder so they set it up before finishing a job (non-blocking; they can still apply).
-  const [payoutReady, setPayoutReady] = useState(true); // optimistic until checked
+  // Keep the whole status, not just a boolean: "you skipped a step" and "Stripe is
+  // reviewing your ID" both read as not-ready but need opposite copy.
+  const [payout, setPayout] = useState<ConnectStatus | null>(null); // null = not checked yet
   useEffect(() => {
-    getPayoutStatus().then((s) => setPayoutReady(s.onboarded)).catch(() => {});
+    getPayoutStatus().then(setPayout).catch(() => {});
   }, [getPayoutStatus]);
+  const payoutReady = payout ? payout.onboarded : true; // optimistic until checked
 
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
   const completedCount = bookings.filter((b) => b.status === "verified").length;
@@ -404,16 +408,37 @@ export default function MyJobsPage() {
 
       <PageContainer className="space-y-4">
         {/* Payout reminder — earners must set up payouts to receive money. Non-blocking. */}
-        {!payoutReady && (
-          <Link
-            href="/profile/payouts"
-            className="flex items-center gap-2.5 rounded-2xl bg-urgent-light px-4 py-3 ring-1 ring-urgent/20 transition hover:bg-urgent-light/70"
-          >
-            <AlertCircle className="size-5 shrink-0 text-urgent" />
-            <span className="flex-1 text-sm font-bold text-urgent">Set up payouts so you can get paid for your work.</span>
-            <span className="shrink-0 text-sm font-extrabold text-urgent">Set up →</span>
-          </Link>
-        )}
+        {!payoutReady &&
+          (payout?.state === "pending" ? (
+            // Under review: there is nothing for them to do, so don't nag — just explain.
+            <Link
+              href="/profile/payouts"
+              className="flex items-center gap-2.5 rounded-2xl bg-primary-light px-4 py-3 ring-1 ring-primary/20 transition hover:bg-primary-light/70"
+            >
+              <Clock className="size-5 shrink-0 text-primary" />
+              <span className="flex-1 text-sm font-bold text-primary">
+                Stripe is verifying your details — payouts switch on automatically.
+              </span>
+              <span className="shrink-0 text-sm font-extrabold text-primary">Details →</span>
+            </Link>
+          ) : (
+            <Link
+              href="/profile/payouts"
+              className="flex items-center gap-2.5 rounded-2xl bg-urgent-light px-4 py-3 ring-1 ring-urgent/20 transition hover:bg-urgent-light/70"
+            >
+              <AlertCircle className="size-5 shrink-0 text-urgent" />
+              <span className="flex-1 text-sm font-bold text-urgent">
+                {payout?.state === "restricted"
+                  ? "There's a problem with your payout account."
+                  : payout?.hasAccount
+                    ? "Finish your payout setup so you can get paid."
+                    : "Set up payouts so you can get paid for your work."}
+              </span>
+              <span className="shrink-0 text-sm font-extrabold text-urgent">
+                {payout?.hasAccount && payout.state !== "restricted" ? "Finish →" : "Set up →"}
+              </span>
+            </Link>
+          ))}
 
         {/* Action-needed band — only appears when a decision is waiting. */}
         {(pendingAmendments.length > 0 || (unrated.length > 0 && tab !== "completed")) && (

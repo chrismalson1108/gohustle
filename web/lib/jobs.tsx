@@ -21,6 +21,7 @@ import { track, captureError } from "./analytics";
 import { useAuth } from "./auth";
 import { useUser } from "./user";
 import type { Job, Booking } from "./types";
+import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus, type ConnectStatus } from "./connectStatus";
 
 const JOBS_CACHE = "jobs_v1";
 const BOOKINGS_CACHE = "bookings_v1";
@@ -189,8 +190,13 @@ interface JobsValue extends State {
     amountCents?: number;
     savedCard?: { id: string; brand: string | null; last4: string | null } | null;
   }>;
-  getPayoutOnboardingUrl: () => Promise<{ url: string }>;
-  getPayoutStatus: () => Promise<{ hasAccount: boolean; onboarded: boolean }>;
+  getPayoutOnboardingUrl: () => Promise<{
+    url?: string;
+    accountId?: string;
+    alreadyOnboarded?: boolean;
+    status?: ConnectStatus;
+  }>;
+  getPayoutStatus: () => Promise<ConnectStatus>;
   createSetupIntent: () => Promise<{ setupIntentClientSecret: string; customerId?: string; ephemeralKey?: string }>;
   getPaymentMethodStatus: () => Promise<{ hasPaymentMethod: boolean; brand?: string | null; last4?: string | null }>;
   getPaymentReadiness: () => Promise<{
@@ -198,6 +204,8 @@ interface JobsValue extends State {
     paymentMethodReady: boolean;
     cardBrand?: string | null;
     cardLast4?: string | null;
+    /** Full payout state — `payoutReady` alone can't tell "unfinished" from "under review". */
+    payout: ConnectStatus;
   }>;
   getPayoutLoginLink: () => Promise<{ url: string }>;
   detachPaymentMethod: (exceptPaymentMethodId?: string) => Promise<{ ok?: boolean }>;
@@ -1146,15 +1154,15 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   // frequently-changing jobs/bookings state.
   const createPaymentIntent = useCallback((bookingId: string) => stripeEdge.createPaymentIntent(bookingId), []);
   const getPayoutOnboardingUrl = useCallback(() => stripeEdge.getPayoutOnboardingUrl(), []);
-  const getPayoutStatus = useCallback(async () => {
-    if (!user) return { hasAccount: false, onboarded: false };
+  const getPayoutStatus = useCallback(async (): Promise<ConnectStatus> => {
+    if (!user) return NO_PAYOUT_ACCOUNT;
     // Live check via the edge fn (authoritative, webhook-independent). Falls back to
     // the cached flag if the edge call fails so the UI still has a best-effort value.
     try {
       return await stripeEdge.getPayoutStatus();
     } catch {
       const { data } = await supabase.from("stripe_accounts").select("account_id, onboarded").eq("user_id", user.id).single();
-      return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
+      return cachedPayoutStatus(!!data, data?.onboarded ?? false);
     }
   }, [user]);
   const createSetupIntent = useCallback(() => stripeEdge.createSetupIntent(), []);
@@ -1175,6 +1183,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       paymentMethodReady: pm.hasPaymentMethod,
       cardBrand: pm.brand ?? null,
       cardLast4: pm.last4 ?? null,
+      payout,
     };
   }, [getPayoutStatus, getPaymentMethodStatus]);
 

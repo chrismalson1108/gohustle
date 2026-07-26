@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, ScrollView, Alert,
+  ActivityIndicator, ScrollView, Alert, Linking,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { SUPPORT_EMAIL } from '../lib/legal';
 import { colors, radii, shadows } from '../theme';
 
 // Unified "GoHustlr Payments" hub — always reachable from Profile so users can
@@ -32,7 +33,7 @@ export default function PayoutSetupScreen({ navigation }) {
   const showEarn = true;
   const showPay  = true;
 
-  const [payout, setPayout]     = useState(null); // { hasAccount, onboarded }
+  const [payout, setPayout]     = useState(null); // full ConnectStatus (src/lib/connectStatus.js)
   const [cardInfo, setCardInfo] = useState(null); // { hasPaymentMethod, brand, last4 }
   const [loadingPayout, setLoadingPayout] = useState(false);
   const [loadingCard, setLoadingCard]     = useState(false);
@@ -50,8 +51,18 @@ export default function PayoutSetupScreen({ navigation }) {
     setLoadingPayout(true);
     try {
       const result = await getPayoutOnboardingUrl();
-      if (result.alreadyOnboarded) {
+      // No URL is the NORMAL answer for an already-done, under-review, or restricted
+      // account — the server withholds one because hosted onboarding would have
+      // nothing to collect. Opening `undefined` used to throw here.
+      if (!result?.url) {
         await refresh();
+        if (result?.status && !result.alreadyOnboarded) {
+          showToast({
+            icon: result.status.state === 'pending' ? '⏳' : '⚠️',
+            title: result.status.title,
+            message: result.status.message,
+          });
+        }
         setLoadingPayout(false);
         return;
       }
@@ -138,7 +149,12 @@ export default function PayoutSetupScreen({ navigation }) {
     );
   };
 
-  const payoutDone = payout?.onboarded;
+  const payoutDone  = payout?.onboarded;
+  const payoutState = payout?.state ?? 'none';
+  // Under review means Stripe is working and the user has nothing to do — offering a
+  // "continue setup" CTA there would send them into an empty onboarding session.
+  const payoutWaiting    = payoutState === 'pending';
+  const payoutRestricted = payoutState === 'restricted';
   const cardDone   = cardInfo?.hasPaymentMethod === true;
   const cardLabel  = cardDone
     ? `${(cardInfo.brand || 'card').charAt(0).toUpperCase() + (cardInfo.brand || 'card').slice(1)} •••• ${cardInfo.last4 || '----'}`
@@ -168,7 +184,11 @@ export default function PayoutSetupScreen({ navigation }) {
             <Ionicons name="wallet-outline" size={20} color={colors.textPrimary} />
             <Text style={styles.sectionTitle} numberOfLines={1}>Get paid for work</Text>
             {payoutDone && <View style={styles.donePill}><Text style={styles.donePillText} numberOfLines={1}>Active</Text></View>}
+            {payoutWaiting && <View style={styles.pendingPill}><Text style={styles.pendingPillText} numberOfLines={1}>In review</Text></View>}
           </View>
+          {/* Four distinct outcomes. Collapsing them into onboarded ? active : "connect
+              a bank" is what made a skipped verification step unexplainable — and would
+              nag a user whose ID is merely under review to go re-do setup. */}
           {payoutDone ? (
             <>
               <View style={styles.successRow}>
@@ -183,16 +203,55 @@ export default function PayoutSetupScreen({ navigation }) {
                 )}
               </TouchableOpacity>
             </>
+          ) : payoutWaiting ? (
+            <>
+              <View style={styles.successRow}>
+                <Ionicons name="time-outline" size={18} color={colors.primary} />
+                <Text style={styles.successText}>{payout.message}</Text>
+              </View>
+              <TouchableOpacity style={styles.btnOutline} onPress={handleManagePayout} disabled={loadingPayout} activeOpacity={0.8}>
+                {loadingPayout ? <ActivityIndicator color={colors.primary} /> : (
+                  <Text style={styles.btnOutlineText} numberOfLines={1}>View payout details</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : payoutRestricted ? (
+            <>
+              <View style={styles.warnRow}>
+                <Ionicons name="alert-circle-outline" size={18} color={colors.urgent} />
+                <Text style={styles.successText}>{payout.message}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.btnOutline}
+                onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.btnOutlineText} numberOfLines={1}>Contact support</Text>
+              </TouchableOpacity>
+            </>
           ) : (
             <>
-              <Text style={styles.sectionDesc}>
-                Connect a bank account so you can receive payments after completing jobs. Takes about a minute.{'\n'}
-                No business needed — choose <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Individual</Text>. Stripe just verifies it's you (name, date of birth, and a bank account) so it can send your money.
-              </Text>
+              {payout?.hasAccount ? (
+                <View style={styles.warnCard}>
+                  <Text style={styles.warnTitle} numberOfLines={2}>{payout.title}</Text>
+                  <Text style={styles.warnBody}>{payout.message}</Text>
+                  {payout.requirements?.length > 0 && payout.requirements.map((r) => (
+                    <View key={r} style={styles.reqRow}>
+                      <View style={styles.reqDot} />
+                      <Text style={styles.reqText}>{r}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.sectionDesc}>
+                  Connect a bank account so you can receive payments after completing jobs. Takes about a minute.{'\n'}
+                  No business needed — choose <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Individual</Text>. Stripe just verifies it's you (name, date of birth, and a bank account) so it can send your money. Complete every step — skipping one leaves payouts switched off.
+                </Text>
+              )}
               <TouchableOpacity style={styles.btn} onPress={handleConnectPayout} disabled={loadingPayout} activeOpacity={0.85}>
                 {loadingPayout ? <ActivityIndicator color="#fff" /> : (
                   <Text style={styles.btnText} numberOfLines={1}>
-                    {payout?.hasAccount ? 'Continue setup' : 'Connect bank account'}
+                    {payout?.hasAccount ? 'Finish setup' : 'Connect bank account'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -310,8 +369,31 @@ const styles = StyleSheet.create({
   },
   donePillText: { color: colors.success, fontSize: 12, fontWeight: '600' },
 
+  pendingPill: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: radii.pill, flexShrink: 0, alignSelf: 'flex-start',
+  },
+  pendingPillText: { color: colors.primary, fontSize: 12, fontWeight: '600' },
+
   successRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 16 },
   successText: { flex: 1, fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  warnRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 16 },
+
+  // Unfinished onboarding — the one state the user must act on, so it gets a tinted
+  // block listing exactly what Stripe is still waiting for.
+  warnCard: {
+    backgroundColor: colors.urgentLight,
+    borderRadius: radii.md, padding: 14, marginBottom: 16,
+  },
+  warnTitle: { fontSize: 15, fontWeight: '700', color: colors.urgent, lineHeight: 20, marginBottom: 4 },
+  warnBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  reqRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6 },
+  reqDot: {
+    width: 4, height: 4, borderRadius: 2,
+    backgroundColor: colors.urgent, marginTop: 7,
+  },
+  reqText: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.textPrimary, lineHeight: 18 },
 
   cardRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

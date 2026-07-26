@@ -8,6 +8,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
 import { track, captureError } from '../lib/analytics';
+import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
@@ -1159,8 +1160,11 @@ export function JobsProvider({ children }) {
 
   const getPayoutOnboardingUrl = () => stripeEdge.getPayoutOnboardingUrl();
 
+  // Returns the full ConnectStatus (see src/lib/connectStatus.js) — screens branch on
+  // `state`, not just `onboarded`, so a skipped onboarding step and an ID under
+  // review don't render as the same "not set up" dead end.
   const getPayoutStatus = async () => {
-    if (!user) return { hasAccount: false, onboarded: false };
+    if (!user) return NO_PAYOUT_ACCOUNT;
     // Live check via the edge fn (authoritative, webhook-independent). Falls back to
     // the cached flag if the edge call fails so the UI still has a best-effort value.
     try {
@@ -1171,7 +1175,7 @@ export function JobsProvider({ children }) {
         .select('account_id, onboarded')
         .eq('user_id', user.id)
         .single();
-      return { hasAccount: !!data, onboarded: data?.onboarded ?? false };
+      return cachedPayoutStatus(!!data, data?.onboarded ?? false);
     }
   };
 
@@ -1202,6 +1206,8 @@ export function JobsProvider({ children }) {
     return {
       payoutReady: payout.onboarded,
       paymentMethodReady: pm.hasPaymentMethod,
+      // Full payout state — `payoutReady` alone can't tell "unfinished" from "under review".
+      payout,
     };
   };
 
