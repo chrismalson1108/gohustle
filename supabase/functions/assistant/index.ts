@@ -197,6 +197,39 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'no_message', message: 'Send a message to Hustlr AI.' }, 400);
     }
 
+    // SIZE bound, not just turn count. assistant_rate caps how MANY requests a user
+    // may make, and the .slice(-16) above caps how many TURNS are sent — but each
+    // turn's content was unbounded, so 16 multi-megabyte messages were accepted and
+    // billed. Against a 1M-token context window that is a five-to-six-figure annual
+    // spend from a single signed-up account, entirely within the request cap, and it
+    // also drags every request onto the expensive model because pickModel reads long
+    // input as complex. The transcript is fully caller-supplied — the client sends
+    // history back each turn — so nothing here can be trusted to be small.
+    const MAX_MESSAGE_CHARS = 4000;   // a very long single chat message
+    const MAX_TOTAL_CHARS = 24000;    // whole transcript sent to the model
+
+    const newest = history[history.length - 1];
+    if (newest.content.length > MAX_MESSAGE_CHARS) {
+      return json({
+        error: 'message_too_long',
+        message: `That message is too long. Please keep it under ${MAX_MESSAGE_CHARS} characters.`,
+      }, 400);
+    }
+    // Drop the OLDEST turns until the transcript fits. Trimming from the front keeps
+    // the newest exchange (and the message just sent) intact, which is what the model
+    // actually needs; the alternative — truncating message bodies — would silently
+    // corrupt what the user said.
+    let totalChars = history.reduce((n, m) => n + m.content.length, 0);
+    while (history.length > 1 && totalChars > MAX_TOTAL_CHARS) {
+      totalChars -= history[0].content.length;
+      history.shift();
+    }
+    // A single oversized assistant turn from an older session could still exceed the
+    // budget on its own; hard-cap the survivor rather than send it whole.
+    if (totalChars > MAX_TOTAL_CHARS) {
+      history[0] = { ...history[0], content: history[0].content.slice(-MAX_TOTAL_CHARS) };
+    }
+
     const { data: profile } = await sb.rpc('my_profile'); // owner's full row (private cols revoked from direct reads)
     const system = buildSystemPrompt(user.id, profile ?? {});
     // Cache the large, stable tools+system prefix. A cache_control breakpoint on
