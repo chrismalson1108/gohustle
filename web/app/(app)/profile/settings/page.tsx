@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Trash2, Plus, X } from "lucide-react";
-import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE } from "@gohustlr/shared";
+import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
+import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -207,6 +208,36 @@ export default function SettingsPage() {
     // user's name, username, bio, city, skills, rates and school data.
     if (loadError) return;
     if (!(await checkUsername())) return;
+
+    // Name, username and bio are PUBLIC user-generated text (they render on the
+    // public profile, job cards, chat headers, reviews and push notifications), so
+    // they get the same two-layer check the mobile client and every other UGC
+    // surface run: the keyword list, then the context-aware pass. App Store
+    // Guideline 1.2 requires filtering objectionable material on every UGC surface.
+    // Mobile already did this (src/screens/SettingsScreen.js); this editor ran no
+    // filter at all, so the web was a clean bypass of both layers. The DB backstop
+    // (guard_prohibited_content) now covers name/username too and is the real
+    // enforcement point — this is the fast, user-friendly check in front of it.
+    const profileText = [f.name, f.username, f.bio].filter(Boolean).join(" ");
+    const kwTerm = findProhibited(profileText);
+    if (kwTerm) {
+      logModerationBlock(kwTerm, "profile", profileText);
+      showToast({
+        icon: "⚠️",
+        title: "Check your wording",
+        message: "Your profile contains content that isn't allowed. Please edit it.",
+      });
+      return;
+    }
+    const mod = await moderateText([f.name, f.bio].filter(Boolean).join("\n"), "profile");
+    if (!mod.allowed) {
+      showToast({
+        icon: "⚠️",
+        title: "Check your wording",
+        message: "Your profile contains content that isn't allowed. Please edit it.",
+      });
+      return;
+    }
     // One-time 18+ DOB backfill (write-once — the server guard pins it once set). Only
     // validate/write when the account has no DOB yet and the user filled it in here.
     let dobIso: string | null = null;
