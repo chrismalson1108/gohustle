@@ -7,25 +7,31 @@ import Providers from "./providers";
 const sora = Sora({ variable: "--font-sora", subsets: ["latin"], display: "swap" });
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
 
+// Brand Guidelines v1.0: the product is "Hustlr" (gohustlr.com is just the address),
+// and the store/link headline is "Find jobs between classes" — under 30 characters,
+// sentence case, no exclamation mark.
+const TITLE = "Hustlr — Find jobs between classes";
+const DESCRIPTION =
+  "Real, paid work that fits between classes. Verified students, payment held in escrow, and money in your bank 48 hours after the job is done.";
+
 export const metadata: Metadata = {
   title: {
-    default: "GoHustlr — Gig work for college students",
-    template: "%s · GoHustlr",
+    default: TITLE,
+    template: "%s · Hustlr",
   },
-  description:
-    "GoHustlr is the gig marketplace built for college students. Find flexible local gigs, hire help, get paid securely, and build your hustle.",
+  description: DESCRIPTION,
   metadataBase: new URL("https://gohustlr.com"),
   openGraph: {
-    title: "GoHustlr — Gig work for college students",
-    description:
-      "Find flexible local gigs, hire help, and get paid securely. Built for college students.",
+    title: TITLE,
+    description: DESCRIPTION,
+    siteName: "Hustlr",
+    url: "https://gohustlr.com",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "GoHustlr — Gig work for college students",
-    description:
-      "Find flexible local gigs, hire help, and get paid securely. Built for college students.",
+    title: TITLE,
+    description: DESCRIPTION,
   },
 };
 

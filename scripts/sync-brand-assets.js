@@ -21,9 +21,12 @@ const COPIES = [
   ["monogram-orange.png", "web/public/brand/monogram-orange.png"],
   ["monogram-blue.png", "web/public/brand/monogram-blue.png"],
   // ── Web: Next.js App Router file conventions ─────────────────────────
-  ["app-icon.png", "web/app/icon.png"],
-  ["app-icon.png", "web/app/apple-icon.png"],
-  ["og-image.png", "web/app/opengraph-image.png"],
+  // The website is on Brand Guidelines v1.0 (mark on Blue, no wordmark in the
+  // tile), so it uses the *-v1 artwork. Mobile still ships the older icon below
+  // — point these at app-icon.png / og-image.png once the app is rebranded too.
+  ["app-icon-v1.png", "web/app/icon.png"],
+  ["app-icon-v1.png", "web/app/apple-icon.png"],
+  ["og-image-v1.png", "web/app/opengraph-image.png"],
   // ── Mobile: icon slots referenced by app.json ────────────────────────
   ["app-icon.png", "assets/icon.png"],
   ["app-icon.png", "assets/favicon.png"],

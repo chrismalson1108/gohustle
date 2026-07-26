@@ -4,16 +4,36 @@ import {
   HustlrMark,
   HustlrWordmark,
   IconArrow,
-  IconBookmark,
   IconBriefcase,
   IconCampus,
   IconChat,
   IconHome,
   IconParttime,
   IconPerson,
-  IconRemote,
   IconStar,
 } from "@/components/brand/glyphs";
+// The device mock deliberately uses Ionicons — the same set @expo/vector-icons
+// renders in the shipped mobile app — so the screenshot matches what a user sees.
+// Brand glyphs above stay on the marketing surfaces (categories, trust, pills).
+import {
+  IonBarChart,
+  IonBookmark,
+  IonBookmarkOutline,
+  IonBriefcase,
+  IonChatbubble,
+  IonFlame,
+  IonFlash,
+  IonGrid,
+  IonMap,
+  IonMegaphone,
+  IonOptions,
+  IonPerson,
+  IonPersonCircle,
+  IonSearch,
+  IonSparkles,
+  IonStar,
+  IonWifi,
+} from "@/components/brand/ionicons";
 
 // Akshar carries display/headlines, JetBrains Mono sets the overlines. Both are scoped
 // to this page so the rest of the app keeps the type stack it already ships with.
@@ -610,7 +630,7 @@ function PhoneMock() {
             <div className="flex h-11 items-end justify-between pb-1">
               <span className="text-xs font-semibold text-[#1A1338]">20:01</span>
               <span className="flex items-center gap-[5px]">
-                <IconRemote className="h-2 w-auto text-[#1A1338]" />
+                <IonWifi className="h-2.5 w-auto text-[#1A1338]" />
                 <span className="h-[9px] w-[19px] rounded-[2.5px] bg-[#1A1338]" />
               </span>
             </div>
@@ -624,7 +644,7 @@ function PhoneMock() {
                 <div className="mt-[3px] text-[13.5px] text-[#6B6482]">Ready to hustle?</div>
               </div>
               <span className="mt-[3px] inline-flex items-center gap-1.5 rounded-full bg-white px-[13px] py-2 whitespace-nowrap shadow-[0_1px_4px_rgba(24,18,49,.06)]">
-                <span className="text-[11px]">🔥</span>
+                <IonFlame className="h-3 w-auto text-[#EA4637]" />
                 <span className="text-xs font-semibold text-[#1A1338]">Start a streak</span>
               </span>
             </div>
@@ -632,26 +652,24 @@ function PhoneMock() {
             {/* Search + filter */}
             <div className="mt-3.5 flex items-center gap-[9px]">
               <div className="flex h-10 flex-1 items-center gap-[9px] rounded-full bg-white px-[15px]">
-                <span className="size-[11px] shrink-0 rounded-full border-[1.8px] border-[#9A93AD]" />
+                <IonSearch className="h-3.5 w-auto shrink-0 text-[#9A93AD]" />
                 <span className="text-[13px] text-[#9A93AD]">Search gigs...</span>
               </div>
-              <div className="flex size-10 shrink-0 flex-col items-center justify-center gap-[3px] rounded-[13px] bg-[#1A1338]">
-                <span className="h-[1.6px] w-[15px] rounded-[1px] bg-[#FEF4E5]" />
-                <span className="h-[1.6px] w-[15px] rounded-[1px] bg-[#FEF4E5]" />
-                <span className="h-[1.6px] w-[15px] rounded-[1px] bg-[#FEF4E5]" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-[#1A1338]">
+                <IonOptions className="h-[18px] w-auto text-[#FEF4E5]" />
               </div>
             </div>
 
             {/* Chips */}
             <div className="mt-[13px] flex gap-[7px] overflow-hidden">
               <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
-                <IconStar className="h-2.5 w-auto" /> For You
+                <IonSparkles className="h-2.5 w-auto" /> For You
               </span>
               <span className="inline-flex items-center gap-[5px] rounded-full bg-[#1A1338] px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#FEF4E5]">
-                <IconCampus className="h-2.5 w-auto" /> All
+                <IonGrid className="h-2.5 w-auto" /> All
               </span>
               <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
-                <IconPerson className="h-2.5 w-auto" /> Tutoring
+                <IonPerson className="h-2.5 w-auto" /> Tutoring
               </span>
               <span className="inline-flex items-center rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
                 Delivery
@@ -662,17 +680,23 @@ function PhoneMock() {
             <div className="mt-3.5 mb-[9px] flex items-center justify-between">
               <span className="text-[12.5px] font-semibold text-[#6B6482]">6 gigs available</span>
               <span className="flex items-center gap-3 text-xs font-semibold text-[#1A1338]">
-                <span>Insights</span>
-                <span>Map</span>
+                <span className="inline-flex items-center gap-1">
+                  <IonBarChart className="h-3 w-auto" />
+                  Insights
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <IonMap className="h-3 w-auto" />
+                  Map
+                </span>
               </span>
             </div>
 
             {/* Card 1 — urgent */}
             <div className="relative mb-2.5 rounded-[20px] bg-white p-3.5">
-              <IconBookmark className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#3F25FE]" />
+              <IonBookmark className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#3F25FE]" />
               <div className="mb-2 flex items-center gap-[7px]">
                 <span className="inline-flex items-center gap-[3px] rounded-full bg-[#FFE7E3] px-2 py-[3px] text-[9.5px] font-bold text-[#EA4637]">
-                  ⚡ Urgent
+                  <IonFlash className="h-2.5 w-auto" /> Urgent
                 </span>
                 <span className="text-[10.5px] font-medium text-[#9A93AD]">Moving</span>
                 <span className="flex-1" />
@@ -693,7 +717,7 @@ function PhoneMock() {
                 <span className="text-[11px] font-semibold text-[#6B6482]">Dana Kim</span>
                 <span className="flex-1" />
                 <span className="flex items-center gap-[3px]">
-                  <IconStar className="h-2.5 w-auto text-[#3F25FE]" />
+                  <IonStar className="h-2.5 w-auto text-[#3F25FE]" />
                   <span className="text-[11px] font-semibold text-[#6B6482]">4.9</span>
                 </span>
               </div>
@@ -701,7 +725,7 @@ function PhoneMock() {
 
             {/* Card 2 */}
             <div className="relative mb-2.5 rounded-[20px] bg-white p-3.5">
-              <IconBookmark className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#3F25FE] opacity-25" />
+              <IonBookmarkOutline className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#9A93AD]" />
               <div className="mb-2 flex items-center gap-[7px]">
                 <span className="text-[10.5px] font-medium text-[#9A93AD]">Tutoring</span>
                 <span className="flex-1" />
@@ -726,16 +750,16 @@ function PhoneMock() {
 
           {/* AI FAB */}
           <div className="absolute right-4 bottom-[100px] z-20 flex size-11 items-center justify-center rounded-full bg-[#3F25FE] shadow-[0_6px_18px_rgba(63,37,254,.34)]">
-            <IconStar className="h-[19px] w-auto text-[#FEF4E5]" />
+            <IonSparkles className="h-[19px] w-auto text-[#FEF4E5]" />
           </div>
 
           {/* Tab bar */}
           <div className="absolute inset-x-3 bottom-[18px] z-20 flex items-center justify-around rounded-full bg-white px-1 py-[9px] shadow-[0_6px_22px_rgba(24,18,49,.14)]">
-            <TabItem icon={IconHome} label="Browse" active />
-            <TabItem icon={IconBriefcase} label="My Jobs" badge="1" />
-            <TabItem icon={IconCampus} label="Hire" />
-            <TabItem icon={IconChat} label="Messages" />
-            <TabItem icon={IconPerson} label="Profile" />
+            <TabItem icon={IonSearch} label="Browse" active />
+            <TabItem icon={IonBriefcase} label="My Jobs" badge="1" />
+            <TabItem icon={IonMegaphone} label="Hire" />
+            <TabItem icon={IonChatbubble} label="Messages" />
+            <TabItem icon={IonPersonCircle} label="Profile" />
           </div>
         </div>
       </div>
@@ -749,7 +773,7 @@ function TabItem({
   active = false,
   badge,
 }: {
-  icon: typeof IconHome;
+  icon: typeof IonSearch;
   label: string;
   active?: boolean;
   badge?: string;
