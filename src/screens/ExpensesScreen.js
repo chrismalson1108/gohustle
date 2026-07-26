@@ -6,9 +6,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
-import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
-import { useJobs } from '../context/JobsContext';
+import { useJobs, computeEffectivePay } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import {
@@ -17,6 +16,7 @@ import {
   expensesByJob,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
+import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 import { colors, radii, shadows } from '../theme';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -32,7 +32,6 @@ const totalMilesFor = (milesText, roundTrip) => {
 };
 
 export default function ExpensesScreen() {
-  const { earningsTotal } = useUser();
   const { user } = useAuth();
   const { bookings, posterBookings } = useJobs();
   const haptic = useHaptic();
@@ -94,7 +93,31 @@ export default function ExpensesScreen() {
   const yearIncome = income.filter(inYear);
   const expTotal = yearExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const cashTotal = yearIncome.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const grossIncome = Number(earningsTotal || 0) + cashTotal;
+  // Platform earnings for the SELECTED YEAR.
+  //
+  // This previously used profiles.earnings_total, which is the LIFETIME counter, while
+  // every other figure on this screen is filtered to `year`. From the second tax year
+  // onward that silently inflated the year's gross income, the net profit, and the ~27%
+  // set-aside — on a screen people use to decide how much tax to put away, and which
+  // feeds the year-end CSV export. In year 3 it reported all three years of platform
+  // income as if it were earned in the selected one.
+  //
+  // Derived instead from the user's own verified EARNER bookings completed in that
+  // year, net of the platform fee — the same basis the earnings dashboard uses.
+  // Approximate by nature (the authoritative per-booking net is payments
+  // .earner_amount_cents, which this screen does not load), but a year-scoped estimate
+  // is strictly better than a lifetime total presented as a single year's income.
+  // Note: for hourly gigs the booking embed carries no estimatedHours, so those are
+  // valued at one hour here — under- rather than over-stating income, which is the
+  // safer direction for a tax set-aside prompt.
+  const platformIncome = (bookings || [])
+    .filter((b) => b?.status === 'verified' && String(b?.completedAt || '').startsWith(String(year)))
+    .reduce((sum, b) => {
+      const gross = computeEffectivePay(b, null);
+      return sum + gross * (1 - SERVICE_FEE_PCT);
+    }, 0);
+
+  const grossIncome = platformIncome + cashTotal;
   const net = grossIncome - expTotal;
   const setAside = Math.max(0, net) * 0.27;
 
@@ -163,10 +186,10 @@ export default function ExpensesScreen() {
   };
 
   const handleExport = async () => {
-    if (!yearExpenses.length && !yearIncome.length && !earningsTotal) {
+    if (!yearExpenses.length && !yearIncome.length && !platformIncome) {
       Alert.alert('Nothing to export', `No income or expenses recorded for ${year} yet.`); return;
     }
-    const csv = buildTaxSummaryCSV({ year, stripeIncome: earningsTotal, income: yearIncome, expenses: yearExpenses });
+    const csv = buildTaxSummaryCSV({ year, stripeIncome: platformIncome, income: yearIncome, expenses: yearExpenses });
     try { await Share.share({ title: `GoHustlr tax summary ${year}`, message: csv }); } catch (_) {}
   };
 
