@@ -255,11 +255,29 @@ export default function SettingsPage() {
 
   const deleteAccount = async () => {
     setDeleting(true);
-    const { error } = await supabase.functions.invoke("delete-account");
+    const { data, error } = await supabase.functions.invoke("delete-account");
     if (error) {
       setDeleting(false);
       setConfirmDelete(false);
-      showToast({ icon: "❌", title: "Could not delete", message: "Please try again, or email support." });
+      // The function refuses (409) while the account still has open bookings, so
+      // deleting can't void an escrow hold on work someone already did. supabase-js
+      // puts a non-2xx body on error.context — read the specific reason and tell the
+      // user what to clear instead of a generic "try again".
+      let message = "Please try again, or email support.";
+      try {
+        const body = await (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } })
+          .context?.json?.();
+        if (body?.error === "UNSETTLED_BOOKINGS" && body?.message) message = body.message;
+      } catch {
+        /* keep the generic message */
+      }
+      showToast({ icon: "❌", title: "Could not delete", message });
+      return;
+    }
+    if (data?.error === "UNSETTLED_BOOKINGS") {
+      setDeleting(false);
+      setConfirmDelete(false);
+      showToast({ icon: "❌", title: "Could not delete", message: data.message });
       return;
     }
     // Account is gone — clear the now-invalid session and return to sign-in.

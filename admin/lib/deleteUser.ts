@@ -6,9 +6,49 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // deletion (the edge function authenticates the account owner; here the caller
 // is a vetted admin). Same sequence: storage objects → escrow-hold release →
 // auth.admin.deleteUser (cascades profile + user rows). Keep the two in sync.
-const BUCKETS = ["avatars", "job-photos", "chat-photos", "completion-photos", "receipts"];
+// `certificates` was missing here and in the edge function, so uploaded credential
+// documents survived deletion in a public bucket. Keep this list in sync.
+const BUCKETS = [
+  "avatars", "job-photos", "chat-photos", "completion-photos", "receipts", "certificates",
+];
+
+// Booking states where the poster's card is authorized and the earner is owed.
+const UNSETTLED_STATUSES = ["confirmed", "completed"];
+
+// Only holds on un-started bookings may be voided. Mirrors the edge function.
+const CANCELLABLE_STATUSES = ["pending", "declined", "cancelled"];
 
 export async function deleteUserCascade(service: SupabaseClient, userId: string): Promise<void> {
+  // 0. Refuse while money is in flight — same defect and same reasoning as the edge
+  // function: cancelling an 'authorized' hold on a completed booking and then
+  // cascading the booking/payment rows away leaves the earner unpaid with no in-app
+  // record. Filtering the cancel loop alone would not help; the cascade still removes
+  // the rows and the hold expires unclaimed.
+  //
+  // Admin deletion throws rather than returning a code: every server action here runs
+  // inside run(), which renders a thrown message straight back to the console (same
+  // pattern as assertActionableTarget). So the admin is told what is outstanding and
+  // can settle it, instead of silently destroying a worker's payout.
+  const [{ data: earnerUnsettled }, { data: ownedJobs }] = await Promise.all([
+    service.from("bookings").select("id").eq("earner_id", userId).in("status", UNSETTLED_STATUSES),
+    service.from("jobs").select("id").eq("poster_id", userId),
+  ]);
+  let posterUnsettled: { id: string }[] = [];
+  const ownedJobIds = (ownedJobs ?? []).map((j) => j.id);
+  if (ownedJobIds.length) {
+    const { data } = await service
+      .from("bookings").select("id").in("job_id", ownedJobIds).in("status", UNSETTLED_STATUSES);
+    posterUnsettled = data ?? [];
+  }
+  const unsettled = (earnerUnsettled?.length ?? 0) + posterUnsettled.length;
+  if (unsettled > 0) {
+    throw new Error(
+      `This user has ${unsettled} unsettled booking(s) (confirmed or completed). ` +
+        `Deleting now would void the escrow hold and leave the earner unpaid with no record. ` +
+        `Settle or cancel those bookings first, then delete.`,
+    );
+  }
+
   // 1. Storage objects aren't FK-cascaded. Batch-delete per bucket; bounded loop.
   for (const bucket of BUCKETS) {
     try {
@@ -31,14 +71,17 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
       const stripe = new Stripe(stripeKey);
+      // Status filter is defence in depth behind the step-0 gate: even if that gate is
+      // bypassed, never void the hold on work that was actually performed.
       const [{ data: asEarner }, { data: myJobs }] = await Promise.all([
-        service.from("bookings").select("id").eq("earner_id", userId),
+        service.from("bookings").select("id").eq("earner_id", userId).in("status", CANCELLABLE_STATUSES),
         service.from("jobs").select("id").eq("poster_id", userId),
       ]);
       const jobIds = (myJobs ?? []).map((j) => j.id);
       let asPoster: { id: string }[] = [];
       if (jobIds.length) {
-        const { data } = await service.from("bookings").select("id").in("job_id", jobIds);
+        const { data } = await service
+          .from("bookings").select("id").in("job_id", jobIds).in("status", CANCELLABLE_STATUSES);
         asPoster = data ?? [];
       }
       const bookingIds = [
