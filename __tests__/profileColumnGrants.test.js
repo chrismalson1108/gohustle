@@ -22,6 +22,15 @@ const path = require('path');
 // So this test enforces the invariant rather than the instance: every column any client
 // selects from `profiles` must appear in the final granted column list. A new private
 // column selected by a client fails here instead of silently wiping user profiles.
+//
+// SCOPE: src/ and web/ only — the clients that hit PostgREST as `authenticated` and are
+// therefore subject to column grants. supabase/functions/ is deliberately NOT scanned:
+// those run with the service role, which bypasses column privileges entirely, so
+// selecting a private column there is legitimate (stripe-connect-onboard reads
+// date_of_birth this way to prefill Stripe Connect). The one shape that would slip
+// through is an edge function using an ANON-key client scoped to the caller's JWT —
+// checked by hand and none of them selects a private profiles column today (the
+// assistant, the only such function, goes through the my_profile() RPC).
 const ROOT = path.join(__dirname, '..');
 const LEGACY_DIR = path.join(ROOT, 'supabase');
 const MIG_DIR = path.join(ROOT, 'supabase', 'migrations');
