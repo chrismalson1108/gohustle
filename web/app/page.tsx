@@ -540,14 +540,9 @@ export default function LandingPage() {
                 { label: "Tax Center", href: "/login" },
               ]}
             />
-            <FooterCol
-              heading="Company"
-              links={[
-                { label: "Contact", href: "/contact" },
-                { label: "Campus partners", href: "/contact" },
-                { label: "Careers", href: "/contact" },
-              ]}
-            />
+            {/* Only routes that actually exist get listed. Campus partners /
+                Careers / About have no page yet — add them back here when they do. */}
+            <FooterCol heading="Company" links={[{ label: "Contact", href: "/contact" }]} />
             <FooterCol
               heading="Legal"
               links={[
