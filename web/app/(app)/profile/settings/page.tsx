@@ -230,6 +230,12 @@ export default function SettingsPage() {
       return;
     }
     const mod = await moderateText([f.name, f.bio].filter(Boolean).join("\n"), "profile");
+    // A 429 here is self-inflicted (own quota), not an outage, so moderateText
+    // fails CLOSED on it — otherwise burning the quota would disable this layer.
+    if (mod.rateLimited) {
+      showToast({ icon: "⏳", title: "Too many checks", message: "You've made a lot of checks in a row. Wait a minute and try again." });
+      return;
+    }
     if (!mod.allowed) {
       showToast({
         icon: "⚠️",

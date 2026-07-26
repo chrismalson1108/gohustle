@@ -137,6 +137,13 @@ export default function OnboardingScreen({ onComplete }) {
     }
     if (form.bio) {
       const mod = await moderateText(form.bio, 'profile');
+      // A 429 here is self-inflicted (own quota), not an outage, so moderateText
+      // fails CLOSED on it — otherwise burning the quota would disable this layer.
+      if (mod.rateLimited) {
+        setSaving(false);
+        setFinishError("You've made a lot of checks in a row. Wait a minute and try again.");
+        return;
+      }
       if (!mod.allowed) {
         setSaving(false);
         setFinishError("Your bio contains content that isn't allowed. Please edit it.");

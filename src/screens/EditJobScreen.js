@@ -154,6 +154,13 @@ export default function EditJobScreen({ route, navigation }) {
     }
     // Context-aware check (catches intent a keyword list misses).
     const mod = await moderateText([form.title, form.description].join('\n'), 'gig');
+    // A 429 here is self-inflicted (own quota), not an outage, so moderateText
+    // fails CLOSED on it — otherwise burning the quota would disable this layer.
+    if (mod.rateLimited) {
+      haptic.error();
+      showToast({ icon: '⏳', title: 'Too many checks', message: "You've made a lot of checks in a row. Wait a minute and try again." });
+      return;
+    }
     if (!mod.allowed) {
       haptic.error();
       showToast({ icon: '⚠️', title: 'Check your wording', message: "This gig contains content that isn't allowed. Please edit it." });

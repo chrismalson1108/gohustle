@@ -346,6 +346,12 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
     try {
       // Context-aware check (harassment, threats, scams a keyword list misses).
       const mod = await moderateText(body, "message", conversation.bookingId);
+      // A 429 here is self-inflicted (own quota), not an outage, so moderateText
+      // fails CLOSED on it — otherwise burning the quota would disable this layer.
+      if (mod.rateLimited) {
+        showToast({ icon: "⏳", title: "Too many checks", message: "You've made a lot of checks in a row. Wait a minute and try again." });
+        return;
+      }
       if (!mod.allowed) {
         showToast({ icon: "🚫", title: "Message blocked", message: "That message contains content that isn't allowed." });
         return;
