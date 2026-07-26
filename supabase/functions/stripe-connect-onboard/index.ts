@@ -43,6 +43,25 @@ const BUSINESS_PROFILE = {
   url: 'https://gohustlr.com',
 };
 
+// 'YYYY-MM-DD' → Stripe's { day, month, year }. Returns null on anything that isn't
+// a well-formed date, so a junk profile value can never make account creation throw —
+// worst case Stripe asks for the birthday itself, which is the old behaviour.
+function parseIsoDob(iso: unknown): { day: number; month: number; year: number } | null {
+  if (typeof iso !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (year < 1900 || year > new Date().getUTCFullYear()) return null;
+  // Reject impossible days (e.g. 2009-02-31) — Date normalises them silently, so
+  // compare the round-trip rather than trusting the range check alone.
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  return { day, month, year };
+}
+
 function resolveWebBase(origin: unknown): string {
   if (typeof origin === 'string' && origin) {
     try {
@@ -131,7 +150,7 @@ Deno.serve(async (req: Request) => {
     // Create account if not yet created
     if (!accountId) {
       const { data: profile } = await supabase
-        .from('profiles').select('name').eq('id', user.id).single();
+        .from('profiles').select('name, date_of_birth').eq('id', user.id).single();
 
       // Prefill the individual's name from their profile so the hosted onboarding
       // doesn't re-ask for it. business_type is 'individual' — students don't need a
@@ -139,6 +158,11 @@ Deno.serve(async (req: Request) => {
       const nameParts = (profile?.name || '').trim().split(/\s+/).filter(Boolean);
       const firstName = nameParts[0];
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+
+      // We already collected date of birth at app onboarding (and enforce an age
+      // floor with it), so don't make the earner type it a second time for Stripe.
+      // Stored as ISO 'YYYY-MM-DD'; Stripe wants numeric day/month/year parts.
+      const dob = parseIsoDob(profile?.date_of_birth);
 
       const account = await stripe.accounts.create({
         type: 'express',
@@ -153,6 +177,7 @@ Deno.serve(async (req: Request) => {
           email: user.email,
           ...(firstName && { first_name: firstName }),
           ...(lastName && { last_name: lastName }),
+          ...(dob && { dob }),
         },
         // Prefilled so hosted onboarding never shows the "Additional information /
         // Your website" step. Without it Stripe has to stop and ask each earner for
