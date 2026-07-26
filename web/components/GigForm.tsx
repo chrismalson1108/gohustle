@@ -174,6 +174,12 @@ export default function GigForm({
     try {
       // Context-aware check (catches intent a keyword list misses).
       const mod = await moderateText([title, description].join("\n"), "gig");
+      // A 429 here is self-inflicted (own quota), not an outage, so moderateText
+      // fails CLOSED on it — otherwise burning the quota would disable this layer.
+      if (mod.rateLimited) {
+        onError?.("You've made a lot of checks in a row. Wait a minute and try again.");
+        return;
+      }
       if (!mod.allowed) {
         onError?.("Your gig contains content that isn't allowed. Please edit it.");
         return;

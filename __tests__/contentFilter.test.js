@@ -82,3 +82,32 @@ describe('contentFilter', () => {
     expect(findProhibited('Need help this weekend, pays well')).toBeNull();
   });
 });
+
+// Regression: the matcher wrapped each term as (^|[^a-z])term([^a-z]|$). The trailing
+// boundary requires a NON-letter after the term, so every inflection walked straight
+// through while the singular was blocked — and plural phrasing is the natural way to
+// write most of these terms in a listing. The same matcher shape is duplicated in the
+// assistant edge function and the DB backstop, so the bypass applied on every
+// moderated surface at once.
+describe('plural forms do not bypass the blocklist', () => {
+  test.each(['escorts', 'prostitutes', 'handguns', 'firearms'])('%s is blocked', (term) => {
+    expect(findProhibited(term)).not.toBeNull();
+  });
+
+  test('singulars still blocked', () => {
+    expect(findProhibited('escort')).not.toBeNull();
+    expect(findProhibited('handgun')).not.toBeNull();
+  });
+
+  // The suffix allowance is deliberately (e?s)? and not a general wildcard — a
+  // wildcard would match "meth" inside "method"/"methodology" and block ordinary text.
+  test.each([
+    'method', 'methodology', 'assistant', 'classes', 'password', 'address', 'processing',
+  ])('%s is NOT a false positive', (word) => {
+    expect(findProhibited(word)).toBeNull();
+  });
+
+  test('a realistic clean listing still passes', () => {
+    expect(findProhibited('Need help moving a couch on Saturday, 2 hours, cash on completion')).toBeNull();
+  });
+});

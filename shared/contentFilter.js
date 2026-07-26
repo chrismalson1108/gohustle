@@ -47,7 +47,13 @@ export function findProhibited(text) {
   if (!text) return null;
   const norm = normalizeForMatch(text);
   for (const term of BLOCKED) {
-    const re = new RegExp(`(^|[^a-z])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
+    // (?:e?s)? — allow a plural suffix. Without it the trailing boundary made every
+    // plural a bypass: "escorts", "prostitutes" and "handguns" all passed while their
+    // singulars were blocked, on every surface that uses this filter. Kept
+    // deliberately narrow — allowing arbitrary suffixes would match "meth" inside
+    // "method"/"methodology". Lockstep with the assistant edge function and
+    // public.contains_prohibited.
+    const re = new RegExp(`(^|[^a-z])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:e?s)?([^a-z]|$)`, 'i');
     if (re.test(norm)) return term;
   }
   return null;
