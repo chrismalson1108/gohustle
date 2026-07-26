@@ -58,6 +58,9 @@ export default function SettingsPage() {
   const { setRole, refreshProfile, showToast } = useUser();
 
   const [loading, setLoading] = useState(true);
+  // If the profile never loaded we must NOT let save run: the update writes every
+  // field unconditionally, so saving from a blank form overwrites the stored profile.
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [usernameError, setUsernameError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -87,15 +90,31 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data } = await supabase
+      // date_of_birth is deliberately NOT selected here, and must not be added back.
+      // It has no column-level SELECT grant (20260624221000_profile_column_lockdown.sql)
+      // and must never get one: profiles_select_all is USING(true), so a table-wide
+      // column grant would expose EVERY user's date of birth to every other signed-in
+      // user — on a platform that includes minors. Naming it here made PostgREST reject
+      // the WHOLE query with 42501, which rendered a blank form that Save then wrote
+      // back over the stored profile. The owner's own DOB comes from my_profile()
+      // instead: SECURITY DEFINER, scoped to auth.uid() (same source web/lib/user.tsx uses).
+      const { data, error } = await supabase
         .from("profiles")
-        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability, date_of_birth")
+        .select("name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability")
         .eq("id", user.id)
         .single();
+      if (error || !data) {
+        // Never fall through to a blank form — the save handler writes every field
+        // unconditionally, so that would silently wipe the profile.
+        setLoadError(error?.message || "Could not load your profile.");
+        setLoading(false);
+        return;
+      }
       if (data) {
         // A legacy account may have no DOB yet — offer the one-time backfill; if it's
         // already set, keep the field locked/omitted (write-once).
-        setDobLocked(!!data.date_of_birth);
+        const { data: mine } = await supabase.rpc("my_profile");
+        setDobLocked(!!mine?.date_of_birth);
         setF({
           name: data.name || "", username: data.username || "", bio: data.bio || "", city: data.city || "",
           role: data.role || "earner", skills: data.skills || [], radiusMiles: data.radius_miles || 25,
@@ -183,6 +202,10 @@ export default function SettingsPage() {
 
   const save = async () => {
     if (!user) return;
+    // Hard stop if the profile never loaded. The update below writes EVERY field
+    // unconditionally, so saving from the empty initial form state would blank the
+    // user's name, username, bio, city, skills, rates and school data.
+    if (loadError) return;
     if (!(await checkUsername())) return;
     // One-time 18+ DOB backfill (write-once — the server guard pins it once set). Only
     // validate/write when the account has no DOB yet and the user filled it in here.
@@ -232,11 +255,29 @@ export default function SettingsPage() {
 
   const deleteAccount = async () => {
     setDeleting(true);
-    const { error } = await supabase.functions.invoke("delete-account");
+    const { data, error } = await supabase.functions.invoke("delete-account");
     if (error) {
       setDeleting(false);
       setConfirmDelete(false);
-      showToast({ icon: "❌", title: "Could not delete", message: "Please try again, or email support." });
+      // The function refuses (409) while the account still has open bookings, so
+      // deleting can't void an escrow hold on work someone already did. supabase-js
+      // puts a non-2xx body on error.context — read the specific reason and tell the
+      // user what to clear instead of a generic "try again".
+      let message = "Please try again, or email support.";
+      try {
+        const body = await (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } })
+          .context?.json?.();
+        if (body?.error === "UNSETTLED_BOOKINGS" && body?.message) message = body.message;
+      } catch {
+        /* keep the generic message */
+      }
+      showToast({ icon: "❌", title: "Could not delete", message });
+      return;
+    }
+    if (data?.error === "UNSETTLED_BOOKINGS") {
+      setDeleting(false);
+      setConfirmDelete(false);
+      showToast({ icon: "❌", title: "Could not delete", message: data.message });
       return;
     }
     // Account is gone — clear the now-invalid session and return to sign-in.
@@ -245,6 +286,27 @@ export default function SettingsPage() {
   };
 
   if (loading) return <FullPageSpinner />;
+
+  // The profile failed to load. Render a retry state rather than the form: the form
+  // would show every field blank, and saving it would overwrite the stored profile.
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-md px-6 py-20 text-center">
+        <h1 className="text-lg font-semibold text-[var(--ink)]">
+          Couldn&apos;t load your profile
+        </h1>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-6 rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-semibold text-white"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   const showEarnerFields = f.role === "earner" || f.role === "both";
 
   return (

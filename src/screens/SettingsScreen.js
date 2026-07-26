@@ -48,6 +48,9 @@ export default function SettingsScreen({ navigation }) {
   // collect it at onboarding, so this only serves that pre-cutoff cohort.
   const [existingDob, setExistingDob] = useState(null); // ISO 'YYYY-MM-DD' or null
   const [dobError, setDobError] = useState('');
+  // If the profile never loaded we must NOT let Save run: handleSave writes every
+  // field unconditionally, so saving from a blank form overwrites the stored profile.
+  const [loadError, setLoadError] = useState('');
 
   const [form, setForm] = useState({
     name: '', username: '', bio: '',
@@ -62,13 +65,30 @@ export default function SettingsScreen({ navigation }) {
   }, []);
 
   const loadProfile = async () => {
-    const { data } = await supabase
+    setLoadError('');
+    // date_of_birth is deliberately NOT selected here, and must not be added back.
+    // It has no column-level SELECT grant (20260624221000_profile_column_lockdown.sql)
+    // and must never get one: profiles_select_all is USING(true), so a table-wide
+    // column grant would expose EVERY user's date of birth to every other signed-in
+    // user — on a platform that includes minors. Naming it here made PostgREST reject
+    // the WHOLE query with 42501, which rendered a blank form that Save then wrote
+    // back over the stored profile. The owner's own DOB comes from my_profile()
+    // instead: SECURITY DEFINER, scoped to auth.uid() (same source UserContext uses).
+    const { data, error } = await supabase
       .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability, date_of_birth')
+      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
       .eq('id', user.id)
       .single();
+    if (error || !data) {
+      // Never fall through to a blank form — handleSave writes every field
+      // unconditionally, so that would silently wipe the profile.
+      setLoadError(error?.message || 'Could not load your profile.');
+      setLoading(false);
+      return;
+    }
     if (data) {
-      setExistingDob(data.date_of_birth || null);
+      const { data: mine } = await supabase.rpc('my_profile');
+      setExistingDob(mine?.date_of_birth || null);
       setForm({
         name: data.name || '',
         username: data.username || '',
@@ -189,6 +209,13 @@ export default function SettingsScreen({ navigation }) {
 
   const handleSave = async () => {
     Keyboard.dismiss();
+    // Hard stop if the profile never loaded. The update below writes EVERY field
+    // unconditionally, so saving from the empty initial form state would blank the
+    // user's name, username, bio, city, skills, rates and school data.
+    if (loadError) {
+      showToast({ icon: '❌', title: "Can't save", message: 'Your profile did not load. Reopen Settings and try again.' });
+      return;
+    }
     const ok = await checkUsername();
     if (!ok) return;
     // Write-once DOB backfill: only when not already set. If the user entered one, it
@@ -271,10 +298,24 @@ export default function SettingsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             setDeleting(true);
-            const { error } = await supabase.functions.invoke('delete-account');
+            const { data, error } = await supabase.functions.invoke('delete-account');
             if (error) {
               setDeleting(false);
-              showToast({ icon: '❌', title: 'Could not delete', message: 'Please try again, or email support.' });
+              // The function refuses (409) while the account still has open bookings,
+              // so deleting can't void an escrow hold on work someone already did.
+              // supabase-js puts a non-2xx body on error.context, so read the specific
+              // reason and tell the user what to clear instead of "try again".
+              let msg = 'Please try again, or email support.';
+              try {
+                const body = await error.context?.json?.();
+                if (body?.error === 'UNSETTLED_BOOKINGS' && body?.message) msg = body.message;
+              } catch (_) { /* keep the generic message */ }
+              showToast({ icon: '❌', title: 'Could not delete', message: msg });
+              return;
+            }
+            if (data?.error === 'UNSETTLED_BOOKINGS') {
+              setDeleting(false);
+              showToast({ icon: '❌', title: 'Could not delete', message: data.message });
               return;
             }
             // Account is gone — clear the now-invalid session and return to sign-in.
@@ -289,6 +330,28 @@ export default function SettingsScreen({ navigation }) {
     return (
       <View style={styles.loadingWrap}>
         <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  // The profile failed to load. Render a retry state rather than the form: the form
+  // would show every field blank, and saving it would overwrite the stored profile.
+  if (loadError) {
+    return (
+      <View style={styles.loadingWrap}>
+        <Text style={styles.loadErrorTitle}>Couldn&apos;t load your profile</Text>
+        <Text style={styles.loadErrorBody}>
+          Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
+        </Text>
+        <TouchableOpacity
+          style={styles.loadErrorBtn}
+          onPress={() => { setLoading(true); loadProfile(); }}
+        >
+          <Text style={styles.loadErrorBtnText}>Try again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.loadErrorBack}>Go back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -632,7 +695,15 @@ function SectionHeader({ children, first }) {
 }
 
 const styles = StyleSheet.create({
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, paddingHorizontal: 32 },
+  loadErrorTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  loadErrorBody: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  loadErrorBtn: {
+    marginTop: 20, backgroundColor: colors.primary,
+    paddingVertical: 12, paddingHorizontal: 28, borderRadius: radii.md,
+  },
+  loadErrorBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  loadErrorBack: { marginTop: 16, color: colors.textMuted, fontSize: 14, fontWeight: '600' },
   container: { flex: 1, backgroundColor: colors.background },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   backBtn: { paddingVertical: 4, paddingRight: 8, marginLeft: -2 },

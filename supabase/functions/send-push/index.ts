@@ -28,8 +28,52 @@ Deno.serve(async (req: Request) => {
     const { userId, title, body, data } = await req.json();
     if (!userId || !title) return json({ error: 'userId and title are required' }, 400);
 
+    // userId is caller-supplied and is interpolated into a PostgREST `.or()` filter
+    // string in the block check below. PostgREST filter syntax is comma/paren
+    // delimited, so an unvalidated value could break out of the predicate and make
+    // the block lookup match nothing — silently defeating block enforcement. Pin it
+    // to a canonical UUID (hex + dashes only, no filter metacharacters) before any
+    // interpolation. The other uses go through .eq()/.in(), which the client encodes.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (typeof userId !== 'string' || !UUID_RE.test(userId)) {
+      return json({ error: 'userId must be a valid user id' }, 400);
+    }
+
     // Don't notify yourself.
     if (userId === user.id) return json({ sent: 0, skipped: 'self' });
+
+    // Block enforcement. H2 (20260710030000_block_enforcement.sql) made blocking a
+    // real server-side control for messages and new bookings, but this endpoint was
+    // never covered — so a blocked counterparty could still deliver caller-authored
+    // title/body to the blocker's lock screen, their permanent Alerts inbox row, and
+    // (for whitelisted types) their email. Sharing a booking is not consent to be
+    // contacted after a block; the block usually EXISTS because of that booking.
+    // Enforcement is BIDIRECTIONAL, matching is_blocked_pair: either direction stops
+    // delivery. Queried directly rather than via private.is_blocked_pair() because
+    // that helper deliberately lives in the non-exposed `private` schema; the service
+    // role client here bypasses blocks-RLS and so sees both directions anyway.
+    //
+    // FAIL CLOSED: if the lookup errors we do not send. A dropped event ping is a
+    // trivial cost; delivering harassment to someone who explicitly blocked the
+    // sender is not.
+    //
+    // Returns the same `{ sent: 0 }` shape as "recipient has no registered devices"
+    // and never names the block — surfacing a distinct error would turn this into an
+    // oracle that lets a blocked user confirm they were blocked, which is exactly what
+    // the silent-block design in 20260710030000 avoids.
+    const { data: blockRows, error: blockErr } = await supabase
+      .from('blocks')
+      .select('blocker_id')
+      .or(
+        `and(blocker_id.eq.${user.id},blocked_id.eq.${userId}),` +
+        `and(blocker_id.eq.${userId},blocked_id.eq.${user.id})`,
+      )
+      .limit(1);
+    if (blockErr) {
+      console.error('send-push: block lookup failed — refusing to send (fail-closed):', blockErr);
+      return json({ sent: 0 });
+    }
+    if (blockRows && blockRows.length > 0) return json({ sent: 0 });
 
     // Anti-spoof: only allow notifying someone you share a booking with, so this
     // endpoint can't be used to plant arbitrary alerts in a stranger's inbox. We
