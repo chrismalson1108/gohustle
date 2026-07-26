@@ -42,6 +42,7 @@ const BUSINESS_PROFILE = {
     'Independent contractor performing short-term local gig work (errands, moving help, cleaning, yard work, tutoring and similar tasks) booked through the GoHustlr marketplace.',
   url: 'https://gohustlr.com',
 };
+
 function resolveWebBase(origin: unknown): string {
   if (typeof origin === 'string' && origin) {
     try {
