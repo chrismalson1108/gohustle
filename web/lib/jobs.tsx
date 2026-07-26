@@ -934,11 +934,16 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // Mark the job completed only when no OTHER booking on it is still active
     // (multi-slot gigs can have several earners).
     if (booking?.jobId) {
-      const { data: others } = await supabase
+      const { data: others, error: othersErr } = await supabase
         .from("bookings").select("id")
         .eq("job_id", booking.jobId).neq("id", bookingId)
         .in("status", ["pending", "confirmed", "completed"]).limit(1);
-      if (!others?.length) {
+      // Fail SAFE on a query error. The error was previously ignored, so a failed
+      // lookup left `others` null and read identically to "no other active bookings"
+      // — delisting a live multi-slot gig and stranding its other earners, whose
+      // bookings then point at a completed job. Leaving the job open on error is
+      // recoverable (the next verify re-checks); delisting it is not.
+      if (!othersErr && !others?.length) {
         dispatch({ type: "UPDATE_JOB", jobId: booking.jobId, patch: { status: "completed" } });
         await supabase.from("jobs").update({ status: "completed" }).eq("id", booking.jobId);
       }
