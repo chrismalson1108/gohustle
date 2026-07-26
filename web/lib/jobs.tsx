@@ -1007,11 +1007,50 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     const slots = d.slots as Array<{ label: string; taken?: boolean; startsAt?: string | null }> | undefined;
     if (slots) {
-      await supabase.from("job_slots").delete().eq("job_id", jobId);
-      if (slots.length)
-        await supabase
-          .from("job_slots")
-          .insert(slots.map((s) => ({ job_id: jobId, label: s.label, taken: s.taken || false, starts_at: s.startsAt || null })));
+      // RECONCILE — never delete-all-then-reinsert. Port of the mobile logic in
+      // src/context/JobsContext.js (which was fixed for this; web was not).
+      //
+      // Deleting every row gave each slot a new id on any save, so
+      // bookings_slot_id_fkey (ON DELETE SET NULL) blanked the slot_id of live
+      // bookings: the booking lost its slot link, the partial unique index
+      // bookings_one_active_per_slot stopped covering it, and the re-inserted slot
+      // came back with taken=false — so a second earner could book it. It also wiped
+      // the anchor earner-claim-payment settles against, permanently blocking the
+      // ghosting payout. Keep rows whose label+starts_at is unchanged, insert only
+      // genuinely new ones, and delete only slots that NO booking references.
+      const { data: existingSlots } = await supabase
+        .from("job_slots").select("id, label, starts_at").eq("job_id", jobId);
+      // starts_at comes back from Postgres in a different string format than the
+      // client's ISO value, so compare the parsed instant, not the raw text.
+      const keyOf = (label: string, startsAt?: string | null) => {
+        const t = startsAt ? new Date(startsAt).getTime() : NaN;
+        return `${label}|${Number.isNaN(t) ? (startsAt || "") : t}`;
+      };
+      const wanted = new Map(slots.map((s) => [keyOf(s.label, s.startsAt), s]));
+      const keptKeys = new Set<string>();
+      const staleIds: string[] = [];
+      (existingSlots ?? []).forEach((row: { id: string; label: string; starts_at: string | null }) => {
+        const k = keyOf(row.label, row.starts_at);
+        if (wanted.has(k) && !keptKeys.has(k)) keptKeys.add(k);
+        else staleIds.push(row.id); // removed by the poster, or an exact duplicate
+      });
+      const toInsert = [...wanted.entries()].filter(([k]) => !keptKeys.has(k));
+      if (toInsert.length) {
+        await supabase.from("job_slots").insert(
+          toInsert.map(([, s]) => ({
+            job_id: jobId, label: s.label, taken: s.taken || false, starts_at: s.startsAt || null,
+          })),
+        );
+      }
+      if (staleIds.length) {
+        const { data: bookedSlots } = await supabase
+          .from("bookings").select("slot_id").in("slot_id", staleIds);
+        const booked = new Set((bookedSlots ?? []).map((b: { slot_id: string | null }) => b.slot_id));
+        // A booked slot stays put even if the poster removed it from the form —
+        // dropping it would strand the live booking with a dangling slot_id.
+        const deletable = staleIds.filter((id) => !booked.has(id));
+        if (deletable.length) await supabase.from("job_slots").delete().in("id", deletable);
+      }
     }
     const reqs = d.requirements as string[] | undefined;
     if (reqs) {
