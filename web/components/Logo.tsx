@@ -1,12 +1,17 @@
 import Image from "next/image";
 import { classNames } from "@/lib/format";
 
-// Hustlr logo — a custom mark, never set in type. Served from /brand/*, which is kept
-// in sync with the single source of truth (shared/assets/brand) via `npm run brand:sync`.
-// `light` swaps to the orange variant for dark / Electric-Blue surfaces. `mark` renders
-// the compact H-monogram instead of the full wordmark (used in the app sidebar).
-const WORDMARK_RATIO = 1584 / 749; // intrinsic aspect ratio of wordmark-*.png
-const MONOGRAM_RATIO = 542 / 741; // intrinsic aspect ratio of monogram-*.png
+// Hustlr logo — served from /brand/*, kept in sync with the single source of truth
+// in shared/assets/brand via `npm run brand:sync`. Redrawn from the v1.0 vector pack.
+//
+// `light` swaps to the Cream colourway for dark / Blue surfaces — this replaced the
+// old Orange variant, which Brand Guidelines v1.0 retired. `mark` renders the compact
+// H-monogram instead of the full wordmark (used in the app sidebar).
+//
+// Marketing and logged-out pages use the inline vector lockup in
+// components/brand/BrandShell.tsx instead; this stays for the in-app chrome.
+const WORDMARK_RATIO = 2600 / 588; // intrinsic aspect ratio of wordmark-*.png
+const MONOGRAM_RATIO = 1210 / 1400; // intrinsic aspect ratio of monogram-*.png
 
 export default function Logo({
   light = false,
@@ -23,7 +28,7 @@ export default function Logo({
   const ratio = mark ? MONOGRAM_RATIO : WORDMARK_RATIO;
   return (
     <Image
-      src={`/brand/${variant}-${light ? "orange" : "blue"}.png`}
+      src={`/brand/${variant}-${light ? "cream" : "blue"}.png`}
       alt="Hustlr"
       width={Math.round(height * ratio)}
       height={height}

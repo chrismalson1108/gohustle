@@ -17,7 +17,7 @@ export function betaSignupMessage(error) {
   const looksLikeGate =
     /not.*allowlist|signup_not_allowlisted|not on the .*beta/i.test(raw);
   if (looksLikeGate) {
-    return "We couldn't create your account. GoHustlr is invite-only right now — " +
+    return "We couldn't create your account. Hustlr is invite-only right now — " +
       "make sure you're using the email you were invited with, or contact us to request access.";
   }
   // Generic server error during signup (transient GoTrue/DB 500, mailer hiccup, etc.).

@@ -48,7 +48,7 @@ export default function ConsentScreen() {
       <ScreenHeader style={styles.hero}>
         <Ionicons name="document-text-outline" size={36} color={colors.textPrimary} style={styles.heroIcon} />
         <Text style={styles.heroTitle}>We've updated our terms</Text>
-        <Text style={styles.heroSub}>Please review and accept to keep using GoHustlr.</Text>
+        <Text style={styles.heroSub}>Please review and accept to keep using Hustlr.</Text>
       </ScreenHeader>
 
       <ScrollView

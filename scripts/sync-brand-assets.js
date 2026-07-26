@@ -17,8 +17,8 @@ const SRC = path.join(ROOT, "shared", "assets", "brand");
 const COPIES = [
   // ── Web: UI logos served from /brand/* ───────────────────────────────
   ["wordmark-blue.png", "web/public/brand/wordmark-blue.png"],
-  ["wordmark-orange.png", "web/public/brand/wordmark-orange.png"],
-  ["monogram-orange.png", "web/public/brand/monogram-orange.png"],
+  ["wordmark-cream.png", "web/public/brand/wordmark-cream.png"],
+  ["monogram-cream.png", "web/public/brand/monogram-cream.png"],
   ["monogram-blue.png", "web/public/brand/monogram-blue.png"],
   // ── Web: Next.js App Router file conventions ─────────────────────────
   ["app-icon.png", "web/app/icon.png"],
@@ -32,8 +32,8 @@ const COPIES = [
   ["android-monochrome.png", "assets/android-icon-monochrome.png"],
   // ── Mobile: in-app <Image> logos ─────────────────────────────────────
   ["wordmark-blue.png", "assets/brand/wordmark-blue.png"],
-  ["wordmark-orange.png", "assets/brand/wordmark-orange.png"],
-  ["monogram-orange.png", "assets/brand/monogram-orange.png"],
+  ["wordmark-cream.png", "assets/brand/wordmark-cream.png"],
+  ["monogram-cream.png", "assets/brand/monogram-cream.png"],
   ["monogram-blue.png", "assets/brand/monogram-blue.png"],
 ];
 

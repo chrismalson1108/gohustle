@@ -159,7 +159,7 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         <ScreenHeader style={styles.hero}>
-          <Logo height={64} style={styles.heroLogo} />
+          <Logo lockup height={40} style={styles.heroLogo} />
           <Text style={styles.heroSub}>Get paid to hustle. Post gigs. Earn money.</Text>
         </ScreenHeader>
 

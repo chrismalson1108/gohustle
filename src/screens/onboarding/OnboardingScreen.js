@@ -107,7 +107,7 @@ export default function OnboardingScreen({ onComplete }) {
   const checkDob = () => {
     const iso = parseDob(composeDob(form.dob));
     if (!iso) { setDobError('Select your date of birth.'); return false; }
-    if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return false; }
+    if (!isAdult(iso)) { setDobError(`You must be ${MIN_AGE} or older to use Hustlr.`); return false; }
     setDobError('');
     return true;
   };
@@ -194,7 +194,7 @@ export default function OnboardingScreen({ onComplete }) {
     // Step 0 — Welcome
     <View key="welcome" style={styles.stepWrap}>
       <Ionicons name="sparkles" size={56} color={colors.primary} style={styles.emoji} />
-      <Text style={styles.stepTitle}>Welcome to GoHustlr!</Text>
+      <Text style={styles.stepTitle}>Welcome to Hustlr!</Text>
       <Text style={styles.stepSub}>
         The gig marketplace for college students.{'\n'}
         Let's set up your profile in 60 seconds.
@@ -210,7 +210,7 @@ export default function OnboardingScreen({ onComplete }) {
     <View key="username" style={styles.stepWrap}>
       <Ionicons name="pricetag" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>Pick a username</Text>
-      <Text style={styles.stepSub}>This is how others will see you on GoHustlr.</Text>
+      <Text style={styles.stepSub}>This is how others will see you on Hustlr.</Text>
       <TextInput
         style={[styles.input, usernameError ? styles.inputError : null]}
         placeholder="e.g. chris_hustler"
@@ -230,7 +230,7 @@ export default function OnboardingScreen({ onComplete }) {
         error={!!dobError}
       />
       {dobError ? <Text style={[styles.errorText, { marginTop: 6 }]}>{dobError}</Text> : null}
-      <Text style={[styles.hintText, { marginTop: 6 }]}>You must be {MIN_AGE}+ to use GoHustlr.</Text>
+      <Text style={[styles.hintText, { marginTop: 6 }]}>You must be {MIN_AGE}+ to use Hustlr.</Text>
       <TouchableOpacity
         style={styles.nextBtn}
         disabled={!form.username || !dobComplete}
@@ -371,7 +371,7 @@ export default function OnboardingScreen({ onComplete }) {
       <Ionicons name="rocket" size={56} color={colors.primary} style={styles.emoji} />
       <Text style={styles.stepTitle}>You're all set!</Text>
       <Text style={styles.stepSub}>
-        Welcome to GoHustlr, @{form.username || 'hustler'}.{'\n'}
+        Welcome to Hustlr, @{form.username || 'hustler'}.{'\n'}
         Time to start hustling!
       </Text>
       {needsConsent && (
@@ -401,7 +401,7 @@ export default function OnboardingScreen({ onComplete }) {
             style={[styles.finishBtnText, (needsConsent && !accepted) && styles.finishBtnTextDisabled]}
             numberOfLines={1}
           >
-            {saving ? 'Setting up...' : 'Enter GoHustlr'}
+            {saving ? 'Setting up...' : 'Enter Hustlr'}
           </Text>
         </View>
       </TouchableOpacity>
