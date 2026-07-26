@@ -80,14 +80,33 @@ Deno.serve(async (req: Request) => {
     // also collect the shared job_ids so a caller can only deep-link to a gig the
     // two users actually transacted on.
     const [asEarner, asPoster] = await Promise.all([
-      supabase.from('bookings').select('id, job_id, jobs!bookings_job_id_fkey!inner(poster_id)')
+      supabase.from('bookings').select('id, job_id, status, jobs!bookings_job_id_fkey!inner(poster_id)')
         .eq('earner_id', user.id).eq('jobs.poster_id', userId),
-      supabase.from('bookings').select('id, job_id, jobs!bookings_job_id_fkey!inner(poster_id)')
+      supabase.from('bookings').select('id, job_id, status, jobs!bookings_job_id_fkey!inner(poster_id)')
         .eq('earner_id', userId).eq('jobs.poster_id', user.id),
     ]);
     const sharedRows = [...(asEarner.data ?? []), ...(asPoster.data ?? [])];
     if (!sharedRows.length) return json({ error: 'Not allowed to notify this user' }, 403);
     const sharedJobIds = new Set(sharedRows.map((r: any) => r.job_id).filter(Boolean));
+
+    // Is there a booking the RECIPIENT actually agreed to?
+    //
+    // The shared-booking gate above is satisfied by a 'pending' booking, and creating
+    // one is a unilateral client write — bookings_insert_own needs only
+    // auth.uid() = earner_id, and the poster is never consulted. So anyone could book
+    // any gig (then even cancel it) purely to open a channel, and push caller-authored
+    // text straight to that poster's lock screen and to a permanent Alerts inbox row.
+    // Nothing moderated that text: guard_prohibited_content does not cover
+    // notifications, and this function writes as service_role, which bypasses it
+    // anyway.
+    //
+    // Rather than drop 'pending' — the "you have a new booking request" push is
+    // legitimate and needed — distinguish the two cases. A booking the recipient has
+    // accepted means the parties are genuinely transacting and caller text (message
+    // previews, amendment notes) is expected. A merely-pending one does not, so the
+    // wording is server-defined and the sender contributes nothing but the type.
+    const hasLiveRelationship = sharedRows.some((r: any) =>
+      ['confirmed', 'completed', 'verified'].includes(r.status));
 
     // Anti-spam rate limit: cap sends per caller so a booking counterparty can't
     // loop this endpoint to flood the target's devices + persistent Alerts inbox.
@@ -118,11 +137,28 @@ Deno.serve(async (req: Request) => {
     const CTRL = new RegExp("[\u0000-\u001F\u007F]", "g");
     const clean = (s: unknown, max: number) =>
       String(s ?? "").replace(CTRL, "").trim().slice(0, max);
-    const safeTitle = clean(title, 100);
-    if (!safeTitle) return json({ error: 'title required' }, 400);
-    const safeBody = clean(body, 280);
+    const callerTitle = clean(title, 100);
+    if (!callerTitle) return json({ error: 'title required' }, 400);
+    const callerBody = clean(body, 280);
     const rawType = data && typeof data.type === 'string' ? data.type : 'update';
     const safeType = KNOWN_TYPES.has(rawType) ? rawType : 'update';
+
+    // Server-defined wording for a not-yet-accepted relationship. Keyed on the already
+    // whitelisted type, so the sender chooses WHICH notification fires but never its
+    // words. This is the same principle the email templates below already apply — the
+    // branded email never interpolates caller text — extended to push and the inbox,
+    // which were the surfaces actually reachable by a stranger.
+    const PENDING_TEMPLATES: Record<string, { title: string; body: string }> = {
+      booking: { title: 'New booking request', body: 'Someone requested one of your gigs. Open GoHustlr to review it.' },
+      message: { title: 'New message', body: 'You have a new message about a booking request.' },
+      amendment: { title: 'Booking change requested', body: 'Someone proposed a change to a booking request.' },
+      update: { title: 'GoHustlr update', body: 'There\'s an update on one of your gigs.' },
+    };
+    const tpl = hasLiveRelationship
+      ? null
+      : (PENDING_TEMPLATES[safeType] ?? PENDING_TEMPLATES.update);
+    const safeTitle = tpl ? tpl.title : callerTitle;
+    const safeBody = tpl ? tpl.body : callerBody;
     const rawTab = data && typeof data.tab === 'string' ? data.tab : null;
     const safeTab = rawTab && KNOWN_TABS.has(rawTab) ? rawTab : null;
     const rawJobId = data && typeof data.jobId === 'string' ? data.jobId : null;

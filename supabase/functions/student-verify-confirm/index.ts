@@ -89,8 +89,21 @@ Deno.serve(async (req: Request) => {
     };
     // Keep an existing 'alumni' status; otherwise treat as a current student.
     if (profile?.student_status !== 'alumni') patch.student_status = 'student';
-    // Derive a school name only if the user hasn't set one.
-    if (!profile?.school && row.domain) {
+    // ALWAYS derive the school label from the domain that was actually verified —
+    // never keep whatever the user typed first.
+    //
+    // This used to run only `if (!profile?.school)`, which left a self-typed value in
+    // place and defeated the pin added in 20260726120000. That pin freezes school once
+    // student_verified is true, but the ordering let you set it BEFORE verifying:
+    //   1. set School = "Stanford University" while unverified (pin does not apply yet)
+    //   2. verify with a real .edu address you actually control, at a different school
+    //   3. this branch skips because school is non-empty, the badge is granted, and the
+    //      pin now freezes the fabricated label permanently
+    // The badge is a trust signal posters weigh when deciding who to let into their
+    // home, so it must vouch for the institution that was proven, not one adjacent to
+    // it. Deriving unconditionally also means the label and school_domain can never
+    // disagree.
+    if (row.domain) {
       const core = String(row.domain).replace(/\.(edu|ac\.uk|edu\.[a-z]{2})$/, '').split('.').pop() || row.domain;
       patch.school = core.charAt(0).toUpperCase() + core.slice(1);
     }
