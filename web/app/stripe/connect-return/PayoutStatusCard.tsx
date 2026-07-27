@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, Clock, AlertTriangle, HelpCircle } from "lucide-react";
+import { CheckCircle2, Clock, AlertTriangle, HelpCircle, Smartphone } from "lucide-react";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
 import { SUPPORT_EMAIL } from "@/lib/legal";
@@ -15,14 +15,40 @@ export default function PayoutStatusCard({
   status,
   failed,
   resuming,
+  noWebSession,
   onFinishSetup,
 }: {
   /** null while loading. */
   status: ConnectStatus | null;
   failed: boolean;
   resuming: boolean;
+  /** Visitor has no web session — almost always a mobile user returning from Stripe. */
+  noWebSession?: boolean;
   onFinishSetup: () => void;
 }) {
+  // Mobile users land here inside an in-app browser that shares NO session with the
+  // native app (the app's session lives in AsyncStorage). We can't read their payout
+  // status, and we must NOT send them to /profile/payouts — that route is gated and
+  // bounces to /login, which reads as "the app logged me out and made me sign up
+  // again". Terminal state: send them back to the app, which re-checks status itself.
+  if (noWebSession) {
+    return (
+      <Shell>
+        <Badge tone="neutral">
+          <Smartphone className="size-9" />
+        </Badge>
+        <Heading>Head back to the app</Heading>
+        <Body>
+          Your details were submitted to Stripe. Open Hustlr and your payout status will be up to date —
+          you can close this window.
+        </Body>
+        <a href="gohustlr://" className={buttonClasses("primary", "lg", "mt-5 w-full")}>
+          Open Hustlr
+        </a>
+      </Shell>
+    );
+  }
+
   if (!status && !failed) {
     return (
       <Shell>

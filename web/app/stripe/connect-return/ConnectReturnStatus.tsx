@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { stripeEdge } from "@/lib/edge";
+import { supabase } from "@/lib/supabaseClient";
 import type { ConnectStatus } from "@/lib/connectStatus";
 import PayoutStatusCard from "./PayoutStatusCard";
 
@@ -16,8 +17,19 @@ export default function ConnectReturnStatus() {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [noWebSession, setNoWebSession] = useState(false);
 
   const load = useCallback(async () => {
+    // Check for a web session FIRST. Mobile users arrive here in an in-app browser
+    // that shares no session with the native app, so the status call would always
+    // 401 and render the alarming "we couldn't confirm" state — then hand them a
+    // button into a gated route that bounces to /login. Detect it up front and show
+    // them the door back to the app instead of a failure they can't act on.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setNoWebSession(true);
+      return;
+    }
     try {
       setStatus(await stripeEdge.getPayoutStatus());
       setFailed(false);
@@ -51,7 +63,13 @@ export default function ConnectReturnStatus() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12">
-      <PayoutStatusCard status={status} failed={failed} resuming={resuming} onFinishSetup={onFinishSetup} />
+      <PayoutStatusCard
+        status={status}
+        failed={failed}
+        resuming={resuming}
+        noWebSession={noWebSession}
+        onFinishSetup={onFinishSetup}
+      />
     </main>
   );
 }
