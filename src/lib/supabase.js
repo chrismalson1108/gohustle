@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import { AppState, Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -17,6 +18,28 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     flowType: 'pkce',
   },
 });
+
+// Tie token auto-refresh to app foreground/background — the pattern Supabase's own
+// React Native guide requires, and which this app was missing.
+//
+// WHY IT MATTERS: `autoRefreshToken: true` runs a timer that only behaves when the JS
+// runtime is alive. Backgrounding the app (Android Custom Tabs during Stripe/Google
+// flows, or just switching apps) suspends timers mid-flight. Supabase ROTATES refresh
+// tokens, so a refresh that completes server-side but never persists locally leaves
+// the client retrying a token the server has already burned — it answers "Already
+// Used" and supabase-js emits SIGNED_OUT. AuthContext treats any null session as a
+// real logout, so a transient background blip becomes a spurious sign-out.
+//
+// Stopping the timer while backgrounded and restarting it on foreground lets the
+// client do one clean refresh on resume instead of racing a suspended one.
+// Web has no such lifecycle (and react-native-web's AppState is a stub), so skip it.
+if (Platform.OS !== 'web') {
+  // Module-scope and never removed on purpose: this must live as long as the client.
+  AppState.addEventListener('change', (state) => {
+    if (state === 'active') supabase.auth.startAutoRefresh();
+    else supabase.auth.stopAutoRefresh();
+  });
+}
 
 // Password reset must NOT use PKCE from this app: the recovery email link opens in
 // a BROWSER (the web reset page), which can never hold this app's code-verifier —
