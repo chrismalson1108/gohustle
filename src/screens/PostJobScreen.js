@@ -17,7 +17,7 @@ import { moderateText, logModerationBlock } from '../lib/moderation';
 import { notify } from '../lib/push';
 import { colors, radii } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
-import { CATEGORIES } from '../data/mockData';
+import { CATEGORIES, MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
@@ -88,15 +88,17 @@ export default function PostJobScreen({ navigation, route }) {
       haptic.error();
       return;
     }
-    // Pay must be a real, positive amount — '0'/'-5' pass the truthiness check above
-    // but would post a $0/negative gig that dead-ends at escrow (non-positive
-    // PaymentIntent). Guard it before anything else touches the value.
-    const pay = parseFloat(form.pay);
-    if (!Number.isFinite(pay) || pay <= 0 || pay > 10000) {
+    // Pay must clear the shared floor — '0'/'-5' pass the truthiness check above but
+    // would post a gig that dead-ends at escrow (non-positive PaymentIntent), and
+    // anything under MIN_JOB_PAY isn't worth an earner's time. Guard it before
+    // anything else touches the value.
+    const payError = validateJobPay(form.pay);
+    if (payError) {
       haptic.error();
-      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: 'Pay must be more than $0 and no more than $10,000.' });
+      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: payError });
       return;
     }
+    const pay = parseFloat(form.pay);
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
@@ -269,7 +271,7 @@ export default function PostJobScreen({ navigation, route }) {
                 <Text style={styles.dollar}>$</Text>
                 <TextInput
                   style={styles.payInput}
-                  placeholder="0"
+                  placeholder={String(MIN_JOB_PAY)}
                   value={form.pay}
                   onChangeText={v => set('pay', v)}
                   keyboardType="numeric"
@@ -293,6 +295,9 @@ export default function PostJobScreen({ navigation, route }) {
                 ))}
               </View>
             </View>
+            <Text style={styles.payHint}>
+              Minimum ${MIN_JOB_PAY}{form.payType === 'hourly' ? ' per hour' : ''}.
+            </Text>
           </Field>
 
           {form.payType === 'hourly' && (
@@ -474,6 +479,7 @@ const styles = StyleSheet.create({
   catChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   catChipTextActive: { color: '#fff' },
   payRow: { flexDirection: 'row', alignItems: 'center' },
+  payHint: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 16 },
   payInputWrap: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.surface, borderRadius: radii.md,

@@ -8,6 +8,11 @@ declare module "@gohustlr/shared" {
   export const shadows: Record<string, unknown>;
 
   // ── constants ──
+  /** Pay floor/ceiling in whole dollars; applies to the RATE, not the computed total. */
+  export const MIN_JOB_PAY: number;
+  export const MAX_JOB_PAY: number;
+  /** Returns null when valid, else a ready-to-show error string. */
+  export function validateJobPay(value: string | number): string | null;
   export interface Category { id: string; label: string; icon: string; ion: string }
   export const CATEGORIES: Category[];
   export const CATEGORY_COLORS: Record<string, string>;

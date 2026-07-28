@@ -97,6 +97,18 @@ Deno.serve(async (req: Request) => {
     if (!Number.isFinite(amountCents) || amountCents < 50 || amountCents > 1_000_000) {
       return json({ error: 'Invalid booking amount' }, 400);
     }
+    // Enforce the platform pay floor on the RATE (not the total): a $10 floor must
+    // hold for a 1-hour hourly gig too. Both clients validate this, but both are
+    // user-controlled — counter_offer especially, since the EARNER sets it. This is
+    // the only check a patched client can't skip, so it's the one that counts.
+    // Keep MIN_JOB_PAY in sync with shared/constants.js.
+    const MIN_JOB_PAY = 10;
+    if (!Number.isFinite(rate) || rate < MIN_JOB_PAY) {
+      return json({
+        error: 'BELOW_MIN_PAY',
+        message: `Gigs must pay at least $${MIN_JOB_PAY}.`,
+      }, 400);
+    }
     const feeCents = Math.round(amountCents * 0.10);         // 10% GoHustlr fee
     const earnerAmountCents = amountCents - feeCents;
 

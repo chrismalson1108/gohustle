@@ -1,3 +1,27 @@
+// Pay floor/ceiling for a gig, in whole dollars. The floor applies to the PAY RATE —
+// the flat price for a fixed gig, or the hourly rate for an hourly one — not to the
+// computed total, so a 1-hour hourly gig can never be posted below the floor either.
+//
+// It is enforced in four places on purpose: PostJob/EditJob (poster sets the price),
+// the counter-offer input (an EARNER-controlled override — a floor on posting is
+// worthless if a counter-offer can undercut it), and server-side in
+// stripe-create-payment-intent, which is the only one a hostile client can't skip.
+export const MIN_JOB_PAY = 10;
+export const MAX_JOB_PAY = 10000;
+
+/**
+ * Shared validator for any user-entered pay rate (posting, editing, counter-offering).
+ * Returns null when valid, or a ready-to-show error string. Keeping the message here
+ * means mobile and web can never drift into telling users different rules.
+ */
+export function validateJobPay(value) {
+  const pay = typeof value === 'number' ? value : parseFloat(value);
+  if (!Number.isFinite(pay)) return 'Enter a valid pay amount.';
+  if (pay < MIN_JOB_PAY) return `Pay must be at least $${MIN_JOB_PAY}.`;
+  if (pay > MAX_JOB_PAY) return `Pay can't be more than $${MAX_JOB_PAY.toLocaleString()}.`;
+  return null;
+}
+
 // `ion` is an Ionicons name (renders reliably everywhere); `icon` kept for any legacy use.
 export const CATEGORIES = [
   { id: 'all', label: 'All', icon: '🌟', ion: 'grid' },

@@ -18,6 +18,7 @@ import { colors, radii, shadows } from '../theme';
 import MessageSheet from '../components/MessageSheet';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
+import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 
@@ -173,6 +174,14 @@ export default function JobDetailScreen({ route, navigation }) {
       return;
     }
     const slot = job.slots?.find(s => s.id === selectedSlot);
+    // A counter-offer REPLACES the posted rate, so it has to clear the same floor —
+    // otherwise the minimum on posting is trivially undercut from the earner side.
+    const counterError = counterPrice ? validateJobPay(counterPrice) : null;
+    if (counterError) {
+      haptic.error();
+      showToast({ icon: '⚠️', title: 'Check your offer', message: counterError });
+      return;
+    }
     const counter = counterPrice ? parseFloat(counterPrice) : null;
     const note = applicationNote.trim() || null;
     const noteTerm = note && findProhibited(note);
@@ -335,7 +344,9 @@ export default function JobDetailScreen({ route, navigation }) {
               <Text style={styles.counterInfo}>
                 Listed rate: <Text style={styles.counterBold}>{estPay}</Text>
               </Text>
-              <Text style={styles.counterHint}>Propose a different rate to negotiate before booking</Text>
+              <Text style={styles.counterHint}>
+                Propose a different rate to negotiate before booking (minimum ${MIN_JOB_PAY})
+              </Text>
               <View style={styles.counterInputRow}>
                 <Text style={styles.counterDollar}>$</Text>
                 <TextInput

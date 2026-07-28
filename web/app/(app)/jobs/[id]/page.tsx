@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { CATEGORY_COLORS, findProhibited } from "@gohustlr/shared";
+import { CATEGORY_COLORS, findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
@@ -164,6 +164,13 @@ export default function JobDetailPage() {
       showToast({ icon: "⚠️", title: "Check your wording", message: "Your note contains content that isn't allowed. Please edit it." });
       return;
     }
+    // A counter-offer REPLACES the posted rate, so it has to clear the same floor —
+    // otherwise the minimum on posting is trivially undercut from the earner side.
+    const counterError = counterPrice ? validateJobPay(counterPrice) : null;
+    if (counterError) {
+      showToast({ icon: "⚠️", title: "Check your offer", message: counterError });
+      return;
+    }
     setBooking(true);
     const slot = job.slots?.find((s) => s.id === selectedSlot);
     const counter = counterPrice ? parseFloat(counterPrice) : null;
@@ -317,7 +324,9 @@ export default function JobDetailPage() {
               <p className="text-sm text-ink-soft">
                 Listed rate: <span className="font-bold text-ink">{estPay}</span>
               </p>
-              <p className="mb-3 mt-1 text-xs text-ink-muted">Propose a different rate to negotiate before booking.</p>
+              <p className="mb-3 mt-1 text-xs text-ink-muted">
+                Propose a different rate to negotiate before booking (minimum ${MIN_JOB_PAY}).
+              </p>
               <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
                 <span className="text-lg font-bold text-primary">$</span>
                 <input

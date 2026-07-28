@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { X, ImagePlus, Lock, Zap } from "lucide-react";
-import { CATEGORIES, findProhibited } from "@gohustlr/shared";
+import { CATEGORIES, findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { useAuth } from "@/lib/auth";
 import { uploadImages } from "@/lib/uploadImage";
@@ -149,16 +149,17 @@ export default function GigForm({
   const removeHazard = (h: string) => setHazards(hazards.filter((x) => x !== h));
 
   const effectiveCategory = category === "other" ? customCategory : category;
-  // pay must parse to a positive finite number — "." or "abc" would serialize to
-  // null and fail the NOT NULL insert (previously surfaced as a false "posted").
-  const payValue = parseFloat(pay);
-  const payValid = Number.isFinite(payValue) && payValue > 0;
+  // Shared with mobile so the two clients can never tell users different rules.
+  // Also catches "." / "abc", which would serialize to null and fail the NOT NULL
+  // insert (previously surfaced as a false "posted").
+  const payError = validateJobPay(pay);
+  const payValid = !payError;
   const valid = title && effectiveCategory && payValid && location && description;
 
   const submit = async () => {
     if (!user || submitting.current) return;
     if (!valid) {
-      onError?.(!payValid && pay ? "Enter a valid pay amount." : "Please fill in all required fields.");
+      onError?.(payError && pay ? payError : "Please fill in all required fields.");
       return;
     }
     const kwTerm = findProhibited([title, description, ...tags, ...hazards].join(" "));
@@ -303,7 +304,7 @@ export default function GigForm({
         <div className="flex gap-2">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-soft">$</span>
-            <Input value={pay} disabled={payLocked} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" inputMode="decimal" className="pl-7" />
+            <Input value={pay} disabled={payLocked} onChange={(e) => setPay(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={String(MIN_JOB_PAY)} inputMode="decimal" className="pl-7" />
           </div>
           {(["flat", "hourly"] as const).map((t) => (
             <Chip key={t} active={payType === t} disabled={payLocked} onClick={() => setPayType(t)}>
@@ -311,6 +312,10 @@ export default function GigForm({
             </Chip>
           ))}
         </div>
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Minimum ${MIN_JOB_PAY}
+          {payType === "hourly" ? " per hour" : ""}.
+        </p>
       </div>
 
       {payType === "hourly" && (

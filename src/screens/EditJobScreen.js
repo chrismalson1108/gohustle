@@ -17,7 +17,7 @@ import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { colors, radii } from '../theme';
-import { CATEGORIES } from '../data/mockData';
+import { CATEGORIES, validateJobPay } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
@@ -139,12 +139,13 @@ export default function EditJobScreen({ route, navigation }) {
     // Pay must be a real, positive amount — '0'/'-5' pass the truthiness check above
     // but would desync the gig from its escrow hold. Guard before submit. (When pay
     // is locked the field is uneditable, so this only bites a genuine edit.)
-    const pay = parseFloat(form.pay);
-    if (!Number.isFinite(pay) || pay <= 0 || pay > 10000) {
+    const payError = validateJobPay(form.pay);
+    if (payError) {
       haptic.error();
-      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: 'Pay must be more than $0 and no more than $10,000.' });
+      showToast({ icon: '⚠️', title: 'Enter a valid pay', message: payError });
       return;
     }
+    const pay = parseFloat(form.pay);
     const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
