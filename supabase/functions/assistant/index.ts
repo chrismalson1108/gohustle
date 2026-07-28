@@ -113,6 +113,13 @@ const MAX_TOOL_ITERATIONS = 8;
 
 const VALID_CATEGORIES = ['Tutoring', 'Delivery', 'Moving', 'Tech Help', 'Creative', 'Odd Jobs', 'Errands', 'Other'];
 
+// Platform pay floor, applied to the RATE (flat price, or hourly rate). The clients
+// enforce it in PostJob/EditJob and on the counter-offer input, but the assistant is
+// a THIRD write path into the same tables and has to mirror it — otherwise "post a
+// $5 gig" works here and only fails later at escrow.
+// Keep in sync with shared/constants.js and stripe-create-payment-intent.
+const MIN_JOB_PAY = 10;
+
 type Json = Record<string, unknown>;
 type Action = { type: string; [k: string]: unknown };
 
@@ -749,6 +756,17 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
   if (!title || !category || !location || !description || !(pay > 0)) {
     return JSON.stringify({ error: 'missing_fields', message: 'Need a title, category, pay, location, and description.' });
   }
+  // The platform pay floor, which PostJob/EditJob enforce on both clients. Without
+  // it here, "post a $5 gig" through the assistant SUCCEEDS and then dead-ends:
+  // the gig is unpayable, because stripe-create-payment-intent rejects the rate at
+  // escrow. That's a worse outcome than refusing up front, and it's a normal user
+  // path, not an attack. Keep in sync with shared/constants.js.
+  if (pay < MIN_JOB_PAY) {
+    return JSON.stringify({
+      error: 'below_min_pay',
+      message: `Gigs have to pay at least $${MIN_JOB_PAY}${payType === 'hourly' ? ' per hour' : ''}. Want me to use $${MIN_JOB_PAY}?`,
+    });
+  }
   // Same moderation guards the manual PostJob path enforces — no bypass via the AI.
   // Layer 1: keyword filter (includes the requirements free-text, as PostJob does).
   const badGig = findProhibited(`${title} ${description} ${requirements.join(' ')}`);
@@ -852,7 +870,15 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
   // poster accepts AND authorizes payment (the escrow card hold) through the normal
   // flow. An assistant-side "instant confirm" would skip that and leave a confirmed
   // booking with no money held — so we never self-confirm here.
+  // A counter-offer REPLACES the posted rate, so it has to clear the same floor —
+  // otherwise an earner can undercut the minimum by asking the assistant to book at $1.
   const counter = typeof input.counter_offer === 'number' && input.counter_offer > 0 ? input.counter_offer : null;
+  if (counter !== null && counter < MIN_JOB_PAY) {
+    return JSON.stringify({
+      error: 'below_min_pay',
+      message: `Counter-offers have to be at least $${MIN_JOB_PAY}.`,
+    });
+  }
   const status = 'pending';
 
   const { data: booking, error } = await sb

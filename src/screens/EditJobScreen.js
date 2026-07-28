@@ -17,7 +17,7 @@ import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { colors, radii } from '../theme';
-import { CATEGORIES, validateJobPay } from '../data/mockData';
+import { CATEGORIES, MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
@@ -357,6 +357,11 @@ export default function EditJobScreen({ route, navigation }) {
                 ))}
               </View>
             </View>
+            {canEditPay && (
+              <Text style={styles.payHint}>
+                Minimum ${MIN_JOB_PAY}{form.payType === 'hourly' ? ' per hour' : ''}.
+              </Text>
+            )}
           </Field>
 
           <Field label={`Location *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
@@ -552,6 +557,7 @@ const styles = StyleSheet.create({
   catChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   catChipTextActive: { color: '#fff' },
   payRow: { flexDirection: 'row', alignItems: 'center' },
+  payHint: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 16 },
   payInputWrap: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.surface, borderRadius: radii.md,
