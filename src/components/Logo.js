@@ -7,41 +7,34 @@ import { Image, View } from 'react-native';
 // `light` swaps to the Cream colourway for dark / Blue surfaces (this replaced the
 // old Orange variant, which Brand Guidelines v1.0 retired). `mark` renders the
 // H-monogram alone; `lockup` renders the approved horizontal lockup.
+// Ratios are the INTRINSIC dimensions of the PNGs — they must be re-measured
+// whenever the art is replaced, or every logo renders stretched.
 const WORDMARK = {
   blue: require('../../shared/assets/brand/wordmark-blue.png'),
   cream: require('../../shared/assets/brand/wordmark-cream.png'),
-  ratio: 2600 / 588,
+  ratio: 1560 / 259,
 };
 const MONOGRAM = {
   blue: require('../../shared/assets/brand/monogram-blue.png'),
   cream: require('../../shared/assets/brand/monogram-cream.png'),
-  ratio: 1210 / 1400,
+  ratio: 620 / 404,
 };
-
-// Construction ratios from the guidelines: the wordmark's cap-height is 0.639x the
-// mark height and the gap between them is 0.336x. Scale the lockup as one group —
-// sizing the two parts independently is the fastest way to break the identity.
-const CAP = 0.639;
-const GAP = 0.336;
 
 export default function Logo({ light = false, height = 32, mark = false, lockup = false, style }) {
   const tone = light ? 'cream' : 'blue';
 
+  // The v3 wordmark art IS the horizontal lockup — the H-mark and "HUSTLR" are drawn
+  // together in one file, with the spacing baked in by the designer. The old art was
+  // text-only, so this component used to compose mark + text itself at guideline
+  // ratios; doing that now would draw the mark TWICE. Render the single asset and let
+  // the artwork own its own construction.
   if (lockup) {
-    const wordHeight = height * CAP;
     return (
-      <View style={[{ flexDirection: 'row', alignItems: 'center', gap: height * GAP }, style]}>
-        <Image
-          source={MONOGRAM[tone]}
-          style={{ height, width: height * MONOGRAM.ratio }}
-          resizeMode="contain"
-        />
-        <Image
-          source={WORDMARK[tone]}
-          style={{ height: wordHeight, width: wordHeight * WORDMARK.ratio }}
-          resizeMode="contain"
-        />
-      </View>
+      <Image
+        source={WORDMARK[tone]}
+        style={[{ height, width: height * WORDMARK.ratio }, style]}
+        resizeMode="contain"
+      />
     );
   }
 

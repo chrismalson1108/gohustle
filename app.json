@@ -62,7 +62,7 @@
       "package": "com.gohustlr.app",
       "versionCode": 8,
       "adaptiveIcon": {
-        "backgroundColor": "#3F25FE",
+        "backgroundColor": "#5038FF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

@@ -1,5 +1,5 @@
 import { Akshar } from "next/font/google";
-import { HustlrMark, HustlrWordmark } from "@/components/brand/glyphs";
+import Logo from "@/components/Logo";
 
 const akshar = Akshar({
   variable: "--font-akshar",
@@ -50,13 +50,21 @@ export default function BrandShell({
   );
 }
 
-/** The horizontal lockup, built to the documented ratios (wordmark cap-height
- *  = 0.639 × mark height, gap = 0.336 × mark height). */
+/** The horizontal lockup.
+ *
+ *  This used to compose the inline SVG glyphs (HustlrMark + HustlrWordmark) at the
+ *  documented construction ratios. Those glyphs are the v1 vector pack — viewBox
+ *  1210×1400 and 2600×588 — and the v3 art has different proportions AND ships the
+ *  mark and wordmark drawn together as one lockup. Keeping the SVG path here would
+ *  leave every logged-out page (login, consent, contact, legal, reset-password)
+ *  showing the previous logo while the in-app chrome showed the new one.
+ *
+ *  Rendering the shared <Logo> keeps one source of truth: the PNGs distributed by
+ *  `npm run brand:sync`. Swap back to vector only when a v3 SVG pack exists. */
 export function BrandLockup({ height = 34 }: { height?: number }) {
   return (
-    <span className="inline-flex items-center" style={{ gap: 0.336 * height }}>
-      <HustlrMark style={{ height }} className="w-auto text-[#3F25FE]" />
-      <HustlrWordmark style={{ height: 0.639 * height }} className="w-auto text-[#3F25FE]" />
+    <span className="inline-flex items-center">
+      <Logo height={height} />
       <span className="sr-only">Hustlr</span>
     </span>
   );

@@ -10,8 +10,12 @@ import { classNames } from "@/lib/format";
 //
 // Marketing and logged-out pages use the inline vector lockup in
 // components/brand/BrandShell.tsx instead; this stays for the in-app chrome.
-const WORDMARK_RATIO = 2600 / 588; // intrinsic aspect ratio of wordmark-*.png
-const MONOGRAM_RATIO = 1210 / 1400; // intrinsic aspect ratio of monogram-*.png
+// Intrinsic aspect ratios of the PNGs in web/public/brand. RE-MEASURE THESE whenever
+// the art is replaced — a stale ratio silently stretches every logo in the app.
+// Note the v3 wordmark art is the full horizontal lockup (H-mark + "HUSTLR"), not
+// text alone, which is why it is far wider than the version it replaced.
+const WORDMARK_RATIO = 1560 / 259; // wordmark-*.png
+const MONOGRAM_RATIO = 620 / 404; // monogram-*.png
 
 export default function Logo({
   light = false,
