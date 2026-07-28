@@ -25,8 +25,29 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(authToken);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    const { userId, title, body, data } = await req.json();
+    const { userId, title, body, data, adminNotice } = await req.json();
     if (!userId || !title) return json({ error: 'userId and title are required' }, 400);
+
+    // ── Admin notice path ────────────────────────────────────────────────────
+    // The anti-spoof gates below exist to stop a STRANGER planting alerts: they
+    // require a shared booking, and they replace caller wording with a fixed
+    // template until the recipient has actually agreed to something. Both are
+    // correct for user-to-user push and must not be relaxed.
+    //
+    // But an admin warning a user shares no booking with them, so the console's
+    // "Notify user" hit the 403 every time and its warning text would have been
+    // swapped for "There's an update on one of your gigs" even if it hadn't.
+    // A safety warning that arrives as a generic gig update is worse than none.
+    //
+    // So: a narrow, separately-authorised path. Membership of admin_users is
+    // checked HERE with the service role — the client asking for it proves nothing.
+    let isAdminNotice = false;
+    if (adminNotice === true) {
+      const { data: adminRow } = await supabase
+        .from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
+      if (!adminRow) return json({ error: 'Not an admin' }, 403);
+      isAdminNotice = true;
+    }
 
     // userId is caller-supplied and is interpolated into a PostgREST `.or()` filter
     // string in the block check below. PostgREST filter syntax is comma/paren
@@ -86,7 +107,8 @@ Deno.serve(async (req: Request) => {
         .eq('earner_id', userId).eq('jobs.poster_id', user.id),
     ]);
     const sharedRows = [...(asEarner.data ?? []), ...(asPoster.data ?? [])];
-    if (!sharedRows.length) return json({ error: 'Not allowed to notify this user' }, 403);
+    // An admin has no booking with the user they're moderating — that's the point.
+    if (!sharedRows.length && !isAdminNotice) return json({ error: 'Not allowed to notify this user' }, 403);
     const sharedJobIds = new Set(sharedRows.map((r: any) => r.job_id).filter(Boolean));
 
     // Is there a booking the RECIPIENT actually agreed to?
@@ -154,7 +176,11 @@ Deno.serve(async (req: Request) => {
       amendment: { title: 'Booking change requested', body: 'Someone proposed a change to a booking request.' },
       update: { title: 'GoHustlr update', body: 'There\'s an update on one of your gigs.' },
     };
-    const tpl = hasLiveRelationship
+    // Admin notices keep their literal wording. The template exists to stop an
+    // unvetted stranger choosing the words in someone's notification tray; a
+    // verified admin_users member IS the trusted author, and the whole value of a
+    // moderation warning is that it says what it means.
+    const tpl = (hasLiveRelationship || isAdminNotice)
       ? null
       : (PENDING_TEMPLATES[safeType] ?? PENDING_TEMPLATES.update);
     const safeTitle = tpl ? tpl.title : callerTitle;
@@ -229,17 +255,22 @@ Deno.serve(async (req: Request) => {
     // Alerts inbox even without a push-capable device. The inbox is the passive
     // notification center and is written regardless of push/email prefs. A
     // missing column (before the inbox migration) just logs and continues.
-    try {
-      await supabase.from('notifications').insert({
-        user_id: userId,
-        type: safeType,
-        title: safeTitle,
-        body: safeBody || null,
-        job_id: safeJobId,
-        data: safeData,
-      });
-    } catch (e) {
-      console.error('send-push: notification insert failed', e);
+    // The admin console writes its own inbox row before calling us (it needs the
+    // record persisted even if push then fails), so skip ours — otherwise the user
+    // sees the same warning twice in their Alerts list.
+    if (!isAdminNotice) {
+      try {
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          type: safeType,
+          title: safeTitle,
+          body: safeBody || null,
+          job_id: safeJobId,
+          data: safeData,
+        });
+      } catch (e) {
+        console.error('send-push: notification insert failed', e);
+      }
     }
 
     // ── OS push (Expo) — gated on the recipient's per-category push pref ──

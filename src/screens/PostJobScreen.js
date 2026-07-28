@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Image,
   StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
@@ -82,7 +82,23 @@ export default function PostJobScreen({ navigation, route }) {
 
   const effectiveCategory = form.category === 'other' ? form.customCategory : form.category;
 
+  // Re-entry guard. The moderation await below takes up to 6s, and the button's
+  // only defence was a `posting` flag set AFTER it — so every impatient tap during
+  // that window fired another moderate-text call and logged another auto-report.
+  // That is what turned one blocked gig into five identical moderation reports.
+  // Mirrors the ref guard web/components/GigForm.tsx already had.
+  const submitting = useRef(false);
   const handlePost = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    try {
+      await handlePostInner();
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  const handlePostInner = async () => {
     Keyboard.dismiss();
     if (!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) {
       haptic.error();

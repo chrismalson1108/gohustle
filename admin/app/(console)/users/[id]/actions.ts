@@ -255,8 +255,12 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
     // this the user sees nothing until they happen to open Alerts. For a "first warning
     // before you're perma banned" that is the difference between a warning and a
     // surprise ban. Best-effort: a device with no push token must not fail the action.
-    // send-push authenticates the CALLER as any signed-in user (it reads recipient
-    // tokens with the service role internally), so pass the admin's own session JWT.
+    // send-push normally requires the caller to SHARE A BOOKING with the recipient
+    // (anti-spoof), which an admin never does — and it replaces caller wording with a
+    // fixed template until the recipient has agreed to something, which would have
+    // turned this warning into "There's an update on one of your gigs". adminNotice
+    // opts into a narrow path that re-verifies admin_users server-side, keeps the
+    // literal wording, and skips its own inbox insert (we wrote one above).
     const supa = await getServerSupabase();
     const {
       data: { session },
@@ -264,6 +268,7 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
     const adminToken = session?.access_token ?? "";
 
     let pushed = false;
+    let pushError: string | null = null;
     try {
       const pushRes = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
         method: "POST",
@@ -272,12 +277,29 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
           Authorization: `Bearer ${adminToken}`,
           apikey: SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ userId, title, body, data: { tab: "ProfileTab", type: "admin" } }),
+        body: JSON.stringify({
+          userId,
+          title,
+          body,
+          adminNotice: true,
+          data: { tab: "ProfileTab", type: "system" },
+        }),
         signal: AbortSignal.timeout(10_000),
       });
       pushed = pushRes.ok;
-    } catch {
-      pushed = false; // offline / timed out — the inbox row still stands
+      if (!pushRes.ok) {
+        // Report what actually happened. Blaming "no device registered" for what is
+        // really a 403 sends the operator hunting the wrong problem.
+        const detail = await pushRes.json().catch(() => null);
+        pushError = `push rejected (${detail?.error ?? `http ${pushRes.status}`})`;
+      } else {
+        const detail = await pushRes.json().catch(() => null);
+        if (typeof detail?.sent === "number" && detail.sent === 0) {
+          pushError = "no push sent — the user has no registered device";
+        }
+      }
+    } catch (e) {
+      pushError = (e as Error)?.name === "TimeoutError" ? "push timed out" : "push request failed";
     }
 
     let emailed = false;
@@ -325,7 +347,7 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
     // Never fall through to the default "Done." while one of them silently didn't —
     // the admin would believe a warning was delivered when it never left the building.
     const problems: string[] = [];
-    if (!pushed) problems.push("no push delivered (user may have no device registered)");
+    if (pushError) problems.push(pushError);
     if (emailError) problems.push(emailError);
     const __message = problems.length
       ? `Saved to their in-app inbox, but ${problems.join("; ")}.`

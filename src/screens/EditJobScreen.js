@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Image,
   StyleSheet, KeyboardAvoidingView, Platform, Alert, Keyboard, ActivityIndicator,
@@ -56,6 +56,13 @@ export default function EditJobScreen({ route, navigation }) {
   const [photos, setPhotos] = useState(job?.photos || []); // mix of remote URLs + new local URIs
   const [coords, setCoords] = useState(job?.lat != null ? { lat: job.lat, lng: job.lng } : null);
   const [saving, setSaving] = useState(false);
+  // Re-entry guard. The moderation await in handleSave takes up to 6s and the button's
+  // only defence was a `saving` flag set AFTER it, so every impatient tap in that window
+  // fired another moderate-text call and logged another auto-report — that is what turned
+  // one blocked gig into five identical moderation reports. Mirrors the ref guard
+  // web/components/GigForm.tsx already had. MUST stay above the `if (!job)` early return
+  // below: a hook after a conditional return breaks React's hook order.
+  const submitting = useRef(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -131,6 +138,16 @@ export default function EditJobScreen({ route, navigation }) {
   }
 
   const handleSave = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    try {
+      await handleSaveInner();
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  const handleSaveInner = async () => {
     Keyboard.dismiss();
     if (!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) {
       haptic.error();
