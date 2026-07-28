@@ -141,6 +141,31 @@ Deno.serve(async (req: Request) => {
       }
       const cats = verdict.categories.length ? verdict.categories.join(', ') : 'policy violation';
       const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 160);
+
+      // Collapse retries. Every rejected submit calls this function, so a user who
+      // presses Post five times against the same blocked text produced FIVE report
+      // rows — each with slightly different AI wording, because the model rewords its
+      // reason each call. That reads to an admin like five separate offences instead
+      // of one person retrying, and it buries genuine reports. log-moderation already
+      // had an anti-flood guard; this path had none.
+      // Keyed on the snippet so different bad content still logs separately.
+      try {
+        const since = new Date(Date.now() - 30 * 60_000).toISOString();
+        // Escape LIKE wildcards — the snippet is user text, and a stray % would match
+        // unrelated reports and silently suppress a genuine one.
+        const needle = snippet.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`);
+        const { count } = await supabase
+          .from('reports')
+          .select('id', { count: 'exact', head: true })
+          .eq('reporter_id', user.id)
+          .eq('source', 'auto')
+          .gte('created_at', since)
+          .like('details', `%${needle}%`);
+        if ((count ?? 0) > 0) {
+          return json({ allowed: false, categories: verdict.categories, reason: verdict.reason });
+        }
+      } catch (_) { /* dedup is best-effort — fall through and log */ }
+
       await supabase.from('reports').insert({
         reporter_id: user.id,
         reported_user_id: user.id,

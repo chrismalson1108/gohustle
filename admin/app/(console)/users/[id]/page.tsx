@@ -70,10 +70,16 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .eq("poster_id", id)
       .order("created_at", { ascending: false })
       .limit(20),
+    // "Reports filed" = reports this user CHOSE to file. Auto-moderation writes
+    // reporter_id = reported_user_id = the author (reporter_id is NOT NULL, so the
+    // author doubles as the placeholder), which made every blocked post also show up
+    // here — a user who got auto-blocked five times looked like a serial reporter of
+    // other people. Exclude source='auto'; those already appear under "Reports against".
     ctx.service
       .from("reports")
       .select("id, reported_user_id, reason, details, created_at")
       .eq("reporter_id", id)
+      .neq("source", "auto")
       .order("created_at", { ascending: false })
       .limit(10),
     ctx.service

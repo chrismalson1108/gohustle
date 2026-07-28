@@ -250,34 +250,87 @@ export async function notifyUser(formData: FormData): Promise<ActionResult> {
       .insert({ user_id: userId, type: "admin", title, body });
     if (error) throw new Error(`in-app notify failed: ${error.message}`);
 
+    // Push the alert to the user's device. Inserting the notifications row alone only
+    // fills the in-app inbox — there is no DB trigger behind that table — so without
+    // this the user sees nothing until they happen to open Alerts. For a "first warning
+    // before you're perma banned" that is the difference between a warning and a
+    // surprise ban. Best-effort: a device with no push token must not fail the action.
+    // send-push authenticates the CALLER as any signed-in user (it reads recipient
+    // tokens with the service role internally), so pass the admin's own session JWT.
+    const supa = await getServerSupabase();
+    const {
+      data: { session },
+    } = await supa.auth.getSession();
+    const adminToken = session?.access_token ?? "";
+
+    let pushed = false;
+    try {
+      const pushRes = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ userId, title, body, data: { tab: "ProfileTab", type: "admin" } }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      pushed = pushRes.ok;
+    } catch {
+      pushed = false; // offline / timed out — the inbox row still stands
+    }
+
     let emailed = false;
+    let emailError: string | null = null;
     if (alsoEmail) {
       const { data } = await ctx.service.auth.admin.getUserById(userId);
       const email = data?.user?.email;
-      if (email) {
-        const supa = await getServerSupabase();
-        const {
-          data: { session },
-        } = await supa.auth.getSession();
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/support-reply`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
-            apikey: SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ toEmail: email, subject: title, body }),
-        });
-        emailed = res.ok;
+      if (!email) {
+        emailError = "that account has no email address";
+      } else {
+        try {
+          // TIMEOUT IS LOAD-BEARING: this fetch had none, so any stall left the server
+          // action unresolved and the form stuck on "Sending…" forever, with the admin
+          // unable to tell whether the warning had gone out.
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/support-reply`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${adminToken}`,
+              apikey: SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ toEmail: email, subject: title, body }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          emailed = res.ok;
+          if (!res.ok) {
+            // Report the REAL reason. "check Resend" is actively misleading when the
+            // cause is a 403 from the AAL2/MFA gate or an unset RESEND_API_KEY.
+            const detail = await res.json().catch(() => null);
+            const code = detail?.error ?? `http ${res.status}`;
+            emailError =
+              code === "forbidden"
+                ? "email refused: your admin session isn't MFA-verified (AAL2)"
+                : code === "email_not_configured"
+                  ? "email is not configured (RESEND_API_KEY unset)"
+                  : `email failed (${code})`;
+          }
+        } catch (e) {
+          emailError = (e as Error)?.name === "TimeoutError" ? "email timed out" : "email request failed";
+        }
       }
     }
-    // The in-app notification is saved by here; only the optional email leg can still
-    // fail. Don't report the default "Done." in that case — the admin would believe a
-    // suspension explanation / safety notice was emailed when it never sent.
-    const __message = alsoEmail && !emailed
-      ? "Notification saved, but the email failed to send (check Resend)."
+
+    // The in-app row is saved by here; push and email are the legs that can still fail.
+    // Never fall through to the default "Done." while one of them silently didn't —
+    // the admin would believe a warning was delivered when it never left the building.
+    const problems: string[] = [];
+    if (!pushed) problems.push("no push delivered (user may have no device registered)");
+    if (emailError) problems.push(emailError);
+    const __message = problems.length
+      ? `Saved to their in-app inbox, but ${problems.join("; ")}.`
       : undefined;
-    return { title, emailed: alsoEmail ? emailed : undefined, __message };
+    return { title, emailed: alsoEmail ? emailed : undefined, pushed, __message };
   });
 }
 
