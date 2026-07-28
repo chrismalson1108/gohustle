@@ -12,7 +12,7 @@ import { Image, View } from 'react-native';
 const WORDMARK = {
   blue: require('../../shared/assets/brand/wordmark-blue.png'),
   cream: require('../../shared/assets/brand/wordmark-cream.png'),
-  ratio: 1560 / 259,
+  ratio: 1560 / 379,
 };
 const MONOGRAM = {
   blue: require('../../shared/assets/brand/monogram-blue.png'),

@@ -14,7 +14,7 @@ import { classNames } from "@/lib/format";
 // the art is replaced — a stale ratio silently stretches every logo in the app.
 // Note the v3 wordmark art is the full horizontal lockup (H-mark + "HUSTLR"), not
 // text alone, which is why it is far wider than the version it replaced.
-const WORDMARK_RATIO = 1560 / 259; // wordmark-*.png
+const WORDMARK_RATIO = 1560 / 379; // wordmark-*.png (the horizontal lockup)
 const MONOGRAM_RATIO = 620 / 404; // monogram-*.png
 
 export default function Logo({
