@@ -3,6 +3,7 @@ import { Akshar, JetBrains_Mono } from "next/font/google";
 import {
   HustlrMark,
   HustlrWordmark,
+  HustlrLockup,
   IconArrow,
   IconBriefcase,
   IconCampus,
@@ -158,9 +159,8 @@ export default function LandingPage() {
       <header
         className={`flex items-center justify-between gap-3 border-b border-[#363636]/8 py-[22px] sm:gap-8 ${gutter}`}
       >
-        <Link href="/" className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <HustlrMark className="h-[26px] w-auto text-[#3F25FE] sm:h-[30px]" />
-          <HustlrWordmark className="h-[19px] w-auto text-[#3F25FE] sm:h-[23px]" />
+        <Link href="/" className="flex shrink-0 items-center">
+          <HustlrLockup className="h-[33px] w-auto text-[#3F25FE] sm:h-[38px]" />
           <span className="sr-only">Hustlr — home</span>
         </Link>
 
@@ -541,9 +541,8 @@ export default function LandingPage() {
       <footer className={`bg-[#363636] pt-16 pb-10 ${gutter}`}>
         <div className="mb-12 flex flex-wrap justify-between gap-14">
           <div className="max-w-[34ch]">
-            <div className="mb-[18px] flex items-center gap-3">
-              <HustlrMark className="h-[30px] w-auto text-[#FEF4E5]" />
-              <HustlrWordmark className="h-[23px] w-auto text-[#FEF4E5]" />
+            <div className="mb-[18px] flex items-center">
+              <HustlrLockup className="h-[38px] w-auto text-[#FEF4E5]" />
             </div>
             <p className="m-0 text-[14px] leading-[1.6] text-[#FEF4E5]/60">
               The campus gig marketplace. Real work, verified students, money that actually lands.
