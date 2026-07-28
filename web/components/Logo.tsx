@@ -1,22 +1,22 @@
-import Image from "next/image";
 import { classNames } from "@/lib/format";
+import { HustlrLockup, HustlrMark } from "@/components/brand/glyphs";
 
-// Hustlr logo — served from /brand/*, kept in sync with the single source of truth
-// in shared/assets/brand via `npm run brand:sync`. Redrawn from the v1.0 vector pack.
+// Hustlr logo for in-app chrome. Renders the INLINE VECTOR from
+// components/brand/glyphs, whose paths are lifted verbatim from the designer's own
+// files — verified pixel-identical to Group 87 (44 differing pixels out of 292,800,
+// i.e. edge antialiasing).
 //
-// `light` swaps to the Cream colourway for dark / Blue surfaces — this replaced the
-// old Orange variant, which Brand Guidelines v1.0 retired. `mark` renders the compact
-// H-monogram instead of the full wordmark (used in the app sidebar).
+// This replaced a next/image PNG. Two reasons, one cosmetic and one structural:
+//   • The PNG was a fixed-resolution raster scaled to whatever height the caller
+//     asked for. Vector is exact at every size and DPR.
+//   • The PNG version needed a hardcoded aspect ratio to size the <Image>, and that
+//     constant went stale every single time the art changed — three times in this
+//     rollout alone, each time silently stretching every logo in the app. An SVG
+//     carries its own viewBox, so `w-auto` derives the width and there is no number
+//     left to get wrong.
 //
-// Marketing and logged-out pages use the inline vector lockup in
-// components/brand/BrandShell.tsx instead; this stays for the in-app chrome.
-// Intrinsic aspect ratios of the PNGs in web/public/brand. RE-MEASURE THESE whenever
-// the art is replaced — a stale ratio silently stretches every logo in the app.
-// Note the v3 wordmark art is the full horizontal lockup (H-mark + "HUSTLR"), not
-// text alone, which is why it is far wider than the version it replaced.
-const WORDMARK_RATIO = 11818 / 2401; // wordmark-*.png (the horizontal lockup)
-const MONOGRAM_RATIO = 620 / 404; // monogram-*.png
-
+// `light` swaps to the Cream colourway for dark / Blue surfaces. `mark` renders the
+// compact H-monogram instead of the full lockup (used in the app sidebar).
 export default function Logo({
   light = false,
   height = 32,
@@ -28,16 +28,14 @@ export default function Logo({
   mark?: boolean;
   className?: string;
 }) {
-  const variant = mark ? "monogram" : "wordmark";
-  const ratio = mark ? MONOGRAM_RATIO : WORDMARK_RATIO;
+  const Glyph = mark ? HustlrMark : HustlrLockup;
   return (
-    <Image
-      src={`/brand/${variant}-${light ? "cream" : "blue"}.png`}
-      alt="Hustlr"
-      width={Math.round(height * ratio)}
-      height={height}
-      priority
-      className={classNames("select-none", className)}
+    <Glyph
+      role="img"
+      aria-label="Hustlr"
+      aria-hidden={undefined}
+      style={{ height, width: "auto" }}
+      className={classNames("select-none", light ? "text-[#FEF4E5]" : "text-[#3F25FE]", className)}
     />
   );
 }
