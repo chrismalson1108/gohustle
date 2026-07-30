@@ -7,22 +7,18 @@ import { useJobs } from '../context/JobsContext';
 import MoneyGoalCard from './MoneyGoalCard';
 import { colors, radii, shadows } from '../theme';
 
-// Money summary: goal card, the four earnings tiles, and personal insights.
-// Extracted from EarnScreen so the You tab's Progress pane renders the identical UI.
-// Derivations live here rather than being passed in, so both mounts stay in sync.
-export default function MonthSummaryCard({ navigation }) {
+// Derivations live here rather than being passed in, so every mount stays in sync.
+// Split so the Progress pane can order by importance: money near the top,
+// insights lower down.
+export function EarningsTiles() {
   const { earningsToday, earningsWeek, earningsTotal } = useUser();
   const { bookings } = useJobs();
 
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
   const completedCount = (bookings || []).filter(b => b.status === 'verified').length;
   const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
-  const insights = computeEarnerInsights(bookings);
 
   return (
-    <>
-      <MoneyGoalCard navigation={navigation} />
-
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Earnings</Text>
         <View style={styles.row}>
@@ -39,8 +35,14 @@ export default function MonthSummaryCard({ navigation }) {
           ))}
         </View>
       </View>
+  );
+}
 
-      {insights && insights.jobCount > 0 && (
+export function InsightsCard() {
+  const { bookings } = useJobs();
+  const insights = computeEarnerInsights(bookings);
+  if (!insights || insights.jobCount === 0) return null;
+  return (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Your insights</Text>
           <View style={styles.insightsRow}>
@@ -55,8 +57,6 @@ export default function MonthSummaryCard({ navigation }) {
             />
           </View>
         </View>
-      )}
-    </>
   );
 }
 

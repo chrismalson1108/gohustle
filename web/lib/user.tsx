@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from "react";
-import { getLevelInfo } from "@gohustlr/shared";
+import { getLevelInfo, livingProgress } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
 import { useAuth } from "./auth";
@@ -107,22 +107,28 @@ type DbProfile = Record<string, unknown>;
 function dbToState(
   profile: DbProfile,
   badges: Array<{ badge_key: string; unlocked: boolean }> = [],
-  challenges: Array<{ challenge_id: string; progress: number }> = [],
+  challenges: Array<{ challenge_id: string; progress: number; updated_at?: string | null }> = [],
 ): UserState {
   const badgeMap = { ...DEFAULT_STATE.badges };
   badges.forEach((b) => {
     if (badgeMap[b.badge_key] !== undefined) badgeMap[b.badge_key] = { unlocked: b.unlocked };
   });
 
-  const challengeMap: Record<string, { progress: number }> = {};
+  const challengeMap: Record<string, { progress: number; updated_at?: string | null }> = {};
   challenges.forEach((c) => {
     challengeMap[c.challenge_id] = c;
   });
 
-  const mergedChallenges = DEFAULT_STATE.challenges.map((c) => ({
-    ...c,
-    progress: challengeMap[c.id]?.progress ?? c.progress,
-  }));
+  // Progress only counts inside the challenge's own period. Without this a
+  // daily challenge finished once read "Done" forever, despite its own copy
+  // saying "today". Mirrors the mobile fix in src/context/UserContext.js.
+  const mergedChallenges = DEFAULT_STATE.challenges.map((c) => {
+    const row = challengeMap[c.id];
+    return {
+      ...c,
+      progress: row ? livingProgress({ ...c, progress: row.progress }, row.updated_at) : c.progress,
+    };
+  });
 
   const p = profile as Record<string, string | number | null | undefined>;
   return {

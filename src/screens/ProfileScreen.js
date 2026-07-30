@@ -16,8 +16,9 @@ import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
 import Avatar from '../components/Avatar';
 import StudentVerifyModal from '../components/StudentVerifyModal';
-import MonthSummaryCard from '../components/MonthSummaryCard';
-import GoalsChallengesCard from '../components/GoalsChallengesCard';
+import MoneyGoalCard from '../components/MoneyGoalCard';
+import { EarningsTiles, InsightsCard } from '../components/MonthSummaryCard';
+import GoalsChallengesCard, { XpCard, ChallengesList } from '../components/GoalsChallengesCard';
 import { collegeLine } from '../lib/school';
 import { pickImage, uploadImage } from '../lib/uploadImage';
 import { useUser } from '../context/UserContext';
@@ -363,8 +364,18 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.statDiv} />
             <Stat label="Avg rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
           </View>
+            {/* Ordered most- to least-important for an earner. Money first,
+                because that is what the app is for: the monthly goal (and the
+                gigs that would hit it), then what you've actually made. Then
+                this week's targets, then the challenges you can still act on.
+                Level and insights are further down — they're nice to see, but
+                nobody opens this tab to check their XP. */}
+            <MoneyGoalCard navigation={navigation} />
+            <EarningsTiles />
             <GoalsChallengesCard />
-            <MonthSummaryCard navigation={navigation} />
+            <ChallengesList />
+            <XpCard />
+            <InsightsCard />
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Badges</Text>
             <BadgeGrid

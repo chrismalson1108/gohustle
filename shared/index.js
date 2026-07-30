@@ -12,5 +12,6 @@ export * from './lifecycle.js';
 export * from './school.js';
 export * from './finance.js';
 export * from './availability.js';
+export * from './challenges.js';
 export * from './analytics.js';
 export * from './age.js';

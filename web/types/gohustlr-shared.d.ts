@@ -172,6 +172,19 @@ declare module "@gohustlr/shared" {
   export function scoreGig(job: Record<string, unknown>, opts?: { skills?: string[]; remaining?: number }): number;
   export function rankGigsForGoal<T>(jobs: T[], opts?: { skills?: string[]; remaining?: number }): T[];
 
+  // ── challenges (period reset) ──
+  /** 'YYYY-MM-DD' for daily, 'YYYY-Wmmdd' (Monday-anchored) for weekly; null on a bad date. */
+  export function periodKey(type: string, date?: Date): string | null;
+  export function isSamePeriod(type: string, updatedAt: string | null | undefined, now?: Date): boolean;
+  /** Stored progress inside its period, 0 outside it — this is what stops a finished challenge reading "Done" forever. */
+  export function livingProgress(
+    challenge: { type?: string; progress?: number } | null | undefined,
+    updatedAt: string | null | undefined,
+    now?: Date,
+  ): number;
+  export function isComplete(challenge: { progress?: number; target?: number } | null | undefined): boolean;
+  export function resetLabel(type: string): string;
+
   // ── availability ──
   export const DAYS: string[];
   export interface WorkStatus { id: string; label: string; emoji: string; color: string }

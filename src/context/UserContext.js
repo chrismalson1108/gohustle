@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { livingProgress } from '../lib/challenges';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { useAuth } from './AuthContext';
 import { BADGE_DEFS, LEVELS } from '../data/mockData';
@@ -83,10 +84,19 @@ function dbToState(profile, badges = [], challenges = []) {
   const challengeMap = {};
   challenges.forEach(c => { challengeMap[c.challenge_id] = c; });
 
-  const mergedChallenges = DEFAULT_STATE.challenges.map(c => ({
-    ...c,
-    progress: challengeMap[c.id]?.progress ?? c.progress,
-  }));
+  // Progress only counts inside the challenge's own period. Without this a
+  // daily challenge finished once read "Done · Complete!" forever, despite its
+  // own copy saying "today" — which is exactly what it looked like: three
+  // permanently-finished cards sitting at the top of the Progress pane.
+  const mergedChallenges = DEFAULT_STATE.challenges.map(c => {
+    const row = challengeMap[c.id];
+    return {
+      ...c,
+      progress: row
+        ? livingProgress({ ...c, progress: row.progress }, row.updated_at)
+        : c.progress,
+    };
+  });
 
   return {
     name: profile.name || 'Hustler',
@@ -290,8 +300,24 @@ export function UserProvider({ children }) {
     const base = challengeProgressRef.current[id] ?? (chal?.progress || 0);
     const next = Math.min(target, base + delta);
     challengeProgressRef.current[id] = next;
+
+    // The card has always advertised "+50 XP" but nothing ever granted it —
+    // xpReward was a display-only field. Award it on the crossing into
+    // complete, so it fires once per period rather than on every increment.
+    if (base < target && next >= target && chal?.xpReward) {
+      addXP(chal.xpReward);
+      showToast({ icon: '🎉', title: 'Challenge complete!', message: `${chal.title} — +${chal.xpReward} XP` });
+    }
+
     supabase.from('user_challenges')
-      .upsert({ user_id: user.id, challenge_id: id, progress: next, target }, { onConflict: 'user_id,challenge_id' })
+      // updated_at is what dates the progress into a period, and the row's
+      // default only applies on INSERT — an upsert that lands on the conflict
+      // path would leave the original timestamp and the challenge would never
+      // reset. Set it explicitly.
+      .upsert(
+        { user_id: user.id, challenge_id: id, progress: next, target, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,challenge_id' },
+      )
       .then(({ error }) => { if (error) console.warn('Challenge sync error:', error.message); });
   };
 
