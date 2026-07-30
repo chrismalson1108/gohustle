@@ -16,14 +16,12 @@ import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import RatingStars from "@/components/ui/RatingStars";
 import { Textarea } from "@/components/ui/Field";
-import MoneyGoalCard from "@/components/MoneyGoalCard";
-import WorkStatusBar from "@/components/WorkStatusBar";
 import TrackExpensesModal from "@/components/TrackExpensesModal";
 import { uploadPrivateImages } from "@/lib/uploadImage";
 import SignedPhotoStrip from "@/components/SignedPhotoStrip";
 import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
-import { computeEarnerInsights, canClaimEarnerPayment } from "@gohustlr/shared";
+import { canClaimEarnerPayment } from "@gohustlr/shared";
 import type { Booking, BookingStatus } from "@/lib/types";
 import type { ConnectStatus } from "@/lib/connectStatus";
 
@@ -47,7 +45,7 @@ const needsAction = (b: Booking) =>
 
 export default function MyJobsPage() {
   const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, claimEarnerPayment, getPayoutStatus, bookingsLoading } = useJobs();
-  const { earningsToday, earningsWeek, earningsTotal, showToast, updateChallenge, profileStatus } = useUser();
+  const { earningsWeek, showToast, updateChallenge, profileStatus } = useUser();
   const { user } = useAuth();
 
   // First bookings load still in flight → show a loader, not "No active jobs",
@@ -58,7 +56,6 @@ export default function MyJobsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Open by default: it renders only on the Completed tab now, where the month
   // recap is the point of the visit.
-  const [showMonth, setShowMonth] = useState(true);
 
   // Payout readiness — earners need a Connect account before they can be paid. Show a
   // reminder so they set it up before finishing a job (non-blocking; they can still apply).
@@ -71,11 +68,7 @@ export default function MyJobsPage() {
   const payoutReady = payout ? payout.onboarded : true; // optimistic until checked
 
   // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
-  const completedCount = bookings.filter((b) => b.status === "verified").length;
-  const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
 
-  // Personal insights from this earner's own completed work (null until they have any).
-  const insights = computeEarnerInsights(bookings);
 
   const [rateBooking, setRateBooking] = useState<Booking | null>(null);
   const [trackBooking, setTrackBooking] = useState<Booking | null>(null);
@@ -486,71 +479,6 @@ export default function MyJobsPage() {
           ))}
         </div>
 
-        {/* "Your month" — earnings, goal, insights & status. Lives on the Completed
-            tab (with the finished work it summarizes) instead of floating below the
-            gig list on every tab. */}
-        {tab === "completed" && (
-        <div>
-          <button
-            onClick={() => setShowMonth((v) => !v)}
-            className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:bg-canvas"
-          >
-            <span className="flex items-center gap-2 font-bold text-ink">
-              <AlertCircle className="size-4 text-ink-muted" /> Your month
-            </span>
-            <ChevronDown className={classNames("size-5 text-ink-muted transition", showMonth && "rotate-180")} />
-          </button>
-
-          {showMonth && (
-            <div className="mt-3 space-y-3">
-              <MoneyGoalCard />
-
-              <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Earnings</p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {[
-                    { label: "Today", value: money(earningsToday) },
-                    { label: "This week", value: money(earningsWeek) },
-                    { label: "All time", value: money(earningsTotal) },
-                    { label: "Avg / job", value: completedCount ? money(avgPerJob) : "—" },
-                  ].map((s) => (
-                    <div key={s.label} className="rounded-xl bg-canvas px-3 py-2.5 text-center">
-                      <p className="text-base font-black text-ink">{s.value}</p>
-                      <p className="text-[11px] text-ink-muted">{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {insights && insights.jobCount > 0 && (
-                <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                  <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Your insights</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                      <p className="text-[11px] font-semibold text-ink-muted">Top area</p>
-                      <p className="mt-0.5 truncate font-bold text-ink">{insights.topArea?.label ?? "—"}</p>
-                    </div>
-                    <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                      <p className="text-[11px] font-semibold text-ink-muted">Busiest day</p>
-                      <p className="mt-0.5 truncate font-bold text-ink">{insights.busiestDay?.label ?? "—"}</p>
-                    </div>
-                    <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                      <p className="text-[11px] font-semibold text-ink-muted">Best day</p>
-                      <p className="mt-0.5 truncate font-bold text-ink">
-                        {insights.mostProfitableDay
-                          ? `${insights.mostProfitableDay.label} (${money(insights.mostProfitableDay.total)})`
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <WorkStatusBar />
-            </div>
-          )}
-        </div>
-        )}
 
         {/* The booked-gig list — the primary content. */}
         {bookingsFirstLoad ? (

@@ -8,8 +8,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import ScreenHeader from '../components/ScreenHeader';
-import MonthSummaryCard from '../components/MonthSummaryCard';
-import CollapsibleSection from '../components/CollapsibleSection';
 import JobCard from '../components/JobCard';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import MessageSheet from '../components/MessageSheet';
@@ -71,7 +69,6 @@ export default function EarnScreen({ navigation }) {
   // Collapsible secondary sections + completed-history expansion.
   // Open by default: it renders only on the Completed tab now, where the month
   // recap is the point of the visit.
-  const [showMonth, setShowMonth]       = useState(true);
   const [expandedId, setExpandedId]     = useState(null);
 
   // ── Drive mileage tracking (foreground GPS) ────────────────────────────────
@@ -221,9 +218,8 @@ export default function EarnScreen({ navigation }) {
     setRefreshing(false);
   };
 
-  // The earnings/goal/insight derivations that used to live here moved into
-  // MonthSummaryCard, which recomputes them from context. Goals & challenges now
-  // live only in the You tab's Progress pane — this screen is gigs in flight.
+  // Earnings, goals, challenges and insights all live in the You tab's Progress
+  // pane now. My Jobs is gigs in flight and nothing else.
 
   // Pair each booked job with its booking, then split by segment
   const pairs = bookedJobs
@@ -782,15 +778,6 @@ export default function EarnScreen({ navigation }) {
         <SegmentBtn label="Awaiting"  count={awaitingPairs.length}  active={tab === 'awaiting'}  onPress={() => { haptic.selection(); setTab('awaiting'); }} />
         <SegmentBtn label="Completed" count={completedPairs.length} active={tab === 'completed'} onPress={() => { haptic.selection(); setTab('completed'); }} />
       </View>
-
-      {/* "Your month" — earnings, goal, insights & status. Lives on the Completed
-          tab (with the finished work it summarizes) instead of floating below the
-          gig list on every tab. */}
-      {tab === 'completed' && (
-        <CollapsibleSection title="Your month" open={showMonth} onToggle={() => setShowMonth(v => !v)}>
-          <MonthSummaryCard navigation={navigation} />
-        </CollapsibleSection>
-      )}
 
       {/* The booked-gig list — the primary content */}
       <View style={styles.section}>

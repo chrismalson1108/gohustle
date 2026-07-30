@@ -6,7 +6,7 @@ import {
   Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
+import { BADGE_DEFS, collegeLine, computeEarnerInsights } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
@@ -17,6 +17,7 @@ import { SUPPORT_EMAIL } from "@/lib/legal";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import XPBar from "@/components/XPBar";
+import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WeeklyGoalsCard from "@/components/WeeklyGoalsCard";
 import ChallengeCard from "@/components/ChallengeCard";
 import RatingStars from "@/components/ui/RatingStars";
@@ -36,7 +37,7 @@ interface Review {
 export default function ProfilePage() {
   const u = useUser();
   const { refreshProfile, showToast } = u;
-  const { postedJobs, profileBadgeCount } = useJobs();
+  const { postedJobs, profileBadgeCount, bookings } = useJobs();
   const { signOut, user } = useAuth();
   const [alertCount, setAlertCount] = useState(0);
 
@@ -104,6 +105,10 @@ export default function ProfilePage() {
       }
     }
   };
+
+  // Avg $/job is over VERIFIED bookings — earnings only accrue on verify.
+  const completedCount = (bookings || []).filter((b) => b.status === "verified").length;
+  const insights = computeEarnerInsights(bookings);
 
   const college = collegeLine({ school: u.school, major: u.major, gradYear: u.gradYear });
   const workerReviews = reviews.filter((r) => r.role === "earner");
@@ -222,9 +227,52 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* Goals & challenges — moved off My Jobs, matching the mobile change that
-            left the earner hub to gigs in flight. Both read from context. */}
+        {/* Goals, earnings and insights — all moved off My Jobs, which is now gigs
+            in flight and nothing else. Everything here reads from context. */}
+        <MoneyGoalCard />
+
         <WeeklyGoalsCard />
+
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Earnings</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { label: "Today", value: money(u.earningsToday) },
+              { label: "This week", value: money(u.earningsWeek) },
+              { label: "All time", value: money(u.earningsTotal) },
+              { label: "Avg / job", value: completedCount ? money(u.earningsTotal / completedCount) : "—" },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl bg-canvas px-3 py-2.5 text-center">
+                <p className="text-base font-black text-ink">{s.value}</p>
+                <p className="text-[11px] text-ink-muted">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {insights && insights.jobCount > 0 && (
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Your insights</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Top area</p>
+                <p className="mt-0.5 truncate font-bold text-ink">{insights.topArea?.label ?? "—"}</p>
+              </div>
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Busiest day</p>
+                <p className="mt-0.5 truncate font-bold text-ink">{insights.busiestDay?.label ?? "—"}</p>
+              </div>
+              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-ink-muted">Best day</p>
+                <p className="mt-0.5 truncate font-bold text-ink">
+                  {insights.mostProfitableDay
+                    ? `${insights.mostProfitableDay.label} (${money(insights.mostProfitableDay.total)})`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {u.challenges.length > 0 && (
           <section className="space-y-3">
