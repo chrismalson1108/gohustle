@@ -220,8 +220,19 @@ export default function ProfilePage() {
             { label: "Streak", value: `${u.streakDays}w` },
             { label: "Rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)}★` : "—" },
           ].map((s) => (
-            <div key={s.label} className="rounded-2xl bg-white p-4 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <p className="text-xl font-black text-ink">{s.value}</p>
+            <div key={s.label} className="rounded-2xl bg-white p-2 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70 sm:p-4">
+              {/* Three fixed-width tiles: at 375px each has ~72px of inner room, and
+                  a four-figure earnings total ("$2,640.50") needs ~109px, so it spilled
+                  out of the card. The clamp reaches 1.25rem (text-xl, today's desktop
+                  size) at ~588px and shrinks below that, which fits totals up to six
+                  figures on the narrowest phone. Inline because Tailwind's arbitrary
+                  values are build-time and this needs to track the viewport. */}
+              <p
+                className="whitespace-nowrap font-black text-ink"
+                style={{ fontSize: "clamp(0.625rem, 3.4vw, 1.25rem)" }}
+              >
+                {s.value}
+              </p>
               <p className="text-xs font-bold text-ink-muted">{s.label}</p>
             </div>
           ))}
