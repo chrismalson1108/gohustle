@@ -170,7 +170,17 @@ declare module "@gohustlr/shared" {
     category?: string | null,
   ): { avg: number | null; median: number | null; count: number };
   export function scoreGig(job: Record<string, unknown>, opts?: { skills?: string[]; remaining?: number }): number;
-  export function rankGigsForGoal<T>(jobs: T[], opts?: { skills?: string[]; remaining?: number }): T[];
+  /** Drops gigs nobody can book and gigs this viewer already won before ranking. */
+  export function rankGigsForGoal<T>(
+    jobs: T[],
+    opts?: {
+      skills?: string[];
+      remaining?: number;
+      myBookings?: Array<{ jobId?: string; status?: string }>;
+    },
+  ): T[];
+  /** The one dollar formatter: whole dollars or exactly 2dp, always separated. */
+  export function formatMoney(n: number | null | undefined): string;
 
   // ── challenges (period reset) ──
   /** 'YYYY-MM-DD' for daily, 'YYYY-Wmmdd' (Monday-anchored) for weekly; null on a bad date. */

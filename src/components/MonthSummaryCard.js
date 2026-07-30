@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { computeEarnerInsights } from '../lib/insights';
+import { formatMoney } from '../lib/finance';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import MoneyGoalCard from './MoneyGoalCard';
@@ -23,10 +24,10 @@ export function EarningsTiles() {
         <Text style={styles.cardTitle}>Earnings</Text>
         <View style={styles.row}>
           {[
-            { label: 'Today',     value: `$${earningsToday}` },
-            { label: 'This week', value: `$${earningsWeek}` },
-            { label: 'All time',  value: `$${earningsTotal.toLocaleString()}` },
-            { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
+            { label: 'Today',     value: formatMoney(earningsToday) },
+            { label: 'This week', value: formatMoney(earningsWeek) },
+            { label: 'All time',  value: formatMoney(earningsTotal) },
+            { label: 'Avg/job',   value: completedCount ? formatMoney(Math.round(avgPerJob)) : '—' },
           ].map(s => (
             <View key={s.label} style={styles.tile}>
               <Text style={styles.tileVal} numberOfLines={1}>{s.value}</Text>
