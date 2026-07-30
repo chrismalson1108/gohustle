@@ -256,6 +256,13 @@ export default function ProfileScreen({ navigation }) {
           pulls both panes up by ~150pt. */}
       <ScreenHeader>
         <View style={styles.youTopRow}>
+          {/* Absolutely centered so the title sits on the SCREEN's centre line. A
+              flex:1 title centres in the leftover space instead, which the 36pt
+              avatar and the 80pt icon pair push visibly off-centre. pointerEvents
+              none keeps it from stealing taps from the controls underneath. */}
+          <View style={styles.youTitleWrap} pointerEvents="none">
+            <Text style={styles.youTitle} numberOfLines={1}>You</Text>
+          </View>
           <TouchableOpacity
             onPress={() => { haptic.medium(); if (user) navigation.navigate('UserProfile', { userId: user.id }); }}
             activeOpacity={0.8}
@@ -264,7 +271,6 @@ export default function ProfileScreen({ navigation }) {
           >
             <Avatar url={avatarUrl} initial={avatarInitial} size={36} fontSize={15} />
           </TouchableOpacity>
-          <Text style={styles.youTitle} numberOfLines={1}>You</Text>
           <View style={styles.youActions}>
             <TouchableOpacity
               style={styles.iconBtn}
@@ -619,11 +625,14 @@ const styles = StyleSheet.create({
   // ── You hub chrome ──
   youTopRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 0,
+    marginBottom: 0, minHeight: 40,
+  },
+  youTitleWrap: {
+    ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center',
   },
   youTitle: {
     fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3,
-    flex: 1, textAlign: 'center', marginHorizontal: 8,
+    textAlign: 'center',
   },
   youActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   iconBtn: { padding: 8, borderRadius: radii.pill },

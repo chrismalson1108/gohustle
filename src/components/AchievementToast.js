@@ -31,6 +31,22 @@ const ICONS = {
   '🔑': { name: 'key',              color: colors.accentDeep },
   '🎯': { name: 'locate',           color: colors.primary },
   '💻': { name: 'laptop',           color: colors.primary },
+  // Keys below were in use at call sites but missing here, so they all fell
+  // through to the generic bell — every "saving…", "blocked", "reported" and
+  // drive-tracking toast looked identical.
+  'ℹ️': { name: 'information-circle', color: colors.primary },
+  '⏳': { name: 'hourglass',        color: colors.textMuted },
+  '🎓': { name: 'school',           color: colors.accentDeep },
+  '🏅': { name: 'medal',            color: colors.accentDeep },
+  '👆': { name: 'hand-left',        color: colors.primary },
+  '📍': { name: 'location',         color: colors.primary },
+  '📚': { name: 'book',             color: colors.primary },
+  '🕒': { name: 'time',             color: colors.textMuted },
+  '📣': { name: 'megaphone',        color: colors.primary },
+  '🚗': { name: 'car',              color: colors.primary },
+  '🚩': { name: 'flag',             color: colors.urgent },
+  '🚫': { name: 'ban',              color: colors.urgent },
+  '📷': { name: 'camera',           color: colors.primary },
 };
 
 export default function AchievementToast() {

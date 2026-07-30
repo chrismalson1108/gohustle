@@ -146,7 +146,19 @@ export default function SettingsScreen({ navigation }) {
     <View style={styles.container}>
       <ScreenHeader>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button">
+          {/* The chevron must be CENTRED in this box, not flush-left. iOS reserves the
+              leftmost ~35pt for the interactive screen-edge pop gesture, and that
+              recogniser eats taps before they reach an RN view — a flush-left chevron
+              draws at x≈31 and is simply dead (verified on device: x=31 no-op, x=42
+              fires). Native stack headers are exempt, which is why only this
+              hand-rolled header was affected. hitSlop widens the target inward. */}
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 0, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>Settings</Text>
@@ -224,7 +236,7 @@ function Row({ icon, title, sub, onPress, danger, last }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backBtn: { width: 40, height: 40, alignItems: 'flex-start', justifyContent: 'center' },
+  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, flex: 1, textAlign: 'center' },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

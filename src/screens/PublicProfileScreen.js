@@ -166,7 +166,13 @@ export default function PublicProfileScreen({ route, navigation }) {
   const canShowAvailability = !!user && availDays.length > 0;
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+    // The ScrollView must NOT be the screen root. Under a transparent header
+    // (HERO_OPTS) a root ScrollView lays out from y=0, covers the floating back
+    // button and swallows its taps — back was dead here while the identical
+    // header worked on screens that wrap first (e.g. ExpensesScreen). The plain
+    // flex View restores normal hit-testing for the nav bar.
+    <View style={styles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
       <ScreenHeader underNav>
         <View style={styles.headerRow}>
           <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} size={64} fontSize={26}
@@ -490,7 +496,8 @@ export default function PublicProfileScreen({ route, navigation }) {
           onViewJob={(jid) => { setMsgOpen(false); navigation.navigate('JobDetail', { jobId: jid }); }}
         />
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

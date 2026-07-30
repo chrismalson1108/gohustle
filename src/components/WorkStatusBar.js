@@ -30,7 +30,11 @@ export default function WorkStatusBar() {
               onPress={() => pick(s)}
               activeOpacity={0.8}
             >
-              <Text style={styles.emoji}>{s.emoji}</Text>
+              {/* A drawn dot, not the status emoji. Emoji depend on a font having
+                  the glyph — these rendered as "?" tofu on device — whereas a View
+                  with a backgroundColor always paints. The colour is the one each
+                  status already carries, and it reads as white on the active pill. */}
+              <View style={[styles.dot, { backgroundColor: active ? '#fff' : s.color }]} />
               <Text
                 style={[styles.pillText, active && styles.pillTextActive]}
                 numberOfLines={2}
@@ -63,13 +67,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radii.pill,
-    paddingVertical: 8,
+    borderRadius: radii.md,
+    paddingVertical: 10,
     paddingHorizontal: 4,
-    gap: 4,
+    minHeight: 62,
+    gap: 6,
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  emoji: { fontSize: 14 },
+  dot: { width: 9, height: 9, borderRadius: 5 },
   pillText: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
   pillTextActive: { color: '#fff' },
 });

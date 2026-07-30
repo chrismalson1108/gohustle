@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import ScreenHeader from '../components/ScreenHeader';
 import MonthSummaryCard from '../components/MonthSummaryCard';
-import GoalsChallengesCard from '../components/GoalsChallengesCard';
 import CollapsibleSection from '../components/CollapsibleSection';
 import JobCard from '../components/JobCard';
 import BookingStatusBadge from '../components/BookingStatusBadge';
@@ -49,11 +48,7 @@ const needsAction = (b) =>
   (b.status === 'verified' && !b.posterRating);
 
 export default function EarnScreen({ navigation }) {
-  const {
-    earningsToday, earningsWeek, earningsTotal,
-    streakDays, levelInfo, xp, challenges,
-    weeklyEarningGoal, weeklyJobsGoal, showToast, updateChallenge,
-  } = useUser();
+  const { earningsWeek, streakDays, levelInfo, showToast, updateChallenge } = useUser();
   const { bookedJobs, bookings, markEarnerDone, ratePoster, respondToAmendment, cancelBooking, startJob, claimEarnerPayment, refreshBookings, refreshJobs, getPayoutStatus } = useJobs();
   const { user } = useAuth();
   const haptic = useHaptic();
@@ -77,7 +72,6 @@ export default function EarnScreen({ navigation }) {
   // Open by default: it renders only on the Completed tab now, where the month
   // recap is the point of the visit.
   const [showMonth, setShowMonth]       = useState(true);
-  const [showGoals, setShowGoals]       = useState(false);
   const [expandedId, setExpandedId]     = useState(null);
 
   // ── Drive mileage tracking (foreground GPS) ────────────────────────────────
@@ -227,9 +221,9 @@ export default function EarnScreen({ navigation }) {
     setRefreshing(false);
   };
 
-  // The earnings/goal/insight derivations that used to live here moved with their
-  // UI into MonthSummaryCard and GoalsChallengesCard, which recompute them from
-  // context so both mount points stay in sync.
+  // The earnings/goal/insight derivations that used to live here moved into
+  // MonthSummaryCard, which recomputes them from context. Goals & challenges now
+  // live only in the You tab's Progress pane — this screen is gigs in flight.
 
   // Pair each booked job with its booking, then split by segment
   const pairs = bookedJobs
@@ -824,11 +818,6 @@ export default function EarnScreen({ navigation }) {
           : shownPairs.map(renderActiveCard)}
       </View>
 
-      {/* "Goals & challenges" — gamification, lowest priority */}
-      <CollapsibleSection title="Goals & challenges" open={showGoals} onToggle={() => setShowGoals(v => !v)}>
-        <GoalsChallengesCard />
-      </CollapsibleSection>
-
       <View style={{ height: 30 }} />
 
       <MessageSheet
@@ -1020,33 +1009,6 @@ const styles = StyleSheet.create({
   nudgeRate: { backgroundColor: colors.accentLight },
   nudgeText: { flex: 1, fontSize: 13, fontWeight: '600', lineHeight: 18, marginRight: 8 },
 
-  // ── "Your month" panels ───────────────────────────────────────────────────
-  insightsCard: {
-    marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
-    ...shadows.card,
-  },
-  insightsTitle: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 12 },
-  insightsRow: { flexDirection: 'row', gap: 8 },
-  insightTile: {
-    flex: 1, backgroundColor: colors.background,
-    borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 12,
-  },
-  insightLabel: { fontSize: 11, fontWeight: '500', color: colors.textMuted, marginBottom: 4 },
-  insightValue: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-  breakdownCard: {
-    marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
-    ...shadows.card,
-  },
-  breakdownRow: { flexDirection: 'row', gap: 8 },
-  breakdownTile: {
-    flex: 1, backgroundColor: colors.background, borderRadius: radii.md,
-    paddingVertical: 12, paddingHorizontal: 4, alignItems: 'center',
-  },
-  breakdownVal: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  breakdownLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
-
   // ── Segmented control ─────────────────────────────────────────────────────
   segment: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
@@ -1064,33 +1026,6 @@ const styles = StyleSheet.create({
   segText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
   segTextActive: { color: '#fff' },
   section: { marginTop: 16 },
-
-  // ── Collapsible secondary sections ────────────────────────────────────────
-  collapseHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginHorizontal: 16, marginTop: 24,
-    backgroundColor: colors.surface, borderRadius: radii.md,
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  collapseTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, flexShrink: 1, marginRight: 12 },
-  collapseBody: { marginTop: 4, marginBottom: 4 },
-  goalsXp: {
-    marginHorizontal: 16, marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16,
-    ...shadows.card,
-  },
-  goalsCard: {
-    marginHorizontal: 16, marginTop: 12, padding: 16,
-    backgroundColor: colors.surface, borderRadius: radii.lg,
-    ...shadows.card,
-  },
-  challengesWrap: { paddingHorizontal: 16, marginTop: 12 },
-  goalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  goalLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1, marginRight: 12 },
-  goalValue: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, flexShrink: 0 },
-  goalTrack: { height: 8, borderRadius: radii.pill, backgroundColor: colors.divider, overflow: 'hidden' },
-  goalFill: { height: 8, borderRadius: radii.pill },
 
   // ── Booked-gig cards ──────────────────────────────────────────────────────
   bookedItem: { marginBottom: 0 },
