@@ -119,6 +119,10 @@ const VALID_CATEGORIES = ['Tutoring', 'Delivery', 'Moving', 'Tech Help', 'Creati
 // $5 gig" works here and only fails later at escrow.
 // Keep in sync with shared/constants.js and stripe-create-payment-intent.
 const MIN_JOB_PAY = 10;
+// The ceiling matters for the same reason the floor does: stripe-create-payment-intent
+// rejects an escrow amount over 1_000_000 cents, so a gig posted above this can be
+// booked but never paid for. Refusing here beats dead-ending at accept time.
+const MAX_JOB_PAY = 10000;
 
 type Json = Record<string, unknown>;
 type Action = { type: string; [k: string]: unknown };
@@ -767,6 +771,12 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
       message: `Gigs have to pay at least $${MIN_JOB_PAY}${payType === 'hourly' ? ' per hour' : ''}. Want me to use $${MIN_JOB_PAY}?`,
     });
   }
+  if (pay > MAX_JOB_PAY) {
+    return JSON.stringify({
+      error: 'above_max_pay',
+      message: `Gigs can't pay more than $${MAX_JOB_PAY.toLocaleString()}${payType === 'hourly' ? ' per hour' : ''}, because that's the most the app can hold on a card.`,
+    });
+  }
   // Same moderation guards the manual PostJob path enforces — no bypass via the AI.
   // Layer 1: keyword filter (includes the requirements free-text, as PostJob does).
   const badGig = findProhibited(`${title} ${description} ${requirements.join(' ')}`);
@@ -877,6 +887,12 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     return JSON.stringify({
       error: 'below_min_pay',
       message: `Counter-offers have to be at least $${MIN_JOB_PAY}.`,
+    });
+  }
+  if (counter !== null && counter > MAX_JOB_PAY) {
+    return JSON.stringify({
+      error: 'above_max_pay',
+      message: `Counter-offers can't be more than $${MAX_JOB_PAY.toLocaleString()}.`,
     });
   }
   const status = 'pending';
