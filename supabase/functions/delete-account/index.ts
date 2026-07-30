@@ -192,7 +192,35 @@ Deno.serve(async (req: Request) => {
       console.error('delete-account: escrow hold release failed (continuing)', e);
     }
 
-    // 3. Delete the auth user → cascades profile + all user-scoped rows.
+    // 3. Scrub the support queue's copy of this person's identity. MUST run before
+    // the auth delete, while support_tickets.user_id still points at them.
+    //
+    // support_tickets.user_id is `on delete set null` (20260705040000), so the ticket
+    // deliberately outlives the account — but the table also denormalises `email`
+    // (not null) and `name`, and those are NOT cleared by that cascade. The result is
+    // that someone who asked to be deleted keeps a plain-text email address and real
+    // name sitting in the support queue forever, with nothing left linking it to a
+    // profile to explain why.
+    //
+    // Tombstoning rather than deleting the rows preserves what `set null` was clearly
+    // for — the operational record of a support interaction — while removing the
+    // direct identifiers. Best-effort: a failure here must not strand the user in a
+    // half-deleted state, so it is logged and the deletion proceeds.
+    //
+    // RESIDUAL: support_ticket_messages.body is free text the user typed and may
+    // contain identifiers they volunteered. Scrubbing it would gut the support record;
+    // that is a retention-policy decision, not a code one.
+    try {
+      const { error: scrubErr } = await admin
+        .from('support_tickets')
+        .update({ email: 'deleted-user@removed.invalid', name: null })
+        .eq('user_id', user.id);
+      if (scrubErr) console.error('delete-account: support ticket scrub failed', scrubErr);
+    } catch (e) {
+      console.error('delete-account: support ticket scrub threw', e);
+    }
+
+    // 4. Delete the auth user → cascades profile + all user-scoped rows.
     const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
     if (delErr) return json({ error: delErr.message }, 500);
 

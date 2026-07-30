@@ -122,7 +122,27 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
     console.error("admin deleteUserCascade: escrow release failed (continuing)", e);
   }
 
-  // 3. Delete the auth user → cascades profile + all user-scoped rows.
+  // 3. Scrub the support queue's copy of this person's identity. MUST run before the
+  // auth delete, while support_tickets.user_id still points at them.
+  //
+  // support_tickets.user_id is `on delete set null`, so the ticket deliberately
+  // outlives the account — but the table also denormalises `email` (not null) and
+  // `name`, which that cascade does not touch. Without this, a deleted user's plain
+  // email address and real name stay in the support queue indefinitely. Tombstoning
+  // keeps the operational record that `set null` was for, minus the identifiers.
+  // Best-effort, matching the edge function: a scrub failure must not strand the
+  // deletion half-done.
+  try {
+    const { error: scrubErr } = await service
+      .from("support_tickets")
+      .update({ email: "deleted-user@removed.invalid", name: null })
+      .eq("user_id", userId);
+    if (scrubErr) console.error("admin deleteUserCascade: support ticket scrub failed", scrubErr);
+  } catch (e) {
+    console.error("admin deleteUserCascade: support ticket scrub threw", e);
+  }
+
+  // 4. Delete the auth user → cascades profile + all user-scoped rows.
   const { error } = await service.auth.admin.deleteUser(userId);
   if (error) throw new Error(`auth delete failed: ${error.message}`);
 }
