@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
@@ -41,6 +42,10 @@ function StarPicker({ value, onChange }) {
 export default function CompletionModal({ visible, booking, onClose, onConfirm }) {
   const haptic = useHaptic();
   const [rating, setRating] = useState(5);
+  // Scroll-into-view on focus. KeyboardAvoidingView lifts the SHEET, but nothing
+  // moves the scroll offset, so a focused field can still sit behind the keyboard —
+  // the occlusion half of the reported bug, distinct from being unable to dismiss.
+  const scrollRef = useRef(null);
   const [reviewText, setReviewText] = useState('');
   const [tipCents, setTipCents] = useState(0);
   const [disputed, setDisputed] = useState(false);
@@ -95,7 +100,10 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Android previously got behavior={undefined}, i.e. no avoidance at all, so the
+          keyboard simply covered the sheet. 'height' is the Android counterpart to
+          iOS 'padding'. */}
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
@@ -106,7 +114,13 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             Confirm that <Text style={styles.nameHighlight}>{earnerName}</Text> completed "{jobTitle}"
           </Text>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
             {/* Earner avatar */}
             <View style={styles.earnerRow}>
               <Avatar
@@ -138,7 +152,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             {booking.beforePhotos?.length > 0 && (
               <>
                 <Text style={styles.sectionLabel}>Before</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {booking.beforePhotos.map((u, i) => (
                     <SignedImage key={i} value={u} bucket="completion-photos" style={styles.completionPhoto} />
                   ))}
@@ -150,7 +164,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             {booking.completionPhotos?.length > 0 && (
               <>
                 <Text style={styles.sectionLabel}>After</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {booking.completionPhotos.map((u, i) => (
                     <SignedImage key={i} value={u} bucket="completion-photos" style={styles.completionPhoto} />
                   ))}
@@ -174,9 +188,11 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
               placeholderTextColor={colors.textMuted}
               value={reviewText}
               onChangeText={setReviewText}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollTo({ y: 260, animated: true }), 80)}
               multiline
               numberOfLines={3}
               textAlignVertical="top"
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
 
             {/* Tip */}
@@ -223,9 +239,11 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   placeholderTextColor={colors.textMuted}
                   value={disputeReason}
                   onChangeText={setDisputeReason}
+                  onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80)}
                   multiline
                   numberOfLines={2}
                   textAlignVertical="top"
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
                 <Text style={styles.tipNote}>The rest of the hold is released back to you.</Text>
               </>
@@ -257,6 +275,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      <KeyboardDoneBar />
     </Modal>
   );
 }

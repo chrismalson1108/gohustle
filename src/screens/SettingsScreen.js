@@ -18,6 +18,7 @@ import { parseDob, isAdult, MIN_AGE } from '../lib/age';
 import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
 import { pickImage } from '../lib/uploadImage';
 import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const SKILL_OPTIONS = [
   'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
@@ -365,6 +366,7 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardDoneBar />
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <ScreenHeader>
           <View style={styles.headerRow}>
@@ -403,6 +405,7 @@ export default function SettingsScreen({ navigation }) {
               textAlignVertical="top" placeholder="A short bio about yourself..."
               placeholderTextColor={colors.textMuted} value={form.bio}
               onChangeText={v => set('bio', v)} maxLength={280}
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
           </Field>
 
@@ -509,6 +512,7 @@ export default function SettingsScreen({ navigation }) {
                   placeholderTextColor={colors.textMuted} value={form.gradYear}
                   onChangeText={v => set('gradYear', v.replace(/[^0-9]/g, '').slice(0, 4))}
                   keyboardType="number-pad" maxLength={4}
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
               </Field>
             </>
@@ -561,6 +565,7 @@ export default function SettingsScreen({ navigation }) {
                           value={form.skillRates?.[s] ? String(form.skillRates[s]) : ''}
                           onChangeText={v => setSkillRate(s, v)}
                           keyboardType="number-pad"
+                          inputAccessoryViewID={KEYBOARD_DONE_ID}
                         />
                         <Text style={styles.rateUnit}>/hr</Text>
                       </View>
@@ -623,6 +628,7 @@ export default function SettingsScreen({ navigation }) {
                 placeholderTextColor={colors.textMuted} value={certForm.year}
                 onChangeText={v => setCert('year', v.replace(/[^0-9]/g, '').slice(0, 4))}
                 keyboardType="number-pad" maxLength={4}
+                inputAccessoryViewID={KEYBOARD_DONE_ID}
               />
               <TouchableOpacity onPress={pickCertImage} style={styles.certImageBtn} activeOpacity={0.85}>
                 <Ionicons

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, TextInput, Image, Modal, ActivityIndicator,
+  Keyboard, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const STATUS_CONTENT = {
   pending:   { ion: 'time', title: 'Application pending',
@@ -82,6 +84,21 @@ export default function JobDetailScreen({ route, navigation }) {
       });
     return () => { active = false; };
   }, [jobId]);
+
+  // The action footer is position:'absolute' and a SIBLING of the ScrollView, so the
+  // ScrollView's automaticallyAdjustKeyboardInsets cannot move it. Without this the
+  // "Book this gig" button hides behind the keyboard exactly while the earner is
+  // typing a counter-offer or an application note. Track the keyboard and lift it.
+  const [kbHeight, setKbHeight] = useState(0);
+  React.useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = e => setKbHeight(e?.endCoordinates?.height ?? 0);
+    const onHide = () => setKbHeight(0);
+    const a = Keyboard.addListener(showEvt, onShow);
+    const b = Keyboard.addListener(hideEvt, onHide);
+    return () => { a.remove(); b.remove(); };
+  }, []);
 
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [counterPrice, setCounterPrice] = useState('');
@@ -216,8 +233,10 @@ export default function JobDetailScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
+      <KeyboardDoneBar />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}
-        automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+        automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         {job.urgent && (
           <View style={styles.urgentBanner}>
             <Ionicons name="flash" size={14} color={colors.urgent} style={{ marginRight: 6 }} />
@@ -356,6 +375,7 @@ export default function JobDetailScreen({ route, navigation }) {
                   value={counterPrice}
                   onChangeText={setCounterPrice}
                   keyboardType="numeric"
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
                 <Text style={styles.counterUnit}>
                   {job.payType === 'hourly' ? '/ hr' : 'flat'}
@@ -386,6 +406,7 @@ export default function JobDetailScreen({ route, navigation }) {
                 multiline
                 maxLength={500}
                 textAlignVertical="top"
+                inputAccessoryViewID={KEYBOARD_DONE_ID}
               />
             </View>
           </Section>
@@ -442,7 +463,10 @@ export default function JobDetailScreen({ route, navigation }) {
       {/* The tab bar no longer reserves layout space (floating pill, hidden on
           detail screens), so the pinned footer must clear the home indicator /
           Android system nav itself. */}
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
+      <View style={[styles.footer, {
+        paddingBottom: kbHeight > 0 ? 12 : Math.max(insets.bottom, 20) + 12,
+        bottom: kbHeight,
+      }]}>
         {job.status === 'cancelled' ? (
           <View style={styles.ownJobBanner}>
             <Text style={styles.ownJobText} numberOfLines={2}>This listing has been removed</Text>

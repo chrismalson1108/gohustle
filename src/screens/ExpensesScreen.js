@@ -18,6 +18,7 @@ import {
 import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 import { colors, radii, shadows } from '../theme';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -197,6 +198,7 @@ export default function ExpensesScreen() {
 
   return (
     <View style={styles.container}>
+      <KeyboardDoneBar />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -338,14 +340,20 @@ export default function ExpensesScreen() {
           <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => !saving && setAdding(false)} />
           <View style={styles.sheet}>
             <View style={styles.handle} />
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            >
               <Text style={styles.modalTitle}>{tab === 'expenses' ? 'Add expense' : 'Add income'}</Text>
 
               <Text style={styles.label}>Amount</Text>
               <View style={styles.amountRow}>
                 <Text style={styles.dollar}>$</Text>
                 <TextInput style={styles.amountInput} placeholder="0.00" placeholderTextColor={colors.textMuted}
-                  value={amount} onChangeText={setAmount} keyboardType="decimal-pad" autoFocus />
+                  value={amount} onChangeText={setAmount} keyboardType="decimal-pad" autoFocus
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
+                />
               </View>
 
               {tab === 'expenses' ? (
@@ -367,7 +375,9 @@ export default function ExpensesScreen() {
                     <>
                       <Text style={styles.label}>Miles driven (one way)</Text>
                       <TextInput style={styles.input} placeholder="e.g. 8.5" placeholderTextColor={colors.textMuted}
-                        value={miles} onChangeText={(t) => applyMileage(t, roundTrip)} keyboardType="decimal-pad" />
+                        value={miles} onChangeText={(t) => applyMileage(t, roundTrip)} keyboardType="decimal-pad"
+                        inputAccessoryViewID={KEYBOARD_DONE_ID}
+                      />
                       <View style={[styles.catGrid, { marginTop: 8 }]}>
                         <TouchableOpacity style={[styles.catChip, !roundTrip && styles.catChipActive]}
                           onPress={() => { haptic.selection(); applyMileage(miles, false); }}>

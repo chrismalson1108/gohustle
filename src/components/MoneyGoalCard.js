@@ -7,6 +7,7 @@ import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
 import { colors, radii, shadows } from '../theme';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
 
@@ -73,6 +74,7 @@ export default function MoneyGoalCard({ navigation }) {
 
   return (
     <View style={styles.card}>
+      <KeyboardDoneBar />
       <View style={styles.headerRow}>
         <View style={styles.iconCircle}>
           <Ionicons name="flag" size={18} color={colors.textPrimary} />
@@ -96,6 +98,7 @@ export default function MoneyGoalCard({ navigation }) {
             autoFocus
             style={styles.input}
             onSubmitEditing={save}
+            inputAccessoryViewID={KEYBOARD_DONE_ID}
           />
           <TouchableOpacity style={styles.saveBtn} onPress={save}>
             <Ionicons name="checkmark" size={18} color="#fff" />

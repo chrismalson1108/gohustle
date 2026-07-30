@@ -16,7 +16,7 @@ import { haversineMiles, milesLabel } from '../lib/geo';
 import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
 import { colors } from '../theme';
 import { CATEGORIES } from '../data/mockData';
-import { matchesForYou } from '../lib/filters';
+import { matchesForYou, isJobBookable } from '../lib/filters';
 import { maskLocation } from '../lib/address';
 
 // "For You" is a pseudo-category that matches gigs to the viewer's profile skills.
@@ -171,8 +171,10 @@ export default function HomeScreen({ navigation }) {
 
   const filtered = useMemo(() => {
     let list = jobs.filter(j => {
-      // Only show open listings in Browse
-      if (j.status !== 'open') return false;
+      // Only show gigs that can still be booked. Slot-aware, so a multi-slot gig
+      // with a free slot stays; a fully-booked or finished one goes. Shared with web
+      // via shared/filters.js so the two feeds can't drift apart.
+      if (!isJobBookable(j)) return false;
 
       // Hide gigs from users you've blocked
       if (blockedIds?.has(j.posterId)) return false;
@@ -393,6 +395,8 @@ export default function HomeScreen({ navigation }) {
       <FlatList
         data={filtered}
         keyExtractor={j => j.id}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         ListHeaderComponent={header}
         renderItem={({ item }) => (
           <JobCard

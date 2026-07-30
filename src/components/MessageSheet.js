@@ -387,6 +387,8 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
             <FlatList
               ref={listRef}
               data={messages}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               keyExtractor={m => m.id}
               renderItem={renderMessage}
               contentContainerStyle={styles.msgList}

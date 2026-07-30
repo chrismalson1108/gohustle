@@ -20,6 +20,7 @@ import SignedImage from '../components/SignedImage';
 import { skillFitScore } from '../lib/filters';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, radii, shadows } from '../theme';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const ACTIVE_STATUSES  = new Set(['pending', 'confirmed', 'completed']);
 const PAST_STATUSES    = new Set(['verified', 'declined', 'cancelled']);
@@ -310,6 +311,7 @@ export default function GigsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <KeyboardDoneBar />
       <ScreenHeader>
         <View style={styles.headerRow}>
           <View style={styles.headerTitleRow}>
@@ -588,6 +590,7 @@ export default function GigsScreen({ navigation }) {
               numberOfLines={4}
               textAlignVertical="top"
               autoFocus
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
             <TouchableOpacity
               style={[styles.amendSubmitBtn, !amendNote.trim() && styles.amendSubmitBtnDisabled]}

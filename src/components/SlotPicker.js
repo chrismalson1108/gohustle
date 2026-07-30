@@ -12,7 +12,7 @@ export default function SlotPicker({ slots, selected, onSelect }) {
   const visible = slots.filter(s => !s.startsAt || new Date(s.startsAt).getTime() > now);
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+    <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       {visible.map(slot => {
         const isSelected = selected === slot.id;
         return (

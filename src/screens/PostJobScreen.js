@@ -18,6 +18,7 @@ import { notify } from '../lib/push';
 import { colors, radii } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES, MIN_JOB_PAY, validateJobPay } from '../data/mockData';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
@@ -206,6 +207,7 @@ export default function PostJobScreen({ navigation, route }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardDoneBar />
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 60 }}
@@ -292,6 +294,7 @@ export default function PostJobScreen({ navigation, route }) {
                   onChangeText={v => set('pay', v)}
                   keyboardType="numeric"
                   placeholderTextColor={colors.textMuted}
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
               </View>
               <View style={styles.payTypeGroup}>
@@ -325,6 +328,7 @@ export default function PostJobScreen({ navigation, route }) {
                 onChangeText={v => set('estHours', v)}
                 keyboardType="numeric"
                 placeholderTextColor={colors.textMuted}
+                inputAccessoryViewID={KEYBOARD_DONE_ID}
               />
               <Text style={styles.hintText}>
                 Used to hold {form.pay ? `~$${((parseFloat(form.pay) || 0) * (parseFloat(form.estHours) || 0)).toFixed(0)}` : 'the estimated total'} on the poster's card. The final charge is based on verified work.
@@ -349,11 +353,12 @@ export default function PostJobScreen({ navigation, route }) {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
           </Field>
 
           <Field label="Photos (optional)">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false}>
               {photos.map((u, i) => (
                 <View key={i} style={styles.thumbWrap}>
                   <Image source={{ uri: u }} style={styles.thumb} />
@@ -381,6 +386,7 @@ export default function PostJobScreen({ navigation, route }) {
               multiline
               numberOfLines={3}
               textAlignVertical="top"
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
           </Field>
 

@@ -8,6 +8,7 @@ import { isEduEmail } from '../lib/school';
 import { startStudentVerification, confirmStudentVerification } from '../lib/student';
 import { useUser } from '../context/UserContext';
 import { colors, radii } from '../theme';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 
 // Two-step .edu verification: enter school email → enter the emailed code.
 export default function StudentVerifyModal({ visible, onClose, onVerified }) {
@@ -52,6 +53,7 @@ export default function StudentVerifyModal({ visible, onClose, onVerified }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
+      <KeyboardDoneBar />
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
         <View style={styles.sheet}>
@@ -91,6 +93,7 @@ export default function StudentVerifyModal({ visible, onClose, onVerified }) {
                 onChangeText={t => { setCode(t.replace(/[^0-9]/g, '')); setError(''); }}
                 keyboardType="number-pad"
                 maxLength={6}
+                inputAccessoryViewID={KEYBOARD_DONE_ID}
               />
               {!!error && <Text style={styles.error}>{error}</Text>}
               <PrimaryBtn label="Verify" busy={busy} onPress={confirm} />

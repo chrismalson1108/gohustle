@@ -18,6 +18,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { colors, radii } from '../theme';
 import { CATEGORIES, MIN_JOB_PAY, validateJobPay } from '../data/mockData';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
@@ -267,6 +268,7 @@ export default function EditJobScreen({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardDoneBar />
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <ScreenHeader underNav>
           <View style={styles.headerRow}>
@@ -356,6 +358,7 @@ export default function EditJobScreen({ route, navigation }) {
                   style={styles.payInput} placeholder="0" value={form.pay}
                   onChangeText={v => set('pay', v)} keyboardType="numeric"
                   placeholderTextColor={colors.textMuted} editable={canEditPay}
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
               </View>
               <View style={styles.payTypeGroup}>
@@ -392,11 +395,13 @@ export default function EditJobScreen({ route, navigation }) {
             <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={4}
               textAlignVertical="top" placeholder="Describe the job..."
               placeholderTextColor={colors.textMuted} value={form.description}
-              onChangeText={v => set('description', v)} />
+              onChangeText={v => set('description', v)}
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
+            />
           </Field>
 
           <Field label="Photos (optional)">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false}>
               {photos.map((u, i) => (
                 <View key={i} style={styles.thumbWrap}>
                   <Image source={{ uri: u }} style={styles.thumb} />
@@ -418,7 +423,9 @@ export default function EditJobScreen({ route, navigation }) {
             <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={3}
               textAlignVertical="top" placeholder={'e.g. Must have a car\nExperience required'}
               placeholderTextColor={colors.textMuted} value={form.requirements}
-              onChangeText={v => set('requirements', v)} />
+              onChangeText={v => set('requirements', v)}
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
+            />
           </Field>
 
           <Field label={`Available times${isLocked && !canEditCore ? '  (locked)' : ''}`}>

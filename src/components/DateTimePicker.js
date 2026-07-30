@@ -115,7 +115,7 @@ export default function DateTimePicker({ slots = [], onChange }) {
 
       {/* Day picker */}
       <Text style={styles.subLabel}>Select a date</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
         {days.map(d => {
           const active = selectedDay?.key === d.key;
           return (

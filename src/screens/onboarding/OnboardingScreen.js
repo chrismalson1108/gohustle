@@ -15,6 +15,7 @@ import { findProhibited } from '../../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../../lib/moderation';
 import LocationPicker from '../../components/LocationPicker';
 import DobPicker, { composeDob } from '../../components/DobPicker';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../../components/KeyboardDoneBar';
 
 const { width } = Dimensions.get('window');
 
@@ -360,6 +361,7 @@ export default function OnboardingScreen({ onComplete }) {
             numberOfLines={4}
             textAlignVertical="top"
             maxLength={280}
+            inputAccessoryViewID={KEYBOARD_DONE_ID}
           />
         </>
       )}
@@ -418,6 +420,7 @@ export default function OnboardingScreen({ onComplete }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <KeyboardDoneBar />
       {/* Progress dots */}
       {step > 0 && step < STEPS.length - 1 && (
         <View style={styles.progressRow}>

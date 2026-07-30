@@ -28,6 +28,7 @@ import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { canClaimEarnerPayment } from '../../shared/lifecycle';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, radii, shadows } from '../theme';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -710,11 +711,15 @@ export default function EarnScreen({ navigation }) {
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={{ paddingBottom: 140 }}
       onScroll={onTabBarScroll}
       scrollEventThrottle={32}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
+      <KeyboardDoneBar />
       <ScreenHeader>
         <View style={styles.titleRow}>
           <Ionicons name="briefcase-outline" size={22} color={colors.textPrimary} style={{ marginRight: 8 }} />
@@ -933,6 +938,7 @@ export default function EarnScreen({ navigation }) {
               numberOfLines={3}
               textAlignVertical="top"
               maxLength={280}
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
             />
 
             <TouchableOpacity onPress={handleRatePoster} disabled={ratingLoading} activeOpacity={0.85} style={styles.submitBtn}>

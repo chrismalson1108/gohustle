@@ -145,6 +145,34 @@ export function availableStatesFrom(jobs) {
   return Array.from(states).sort();
 }
 
+/**
+ * Is this gig still worth showing on Browse — i.e. can someone actually book it?
+ *
+ * `jobs.status` is NOT the answer. Its enum allows 'booked', but nothing in the app
+ * ever writes that value (KNOWN_RISKS.md §5.1), so a gig stays 'open' forever no
+ * matter how far its bookings progress. That is why a finished gig — both parties
+ * done, verified, paid — kept sitting in the Browse feed wearing a green "Completed"
+ * badge.
+ *
+ * Availability lives on the SLOTS. `job_slots.taken` is maintained server-side by the
+ * sync_slot_taken trigger on booking status changes, so it is the trustworthy signal:
+ * accepting a booking takes the slot, cancelling releases it again.
+ *
+ * Slot-level rather than job-level matters for multi-slot gigs: one earner booking
+ * Tuesday must NOT hide the gig from someone who wants Thursday. Only when every slot
+ * is spoken for does the gig stop being bookable.
+ *
+ * Fails OPEN on a gig with no slots at all: PostJob/EditJob always attach at least a
+ * "Flexible" slot, so an empty array means unexpected data, and hiding listings on a
+ * data quirk is worse than showing one that can't be booked.
+ */
+export function isJobBookable(job) {
+  if (!job || job.status !== 'open') return false;
+  const slots = job.slots;
+  if (!Array.isArray(slots) || slots.length === 0) return true;
+  return slots.some(s => !s.taken);
+}
+
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
 export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [] } = {}) {
@@ -154,7 +182,8 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
   const radiusCenter = (filters.near && filters.near.lat != null) ? filters.near : center;
   const radiusOn = filters.radius && filters.radius !== 'any' && radiusCenter && radiusCenter.lat != null;
   let list = (jobs || []).filter(j => {
-    if (j.status !== 'open') return false;
+    // Bookability, not just status — see isJobBookable.
+    if (!isJobBookable(j)) return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
     if (selectedCat === 'foryou') {
       if (!matchesForYou(j, forYouSkills)) return false;
