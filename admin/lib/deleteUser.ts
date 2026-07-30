@@ -29,16 +29,32 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
   // inside run(), which renders a thrown message straight back to the console (same
   // pattern as assertActionableTarget). So the admin is told what is outstanding and
   // can settle it, instead of silently destroying a worker's payout.
-  const [{ data: earnerUnsettled }, { data: ownedJobs }] = await Promise.all([
+  // Fail CLOSED on a query error. These .select()s return { data: null, error } when
+  // they fail, and the count below reads `earnerUnsettled?.length ?? 0` — so a
+  // transient failure silently produced "0 unsettled" and let the cascade run,
+  // disabling the one control protecting a worker's payout precisely when it was
+  // needed. Deletion is irreversible; not knowing has to mean "don't".
+  const [
+    { data: earnerUnsettled, error: earnerErr },
+    { data: ownedJobs, error: jobsErr },
+  ] = await Promise.all([
     service.from("bookings").select("id").eq("earner_id", userId).in("status", UNSETTLED_STATUSES),
     service.from("jobs").select("id").eq("poster_id", userId),
   ]);
   let posterUnsettled: { id: string }[] = [];
   const ownedJobIds = (ownedJobs ?? []).map((j) => j.id);
+  let posterErr: unknown = null;
   if (ownedJobIds.length) {
-    const { data } = await service
+    const { data, error } = await service
       .from("bookings").select("id").in("job_id", ownedJobIds).in("status", UNSETTLED_STATUSES);
     posterUnsettled = data ?? [];
+    posterErr = error;
+  }
+  if (earnerErr || jobsErr || posterErr) {
+    throw new Error(
+      "Could not verify this user's open bookings, so deletion was refused. " +
+        "Retry in a moment; if it keeps failing, settle their bookings manually before deleting.",
+    );
   }
   const unsettled = (earnerUnsettled?.length ?? 0) + posterUnsettled.length;
   if (unsettled > 0) {

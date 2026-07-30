@@ -341,12 +341,12 @@ export default function ProfileSettingsScreen({ navigation }) {
       let msg = 'Please try again, or email support.';
       try {
         const body = await error.context?.json?.();
-        if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(body.error)) msg = body.message;
+        if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED','SETTLEMENT_CHECK_FAILED'].includes(body.error)) msg = body.message;
       } catch (_) { /* keep the generic message */ }
       showToast({ icon: '❌', title: 'Could not delete', message: msg });
       return;
     }
-    if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(data?.error)) {
+    if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED','SETTLEMENT_CHECK_FAILED'].includes(data?.error)) {
       setDeleting(false);
       showToast({ icon: '❌', title: 'Could not delete', message: data.message });
       return;

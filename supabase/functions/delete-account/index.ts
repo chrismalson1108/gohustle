@@ -61,16 +61,34 @@ Deno.serve(async (req: Request) => {
     // to clear, and every settle/cancel path remains available in-app. Apple 5.1.1(v)
     // requires that account deletion be offered, not that it override an unsettled
     // payment obligation to a third party.
-    const [{ data: earnerBookings }, { data: ownedJobs }] = await Promise.all([
+    // Fail CLOSED on a query error, for the same reason the report check below does.
+    // These three .select()s return { data: null, error } when they fail, and the
+    // count below reads `earnerBookings?.length ?? 0` — so a dropped connection or a
+    // PostgREST hiccup silently produced "0 unsettled" and let the deletion proceed,
+    // turning the one control protecting a worker's payout into a no-op at exactly
+    // the moment it was needed. The cascade is irreversible; not knowing has to mean
+    // "don't".
+    const [
+      { data: earnerBookings, error: earnerErr },
+      { data: ownedJobs, error: jobsErr },
+    ] = await Promise.all([
       admin.from('bookings').select('id').eq('earner_id', user.id).in('status', UNSETTLED_STATUSES),
       admin.from('jobs').select('id').eq('poster_id', user.id),
     ]);
     let posterUnsettled: { id: string }[] = [];
     const ownedJobIds = (ownedJobs ?? []).map((j) => j.id);
+    let posterErr: unknown = null;
     if (ownedJobIds.length) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from('bookings').select('id').in('job_id', ownedJobIds).in('status', UNSETTLED_STATUSES);
       posterUnsettled = data ?? [];
+      posterErr = error;
+    }
+    if (earnerErr || jobsErr || posterErr) {
+      return json({
+        error: 'SETTLEMENT_CHECK_FAILED',
+        message: 'We could not check your open bookings. Please try again, or contact support to delete your account.',
+      }, 503);
     }
     // Open safety report = evidence hold. Self-deletion cascades away the bookings,
     // messages, reviews and photos a moderator would need to act on a report filed
