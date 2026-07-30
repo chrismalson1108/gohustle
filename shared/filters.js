@@ -173,9 +173,30 @@ export function isJobBookable(job) {
   return slots.some(s => !s.taken);
 }
 
+/**
+ * Statuses that mean "this viewer already has this gig" — it should leave their Browse
+ * feed even though it may still be bookable by someone else.
+ *
+ * isJobBookable answers "can ANYONE book this?", which is a property of the gig. This
+ * answers "should THIS person still see it?", which is a property of the viewer. A gig
+ * with 9 slots and 2 taken is genuinely still open to others, so the slot rule keeps it
+ * — but the earner who already completed it was seeing their own finished work in the
+ * feed wearing a green "Completed" badge, which is what got reported.
+ *
+ * 'pending' deliberately stays visible: the applicant hasn't got the job yet and may
+ * want to keep seeing it. 'declined' also stays — the slot is free again and re-applying
+ * is legitimate.
+ */
+const MINE_ALREADY = new Set(['confirmed', 'completed', 'verified']);
+
+export function isHiddenForViewer(job, myBookings) {
+  if (!job || !myBookings) return false;
+  return myBookings.some(b => b.jobId === job.id && MINE_ALREADY.has(b.status));
+}
+
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
-export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [] } = {}) {
+export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [], myBookings } = {}) {
   const schoolKey = (mySchool || '').trim().toLowerCase();
   // Radius filter center: an explicitly chosen location wins, else the default
   // (profile/device location) passed by the caller.
@@ -184,6 +205,8 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
   let list = (jobs || []).filter(j => {
     // Bookability, not just status — see isJobBookable.
     if (!isJobBookable(j)) return false;
+    // …and gigs this viewer has already won/finished — see isHiddenForViewer.
+    if (isHiddenForViewer(j, myBookings)) return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
     if (selectedCat === 'foryou') {
       if (!matchesForYou(j, forYouSkills)) return false;

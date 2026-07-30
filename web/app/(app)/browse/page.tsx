@@ -122,8 +122,9 @@ export default function BrowsePage() {
       : profileCoords ?? userCoords;
 
   const filtered: Job[] = useMemo(
-    () => applyJobFilters(jobsGeo, { selectedCat, search, filters, blockedIds, userCoords, center, mySchool: school, forYouSkills: skills }),
-    [jobsGeo, selectedCat, search, filters, blockedIds, userCoords, center, school, skills],
+    () => applyJobFilters(jobsGeo, { selectedCat, search, filters, blockedIds, userCoords, center, mySchool: school, forYouSkills: skills, myBookings: bookings }),
+    // bookings included: the feed hides gigs this viewer already won.
+    [jobsGeo, bookings, selectedCat, search, filters, blockedIds, userCoords, center, school, skills],
   );
 
   const forYouNoSkills = selectedCat === "foryou" && skills.length === 0;

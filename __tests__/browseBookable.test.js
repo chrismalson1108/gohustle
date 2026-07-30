@@ -1,4 +1,4 @@
-import { isJobBookable, applyJobFilters, DEFAULT_FILTERS } from '../shared/filters.js';
+import { isJobBookable, isHiddenForViewer, applyJobFilters, DEFAULT_FILTERS } from '../shared/filters.js';
 
 // Browse must show only gigs someone can actually book. This is slot-aware on
 // purpose: `jobs.status` never leaves 'open' (its 'booked' value is a dead enum,
@@ -79,5 +79,48 @@ describe('applyJobFilters drops unbookable gigs from Browse', () => {
       slots: [{ id: 'a', taken: true, label: 'Tue' }, { id: 'b', taken: false, label: 'Thu' }],
     });
     expect(applyJobFilters([partial], opts).map(j => j.id)).toEqual(['partial']);
+  });
+});
+
+// isJobBookable asks "can ANYONE book this?"; isHiddenForViewer asks "should THIS
+// person still see it?". The reported gig had 9 slots with only 2 taken — genuinely
+// still open to others — so only the viewer rule removes it from the earner's feed.
+describe('isHiddenForViewer', () => {
+  const j = { id: 'j1' };
+  test('hidden once the viewer holds it', () => {
+    for (const status of ['confirmed', 'completed', 'verified']) {
+      expect(isHiddenForViewer(j, [{ jobId: 'j1', status }])).toBe(true);
+    }
+  });
+
+  test('a pending application still shows — they have not got it yet', () => {
+    expect(isHiddenForViewer(j, [{ jobId: 'j1', status: 'pending' }])).toBe(false);
+  });
+
+  test('declined still shows — the slot is free again and re-applying is legitimate', () => {
+    expect(isHiddenForViewer(j, [{ jobId: 'j1', status: 'declined' }])).toBe(false);
+  });
+
+  test("another user's booking on the same gig is irrelevant", () => {
+    expect(isHiddenForViewer(j, [{ jobId: 'other', status: 'verified' }])).toBe(false);
+  });
+
+  test('no bookings / missing args are safe', () => {
+    expect(isHiddenForViewer(j, [])).toBe(false);
+    expect(isHiddenForViewer(j, null)).toBe(false);
+    expect(isHiddenForViewer(null, [{ jobId: 'j1', status: 'verified' }])).toBe(false);
+  });
+});
+
+describe('the exact reported case', () => {
+  test('9 slots, 2 taken, viewer already completed it -> bookable but hidden from them', () => {
+    const slots = Array.from({ length: 9 }, (_, i) => ({ id: `s${i}`, taken: i < 2 }));
+    const gig = { id: 'meander', status: 'open', title: 'Meandering analyst', description: '',
+      category: 'Tutoring', pay: 40, payType: 'flat', location: 'Plano, TX', slots };
+    expect(isJobBookable(gig)).toBe(true);            // still open to other earners
+    const mine = [{ jobId: 'meander', status: 'verified' }];
+    expect(isHiddenForViewer(gig, mine)).toBe(true);  // but not to the one who did it
+    const out = applyJobFilters([gig], { filters: DEFAULT_FILTERS, myBookings: mine });
+    expect(out).toHaveLength(0);
   });
 });

@@ -77,8 +77,17 @@ declare module "@gohustlr/shared" {
       center?: { lat: number; lng: number } | null;
       mySchool?: string | null;
       forYouSkills?: string[];
+      /** Viewer's own bookings — gigs they already won/finished leave their feed. */
+      myBookings?: Array<{ jobId: string; status: string }>;
     },
   ): Array<T & { _distanceMi?: number | null }>;
+  /** Can ANYONE still book this gig? Slot-aware, so multi-slot gigs stay while any slot is free. */
+  export function isJobBookable(job: { status?: string; slots?: Array<{ taken?: boolean }> } | null | undefined): boolean;
+  /** Should THIS viewer still see it? True once they hold a confirmed/completed/verified booking. */
+  export function isHiddenForViewer(
+    job: { id: string } | null | undefined,
+    myBookings: Array<{ jobId: string; status: string }> | null | undefined,
+  ): boolean;
 
   // ── lifecycle ──
   export const BOOKING_STATUS: Record<string, { label: string; ion: string; color: string; bg: string }>;
