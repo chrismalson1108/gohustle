@@ -22,7 +22,12 @@ import { markConversationRead } from '../lib/messages';
 // Optional navigation hooks: `onViewProfile(userId)` makes the header person
 // tappable, `onViewJob(jobId)` (with `jobId`) makes the "re: job" line tappable.
 // Callers are responsible for closing the sheet before navigating.
-export default function MessageSheet({ visible, bookingId, jobId, jobTitle, otherPerson, onClose, onViewProfile, onViewJob }) {
+// `embedded` renders the conversation as a plain full-height view instead of a
+// bottom sheet: no Modal, no backdrop, no drag handle, and no header — the host
+// screen (ChatScreen) owns the header and the native back button. A 75%-tall
+// sheet left almost nothing of the conversation visible once the keyboard came
+// up, which is why chat is a real screen now.
+export default function MessageSheet({ visible, bookingId, jobId, jobTitle, otherPerson, onClose, onViewProfile, onViewJob, embedded = false }) {
   const { user } = useAuth();
   const { blockUser, refreshUnread } = useJobs();
   const { showToast } = useUser();
@@ -323,11 +328,12 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
 
   if (!visible) return null;
 
+  // One body, two hosts: a bottom sheet (legacy call sites) or a full screen.
+  const Host = embedded ? EmbeddedHost : SheetHost;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
+    <Host onClose={onClose}>
+      {!embedded && (
           <View style={styles.header}>
             <View style={styles.handle} />
             <View style={styles.headerContent}>
@@ -368,6 +374,7 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
               </View>
             </View>
           </View>
+      )}
 
           {loading ? (
             <View style={styles.loadingWrap}>
@@ -436,8 +443,6 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
               }
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
 
       {/* Report-reason picker — a real modal so all reasons show on Android too. */}
       <Modal visible={reportVisible} animationType="fade" transparent onRequestClose={() => setReportVisible(false)}>
@@ -456,7 +461,34 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
           </View>
         </TouchableOpacity>
       </Modal>
+    </Host>
+  );
+}
+
+// Bottom-sheet host — the original presentation, kept for the call sites that
+// still open chat over the top of a screen.
+function SheetHost({ children, onClose }) {
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.sheet}>{children}</View>
+      </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+// Full-screen host. keyboardVerticalOffset clears the native header so the
+// composer sits exactly on top of the keyboard rather than under it.
+function EmbeddedHost({ children }) {
+  return (
+    <KeyboardAvoidingView
+      style={styles.embedded}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
+    >
+      {children}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -478,6 +510,7 @@ const styles = StyleSheet.create({
   },
   reportCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
   overlay: { flex: 1, justifyContent: 'flex-end' },
+  embedded: { flex: 1, backgroundColor: colors.surface },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     backgroundColor: colors.surface,

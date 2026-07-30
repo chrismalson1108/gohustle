@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import Avatar from '../components/Avatar';
-import MessageSheet from '../components/MessageSheet';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
@@ -36,7 +35,6 @@ export default function MessagesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState('inbox'); // 'inbox' | 'archived'
-  const [activeChat, setActiveChat] = useState(null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -75,7 +73,9 @@ export default function MessagesScreen({ navigation }) {
 
   const openChat = async (c) => {
     haptic.light();
-    setActiveChat({
+    // A conversation is a screen, not a sheet — full height, native back, and it
+    // reloads this list on the way out via useFocusEffect.
+    navigation.navigate('Chat', {
       bookingId: c.bookingId,
       jobId: c.jobId,
       jobTitle: c.jobTitle,
@@ -173,16 +173,6 @@ export default function MessagesScreen({ navigation }) {
         </ScrollView>
       )}
 
-      <MessageSheet
-        visible={!!activeChat}
-        bookingId={activeChat?.bookingId}
-        jobId={activeChat?.jobId}
-        jobTitle={activeChat?.jobTitle}
-        otherPerson={activeChat?.otherPerson}
-        onClose={() => { setActiveChat(null); load(); }}
-        onViewProfile={(userId) => { setActiveChat(null); navigation.navigate('UserProfile', { userId }); }}
-        onViewJob={(jobId) => { setActiveChat(null); navigation.navigate('JobDetail', { jobId }); }}
-      />
     </View>
   );
 }

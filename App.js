@@ -42,6 +42,7 @@ import AvailabilityScreen   from './src/screens/AvailabilityScreen';
 import NotificationsScreen  from './src/screens/NotificationsScreen';
 import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
 import MessagesScreen       from './src/screens/MessagesScreen';
+import ChatScreen           from './src/screens/ChatScreen';
 import FindPeopleScreen     from './src/screens/FindPeopleScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
@@ -103,6 +104,7 @@ function HomeStack() {
       <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -114,6 +116,7 @@ function EarnStack() {
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -127,6 +130,7 @@ function GigsStack() {
       <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -138,6 +142,7 @@ function MessagesStack() {
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
@@ -164,6 +169,7 @@ function ProfileStack() {
       <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved gigs' }} />
       <Stack.Screen name="JobDetail"      component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="FindPeople"     component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
