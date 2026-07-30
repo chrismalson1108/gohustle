@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert, Image,
+  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert, Image, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -39,6 +39,8 @@ export default function ProfileSettingsScreen({ navigation }) {
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
   const [deleting, setDeleting]     = useState(false);
+  const [deleteStep, setDeleteStep] = useState(0); // 0 closed, 1 consequences, 2 type-to-confirm
+  const [deleteConfirm, setDeleteConfirm] = useState('');
   const [usernameError, setUsernameError] = useState('');
 
   const [certs, setCerts] = useState([]);
@@ -320,43 +322,38 @@ export default function ProfileSettingsScreen({ navigation }) {
     navigation.goBack();
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account, profile, gigs, bookings, messages, reviews, and photos. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            const { data, error } = await supabase.functions.invoke('delete-account');
-            if (error) {
-              setDeleting(false);
-              // The function refuses (409) while the account still has open bookings,
-              // so deleting can't void an escrow hold on work someone already did.
-              // supabase-js puts a non-2xx body on error.context, so read the specific
-              // reason and tell the user what to clear instead of "try again".
-              let msg = 'Please try again, or email support.';
-              try {
-                const body = await error.context?.json?.();
-                if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(body.error)) msg = body.message;
-              } catch (_) { /* keep the generic message */ }
-              showToast({ icon: '❌', title: 'Could not delete', message: msg });
-              return;
-            }
-            if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(data?.error)) {
-              setDeleting(false);
-              showToast({ icon: '❌', title: 'Could not delete', message: data.message });
-              return;
-            }
-            // Account is gone — clear the now-invalid session and return to sign-in.
-            await signOut();
-          },
-        },
-      ],
-    );
+  // Deleting an account is irreversible and takes the user's earnings history,
+  // reviews and message record with it. One destructive button in an alert is
+  // too easy to hit by accident, so this is a deliberate gauntlet: read what
+  // you lose, then type your own username to prove you meant this one.
+  const CONFIRM_WORD = (form.username || '').trim() || 'DELETE';
+  const confirmMatches = deleteConfirm.trim().toLowerCase() === CONFIRM_WORD.toLowerCase();
+
+  const performDelete = async () => {
+    setDeleting(true);
+    const { data, error } = await supabase.functions.invoke('delete-account');
+    if (error) {
+      setDeleting(false);
+      // The function refuses (409) while the account still has open bookings,
+      // so deleting can't void an escrow hold on work someone already did.
+      // supabase-js puts a non-2xx body on error.context, so read the specific
+      // reason and tell the user what to clear instead of "try again".
+      let msg = 'Please try again, or email support.';
+      try {
+        const body = await error.context?.json?.();
+        if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(body.error)) msg = body.message;
+      } catch (_) { /* keep the generic message */ }
+      showToast({ icon: '❌', title: 'Could not delete', message: msg });
+      return;
+    }
+    if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(data?.error)) {
+      setDeleting(false);
+      showToast({ icon: '❌', title: 'Could not delete', message: data.message });
+      return;
+    }
+    // Account is gone — clear the now-invalid session and return to sign-in.
+    setDeleteStep(0);
+    await signOut();
   };
 
   if (loading) {
@@ -701,7 +698,7 @@ export default function ProfileSettingsScreen({ navigation }) {
 
           <View style={styles.dangerZone}>
             <Text style={styles.dangerLabel}>Danger zone</Text>
-            <TouchableOpacity onPress={handleDeleteAccount} disabled={deleting} style={styles.deleteBtn} activeOpacity={0.85}>
+            <TouchableOpacity onPress={() => { haptic.medium(); setDeleteConfirm(''); setDeleteStep(1); }} disabled={deleting} style={styles.deleteBtn} activeOpacity={0.85}>
               {deleting
                 ? <ActivityIndicator color={colors.urgent} />
                 : (
@@ -712,10 +709,78 @@ export default function ProfileSettingsScreen({ navigation }) {
                 )
               }
             </TouchableOpacity>
-            <Text style={styles.dangerHint}>Permanently deletes your account and all your data. This can't be undone.</Text>
+            <Text style={styles.dangerHint}>Permanently deletes your account and all your data. This can&apos;t be undone.</Text>
           </View>
         </View>
       </ScrollView>
+
+      {/* Two deliberate steps. Step 1 makes the cost concrete instead of an
+          abstract "all your data"; step 2 requires typing your own username, so
+          muscle memory and a mis-tap can't finish it. Cancel is the primary
+          button at both steps. */}
+      <Modal visible={deleteStep > 0} transparent animationType="fade" onRequestClose={() => setDeleteStep(0)}>
+        <View style={styles.delOverlay}>
+          <View style={styles.delCard}>
+            {deleteStep === 1 ? (
+              <>
+                <Text style={styles.delTitle}>Delete your account?</Text>
+                <Text style={styles.delBody}>This can&apos;t be undone. You&apos;ll permanently lose:</Text>
+                {[
+                  ['star-outline', 'Your rating and every review you’ve earned'],
+                  ['cash-outline', 'Your earnings history and tax records'],
+                  ['chatbubble-outline', 'All your messages and booking history'],
+                  ['briefcase-outline', 'Any gigs you’ve posted'],
+                ].map(([icon, label]) => (
+                  <View key={label} style={styles.delLossRow}>
+                    <Ionicons name={icon} size={16} color={colors.urgent} />
+                    <Text style={styles.delLossText}>{label}</Text>
+                  </View>
+                ))}
+                <Text style={styles.delNote}>
+                  Just need a break? Setting your work status to Offline hides you from new gigs
+                  without losing any of this.
+                </Text>
+                <TouchableOpacity style={styles.delCancel} onPress={() => setDeleteStep(0)} activeOpacity={0.85}>
+                  <Text style={styles.delCancelText}>Keep my account</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.delNext} onPress={() => setDeleteStep(2)} activeOpacity={0.7}>
+                  <Text style={styles.delNextText}>Continue to delete</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.delTitle}>Confirm deletion</Text>
+                <Text style={styles.delBody}>
+                  Type <Text style={styles.delWord}>{CONFIRM_WORD}</Text> below to permanently delete your account.
+                </Text>
+                <TextInput
+                  style={styles.delInput}
+                  value={deleteConfirm}
+                  onChangeText={setDeleteConfirm}
+                  placeholder={CONFIRM_WORD}
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  inputAccessoryViewID={KEYBOARD_DONE_ID}
+                />
+                <TouchableOpacity style={styles.delCancel} onPress={() => setDeleteStep(0)} activeOpacity={0.85}>
+                  <Text style={styles.delCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.delConfirm, (!confirmMatches || deleting) && styles.delConfirmOff]}
+                  onPress={performDelete}
+                  disabled={!confirmMatches || deleting}
+                  activeOpacity={0.8}
+                >
+                  {deleting
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={styles.delConfirmText}>Delete my account forever</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -887,4 +952,34 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { color: colors.urgent, fontSize: 15, fontWeight: '600' },
   dangerHint: { fontSize: 12, color: colors.textMuted, marginTop: 12, textAlign: 'center', lineHeight: 17 },
+
+  delOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 24 },
+  delCard: { backgroundColor: colors.surface, borderRadius: radii.xl, padding: 24 },
+  delTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3 },
+  delBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginTop: 8 },
+  delLossRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 10 },
+  delLossText: { flex: 1, fontSize: 14, color: colors.textPrimary, lineHeight: 19 },
+  delNote: {
+    fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 16,
+    backgroundColor: colors.background, borderRadius: radii.md, padding: 12,
+  },
+  delWord: { fontWeight: '800', color: colors.textPrimary },
+  delInput: {
+    marginTop: 12, height: 48, borderRadius: radii.md, paddingHorizontal: 14,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
+    fontSize: 16, color: colors.textPrimary,
+  },
+  delCancel: {
+    marginTop: 20, height: 50, borderRadius: radii.md,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary,
+  },
+  delCancelText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  delNext: { marginTop: 12, paddingVertical: 12, alignItems: 'center' },
+  delNextText: { color: colors.urgent, fontSize: 14, fontWeight: '600' },
+  delConfirm: {
+    marginTop: 12, height: 50, borderRadius: radii.md,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.urgent,
+  },
+  delConfirmOff: { opacity: 0.4 },
+  delConfirmText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

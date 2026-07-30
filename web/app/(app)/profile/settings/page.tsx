@@ -67,7 +67,11 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [usernameError, setUsernameError] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // 0 closed, 1 consequences, 2 type-to-confirm. Deleting is irreversible and
+  // takes earnings history and reviews with it, so it is a deliberate gauntlet
+  // rather than one destructive button in a dialog.
+  const [deleteStep, setDeleteStep] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [certs, setCerts] = useState<Certification[]>([]);
   const [certModalOpen, setCertModalOpen] = useState(false);
@@ -90,6 +94,10 @@ export default function SettingsPage() {
     showAvailability: false,
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
+  // Typing your own username is the strongest available signal that this is
+  // the account you meant; fall back to DELETE if a legacy row has none.
+  const CONFIRM_WORD = f.username.trim() || "DELETE";
+  const confirmMatches = deleteConfirm.trim().toLowerCase() === CONFIRM_WORD.toLowerCase();
 
   useEffect(() => {
     if (!user) return;
@@ -321,7 +329,7 @@ export default function SettingsPage() {
     const { data, error } = await supabase.functions.invoke("delete-account");
     if (error) {
       setDeleting(false);
-      setConfirmDelete(false);
+      setDeleteStep(0);
       // The function refuses (409) while the account still has open bookings, so
       // deleting can't void an escrow hold on work someone already did. supabase-js
       // puts a non-2xx body on error.context — read the specific reason and tell the
@@ -339,7 +347,7 @@ export default function SettingsPage() {
     }
     if (["UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED"].includes(data?.error ?? "")) {
       setDeleting(false);
-      setConfirmDelete(false);
+      setDeleteStep(0);
       showToast({ icon: "❌", title: "Could not delete", message: data.message });
       return;
     }
@@ -643,7 +651,7 @@ export default function SettingsPage() {
               variant="outline"
               size="sm"
               className="mt-3 border-urgent text-urgent hover:bg-urgent/5 hover:text-urgent"
-              onClick={() => setConfirmDelete(true)}
+              onClick={() => { setDeleteConfirm(""); setDeleteStep(1); }}
             >
               <Trash2 className="size-4" /> Delete account
             </Button>
@@ -706,21 +714,62 @@ export default function SettingsPage() {
       </Modal>
 
       <Modal
-        open={confirmDelete}
-        onClose={() => !deleting && setConfirmDelete(false)}
-        title="Delete your account?"
+        open={deleteStep > 0}
+        onClose={() => !deleting && setDeleteStep(0)}
+        title={deleteStep === 1 ? "Delete your account?" : "Confirm deletion"}
         size="sm"
         footer={
-          <div className="flex gap-2">
-            <Button variant="outline" fullWidth onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</Button>
-            <Button fullWidth loading={deleting} onClick={deleteAccount} variant="danger">Delete forever</Button>
-          </div>
+          deleteStep === 1 ? (
+            <div className="flex flex-col gap-2">
+              <Button fullWidth onClick={() => setDeleteStep(0)}>Keep my account</Button>
+              <Button variant="ghost" fullWidth className="text-urgent" onClick={() => setDeleteStep(2)}>
+                Continue to delete
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Button fullWidth onClick={() => setDeleteStep(0)} disabled={deleting}>Cancel</Button>
+              <Button
+                fullWidth
+                variant="danger"
+                loading={deleting}
+                disabled={!confirmMatches || deleting}
+                onClick={deleteAccount}
+              >
+                Delete my account forever
+              </Button>
+            </div>
+          )
         }
       >
-        <p className="text-sm text-ink-soft">
-          This permanently deletes your account and all your data — your profile, gigs, bookings, messages, reviews, and uploaded
-          photos. This action <span className="font-bold text-ink">cannot be undone</span>.
-        </p>
+        {deleteStep === 1 ? (
+          <>
+            <p className="text-sm text-ink-soft">This can&apos;t be undone. You&apos;ll permanently lose:</p>
+            <ul className="mt-3 space-y-2 text-sm text-ink">
+              <li>Your rating and every review you&apos;ve earned</li>
+              <li>Your earnings history and tax records</li>
+              <li>All your messages and booking history</li>
+              <li>Any gigs you&apos;ve posted</li>
+            </ul>
+            <p className="mt-4 rounded-xl bg-canvas p-3 text-sm text-ink-soft">
+              Just need a break? Setting your work status to Offline hides you from new gigs without
+              losing any of this.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-ink-soft">
+              Type <span className="font-bold text-ink">{CONFIRM_WORD}</span> below to permanently delete your account.
+            </p>
+            <Input
+              className="mt-3"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder={CONFIRM_WORD}
+              autoComplete="off"
+            />
+          </>
+        )}
       </Modal>
     </div>
   );

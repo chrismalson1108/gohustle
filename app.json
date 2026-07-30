@@ -2,7 +2,7 @@
   "expo": {
     "name": "GoHustlr",
     "slug": "GoHustlr",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "scheme": "gohustlr",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

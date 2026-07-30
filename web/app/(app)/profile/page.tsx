@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
+  Settings, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine, computeEarnerInsights } from "@gohustlr/shared";
@@ -21,7 +21,7 @@ import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WeeklyGoalsCard from "@/components/WeeklyGoalsCard";
 import ChallengeCard from "@/components/ChallengeCard";
 import RatingStars from "@/components/ui/RatingStars";
-import Button, { buttonClasses } from "@/components/ui/Button";
+import Button from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { money } from "@/lib/format";
 
@@ -38,7 +38,7 @@ export default function ProfilePage() {
   const u = useUser();
   const { refreshProfile, showToast } = u;
   const { postedJobs, profileBadgeCount, bookings } = useJobs();
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
   const [alertCount, setAlertCount] = useState(0);
 
   const [idv, setIdv] = useState({ verified: false, status: "none" });
@@ -431,9 +431,8 @@ export default function ProfilePage() {
           <Row icon={LifeBuoy} title="Contact support" externalHref={`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`} />
         </Group>
 
-        <button onClick={() => signOut()} className={buttonClasses("outline", "md", "w-full text-urgent hover:border-urgent hover:text-urgent")}>
-          <LogOut className="size-4" /> Sign out
-        </button>
+        {/* Sign out lives in Settings only — it sat at the bottom of the page
+            people open most, one mis-tap from ending the session. */}
           </>
         )}
       </PageContainer>

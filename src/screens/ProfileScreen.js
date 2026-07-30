@@ -40,7 +40,7 @@ export default function ProfileScreen({ navigation }) {
     profileStatus, retryProfile,
   } = useUser();
   const { postedJobs, bookedJobs, bookings, posterBookings, profileBadgeCount, getPaymentReadiness } = useJobs();
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
   const haptic = useHaptic();
   const onTabBarScroll = useTabBarScrollHandler();
   const [payReady, setPayReady] = useState(null); // { payoutReady, paymentMethodReady }
@@ -567,12 +567,9 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.signOutBtn}
-            onPress={() => { haptic.medium(); signOut(); }}
-          >
-            <Text style={styles.signOutText} numberOfLines={1}>Sign out</Text>
-          </TouchableOpacity>
+          {/* Sign out lives in Settings only. It sat at the bottom of the tab
+              people open most, one mis-tap from being logged out of a session
+              they'd have to re-verify by email to get back into. */}
           </ScrollView>
         </View>
       </ScrollView>
@@ -678,23 +675,6 @@ const styles = StyleSheet.create({
   stateBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Header
-  profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  avatarWrap: { marginRight: 16 },
-  avatarBadge: {
-    position: 'absolute', right: -2, bottom: -2,
-    width: 24, height: 24, borderRadius: radii.pill,
-    backgroundColor: colors.primary, borderWidth: 1, borderColor: colors.background,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  profileInfo: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  nameIcon: { marginLeft: 6, flexShrink: 0 },
-  profileName: {
-    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
-    letterSpacing: -0.4, flexShrink: 1,
-  },
-  profileCollege: { fontSize: 12, color: colors.textSecondary, marginTop: 4, fontWeight: '600' },
-  profileSub: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 16 },
 
   // Payment nudge
   payAlert: {
@@ -728,14 +708,6 @@ const styles = StyleSheet.create({
   statDiv: { width: 1, height: 32, backgroundColor: colors.border, flexShrink: 0 },
 
   // Primary CTA
-  editProfileBtn: {
-    marginHorizontal: 20, marginTop: 16, borderRadius: radii.md,
-    paddingVertical: 14, paddingHorizontal: 20,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary,
-  },
-  editProfileIcon: { marginRight: 8, flexShrink: 0 },
-  editProfileText: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1 },
 
   // Grouped-list profile menu (iOS-Settings style)
   group: { marginHorizontal: 20, marginTop: 24 },
@@ -787,19 +759,6 @@ const styles = StyleSheet.create({
     gap: 4, paddingVertical: 12,
   },
   seeAllText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
-  reviewCard: {
-    backgroundColor: colors.surface, borderRadius: radii.lg,
-    padding: 16, marginBottom: 12,
-    ...shadows.card,
-  },
-  reviewHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  reviewerInfo: { flex: 1, marginRight: 8 },
-  reviewerName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 4 },
-  reviewStarsRow: { flexDirection: 'row', alignItems: 'center' },
-  reviewStar: { marginRight: 1 },
-  reviewRatingNum: { fontSize: 11, color: colors.textMuted, marginLeft: 4, fontWeight: '600' },
-  reviewDate: { fontSize: 11, color: colors.textMuted, flexShrink: 0 },
-  reviewText: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 
   // Legal & support — same label-above-card pattern as Group
   legalSection: { marginHorizontal: 20, marginTop: 24 },
@@ -820,10 +779,4 @@ const styles = StyleSheet.create({
   legalRowIcon: { flexShrink: 0 },
 
   // Sign out
-  signOutBtn: {
-    marginHorizontal: 20, marginTop: 16, borderRadius: radii.md,
-    paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center',
-    backgroundColor: colors.urgentLight,
-  },
-  signOutText: { fontSize: 15, fontWeight: '600', color: colors.urgent },
 });

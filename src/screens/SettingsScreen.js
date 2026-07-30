@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking, Alert,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking, Alert, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -34,6 +34,20 @@ export default function SettingsScreen({ navigation }) {
   );
 
   const go = (route, params) => { haptic.medium(); navigation.navigate(route, params); };
+
+  // Signing out means re-verifying by email to get back in, so it asks first.
+  const confirmSignOut = () => {
+    haptic.medium();
+    if (Platform.OS === 'web') {
+      // Alert.alert's buttons are a no-op on react-native-web.
+      if (typeof window !== 'undefined' && window.confirm?.('Sign out of GoHustlr?')) signOut();
+      return;
+    }
+    Alert.alert('Sign out?', "You'll need to sign in again to get back to your gigs.", [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: signOut },
+    ]);
+  };
 
   // Payments subtitle mirrors the You tab's banner so the two never disagree.
   const paymentsSub = !payReady
@@ -118,12 +132,17 @@ export default function SettingsScreen({ navigation }) {
     {
       title: 'Account actions',
       rows: [
+        // Sign out is the ONLY account action at this level. Deleting your
+        // account is deliberately not a row here — it lives at the bottom of
+        // Profile settings, behind a typed confirmation, so it can't be reached
+        // by scrolling to the end of the settings list and tapping the last
+        // red thing. Search still finds it (see the keywords below).
         { icon: 'log-out-outline', title: 'Sign out', danger: true, keywords: 'logout log out leave',
-          onPress: () => { haptic.medium(); signOut(); } },
-        { icon: 'trash-outline', title: 'Delete account', danger: true,
-          sub: 'Permanently remove your account and data',
-          keywords: 'delete remove close erase gdpr',
-          onPress: () => go('ProfileSettings', { scrollTo: 'danger' }) },
+          onPress: () => confirmSignOut() },
+        { icon: 'person-circle-outline', title: 'Manage your account',
+          sub: 'Profile details, and closing your account',
+          keywords: 'delete remove close erase gdpr account deletion',
+          onPress: () => go('ProfileSettings') },
       ],
     },
   ];
