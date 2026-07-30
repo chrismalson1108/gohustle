@@ -79,9 +79,13 @@ describe('finance.marketRate', () => {
 });
 
 describe('finance.scoreGig / rankGigsForGoal', () => {
+  // `status` is required for a gig to be recommendable: rankGigsForGoal now applies
+  // the same bookability rules as Browse, and those fail closed. Real rows always
+  // carry it (jobs.status is `not null default 'open'`), so these fixtures were
+  // simply under-specified — the assertions below are still about ranking ORDER.
   const jobs = [
-    { title: 'Photography for event', description: 'shoot photos', category: 'Creative', pay: 200 },
-    { title: 'Move boxes', description: 'lifting', category: 'Moving', pay: 40 },
+    { title: 'Photography for event', description: 'shoot photos', category: 'Creative', pay: 200, status: 'open' },
+    { title: 'Move boxes', description: 'lifting', category: 'Moving', pay: 40, status: 'open' },
   ];
   test('skill match and pay both raise the score', () => {
     const withSkill = scoreGig(jobs[0], { skills: ['photography'], remaining: 400 });
