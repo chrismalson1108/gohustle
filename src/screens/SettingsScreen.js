@@ -1,841 +1,261 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Alert, Image,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import { useFocusEffect } from '@react-navigation/native';
+import ScreenHeader from '../components/ScreenHeader';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
+import { SUPPORT_EMAIL } from '../lib/legal';
 import { useAuth } from '../context/AuthContext';
+import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { findProhibited } from '../lib/contentFilter';
-import { moderateText, logModerationBlock } from '../lib/moderation';
-import { colors, radii, shadows } from '../theme';
-import ScreenHeader from '../components/ScreenHeader';
-import LocationPicker from '../components/LocationPicker';
-import DobPicker, { composeDob } from '../components/DobPicker';
-import { parseDob, isAdult, MIN_AGE } from '../lib/age';
-import { CLASS_STANDINGS, DEGREE_TYPES } from '../lib/school';
-import { pickImage } from '../lib/uploadImage';
-import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
-import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
+import { colors, radii } from '../theme';
 
-const SKILL_OPTIONS = [
-  'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
-  'Delivery', 'Pet Care', 'Handyman', 'Photography', 'Writing',
-  'Design', 'Cooking', 'Driving', 'Assembly', 'Painting',
-  'Music', 'Fitness', 'Childcare', 'Errands', 'Other',
-];
-
-const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
-
+// The settings HUB. Everything a user can change lives here or one tap away, and the
+// search filters across all of it — a flat list of 20-odd rows is unusable otherwise,
+// which is why iOS/Android both ship search in Settings.
+//
+// The long profile form that used to BE this screen now lives in ProfileSettingsScreen
+// behind the first row; this screen is navigation + the things that don't need a form.
 export default function SettingsScreen({ navigation }) {
-  const { user, signOut } = useAuth();
-  const { showToast, setRole, refreshProfile } = useUser();
+  const { signOut, user } = useAuth();
+  const { getPaymentReadiness } = useJobs();
+  const { showToast } = useUser();
   const haptic = useHaptic();
+  const [q, setQ] = useState('');
+  const [payReady, setPayReady] = useState(null);
 
-  const [loading, setLoading]       = useState(true);
-  const [saving, setSaving]         = useState(false);
-  const [deleting, setDeleting]     = useState(false);
-  const [usernameError, setUsernameError] = useState('');
+  useFocusEffect(
+    useCallback(() => {
+      getPaymentReadiness().then(setPayReady).catch(() => {});
+    }, [getPaymentReadiness]),
+  );
 
-  const [certs, setCerts] = useState([]);
-  const [savingCert, setSavingCert] = useState(false);
-  const [certForm, setCertForm] = useState({ title: '', issuer: '', year: '', imageUri: null });
+  const go = (route, params) => { haptic.medium(); navigation.navigate(route, params); };
 
-  // Legacy DOB backfill (C08): pre-cutoff testers signed up before the onboarding DOB
-  // step existed, so date_of_birth is NULL. Offer a write-once field to set it (18+);
-  // once set the DB guard (guard_profiles_write) makes it read-only. New signups already
-  // collect it at onboarding, so this only serves that pre-cutoff cohort.
-  const [existingDob, setExistingDob] = useState(null); // ISO 'YYYY-MM-DD' or null
-  const [dobError, setDobError] = useState('');
-  // If the profile never loaded we must NOT let Save run: handleSave writes every
-  // field unconditionally, so saving from a blank form overwrites the stored profile.
-  const [loadError, setLoadError] = useState('');
+  // Payments subtitle mirrors the You tab's banner so the two never disagree.
+  const paymentsSub = !payReady
+    ? 'Payout account & card on file'
+    : payReady.payoutReady && payReady.paymentMethodReady
+      ? 'Payouts active · card on file'
+      : payReady.payout?.state === 'pending'
+        ? 'Stripe is verifying your details'
+        : !payReady.payoutReady
+          ? 'Finish payout setup to get paid'
+          : 'Add a card so you can hire';
 
-  const [form, setForm] = useState({
-    name: '', username: '', bio: '',
-    city: '', role: 'earner', skills: [], radiusMiles: 25, skillRates: {},
-    school: '', major: '', degreeType: '', classStanding: '', gradYear: '',
-    showAvailability: false,
-    dob: { month: null, day: null, year: null },
-  });
-
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    setLoadError('');
-    // date_of_birth is deliberately NOT selected here, and must not be added back.
-    // It has no column-level SELECT grant (20260624221000_profile_column_lockdown.sql)
-    // and must never get one: profiles_select_all is USING(true), so a table-wide
-    // column grant would expose EVERY user's date of birth to every other signed-in
-    // user — on a platform that includes minors. Naming it here made PostgREST reject
-    // the WHOLE query with 42501, which rendered a blank form that Save then wrote
-    // back over the stored profile. The owner's own DOB comes from my_profile()
-    // instead: SECURITY DEFINER, scoped to auth.uid() (same source UserContext uses).
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
-      .eq('id', user.id)
-      .single();
-    if (error || !data) {
-      // Never fall through to a blank form — handleSave writes every field
-      // unconditionally, so that would silently wipe the profile.
-      setLoadError(error?.message || 'Could not load your profile.');
-      setLoading(false);
-      return;
-    }
-    if (data) {
-      const { data: mine } = await supabase.rpc('my_profile');
-      setExistingDob(mine?.date_of_birth || null);
-      setForm({
-        name: data.name || '',
-        username: data.username || '',
-        bio: data.bio || '',
-        city: data.city || '',
-        role: data.role || 'earner',
-        skills: data.skills || [],
-        radiusMiles: data.radius_miles || 25,
-        skillRates: data.skill_rates || {},
-        school: data.school || '',
-        major: data.major || '',
-        degreeType: data.degree_type || '',
-        classStanding: data.class_standing || '',
-        gradYear: data.grad_year ? String(data.grad_year) : '',
-        showAvailability: data.show_availability === true,
-        dob: { month: null, day: null, year: null },
-      });
-    }
-    try { setCerts(await fetchCertifications(user.id)); } catch (_) {}
-    setLoading(false);
-  };
-
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
-  const setCert = (k, v) => setCertForm(p => ({ ...p, [k]: v }));
-
-  const pickCertImage = async () => {
-    const res = await pickImage();
-    if (!res.canceled) setCert('imageUri', res.uri);
-  };
-
-  const handleAddCert = async () => {
-    const title = certForm.title.trim();
-    if (!title) {
-      showToast({ icon: '⚠️', title: 'Title required', message: 'Add the certification name.' });
-      return;
-    }
-    Keyboard.dismiss();
-    setSavingCert(true);
-    haptic.success();
-    try {
-      const created = await addCertification({
-        userId: user.id,
-        title,
-        issuer: certForm.issuer.trim() || null,
-        year: certForm.year ? parseInt(certForm.year, 10) || null : null,
-        imageUri: certForm.imageUri,
-      });
-      setCerts(p => [created, ...p]);
-      setCertForm({ title: '', issuer: '', year: '', imageUri: null });
-      showToast({ icon: '✅', title: 'Certification added!', message: 'It now shows on your profile.' });
-    } catch (e) {
-      showToast({ icon: '❌', title: 'Couldn’t add', message: e?.message || 'Please try again.' });
-    }
-    setSavingCert(false);
-  };
-
-  const handleDeleteCert = (id) => {
-    Alert.alert('Remove certification?', 'This will remove it from your profile.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          const prev = certs;
-          setCerts(p => p.filter(c => c.id !== id));
-          try {
-            await deleteCertification(id);
-          } catch (_) {
-            setCerts(prev);
-            showToast({ icon: '⚠️', title: 'Couldn’t remove', message: 'Please try again.' });
-          }
-        },
-      },
-    ]);
-  };
-
-  const toggleSkill = (s) => {
-    set('skills', form.skills.includes(s)
-      ? form.skills.filter(x => x !== s)
-      : [...form.skills, s]);
-  };
-
-  const toggleShowAvailability = async (value) => {
-    haptic.selection();
-    set('showAvailability', value); // optimistic
-    const { error } = await supabase.from('profiles').update({ show_availability: value }).eq('id', user.id);
-    if (error) {
-      set('showAvailability', !value); // revert
-      showToast({ icon: '⚠️', title: "Couldn't update", message: 'Please try again.' });
-      return;
-    }
-    await refreshProfile();
-  };
-
-  const setSkillRate = (s, v) => {
-    const clean = v.replace(/[^0-9]/g, '');
-    setForm(p => ({ ...p, skillRates: { ...p.skillRates, [s]: clean } }));
-  };
-
-  const checkUsername = async () => {
-    const u = form.username.trim().toLowerCase();
-    if (!u) return true;
-    if (!/^[a-z0-9_]{3,30}$/.test(u)) {
-      setUsernameError('3–30 chars, lowercase letters/numbers/underscores only');
-      return false;
-    }
-    const { data } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', u)
-      .neq('id', user.id)
-      .maybeSingle();
-    if (data) { setUsernameError('That username is already taken'); return false; }
-    setUsernameError('');
-    return true;
-  };
-
-  const handleSave = async () => {
-    Keyboard.dismiss();
-    // Hard stop if the profile never loaded. The update below writes EVERY field
-    // unconditionally, so saving from the empty initial form state would blank the
-    // user's name, username, bio, city, skills, rates and school data.
-    if (loadError) {
-      showToast({ icon: '❌', title: "Can't save", message: 'Your profile did not load. Reopen Settings and try again.' });
-      return;
-    }
-    const ok = await checkUsername();
-    if (!ok) return;
-    // Write-once DOB backfill: only when not already set. If the user entered one, it
-    // must parse and be 18+; leaving it blank is allowed (pre-cutoff grace stays intact).
-    let dobIso = null;
-    if (!existingDob) {
-      const composed = composeDob(form.dob);
-      if (composed) {
-        dobIso = parseDob(composed);
-        if (!dobIso) { setDobError('Enter a valid date of birth.'); return; }
-        if (!isAdult(dobIso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return; }
-      }
-      setDobError('');
-    }
-
-    // Name, username and bio are PUBLIC user-generated text (they render on the
-    // public profile), so they get the same two-layer check as gigs and chat:
-    // the keyword list, then the context-aware pass. App Store Guideline 1.2
-    // requires filtering objectionable material on every UGC surface, and these
-    // were the only public free-text fields that skipped it.
-    const profileText = [form.name, form.username, form.bio].filter(Boolean).join(' ');
-    const kwTerm = findProhibited(profileText);
-    if (kwTerm) {
-      logModerationBlock(kwTerm, 'profile', profileText);
-      haptic.error();
-      showToast({ icon: '⚠️', title: 'Check your wording', message: "Your profile contains content that isn't allowed. Please edit it." });
-      return;
-    }
-    const mod = await moderateText([form.name, form.bio].filter(Boolean).join('\n'), 'profile');
-    // A 429 here is self-inflicted (own quota), not an outage, so moderateText
-    // fails CLOSED on it — otherwise burning the quota would disable this layer.
-    if (mod.rateLimited) {
-      haptic.error();
-      showToast({ icon: '⏳', title: 'Too many checks', message: "You've made a lot of checks in a row. Wait a minute and try again." });
-      return;
-    }
-    if (!mod.allowed) {
-      haptic.error();
-      showToast({ icon: '⚠️', title: 'Check your wording', message: "Your profile contains content that isn't allowed. Please edit it." });
-      return;
-    }
-
-    setSaving(true);
-    haptic.success();
-    const avatarInitial = form.name?.trim().charAt(0).toUpperCase() || 'H';
-    const { error } = await supabase.from('profiles').update({
-      name: form.name,
-      avatar_initial: avatarInitial,
-      username: form.username.trim().toLowerCase() || null,
-      bio: form.bio || null,
-      city: form.city || null,
-      role: form.role,
-      skills: form.skills,
-      radius_miles: form.radiusMiles,
-      skill_rates: form.skills.reduce((acc, s) => {
-        const r = parseInt(form.skillRates?.[s], 10);
-        if (r > 0) acc[s] = r;
-        return acc;
-      }, {}),
-      school: form.school || null,
-      major: form.major || null,
-      degree_type: form.degreeType || null,
-      class_standing: form.classStanding || null,
-      grad_year: form.gradYear ? parseInt(form.gradYear, 10) || null : null,
-      ...(dobIso ? { date_of_birth: dobIso } : {}),
-    }).eq('id', user.id);
-    setSaving(false);
-    if (error) {
-      showToast({ icon: '❌', title: 'Save Failed', message: error.message || 'Could not save your profile. Please try again.' });
-      return;
-    }
-    if (dobIso) setExistingDob(dobIso); // now write-once locked
-    setRole(form.role);
-    await refreshProfile();
-    showToast({ icon: '✅', title: 'Profile Updated!', message: 'Your settings have been saved.' });
-    navigation.goBack();
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account, profile, gigs, bookings, messages, reviews, and photos. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            const { data, error } = await supabase.functions.invoke('delete-account');
-            if (error) {
-              setDeleting(false);
-              // The function refuses (409) while the account still has open bookings,
-              // so deleting can't void an escrow hold on work someone already did.
-              // supabase-js puts a non-2xx body on error.context, so read the specific
-              // reason and tell the user what to clear instead of "try again".
-              let msg = 'Please try again, or email support.';
-              try {
-                const body = await error.context?.json?.();
-                if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(body.error)) msg = body.message;
-              } catch (_) { /* keep the generic message */ }
-              showToast({ icon: '❌', title: 'Could not delete', message: msg });
-              return;
-            }
-            if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED'].includes(data?.error)) {
-              setDeleting(false);
-              showToast({ icon: '❌', title: 'Could not delete', message: data.message });
-              return;
-            }
-            // Account is gone — clear the now-invalid session and return to sign-in.
-            await signOut();
-          },
-        },
+  // `keywords` widens what a row matches without cluttering its label — searching
+  // "password", "delete", "1099" or "terms" should all land somewhere sensible.
+  const GROUPS = [
+    {
+      title: 'Account',
+      rows: [
+        { icon: 'person-circle-outline', title: 'Profile settings',
+          sub: 'Photo, name, bio, skills, college, availability radius',
+          keywords: 'avatar picture username role location skills major graduation certifications date of birth',
+          onPress: () => go('ProfileSettings') },
+        { icon: 'time-outline', title: 'Availability & schedule',
+          sub: 'Work status, hours & classes',
+          keywords: 'busy hours calendar classes schedule status',
+          onPress: () => go('Availability') },
+        { icon: 'eye-outline', title: 'View my public profile',
+          sub: 'See exactly how others see you',
+          keywords: 'public preview others reviews',
+          onPress: () => { if (user) go('UserProfile', { userId: user.id }); } },
       ],
-    );
-  };
+    },
+    {
+      title: 'Money',
+      rows: [
+        { icon: 'card-outline', title: 'Payments & payouts', sub: paymentsSub,
+          keywords: 'stripe bank card payout money withdraw earnings deposit',
+          onPress: () => go('PayoutSetup') },
+        { icon: 'receipt-outline', title: 'Tax Center',
+          sub: 'Track expenses & export for taxes',
+          keywords: 'tax 1099 expenses mileage receipts income export csv',
+          onPress: () => go('Expenses') },
+      ],
+    },
+    {
+      title: 'Notifications',
+      rows: [
+        { icon: 'options-outline', title: 'Notification settings',
+          sub: 'Push & email preferences',
+          keywords: 'push email alerts mute preferences',
+          onPress: () => go('NotificationSettings') },
+        { icon: 'notifications-outline', title: 'Alerts inbox',
+          sub: 'Booking updates & gig matches',
+          keywords: 'inbox unread messages updates',
+          onPress: () => go('Notifications') },
+      ],
+    },
+    {
+      title: 'Saved',
+      rows: [
+        { icon: 'bookmark-outline', title: 'Saved gigs', sub: "Gigs you've bookmarked",
+          keywords: 'bookmarks favourites favorites later', onPress: () => go('SavedGigs') },
+        { icon: 'heart-outline', title: 'Saved people', sub: "Workers & clients you've favorited",
+          keywords: 'favourites favorites people workers clients', onPress: () => go('Favorites') },
+      ],
+    },
+    {
+      title: 'Legal & support',
+      rows: [
+        { icon: 'document-text-outline', title: 'Terms of Service', keywords: 'legal terms agreement',
+          onPress: () => go('Legal', { doc: 'terms' }) },
+        { icon: 'lock-closed-outline', title: 'Privacy Policy', keywords: 'legal privacy data gdpr',
+          onPress: () => go('Legal', { doc: 'privacy' }) },
+        { icon: 'briefcase-outline', title: 'Independent Contractor Agreement',
+          keywords: 'legal contractor 1099 employment classification',
+          onPress: () => go('Legal', { doc: 'contractor' }) },
+        { icon: 'mail-outline', title: 'Contact support', sub: SUPPORT_EMAIL,
+          keywords: 'help email problem report bug',
+          onPress: () => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`) },
+      ],
+    },
+    {
+      title: 'Account actions',
+      rows: [
+        { icon: 'log-out-outline', title: 'Sign out', danger: true, keywords: 'logout log out leave',
+          onPress: () => { haptic.medium(); signOut(); } },
+        { icon: 'trash-outline', title: 'Delete account', danger: true,
+          sub: 'Permanently remove your account and data',
+          keywords: 'delete remove close erase gdpr',
+          onPress: () => go('ProfileSettings', { scrollTo: 'danger' }) },
+      ],
+    },
+  ];
 
-  if (loading) {
-    return (
-      <View style={styles.loadingWrap}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return GROUPS;
+    return GROUPS
+      .map(g => ({
+        ...g,
+        rows: g.rows.filter(r =>
+          `${r.title} ${r.sub || ''} ${r.keywords || ''} ${g.title}`.toLowerCase().includes(needle)),
+      }))
+      .filter(g => g.rows.length > 0);
+  }, [q, paymentsSub]);
 
-  // The profile failed to load. Render a retry state rather than the form: the form
-  // would show every field blank, and saving it would overwrite the stored profile.
-  if (loadError) {
-    return (
-      <View style={styles.loadingWrap}>
-        <Text style={styles.loadErrorTitle}>Couldn&apos;t load your profile</Text>
-        <Text style={styles.loadErrorBody}>
-          Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
-        </Text>
-        <TouchableOpacity
-          style={styles.loadErrorBtn}
-          onPress={() => { setLoading(true); loadProfile(); }}
-        >
-          <Text style={styles.loadErrorBtnText}>Try again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.loadErrorBack}>Go back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const nothing = filtered.length === 0;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <KeyboardDoneBar />
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <ScreenHeader>
-          <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Text style={styles.backText} numberOfLines={1}>‹ Back</Text>
+    <View style={styles.container}>
+      <ScreenHeader>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button">
+            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>Settings</Text>
+          <View style={styles.backBtn} />
+        </View>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={17} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search settings"
+            placeholderTextColor={colors.textMuted}
+            value={q}
+            onChangeText={setQ}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            inputAccessoryViewID={KEYBOARD_DONE_ID}
+          />
+          {q.length > 0 && (
+            <TouchableOpacity onPress={() => setQ('')} hitSlop={10} accessibilityLabel="Clear search">
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
             </TouchableOpacity>
+          )}
+        </View>
+      </ScreenHeader>
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        {nothing ? (
+          <View style={styles.empty}>
+            <Ionicons name="search-outline" size={30} color={colors.textMuted} />
+            <Text style={styles.emptyTitle} numberOfLines={2}>No settings match “{q}”</Text>
+            <Text style={styles.emptySub}>Try a different word, like “payout”, “notifications” or “privacy”.</Text>
           </View>
-          <Text style={styles.headerTitle} numberOfLines={2}>Profile settings</Text>
-          <Text style={styles.headerSub}>Change your info, role, location, and skills</Text>
-        </ScreenHeader>
-
-        <View style={styles.form}>
-          <SectionHeader first>Basics</SectionHeader>
-          <Field label="Display name">
-            <TextInput
-              style={styles.input} placeholder="Your name"
-              placeholderTextColor={colors.textMuted} value={form.name}
-              onChangeText={v => set('name', v)} autoCapitalize="words"
-            />
-          </Field>
-
-          <Field label="Username">
-            <TextInput
-              style={[styles.input, usernameError && styles.inputError]}
-              placeholder="e.g. chris_hustler" placeholderTextColor={colors.textMuted}
-              value={form.username} onChangeText={v => { set('username', v); setUsernameError(''); }}
-              autoCapitalize="none" autoCorrect={false} maxLength={30}
-            />
-            {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
-            <Text style={styles.hintText}>@{form.username || 'username'} · 3–30 lowercase chars</Text>
-          </Field>
-
-          <Field label="Bio">
-            <TextInput
-              style={[styles.input, styles.textArea]} multiline numberOfLines={3}
-              textAlignVertical="top" placeholder="A short bio about yourself..."
-              placeholderTextColor={colors.textMuted} value={form.bio}
-              onChangeText={v => set('bio', v)} maxLength={280}
-              inputAccessoryViewID={KEYBOARD_DONE_ID}
-            />
-          </Field>
-
-          <Field label="I'm here to...">
-            <View style={styles.roleRow}>
-              {[
-                { id: 'earner', ion: 'school',    label: 'Earn' },
-                { id: 'poster', ion: 'clipboard', label: 'Post Jobs' },
-                { id: 'both',   ion: 'flash',     label: 'Both' },
-              ].map(r => (
-                <TouchableOpacity
-                  key={r.id}
-                  style={[styles.roleChip, form.role === r.id && styles.roleChipActive]}
-                  onPress={() => { haptic.selection(); set('role', r.id); }}
-                >
-                  <Ionicons name={r.ion} size={18} color={form.role === r.id ? '#fff' : colors.textSecondary} style={styles.roleChipIcon} />
-                  <Text style={[styles.roleChipText, form.role === r.id && styles.roleChipTextActive]} numberOfLines={1}>{r.label}</Text>
-                </TouchableOpacity>
+        ) : filtered.map(group => (
+          <View key={group.title} style={styles.group}>
+            <Text style={styles.groupTitle}>{group.title}</Text>
+            <View style={styles.card}>
+              {group.rows.map((r, i) => (
+                <Row key={r.title} {...r} last={i === group.rows.length - 1} />
               ))}
             </View>
-          </Field>
-
-          <Field label="Location">
-            <LocationPicker
-              value={form.city}
-              onChange={v => set('city', v)}
-              placeholder="Your city or 'Remote'"
-            />
-          </Field>
-
-          <Field label="Date of birth">
-            {existingDob ? (
-              <>
-                <View style={styles.dobReadonly}>
-                  <Ionicons name="lock-closed" size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
-                  <Text style={styles.dobReadonlyText} numberOfLines={1}>{formatDob(existingDob)}</Text>
-                </View>
-                <Text style={styles.hintText}>Your date of birth is set and can't be changed.</Text>
-              </>
-            ) : (
-              <>
-                <DobPicker
-                  value={form.dob}
-                  onChange={v => { set('dob', v); setDobError(''); }}
-                  error={!!dobError}
-                />
-                {dobError ? <Text style={styles.errorText}>{dobError}</Text> : null}
-                <Text style={styles.hintText}>You must be {MIN_AGE}+ to use GoHustlr. This is saved once and can't be changed later.</Text>
-              </>
-            )}
-          </Field>
-
-          <SectionHeader>Education</SectionHeader>
-          <Field label="College (optional)">
-            <TextInput
-              style={styles.input} placeholder="e.g. University of Texas at Austin"
-              placeholderTextColor={colors.textMuted} value={form.school}
-              onChangeText={v => set('school', v)}
-            />
-            <Text style={styles.hintText}>Verify your .edu email on your Profile to earn a Verified Student badge.</Text>
-          </Field>
-
-          {!!form.school && (
-            <>
-              <Field label="Major">
-                <TextInput
-                  style={styles.input} placeholder="e.g. Computer Science"
-                  placeholderTextColor={colors.textMuted} value={form.major}
-                  onChangeText={v => set('major', v)}
-                />
-              </Field>
-
-              <Field label="Class standing">
-                <View style={styles.skillGrid}>
-                  {CLASS_STANDINGS.map(s => (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.skillChip, form.classStanding === s && styles.skillChipActive]}
-                      onPress={() => { haptic.selection(); set('classStanding', form.classStanding === s ? '' : s); }}
-                    >
-                      <Text style={[styles.skillChipText, form.classStanding === s && styles.skillChipTextActive]}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Field>
-
-              <Field label="Degree">
-                <View style={styles.skillGrid}>
-                  {DEGREE_TYPES.map(d => (
-                    <TouchableOpacity
-                      key={d}
-                      style={[styles.skillChip, form.degreeType === d && styles.skillChipActive]}
-                      onPress={() => { haptic.selection(); set('degreeType', form.degreeType === d ? '' : d); }}
-                    >
-                      <Text style={[styles.skillChipText, form.degreeType === d && styles.skillChipTextActive]}>{d}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Field>
-
-              <Field label="Graduation year">
-                <TextInput
-                  style={styles.input} placeholder="e.g. 2027"
-                  placeholderTextColor={colors.textMuted} value={form.gradYear}
-                  onChangeText={v => set('gradYear', v.replace(/[^0-9]/g, '').slice(0, 4))}
-                  keyboardType="number-pad" maxLength={4}
-                  inputAccessoryViewID={KEYBOARD_DONE_ID}
-                />
-              </Field>
-            </>
-          )}
-
-          {(form.role === 'earner' || form.role === 'both') && (
-            <>
-              <SectionHeader>Work preferences</SectionHeader>
-              <Field label="Travel radius">
-                <View style={styles.radiusRow}>
-                  {RADIUS_OPTIONS.map(r => (
-                    <TouchableOpacity
-                      key={r}
-                      style={[styles.radiusBtn, form.radiusMiles === r && styles.radiusBtnActive]}
-                      onPress={() => { haptic.selection(); set('radiusMiles', r); }}
-                    >
-                      <Text style={[styles.radiusBtnText, form.radiusMiles === r && styles.radiusBtnTextActive]}>
-                        {r} mi
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Field>
-
-              <Field label="My skills">
-                <View style={styles.skillGrid}>
-                  {SKILL_OPTIONS.map(s => (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.skillChip, form.skills.includes(s) && styles.skillChipActive]}
-                      onPress={() => { haptic.selection(); toggleSkill(s); }}
-                    >
-                      <Text style={[styles.skillChipText, form.skills.includes(s) && styles.skillChipTextActive]}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Field>
-
-              {form.skills.length > 0 && (
-                <Field label="Hourly rates (optional)">
-                  {form.skills.map(s => (
-                    <View key={s} style={styles.rateRow}>
-                      <Text style={styles.rateSkill} numberOfLines={1}>{s}</Text>
-                      <View style={styles.rateInputWrap}>
-                        <Text style={styles.rateDollar}>$</Text>
-                        <TextInput
-                          style={styles.rateInput}
-                          placeholder="—"
-                          placeholderTextColor={colors.textMuted}
-                          value={form.skillRates?.[s] ? String(form.skillRates[s]) : ''}
-                          onChangeText={v => setSkillRate(s, v)}
-                          keyboardType="number-pad"
-                          inputAccessoryViewID={KEYBOARD_DONE_ID}
-                        />
-                        <Text style={styles.rateUnit}>/hr</Text>
-                      </View>
-                    </View>
-                  ))}
-                </Field>
-              )}
-
-              <View style={styles.availToggleRow}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={styles.availToggleTitle} numberOfLines={2}>Show my availability on my profile</Text>
-                  <Text style={styles.availToggleHint}>Lets signed-in clients see when you're free.</Text>
-                </View>
-                <Switch
-                  value={form.showAvailability}
-                  onValueChange={toggleShowAvailability}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </>
-          )}
-
-          <Field label="Certifications">
-            <Text style={styles.hintText}>Trade certs & credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.</Text>
-            {certs.map(c => (
-              <View key={c.id} style={styles.certRow}>
-                {safeCertUrl(c.image_url) ? (
-                  <Image source={{ uri: safeCertUrl(c.image_url) }} style={styles.certThumb} />
-                ) : (
-                  <View style={styles.certThumbPlaceholder}>
-                    <Ionicons name="ribbon-outline" size={18} color={colors.textSecondary} />
-                  </View>
-                )}
-                <View style={styles.certInfo}>
-                  <Text style={styles.certTitle} numberOfLines={1}>{c.title}</Text>
-                  {(c.issuer || c.year) ? (
-                    <Text style={styles.certMeta} numberOfLines={1}>{[c.issuer, c.year].filter(Boolean).join(' · ')}</Text>
-                  ) : null}
-                </View>
-                <TouchableOpacity onPress={() => handleDeleteCert(c.id)} style={styles.certRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close" size={18} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-            ))}
-
-            <View style={styles.certForm}>
-              <TextInput
-                style={styles.input} placeholder="Title (e.g. EPA 608 Certification)"
-                placeholderTextColor={colors.textMuted} value={certForm.title}
-                onChangeText={v => setCert('title', v)} maxLength={120}
-              />
-              <TextInput
-                style={[styles.input, { marginTop: 8 }]} placeholder="Issuer (e.g. Trade Tech)"
-                placeholderTextColor={colors.textMuted} value={certForm.issuer}
-                onChangeText={v => setCert('issuer', v)} maxLength={120}
-              />
-              <TextInput
-                style={[styles.input, { marginTop: 8 }]} placeholder="Year (e.g. 2024)"
-                placeholderTextColor={colors.textMuted} value={certForm.year}
-                onChangeText={v => setCert('year', v.replace(/[^0-9]/g, '').slice(0, 4))}
-                keyboardType="number-pad" maxLength={4}
-                inputAccessoryViewID={KEYBOARD_DONE_ID}
-              />
-              <TouchableOpacity onPress={pickCertImage} style={styles.certImageBtn} activeOpacity={0.85}>
-                <Ionicons
-                  name={certForm.imageUri ? 'checkmark-circle' : 'image-outline'}
-                  size={18}
-                  color={certForm.imageUri ? colors.success : colors.textSecondary}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.certImageBtnText} numberOfLines={1}>{certForm.imageUri ? 'Image selected' : 'Add image (optional)'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleAddCert} disabled={savingCert} style={styles.certAddBtn} activeOpacity={0.85}>
-                {savingCert
-                  ? <ActivityIndicator color={colors.textPrimary} />
-                  : (
-                    <>
-                      <Ionicons name="add" size={18} color={colors.textPrimary} style={{ marginRight: 4 }} />
-                      <Text style={styles.certAddBtnText} numberOfLines={1}>Add certification</Text>
-                    </>
-                  )
-                }
-              </TouchableOpacity>
-            </View>
-          </Field>
-
-          <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85} style={styles.saveBtn}>
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.saveBtnText} numberOfLines={1}>Save changes</Text>
-            }
-          </TouchableOpacity>
-
-          <View style={styles.dangerZone}>
-            <Text style={styles.dangerLabel}>Danger zone</Text>
-            <TouchableOpacity onPress={handleDeleteAccount} disabled={deleting} style={styles.deleteBtn} activeOpacity={0.85}>
-              {deleting
-                ? <ActivityIndicator color={colors.urgent} />
-                : (
-                  <>
-                    <Ionicons name="trash-outline" size={18} color={colors.urgent} style={{ marginRight: 8 }} />
-                    <Text style={styles.deleteBtnText} numberOfLines={1}>Delete account</Text>
-                  </>
-                )
-              }
-            </TouchableOpacity>
-            <Text style={styles.dangerHint}>Permanently deletes your account and all your data. This can't be undone.</Text>
           </View>
-        </View>
+        ))}
       </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
-
-// Format a stored 'YYYY-MM-DD' DOB for the read-only display (parsed at noon UTC to
-// avoid a timezone rollback to the previous day).
-function formatDob(iso) {
-  const d = new Date(`${iso}T12:00:00Z`);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
-function Field({ label, children }) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {children}
+      <KeyboardDoneBar />
     </View>
   );
 }
 
-// Larger, darker heading that chunks the long form into labeled sections.
-function SectionHeader({ children, first }) {
+function Row({ icon, title, sub, onPress, danger, last }) {
   return (
-    <Text style={[styles.sectionHeader, first && { marginTop: 0 }]}>
-      {children}
-    </Text>
+    <TouchableOpacity
+      style={[styles.row, last && styles.rowLast]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+    >
+      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
+        <Ionicons name={icon} size={18} color={danger ? colors.urgent : colors.primary} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={[styles.rowTitle, danger && styles.rowTitleDanger]} numberOfLines={1}>{title}</Text>
+        {!!sub && <Text style={styles.rowSub} numberOfLines={2}>{sub}</Text>}
+      </View>
+      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, paddingHorizontal: 32 },
-  loadErrorTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
-  loadErrorBody: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  loadErrorBtn: {
-    marginTop: 20, backgroundColor: colors.primary,
-    paddingVertical: 12, paddingHorizontal: 28, borderRadius: radii.md,
-  },
-  loadErrorBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  loadErrorBack: { marginTop: 16, color: colors.textMuted, fontSize: 14, fontWeight: '600' },
   container: { flex: 1, backgroundColor: colors.background },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  backBtn: { paddingVertical: 4, paddingRight: 8, marginLeft: -2 },
-  backText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1 },
-  headerTitle: {
-    fontSize: 24, fontWeight: '700', color: colors.textPrimary,
-    letterSpacing: -0.4, marginBottom: 4,
-  },
-  headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
-  form: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
-  sectionHeader: {
-    fontSize: 17, fontWeight: '700', color: colors.textPrimary,
-    letterSpacing: -0.2, marginTop: 32, marginBottom: 16,
-  },
-  field: { marginBottom: 24 },
-  fieldLabel: {
-    fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8,
-  },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
-    fontSize: 15, color: colors.textPrimary, borderWidth: 1, borderColor: colors.border,
-  },
-  inputError: { borderColor: colors.urgent },
-  dobReadonly: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: radii.md, padding: 14,
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  backBtn: { width: 40, height: 40, alignItems: 'flex-start', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, flex: 1, textAlign: 'center' },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.surface, borderRadius: radii.pill,
+    paddingHorizontal: 14, height: 44, marginTop: 12,
     borderWidth: 1, borderColor: colors.border,
   },
-  dobReadonlyText: { fontSize: 15, color: colors.textPrimary, fontWeight: '500', flexShrink: 1 },
-  textArea: { minHeight: 88, lineHeight: 21 },
-  errorText: { color: colors.urgent, fontSize: 12, fontWeight: '500', marginTop: 6, lineHeight: 16 },
-  hintText: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 17 },
-  // Negative right margin lets the last chip's trailing margin hang off the gutter,
-  // buying back the width the 3-up row needs for the longest label ("Post Jobs").
-  roleRow: { flexDirection: 'row', marginRight: -8 },
-  roleChip: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, paddingHorizontal: 6, borderRadius: radii.md, marginRight: 8,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, paddingVertical: 0 },
+
+  group: { paddingHorizontal: 20, marginTop: 22 },
+  groupTitle: {
+    fontSize: 12, fontWeight: '700', color: colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8, marginLeft: 4,
   },
-  roleChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  roleChipIcon: { marginRight: 5, flexShrink: 0 },
-  roleChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
-  roleChipTextActive: { color: '#fff' },
-  radiusRow: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
-  radiusBtn: {
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: radii.pill, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  card: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: 'hidden' },
+  row: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
-  radiusBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  radiusBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  radiusBtnTextActive: { color: '#fff' },
-  skillGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
-  rateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
-  rateSkill: { fontSize: 14, color: colors.textPrimary, fontWeight: '500', flex: 1, marginRight: 12 },
-  rateInputWrap: {
-    flexDirection: 'row', alignItems: 'center', flexShrink: 0,
-    backgroundColor: colors.surface, borderRadius: radii.md,
-    borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 12, paddingVertical: 8, minWidth: 118,
+  rowLast: { borderBottomWidth: 0 },
+  rowIcon: {
+    width: 34, height: 34, borderRadius: radii.md, marginRight: 12,
+    backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center',
   },
-  rateDollar: { fontSize: 14, color: colors.textSecondary, marginRight: 2 },
-  rateInput: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '600', padding: 0 },
-  rateUnit: { fontSize: 12, color: colors.textMuted, marginLeft: 2 },
-  skillChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-  },
-  skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  skillChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  skillChipTextActive: { color: '#fff' },
-  certRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 12,
-    ...shadows.card,
-  },
-  certThumb: { width: 40, height: 40, borderRadius: radii.sm, marginRight: 12, backgroundColor: colors.divider },
-  certThumbPlaceholder: {
-    width: 40, height: 40, borderRadius: radii.sm, marginRight: 12,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background,
-  },
-  certInfo: { flex: 1, marginRight: 8 },
-  certTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 19 },
-  certMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
-  certRemove: { padding: 4, flexShrink: 0 },
-  certForm: { marginTop: 16 },
-  certImageBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.md, marginTop: 8,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-  },
-  certImageBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
-  certAddBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.md, marginTop: 8,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-  },
-  certAddBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
-  availToggleRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surface, borderRadius: radii.lg,
-    paddingHorizontal: 16, paddingVertical: 14, marginBottom: 24,
-    ...shadows.card,
-  },
-  availToggleTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, lineHeight: 19 },
-  availToggleHint: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 17 },
-  saveBtn: {
-    backgroundColor: colors.primary, borderRadius: radii.md,
-    paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center',
-    marginTop: 8,
-  },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  dangerZone: { marginTop: 40 },
-  dangerLabel: { fontSize: 13, fontWeight: '600', color: colors.urgent, marginBottom: 8, lineHeight: 18 },
-  deleteBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, paddingHorizontal: 20, borderRadius: radii.md,
-    backgroundColor: colors.urgentLight,
-  },
-  deleteBtnText: { color: colors.urgent, fontSize: 15, fontWeight: '600' },
-  dangerHint: { fontSize: 12, color: colors.textMuted, marginTop: 12, textAlign: 'center', lineHeight: 17 },
+  rowIconDanger: { backgroundColor: colors.urgentLight },
+  rowText: { flex: 1, marginRight: 10 },
+  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  rowTitleDanger: { color: colors.urgent },
+  rowSub: { fontSize: 13, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
+
+  empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 12, textAlign: 'center' },
+  emptySub: { fontSize: 13, color: colors.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 18 },
 });

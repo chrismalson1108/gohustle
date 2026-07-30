@@ -16,7 +16,7 @@ import { haversineMiles, milesLabel } from '../lib/geo';
 import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
 import { colors } from '../theme';
 import { CATEGORIES } from '../data/mockData';
-import { matchesForYou, isJobBookable } from '../lib/filters';
+import { matchesForYou, isJobBookable, isHiddenForViewer } from '../lib/filters';
 import { maskLocation } from '../lib/address';
 
 // "For You" is a pseudo-category that matches gigs to the viewer's profile skills.
@@ -175,6 +175,10 @@ export default function HomeScreen({ navigation }) {
       // with a free slot stays; a fully-booked or finished one goes. Shared with web
       // via shared/filters.js so the two feeds can't drift apart.
       if (!isJobBookable(j)) return false;
+      // …and drop gigs this viewer already won or finished. isJobBookable asks
+      // "can anyone book this?"; a 9-slot gig with 2 taken is still open to others,
+      // so the earner who completed it kept seeing their own finished work here.
+      if (isHiddenForViewer(j, bookings)) return false;
 
       // Hide gigs from users you've blocked
       if (blockedIds?.has(j.posterId)) return false;
@@ -262,7 +266,9 @@ export default function HomeScreen({ navigation }) {
     }
 
     return list;
-  }, [jobs, selectedCat, search, filters, blockedIds, userCoords, center, geoCache, school, skills]);
+    // `bookings` is a real dependency: the feed hides gigs this viewer already won,
+    // so the list must recompute when a booking's status changes.
+  }, [jobs, bookings, selectedCat, search, filters, blockedIds, userCoords, center, geoCache, school, skills]);
 
   const activeFilterCount = countActiveFilters(filters);
   const forYouNoSkills = selectedCat === 'foryou' && (skills?.length || 0) === 0;

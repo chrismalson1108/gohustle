@@ -29,6 +29,7 @@ import MarketInsightsScreen from './src/screens/MarketInsightsScreen';
 import ManageBookingsScreen from './src/screens/ManageBookingsScreen';
 import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
+import ProfileSettingsScreen from './src/screens/ProfileSettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
@@ -148,6 +149,7 @@ function ProfileStack() {
       <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
       <Stack.Screen name="EditJob"        component={EditJobScreen} options={HERO_OPTS} />
       <Stack.Screen name="Settings"       component={SettingsScreen} />
+      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
       <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
