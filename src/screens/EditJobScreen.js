@@ -164,7 +164,9 @@ export default function EditJobScreen({ route, navigation }) {
       return;
     }
     const pay = parseFloat(form.pay);
-    const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
+    // location included for the same reason as PostJob: it is free text that
+    // renders to every browsing user.
+    const kwTerm = findProhibited([form.title, form.description, form.location, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
       haptic.error();
