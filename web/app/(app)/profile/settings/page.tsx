@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2, Plus, X, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, X, Camera, Loader2, LogOut } from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
@@ -71,6 +71,7 @@ export default function SettingsPage() {
   // takes earnings history and reviews with it, so it is a deliberate gauntlet
   // rather than one destructive button in a dialog.
   const [deleteStep, setDeleteStep] = useState(0);
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [certs, setCerts] = useState<Certification[]>([]);
@@ -641,6 +642,26 @@ export default function SettingsPage() {
 
           <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
 
+          {/* Sign out. Both clients moved this off the profile tab so it could not be
+              mis-tapped, leaving the comment "Sign out lives in Settings only" — but on
+              web the second half never happened, so there was NO way to end a web
+              session at all. Mobile's SettingsScreen has had confirmSignOut the whole
+              time. Confirmed, like mobile, because this is still a one-tap exit. */}
+          <div className="mt-6 rounded-2xl border border-line bg-white p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Account</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              You&apos;ll need to sign in again to get back to your gigs.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => setSignOutOpen(true)}
+            >
+              <LogOut className="size-4" /> Sign out
+            </Button>
+          </div>
+
           {/* Danger zone */}
           <div className="mt-8 rounded-2xl border border-urgent/30 bg-urgent/5 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-urgent">Danger zone</p>
@@ -711,6 +732,33 @@ export default function SettingsPage() {
             {cert.file && <p className="mt-1.5 truncate text-xs text-ink-muted">{cert.file.name}</p>}
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={signOutOpen}
+        onClose={() => setSignOutOpen(false)}
+        title="Sign out?"
+        size="sm"
+        footer={
+          <div className="flex flex-col gap-2">
+            <Button fullWidth onClick={() => setSignOutOpen(false)}>Stay signed in</Button>
+            <Button
+              variant="ghost"
+              fullWidth
+              onClick={async () => {
+                setSignOutOpen(false);
+                await signOut();
+                router.replace("/login");
+              }}
+            >
+              Sign out
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          You&apos;ll need to sign in again to get back to your gigs.
+        </p>
       </Modal>
 
       <Modal
