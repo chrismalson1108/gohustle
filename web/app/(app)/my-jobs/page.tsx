@@ -210,7 +210,13 @@ export default function MyJobsPage() {
   // ── Per-gig helpers ─────────────────────────────────────────────────────────
   const payLine = (b: Booking) => {
     const job = jobs.find((j) => j.id === b.jobId);
-    const pay = money(b.counterOffer ?? b.job?.pay ?? job?.pay);
+    // An hourly booking has to say so. Without the suffix a $100/hr gig read as
+    // a flat "$100" here, understating what the earner is owed — the app shows
+    // the same booking as "$200-300 est." A counter-offer on an hourly gig is
+    // also a RATE, so the suffix applies to both branches.
+    const payType = b.job?.payType ?? job?.payType;
+    const amount = b.counterOffer ?? b.job?.pay ?? job?.pay;
+    const pay = `${money(amount)}${payType === "hourly" ? "/hr" : ""}`;
     return `${b.slotLabel || "Flexible"} · ${pay}${b.tipAmount > 0 ? ` · +${money(b.tipAmount)} tip` : ""}`;
   };
   const titleOf = (b: Booking) => b.job?.title || jobs.find((j) => j.id === b.jobId)?.title || "Gig";
