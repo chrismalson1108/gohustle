@@ -30,7 +30,18 @@ export function EarningsTiles() {
             { label: 'Avg/job',   value: completedCount ? formatMoney(Math.round(avgPerJob)) : '—' },
           ].map(s => (
             <View key={s.label} style={styles.tile}>
-              <Text style={styles.tileVal} numberOfLines={1}>{s.value}</Text>
+              {/* Four tiles share the row, so a full earnings total ("$2,640.50")
+                  is wider than its quarter and was truncating to "$2,640…" —
+                  which reads as a different, smaller number. Shrink to fit
+                  instead of clipping; the floor still keeps it legible. */}
+              <Text
+                style={styles.tileVal}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+              >
+                {s.value}
+              </Text>
               <Text style={styles.tileLabel} numberOfLines={1}>{s.label}</Text>
             </View>
           ))}
