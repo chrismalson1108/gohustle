@@ -198,7 +198,9 @@ function AppNavigator() {
         <Tab.Screen name="EarnTab"    component={EarnStack}    options={{ title: 'My Jobs' }} />
         <Tab.Screen name="GigsTab"     component={GigsStack}     options={{ title: 'Hire' }} />
         <Tab.Screen name="MessagesTab" component={MessagesStack} options={{ title: 'Messages' }} />
-        <Tab.Screen name="ProfileTab"  component={ProfileStack}  options={{ title: 'Profile' }} />
+        {/* Label is "You" (Strava-style hub); the ROUTE NAME stays ProfileTab — it is a
+            wire protocol shared with send-push KNOWN_TABS and the admin console. */}
+        <Tab.Screen name="ProfileTab"  component={ProfileStack}  options={{ title: 'You' }} />
       </Tab.Navigator>
     </NavigationContainer>
   );

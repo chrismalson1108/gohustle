@@ -34,7 +34,10 @@ export async function getUnreadCount() {
 }
 
 // Where tapping an alert should go: a gig deep-link, else a tab.
-const TABS = { EarnTab: 1, GigsTab: 1, MessagesTab: 1, HomeTab: 1 };
+// Must stay in sync with KNOWN_TABS in supabase/functions/send-push/index.ts.
+// ProfileTab was missing, so an admin notice targeting it routed correctly as a
+// PUSH but was silently unroutable when tapped in the in-app inbox.
+const TABS = { EarnTab: 1, GigsTab: 1, MessagesTab: 1, HomeTab: 1, ProfileTab: 1 };
 export function notificationRoute(n) {
   if (n.job_id) return { tab: 'HomeTab', screen: 'JobDetail', params: { jobId: n.job_id } };
   const tab = n?.data?.tab;

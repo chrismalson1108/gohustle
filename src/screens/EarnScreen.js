@@ -8,11 +8,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import ScreenHeader from '../components/ScreenHeader';
-import ChallengeCard from '../components/ChallengeCard';
+import MonthSummaryCard from '../components/MonthSummaryCard';
+import GoalsChallengesCard from '../components/GoalsChallengesCard';
+import CollapsibleSection from '../components/CollapsibleSection';
 import JobCard from '../components/JobCard';
-import XPBar from '../components/XPBar';
-import MoneyGoalCard from '../components/MoneyGoalCard';
-import WorkStatusBar from '../components/WorkStatusBar';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import MessageSheet from '../components/MessageSheet';
 import { useUser } from '../context/UserContext';
@@ -21,7 +20,6 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
 import SignedImage from '../components/SignedImage';
-import { computeEarnerInsights } from '../lib/insights';
 import { addExpense } from '../lib/expenses';
 import { haversineMiles } from '../lib/geo';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
@@ -229,27 +227,9 @@ export default function EarnScreen({ navigation }) {
     setRefreshing(false);
   };
 
-  const earningPct = Math.min(1, earningsWeek / weeklyEarningGoal);
-  // Avg $/job over verified (paid-out) bookings — earnings only accrue on verify.
-  const completedCount = (bookings || []).filter(b => b.status === 'verified').length;
-  const avgPerJob = completedCount ? earningsTotal / completedCount : 0;
-  // Weekly jobs goal counts work that actually FINISHED this week (mutual
-  // completion or verified), derived from bookings — not the old apply-time
-  // counter, which advanced the moment a gig was booked. Week starts Monday.
-  const weekStartMs = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    return d.getTime();
-  })();
-  const weeklyJobsDone = (bookings || []).filter(b =>
-    (b.status === 'completed' || b.status === 'verified')
-    && b.completedAt && new Date(b.completedAt).getTime() >= weekStartMs
-  ).length;
-  const jobsPct    = Math.min(1, weeklyJobsDone / weeklyJobsGoal);
-
-  // Personal insights from this earner's own completed work (null until they have any).
-  const insights = computeEarnerInsights(bookings);
+  // The earnings/goal/insight derivations that used to live here moved with their
+  // UI into MonthSummaryCard and GoalsChallengesCard, which recompute them from
+  // context so both mount points stay in sync.
 
   // Pair each booked job with its booking, then split by segment
   const pairs = bookedJobs
@@ -814,43 +794,7 @@ export default function EarnScreen({ navigation }) {
           gig list on every tab. */}
       {tab === 'completed' && (
         <CollapsibleSection title="Your month" open={showMonth} onToggle={() => setShowMonth(v => !v)}>
-          <MoneyGoalCard navigation={navigation} />
-
-          <View style={styles.breakdownCard}>
-            <Text style={styles.insightsTitle}>Earnings</Text>
-            <View style={styles.breakdownRow}>
-              {[
-                { label: 'Today',     value: `$${earningsToday}` },
-                { label: 'This week', value: `$${earningsWeek}` },
-                { label: 'All time',  value: `$${earningsTotal.toLocaleString()}` },
-                { label: 'Avg/job',   value: completedCount ? `$${Math.round(avgPerJob).toLocaleString()}` : '—' },
-              ].map(s => (
-                <View key={s.label} style={styles.breakdownTile}>
-                  <Text style={styles.breakdownVal} numberOfLines={1}>{s.value}</Text>
-                  <Text style={styles.breakdownLabel} numberOfLines={1}>{s.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {insights && insights.jobCount > 0 && (
-            <View style={styles.insightsCard}>
-              <Text style={styles.insightsTitle}>Your insights</Text>
-              <View style={styles.insightsRow}>
-                <InsightTile icon="location-outline" label="Top area" value={insights.topArea?.label || '—'} />
-                <InsightTile icon="calendar-outline" label="Busiest" value={insights.busiestDay?.label || '—'} />
-                <InsightTile
-                  icon="cash-outline"
-                  label="Best day"
-                  value={insights.mostProfitableDay
-                    ? `${insights.mostProfitableDay.label} ($${Math.round(insights.mostProfitableDay.total).toLocaleString()})`
-                    : '—'}
-                />
-              </View>
-            </View>
-          )}
-
-          <WorkStatusBar />
+          <MonthSummaryCard navigation={navigation} />
         </CollapsibleSection>
       )}
 
@@ -882,17 +826,7 @@ export default function EarnScreen({ navigation }) {
 
       {/* "Goals & challenges" — gamification, lowest priority */}
       <CollapsibleSection title="Goals & challenges" open={showGoals} onToggle={() => setShowGoals(v => !v)}>
-        <View style={styles.goalsXp}>
-          <XPBar levelInfo={levelInfo} xp={xp} dark={false} />
-        </View>
-        <View style={styles.goalsCard}>
-          <GoalBar label="Earnings"  value={`$${earningsWeek}`}  max={`$${weeklyEarningGoal}`} pct={earningPct} color={colors.accent} />
-          <View style={{ height: 16 }} />
-          <GoalBar label="Jobs done" value={`${weeklyJobsDone}`} max={`${weeklyJobsGoal} gigs`} pct={jobsPct} color={colors.primary} />
-        </View>
-        <View style={styles.challengesWrap}>
-          {challenges.map(c => <ChallengeCard key={c.id} challenge={c} />)}
-        </View>
+        <GoalsChallengesCard />
       </CollapsibleSection>
 
       <View style={{ height: 30 }} />
@@ -1023,17 +957,6 @@ export default function EarnScreen({ navigation }) {
   );
 }
 
-function CollapsibleSection({ title, open, onToggle, children }) {
-  return (
-    <View>
-      <TouchableOpacity style={styles.collapseHeader} onPress={onToggle} activeOpacity={0.7}>
-        <Text style={styles.collapseTitle} numberOfLines={1}>{title}</Text>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
-      </TouchableOpacity>
-      {open && <View style={styles.collapseBody}>{children}</View>}
-    </View>
-  );
-}
 
 function SegmentBtn({ label, count, active, onPress }) {
   return (
@@ -1045,29 +968,7 @@ function SegmentBtn({ label, count, active, onPress }) {
   );
 }
 
-function InsightTile({ icon, label, value }) {
-  return (
-    <View style={styles.insightTile}>
-      <Ionicons name={icon} size={16} color={colors.textSecondary} style={{ marginBottom: 4 }} />
-      <Text style={styles.insightLabel} numberOfLines={1}>{label}</Text>
-      <Text style={styles.insightValue} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
 
-function GoalBar({ label, value, max, pct, color }) {
-  return (
-    <View>
-      <View style={styles.goalHeader}>
-        <Text style={styles.goalLabel} numberOfLines={1}>{label}</Text>
-        <Text style={styles.goalValue} numberOfLines={1}>{value} / {max}</Text>
-      </View>
-      <View style={styles.goalTrack}>
-        <View style={[styles.goalFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
-}
 
 
 const styles = StyleSheet.create({
