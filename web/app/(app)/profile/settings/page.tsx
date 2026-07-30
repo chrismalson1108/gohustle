@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2, Plus, X } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, X, Camera, Loader2 } from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
@@ -14,8 +14,10 @@ import {
   deleteCertification,
   type Certification,
 } from "@/lib/certifications";
+import { uploadToBucket } from "@/lib/uploadImage";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
-import Button from "@/components/ui/Button";
+import Avatar from "@/components/ui/Avatar";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { Input, Textarea, Label, Select } from "@/components/ui/Field";
 import LocationPicker from "@/components/LocationPicker";
@@ -56,9 +58,10 @@ function SectionHeader({ children, first }: { children: React.ReactNode; first?:
 export default function SettingsPage() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const { setRole, refreshProfile, showToast } = useUser();
+  const { setRole, refreshProfile, showToast, name, avatarUrl, avatarInitial } = useUser();
 
   const [loading, setLoading] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   // If the profile never loaded we must NOT let save run: the update writes every
   // field unconditionally, so saving from a blank form overwrites the stored profile.
   const [loadError, setLoadError] = useState("");
@@ -133,6 +136,29 @@ export default function SettingsPage() {
       setLoading(false);
     })();
   }, [user]);
+
+  const onAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploadingAvatar(true);
+    try {
+      const url = await uploadToBucket(file, "avatars", user.id);
+      // supabase resolves with { error } instead of rejecting, so this has to be
+      // checked explicitly — otherwise an RLS or network failure on the profile
+      // write still fell through to the success toast and the user was told
+      // "Photo updated!" while looking at their old picture.
+      const { error } = await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id);
+      if (error) throw error;
+      await refreshProfile();
+      showToast({ icon: "✅", title: "Photo updated!", message: "Your new profile picture is live." });
+    } catch (err) {
+      showToast({ icon: "⚠️", title: "Upload failed", message: (err as Error).message || "Please try again." });
+    } finally {
+      setUploadingAvatar(false);
+      // Clear the input so picking the SAME file again after a failure re-fires change.
+      e.target.value = "";
+    }
+  };
 
   const saveCert = async () => {
     if (!user) return;
@@ -355,7 +381,36 @@ export default function SettingsPage() {
         </button>
 
         <div className="space-y-5">
-          <SectionHeader first>Basics</SectionHeader>
+          {/* The only place on web to change the profile photo — the Profile page's
+              avatar links to the public profile instead of opening a picker. */}
+          <SectionHeader first>Photo</SectionHeader>
+          <label
+            className={classNames(
+              "flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70",
+              uploadingAvatar ? "cursor-default opacity-60" : "cursor-pointer",
+            )}
+          >
+            <div className="relative">
+              <Avatar url={avatarUrl} initial={avatarInitial} name={name} size={64} />
+              <span className="absolute -bottom-0.5 -right-0.5 flex size-6 items-center justify-center rounded-full bg-primary ring-2 ring-white">
+                {uploadingAvatar
+                  ? <Loader2 className="size-3.5 animate-spin text-white" />
+                  : <Camera className="size-3.5 text-white" />}
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-ink">Profile photo</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {uploadingAvatar ? "Uploading…" : "Click to choose a new picture"}
+              </p>
+            </div>
+            <span className={buttonClasses("outline", "sm", "shrink-0")}>Change</span>
+            {/* sr-only, not hidden: display:none takes the input out of the tab
+                order, and this is now the ONLY way to set a profile photo on web. */}
+            <input type="file" accept="image/*" className="sr-only" onChange={onAvatar} disabled={uploadingAvatar} />
+          </label>
+
+          <SectionHeader>Basics</SectionHeader>
           <div>
             <Label>Display name</Label>
             <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" />

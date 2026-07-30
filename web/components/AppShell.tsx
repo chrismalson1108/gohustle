@@ -15,7 +15,7 @@ const NAV = [
   { href: "/hiring", label: "Hire", icon: Megaphone, badge: "poster" },
   { href: "/messages", label: "Messages", icon: MessageCircle, badge: "unread" },
   { href: "/notifications", label: "Alerts", icon: Bell, badge: "alerts" },
-  { href: "/profile", label: "Profile", icon: UserCircle2, badge: null },
+  { href: "/profile", label: "You", icon: UserCircle2, badge: null },
 ] as const;
 
 function Badge({ count }: { count: number }) {

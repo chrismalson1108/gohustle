@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Camera, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
+  Settings, LogOut, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine } from "@gohustlr/shared";
@@ -11,13 +11,14 @@ import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
-import { uploadToBucket } from "@/lib/uploadImage";
 import { fetchVerificationStatus, requestVerification } from "@/lib/verification";
 import { getReferralCode, fetchReferralCount } from "@/lib/referrals";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import XPBar from "@/components/XPBar";
+import WeeklyGoalsCard from "@/components/WeeklyGoalsCard";
+import ChallengeCard from "@/components/ChallengeCard";
 import RatingStars from "@/components/ui/RatingStars";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
@@ -39,8 +40,8 @@ export default function ProfilePage() {
   const { signOut, user } = useAuth();
   const [alertCount, setAlertCount] = useState(0);
 
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [idv, setIdv] = useState({ verified: false, status: "none" });
+  const [pane, setPane] = useState<"progress" | "profile">("progress");
   const [refCode, setRefCode] = useState("");
   const [refCount, setRefCount] = useState(0);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -70,21 +71,6 @@ export default function ProfilePage() {
       .eq("archived", false)
       .then(({ count }) => setAlertCount(count || 0), () => {});
   }, [user, loadReviews]);
-
-  const onAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    setUploadingAvatar(true);
-    try {
-      const url = await uploadToBucket(file, "avatars", user.id);
-      await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id);
-      await refreshProfile();
-      showToast({ icon: "✅", title: "Photo updated!", message: "Your new profile picture is live." });
-    } catch (err) {
-      showToast({ icon: "⚠️", title: "Upload failed", message: (err as Error).message || "Please try again." });
-    }
-    setUploadingAvatar(false);
-  };
 
   const verifyIdentity = async () => {
     if (idv.verified) return;
@@ -130,7 +116,7 @@ export default function ProfilePage() {
   if (u.profileStatus !== "ready") {
     return (
       <div>
-        <PageHeader title="Profile" variant="gold" />
+        <PageHeader title="You" variant="gold" />
         <PageContainer>
           {u.profileStatus === "loading" ? (
             <FullPageSpinner label="Loading your profile…" />
@@ -151,7 +137,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader
-        title="Profile"
+        title="You"
         variant="gold"
         right={
           <Link href="/profile/settings" className="rounded-full bg-white/15 p-2 text-white">
@@ -160,13 +146,16 @@ export default function ProfilePage() {
         }
       >
         <div className="mt-4 flex items-center gap-4">
-          <label className="relative cursor-pointer">
+          {/* The avatar opens your PUBLIC profile, mirroring the mobile You tab —
+              seeing yourself as others do is the thing people actually want from
+              their own picture. Changing the photo moved to /profile/settings. */}
+          <Link
+            href={user ? `/u/${user.id}` : "/profile"}
+            aria-label="View your public profile"
+            className="relative shrink-0 rounded-full transition hover:opacity-90"
+          >
             <Avatar url={u.avatarUrl} initial={u.avatarInitial} name={u.name} size={64} ring />
-            <span className="absolute -bottom-1 -right-1 flex size-6 items-center justify-center rounded-full bg-primary ring-2 ring-white">
-              <Camera className="size-3 text-white" />
-            </span>
-            <input type="file" accept="image/*" className="hidden" onChange={onAvatar} disabled={uploadingAvatar} />
-          </label>
+          </Link>
           <div>
             <div className="flex items-center gap-1.5">
               <p className="text-xl font-black">{u.name}</p>
@@ -194,6 +183,30 @@ export default function ProfilePage() {
       </PageHeader>
 
       <PageContainer className="space-y-5">
+        {/* Progress vs Profile, the split the mobile You tab uses. Deliberately a
+            client-state toggle on ONE page rather than the native swipe pager or
+            two routes: on web a second URL for the same identity page just hurts
+            linkability, and there is no back-stack cost to pay for. */}
+        <div className="flex gap-2 border-b border-line">
+          {([
+            { id: "progress", label: "Progress" },
+            { id: "profile", label: "Profile" },
+          ] as const).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPane(p.id)}
+              aria-current={pane === p.id ? "page" : undefined}
+              className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-black transition ${
+                pane === p.id ? "border-primary text-ink" : "border-transparent text-ink-muted hover:text-ink-soft"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {pane === "progress" ? (
+          <>
         {/* Stats — XP lives in the header level bar, so the third stat shows the
             trust-relevant rating instead of duplicating XP. */}
         <div className="grid grid-cols-3 gap-3">
@@ -209,13 +222,18 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* Primary action — tied to the identity header above. */}
-        <Link
-          href="/profile/settings"
-          className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 font-black text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark"
-        >
-          <Settings className="size-[18px]" /> Edit Profile &amp; Settings
-        </Link>
+        {/* Goals & challenges — moved off My Jobs, matching the mobile change that
+            left the earner hub to gigs in flight. Both read from context. */}
+        <WeeklyGoalsCard />
+
+        {u.challenges.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="ml-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Challenges</h2>
+            {u.challenges.map((c) => (
+              <ChallengeCard key={c.id} challenge={c} />
+            ))}
+          </section>
+        )}
 
         <Group title="Gigs & Earnings">
           {postedJobs.length > 0 && (
@@ -236,6 +254,32 @@ export default function ProfilePage() {
           <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
           <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
         </Group>
+
+        {/* Badges */}
+        <section>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Badges</h2>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(BADGE_DEFS).map(([key, def]) => {
+              const unlocked = u.badges[key]?.unlocked;
+              return (
+                <div key={key} className={`flex w-20 flex-col items-center gap-1 rounded-2xl p-3 text-center ${unlocked ? "bg-gold-light ring-1 ring-gold" : "bg-white ring-1 ring-line/70"}`}>
+                  <span className={`text-2xl ${unlocked ? "" : "opacity-40"}`}>{def.icon}</span>
+                  <span className={`text-[10px] font-bold leading-tight ${unlocked ? "text-ink" : "text-ink-muted"}`}>{def.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+          </>
+        ) : (
+          <>
+        {/* Primary action — tied to the identity header above. */}
+        <Link
+          href="/profile/settings"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 font-black text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark"
+        >
+          <Settings className="size-[18px]" /> Edit Profile &amp; Settings
+        </Link>
 
         <Group title="Preferences">
           <Row icon={BellRing} title="Notification settings" sub="Push & email preferences" href="/profile/notifications" />
@@ -272,22 +316,6 @@ export default function ProfilePage() {
           />
         </Group>
 
-        {/* Badges */}
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Badges</h2>
-          <div className="flex flex-wrap gap-3">
-            {Object.entries(BADGE_DEFS).map(([key, def]) => {
-              const unlocked = u.badges[key]?.unlocked;
-              return (
-                <div key={key} className={`flex w-20 flex-col items-center gap-1 rounded-2xl p-3 text-center ${unlocked ? "bg-gold-light ring-1 ring-gold" : "bg-white ring-1 ring-line/70"}`}>
-                  <span className={`text-2xl ${unlocked ? "" : "opacity-40"}`}>{def.icon}</span>
-                  <span className={`text-[10px] font-bold leading-tight ${unlocked ? "text-ink" : "text-ink-muted"}`}>{def.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
         {/* Reviews received */}
         <section>
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Reviews I&apos;ve received</h2>
@@ -304,8 +332,11 @@ export default function ProfilePage() {
               <p className="text-sm text-ink-soft">Complete gigs as a worker or client to start earning reviews.</p>
             </div>
           ) : (
+            /* Only the three most recent. This page renders on every visit, and
+               rendering every review inline grows without bound — the rest live
+               behind "See all". */
             <div className="space-y-2.5">
-              {reviews.map((r) => (
+              {reviews.slice(0, 3).map((r) => (
                 <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
                   <div className="flex items-center gap-2.5">
                     <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
@@ -318,6 +349,14 @@ export default function ProfilePage() {
                   {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
                 </div>
               ))}
+              {reviews.length > 3 && (
+                <Link
+                  href="/profile/reviews"
+                  className="flex items-center justify-center gap-1 rounded-2xl bg-white p-3.5 text-sm font-bold text-primary shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:bg-primary-light/40"
+                >
+                  See all {reviews.length} reviews <ChevronRight className="size-4" />
+                </Link>
+              )}
             </div>
           )}
         </section>
@@ -347,6 +386,8 @@ export default function ProfilePage() {
         <button onClick={() => signOut()} className={buttonClasses("outline", "md", "w-full text-urgent hover:border-urgent hover:text-urgent")}>
           <LogOut className="size-4" /> Sign out
         </button>
+          </>
+        )}
       </PageContainer>
     </div>
   );
