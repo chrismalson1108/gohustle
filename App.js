@@ -82,26 +82,27 @@ const MANAGE_OPTS = {
   headerShown: false,
 };
 
-// Hero pattern for screens that open with their own <ScreenHeader underNav>:
-// the native bar is transparent, so the screen's own header runs to the very
-// top and the back button floats over it (iOS 26 draws it in a frosted circle,
-// which stays legible over content as it scrolls past).
-const HERO_OPTS = {
-  ...DETAIL_OPTS,
-  headerTransparent: true,
-  // Must stay transparent — an opaque bar would stack a dead strip on top of
-  // the screen's own header.
-  headerStyle: { backgroundColor: 'transparent' },
-};
+// There used to be a second, "hero" header here: a TRANSPARENT native bar whose
+// back button floated in a frosted circle over the screen's own header. It was
+// removed because that button was unreliable to actually press — the floating
+// control sits in the strip iOS reserves for the interactive screen-edge pop
+// gesture, and a real fingertip (which always drifts a pixel or two, unlike a
+// synthetic tap) gets claimed by the pan recogniser instead of the button. Users
+// reported back "doing nothing"; it reproduced with a finger and not in scripted
+// taps, which is exactly the signature of that race.
+//
+// Every pushed screen now uses DETAIL_OPTS: one opaque bar, one native back
+// chevron, same position and same behaviour app-wide. `title` stays '' so the
+// screens that draw their own big header don't show the name twice.
 
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain"  component={HomeScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={HERO_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="MarketInsights" component={MarketInsightsScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -111,8 +112,8 @@ function EarnStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -121,11 +122,11 @@ function GigsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="GigsMain"  component={GigsScreen} />
-      <Stack.Screen name="PostJob"   component={PostJobScreen} options={HERO_OPTS} />
+      <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="EditJob"   component={EditJobScreen} options={HERO_OPTS} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -134,10 +135,10 @@ function MessagesStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MessagesMain" component={MessagesScreen} />
-      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={HERO_OPTS} />
+      <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
-      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
     </Stack.Navigator>
   );
 }
@@ -147,18 +148,18 @@ function ProfileStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileMain"    component={ProfileScreen} />
       <Stack.Screen name="ManageBookings" component={ManageBookingsScreen} options={MANAGE_OPTS} />
-      <Stack.Screen name="EditJob"        component={EditJobScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Settings"       component={SettingsScreen} />
-      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <Stack.Screen name="EditJob"        component={EditJobScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Settings"       component={SettingsScreen} options={{ ...DETAIL_OPTS, title: 'Settings' }} />
+      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Profile settings' }} />
       <Stack.Screen name="Availability"   component={AvailabilityScreen} options={{ ...DETAIL_OPTS, title: 'Availability' }} />
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
-      <Stack.Screen name="Expenses"       component={ExpensesScreen} options={HERO_OPTS} />
-      <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={HERO_OPTS} />
-      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={HERO_OPTS} />
+      <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
-      <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={HERO_OPTS} />
+      <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved people' }} />
       <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved gigs' }} />
       <Stack.Screen name="JobDetail"      component={JobDetailScreen} options={DETAIL_OPTS} />

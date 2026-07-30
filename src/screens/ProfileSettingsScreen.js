@@ -393,12 +393,9 @@ export default function ProfileSettingsScreen({ navigation }) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <KeyboardDoneBar />
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <ScreenHeader>
-          <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Text style={styles.backText} numberOfLines={1}>‹ Back</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Back comes from the native stack header now, like every other screen —
+            this used to be the app's only "‹ Back" text button. */}
+        <ScreenHeader topInset={false}>
           <Text style={styles.headerTitle} numberOfLines={2}>Profile settings</Text>
           <Text style={styles.headerSub}>Change your info, role, location, and skills</Text>
         </ScreenHeader>
@@ -773,9 +770,6 @@ const styles = StyleSheet.create({
   loadErrorBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   loadErrorBack: { marginTop: 16, color: colors.textMuted, fontSize: 14, fontWeight: '600' },
   container: { flex: 1, backgroundColor: colors.background },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  backBtn: { paddingVertical: 4, paddingRight: 8, marginLeft: -2 },
-  backText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1 },
   headerTitle: {
     fontSize: 24, fontWeight: '700', color: colors.textPrimary,
     letterSpacing: -0.4, marginBottom: 4,

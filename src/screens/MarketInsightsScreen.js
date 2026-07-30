@@ -83,7 +83,7 @@ export default function MarketInsightsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader underNav>
+      <ScreenHeader topInset={false}>
         <View style={styles.topRow}>
           <View style={styles.topRowText}>
             <Text style={styles.title} numberOfLines={2}>Market Insights</Text>

@@ -204,7 +204,7 @@ export default function ExpensesScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        <ScreenHeader underNav>
+        <ScreenHeader topInset={false}>
           <View style={styles.titleRow}>
             <Ionicons name="receipt-outline" size={22} color={colors.textPrimary} style={{ marginRight: 8 }} />
             <Text style={styles.screenTitle} numberOfLines={1}>Tax Center</Text>

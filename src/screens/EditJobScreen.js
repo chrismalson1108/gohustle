@@ -270,7 +270,7 @@ export default function EditJobScreen({ route, navigation }) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <KeyboardDoneBar />
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <ScreenHeader underNav>
+        <ScreenHeader topInset={false}>
           <View style={styles.headerRow}>
             {/* Back is the floating nav button (HERO_OPTS); only Delete lives in the header. */}
             <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>

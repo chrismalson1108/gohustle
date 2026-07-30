@@ -29,7 +29,7 @@ export default function TrophyCaseScreen({ route }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
-      <ScreenHeader underNav>
+      <ScreenHeader topInset={false}>
         <Text style={styles.title} numberOfLines={1}>Trophy case</Text>
         <Text style={styles.sub} numberOfLines={1}>{earnedCount} of {keys.length} badges unlocked</Text>
       </ScreenHeader>

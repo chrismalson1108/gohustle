@@ -213,7 +213,7 @@ export default function PostJobScreen({ navigation, route }) {
         contentContainerStyle={{ paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        <ScreenHeader underNav>
+        <ScreenHeader topInset={false}>
           <Text style={styles.headerTitle} numberOfLines={2}>
             {rebookEarner ? `Rebook ${rebookEarner.name || ''}`.trim() : prefill ? 'Duplicate gig' : 'Post a gig'}
           </Text>
