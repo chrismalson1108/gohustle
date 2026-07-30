@@ -22,8 +22,16 @@ function assertSafeImageType(file: File): void {
 async function moderateOrThrow(bucket: string, path: string): Promise<void> {
   try {
     const { data, error } = await supabase.functions.invoke("moderate-image", { body: { bucket, path } });
-    if (!error && data && (data as { allowed?: boolean }).allowed === false) {
-      const e = new Error("That image was blocked — it may violate our content policy.");
+    const result = data as { allowed?: boolean; reason?: string } | null;
+    if (!error && result && result.allowed === false) {
+      // 'too_large' is a rejection, not a policy verdict — the scanner can't read the
+      // file, so "violates our content policy" would be a lie to someone who just
+      // picked a big photo.
+      const e = new Error(
+        result.reason === "too_large"
+          ? "That photo is too large to check. Please pick a smaller one."
+          : "That image was blocked — it may violate our content policy.",
+      );
       (e as Error & { blocked?: boolean }).blocked = true;
       throw e;
     }

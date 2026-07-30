@@ -79,7 +79,14 @@ async function moderateOrThrow(bucket, path) {
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: 'timeout' }), 8000));
     const { data, error } = await Promise.race([invoke, timeout]);
     if (!error && data && data.allowed === false) {
-      const e = new Error('That image was blocked — it may violate our content policy.');
+      // 'too_large' is a rejection, not a policy verdict — the scanner can't read
+      // the file, so saying "violates our content policy" would be a lie to someone
+      // who just picked a big photo.
+      const e = new Error(
+        data.reason === 'too_large'
+          ? "That photo is too large to check. Please pick a smaller one."
+          : 'That image was blocked — it may violate our content policy.',
+      );
       e.blocked = true;
       throw e;
     }
