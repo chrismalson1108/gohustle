@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LocationPicker from './LocationPicker';
+import KeyboardDoneBar from './KeyboardDoneBar';
 import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 
@@ -303,6 +304,10 @@ export default function FilterSheet({ visible, filters, availableStates, mySchoo
           </View>
         </View>
       </View>
+      {/* The location field is a TextInput inside a modal with no other keyboard
+          affordance — without this its accessory view has nothing to attach to
+          and the keyboard covers the filters with no way down. */}
+      <KeyboardDoneBar />
     </Modal>
   );
 }

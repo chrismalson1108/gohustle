@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii } from '../theme';
+import { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 
 // Free-form tag editor: type + return (or blur) adds a chip; tap a chip to remove.
 // Used by PostJob and EditJob for jobs.tags. Tags help discovery + "For You" matching.
@@ -32,6 +33,7 @@ export default function TagInput({ value = [], onChange, max = 6, placeholder = 
           onBlur={add}
           blurOnSubmit={false}
           returnKeyType="done"
+          inputAccessoryViewID={KEYBOARD_DONE_ID}
           autoCapitalize="none"
           placeholder={value.length ? 'Add another…' : placeholder}
           placeholderTextColor={colors.textMuted}

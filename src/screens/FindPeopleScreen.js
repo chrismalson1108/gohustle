@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from '../components/Avatar';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 import RatingStars from '../components/RatingStars';
 import { colors, radii, shadows } from '../theme';
 
@@ -74,6 +75,7 @@ export default function FindPeopleScreen({ navigation }) {
           autoFocus
           returnKeyType="search"
           onSubmitEditing={() => runSearch(query)}
+          inputAccessoryViewID={KEYBOARD_DONE_ID}
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={() => { setQuery(''); setResults(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -107,6 +109,7 @@ export default function FindPeopleScreen({ navigation }) {
           data={results}
           keyExtractor={p => p.id}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 24 }}
           renderItem={({ item: p }) => (
             <TouchableOpacity style={styles.row} onPress={() => openProfile(p)} activeOpacity={0.85}>
@@ -132,6 +135,7 @@ export default function FindPeopleScreen({ navigation }) {
           )}
         />
       )}
+      <KeyboardDoneBar />
     </View>
   );
 }

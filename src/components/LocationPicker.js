@@ -6,6 +6,7 @@ import {
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, shadows } from '../theme';
+import { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 
 const REMOTE_OPTIONS = ['Remote', 'Zoom / Remote', 'Work from Home'];
 
@@ -131,6 +132,7 @@ export default function LocationPicker({ value, onChange, placeholder }) {
           onBlur={() => setTimeout(() => setOpen(false), 180)}
           autoCorrect={false}
           autoCapitalize="words"
+          inputAccessoryViewID={KEYBOARD_DONE_ID}
         />
         {locating
           ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} />
