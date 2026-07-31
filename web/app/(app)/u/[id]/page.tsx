@@ -3,7 +3,23 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, MapPin, Eye, Heart, MoreVertical, Flag, Ban, ShieldCheck, MessageCircle } from "lucide-react";
+import {
+  Ban,
+  Briefcase,
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  Flag,
+  Heart,
+  MapPin,
+  Megaphone,
+  MessageCircle,
+  MoreHorizontal,
+  Ribbon,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, workStatusMeta } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
@@ -66,6 +82,9 @@ interface PubListing {
   location: string;
 }
 
+const avg = (arr: PubReview[]): number | null =>
+  arr.length ? arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length : null;
+
 // Only render certificate images/links that are genuine Supabase storage public
 // URLs over https. A user can insert an arbitrary image_url via a direct API call
 // (the insert RLS only checks ownership), so block javascript:/data: schemes and
@@ -85,10 +104,12 @@ function safeCertUrl(url: string | null): string | null {
 // Label + content as one block. Previously the <h2>s and their cards were loose
 // siblings of a `space-y-4` column, so a heading sat the same distance from its
 // own content as from the section above it and the page read as one flat list.
+// Every heading string is passed in verbatim — including the ` (N)` counts — so
+// the web page reads identically to src/screens/PublicProfileScreen.js.
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="min-w-0">
-      <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">{title}</h2>
+      <h2 className="mb-3 text-[13px] font-semibold text-ink-muted">{title}</h2>
       {children}
     </section>
   );
@@ -110,6 +131,7 @@ export default function PublicProfilePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
   const [reportDetails, setReportDetails] = useState("");
   const isSelf = user?.id === id;
@@ -126,9 +148,25 @@ export default function PublicProfilePage() {
   ];
   const sharedBooking = sharedBookings.find((b) => ACTIVE_MSG_STATUSES.includes(b.status)) || sharedBookings[0] || null;
 
-  const sendInvite = (job: { id: string; title: string }) => {
-    notify(id, "You got a gig invitation", `${myName || "Someone"} invited you to apply to "${job.title}"`, { tab: "HomeTab" });
+  // send-push only delivers to someone you already share a booking with — a brand-new
+  // person is silently dropped (403) with no push and no in-app row. Don't claim
+  // "Invitation sent" when it can't be delivered: mirror the server gate and gate the
+  // success toast on the real send result. (notify() is best-effort and returns
+  // undefined today; once it reports success/failure this tightens further.)
+  const sendInvite = async (job: { id: string; title: string }) => {
+    const canDeliver = sharedBookings.length > 0;
+    const ok = canDeliver
+      ? await notify(id, "You got a gig invitation", `${myName || "Someone"} invited you to apply to "${job.title}"`, { tab: "HomeTab" })
+      : false;
     setInviteOpen(false);
+    if (ok === false) {
+      showToast({
+        icon: "⚠️",
+        title: "Couldn't send invite",
+        message: "You can only invite someone you already share a booking with. Message them to connect first.",
+      });
+      return;
+    }
     showToast({ icon: "✅", title: "Invitation sent", message: `${profile?.name || "They"} were invited to "${job.title}".` });
   };
 
@@ -226,10 +264,23 @@ export default function PublicProfilePage() {
   if (!profile) return <EmptyState title="Profile not found" />;
 
   const college = collegeLine(profile);
-  const overall = reviews.length ? reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length : null;
-  const earnerReviews = reviews.filter((r) => r.role === "earner");
-  const recentWork = earnerReviews.slice(0, 10);
-  const { certified, progress } = computeCertifications(earnerReviews);
+  const workerReviews = reviews.filter((r) => r.role === "earner");
+  const clientReviews = reviews.filter((r) => r.role === "poster");
+  const overall = avg(reviews);
+  const workerAvg = avg(workerReviews);
+  const clientAvg = avg(clientReviews);
+  const recentWork = workerReviews.slice(0, 10);
+  const { certified, progress } = computeCertifications(workerReviews);
+
+  // "4.8 · 12 reviews · Since 2025" — either half can be absent, and with neither
+  // the line is empty and must not be rendered at all (an empty <p> still claims a
+  // line box on the web, where mobile's lineHeight-less Text collapses to nothing).
+  const identityMeta = [
+    overall != null ? `${overall.toFixed(1)} · ${reviews.length} review${reviews.length !== 1 ? "s" : ""}` : "",
+    profile.member_since ? `Since ${profile.member_since}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const availDays = DAYS.map((label, day) => ({ label, day, windows: windowsForDay(availability, day) })).filter(
     (d) => d.windows.length > 0,
@@ -238,18 +289,62 @@ export default function PublicProfilePage() {
   // (or it's the owner viewing their own profile), and there are windows to show.
   const canShowAvailability = !!user && availDays.length > 0;
 
+  // Mobile caps the inline list at 3 — a profile with 50 reviews would otherwise be
+  // 50 cards deep before the page ended. Mobile's "See all" pushes a dedicated
+  // Reviews screen; /profile/reviews is the signed-in user's OWN reviews only, so on
+  // the web the same affordance expands the list in place rather than dropping the
+  // other person's reviews on the floor.
+  const shownReviews = showAllReviews ? reviews : reviews.slice(0, 3);
+
   return (
     <div>
-      {/* The person's name is the page's <h1>. It used to be a <p> under an empty
-          PageHeader title, which left the whole profile without an accessible
-          heading. */}
+      {/* Single column, mobile's section order exactly. The two-column rail this
+          replaced put a 20rem sidebar next to the feed: it left the rail gappy, cut
+          the review/recent-work cards down to a ragged two-up grid, and reordered
+          the sections relative to the app.
+          `form` (760px), not `content` (1120px): this is a single column of short
+          cards — a one-line review stretched across 1120px reads as a mostly-empty
+          band. 760 is the comfortable profile measure, and the header must use the
+          same value or the name stops lining up with the sections under it. */}
       <PageHeader
-        title={profile.name || "GoHustlr user"}
-        width="content"
+        title=""
+        width="form"
         back={isSelf ? "/profile" : "/browse"}
-        right={
-          !isSelf && user ? (
-            <div className="relative flex items-center gap-2">
+      >
+        {/* Mobile sets the name BESIDE the 64px avatar, so the page's <h1> lives in
+            this identity row rather than in PageHeader's title slot (which stacks
+            above the children). It is still the document's only h1 — the profile
+            must never be left without an accessible heading. */}
+        <div className="flex items-center gap-4">
+          <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} name={profile.name} size={64} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="min-w-0 text-[26px] font-bold leading-tight tracking-[-0.02em] text-ink sm:text-[28px]">
+                {profile.name || "GoHustlr user"}
+              </h1>
+              {profile.verified && (
+                <span className="inline-flex min-w-0 shrink items-center gap-1 self-center rounded-lg bg-success-light px-2 py-0.5 text-[11px] font-semibold text-success">
+                  <CheckCircle2 className="size-3 shrink-0" />
+                  <span className="truncate">Verified</span>
+                </span>
+              )}
+              <StudentBadge profile={profile} />
+            </div>
+            {overall != null ? (
+              <RatingStars value={overall} size={14} display className="mt-1" />
+            ) : (
+              <p className="mt-1 text-xs text-ink-muted">No reviews yet</p>
+            )}
+            {identityMeta && <p className="mt-1 truncate text-xs text-ink-muted">{identityMeta}</p>}
+            {college && <p className="mt-1 truncate text-xs text-ink-muted">{college}</p>}
+            {profile.city && (
+              <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-ink-muted">
+                <MapPin className="size-3 shrink-0" /> <span className="truncate">{profile.city}</span>
+              </p>
+            )}
+          </div>
+          {!isSelf && user && (
+            <div className="relative flex shrink-0 items-center gap-2 self-start">
               <button
                 onClick={toggleFav}
                 className="flex size-11 items-center justify-center rounded-full border border-line bg-white transition hover:border-primary"
@@ -264,7 +359,7 @@ export default function PublicProfilePage() {
                 aria-label="More options"
                 aria-expanded={menuOpen}
               >
-                <MoreVertical className="size-5" />
+                <MoreHorizontal className="size-5" />
               </button>
               {menuOpen && (
                 // `rounded-2xl` (20px): an elevated floating menu is a PANEL, and
@@ -275,256 +370,263 @@ export default function PublicProfilePage() {
                     <Flag className="size-4 shrink-0" /> Report
                   </button>
                   <button onClick={doBlock} className="flex w-full items-center gap-2 px-3.5 py-3 text-sm font-semibold text-urgent transition hover:bg-canvas">
-                    <Ban className="size-4 shrink-0" /> Block
+                    <Ban className="size-4 shrink-0" /> Block this user
                   </button>
                 </div>
               )}
             </div>
-          ) : undefined
-        }
-      >
-        <div className="mt-4 flex items-center gap-4">
-          <Avatar url={profile.avatar_url} initial={profile.avatar_initial || profile.name?.[0]} name={profile.name} size={64} />
-          <div className="min-w-0">
-            {(profile.verified || profile.student_verified) && (
-              <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1.5">
-                {profile.verified && (
-                  <span className="inline-flex min-w-0 shrink items-center gap-1 rounded-lg bg-success-light px-2 py-0.5 text-[11px] font-semibold text-success">
-                    <CheckCircle2 className="size-3 shrink-0" />
-                    <span className="truncate">Verified</span>
-                  </span>
-                )}
-                <StudentBadge profile={profile} />
-              </div>
-            )}
-            {overall != null ? (
-              <div className="flex min-w-0 items-center gap-2 text-ink-soft">
-                <RatingStars value={overall} size={14} />
-                <span className="truncate text-sm">
-                  {overall.toFixed(1)} · {reviews.length} review{reviews.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-            ) : (
-              <p className="text-sm text-ink-muted">No reviews yet</p>
-            )}
-            {college && <p className="mt-0.5 truncate text-sm font-semibold text-ink-soft">{college}</p>}
-            {profile.city && (
-              <p className="mt-0.5 flex min-w-0 items-center gap-1 text-sm text-ink-muted">
-                <MapPin className="size-3.5 shrink-0" /> <span className="truncate">{profile.city}</span>
-              </p>
-            )}
-          </div>
+          )}
         </div>
       </PageHeader>
 
-      <PageContainer width="content" className="space-y-4">
-        {isSelf && (
-          <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-[var(--shadow-card)]">
-            <Eye className="size-4 shrink-0 text-ink-muted" />
-            <p className="min-w-0 text-[13px] text-ink-soft">
-              This is your public profile — exactly how others see you.
-            </p>
+      <PageContainer width="form" className="space-y-6">
+        {/* Trust summary + self banner sit tighter than the 24px section rhythm,
+            mirroring mobile's 16/16 top margins on these two blocks. */}
+        <div className="space-y-3">
+          {/* Rating breakdown: worker vs client, the two halves of a two-sided
+              reputation. Always rendered — an em dash reads as "no reviews in this
+              role yet", which is information a hidden card wouldn't carry. */}
+          <div className="flex items-center rounded-2xl bg-white py-4 shadow-[var(--shadow-card)]">
+            <div className="flex min-w-0 flex-1 flex-col items-center px-2 text-center">
+              <Briefcase className="size-4 shrink-0 text-ink-soft" />
+              <p className="mt-1 truncate text-xl font-bold text-ink">{workerAvg != null ? workerAvg.toFixed(1) : "—"}</p>
+              <p className="mt-1 max-w-full truncate text-xs font-medium text-ink-muted">As a worker ({workerReviews.length})</p>
+            </div>
+            <div className="h-11 w-px shrink-0 bg-divider" />
+            <div className="flex min-w-0 flex-1 flex-col items-center px-2 text-center">
+              <Megaphone className="size-4 shrink-0 text-ink-soft" />
+              <p className="mt-1 truncate text-xl font-bold text-ink">{clientAvg != null ? clientAvg.toFixed(1) : "—"}</p>
+              <p className="mt-1 max-w-full truncate text-xs font-medium text-ink-muted">As a client ({clientReviews.length})</p>
+            </div>
+          </div>
+
+          {isSelf && (
+            <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-4 py-3">
+              <Eye className="size-4 shrink-0 text-ink-muted" />
+              <p className="min-w-0 text-[13px] font-medium text-ink-soft">
+                This is your public profile — exactly how others see you.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {canShowAvailability && (
+          <Section title="Availability">
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+              {profile.work_status && (() => {
+                const ws = workStatusMeta(profile.work_status);
+                return (
+                  <div className="mb-3 flex items-center gap-2 border-b border-divider pb-3">
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: ws.color }} />
+                    <span className="min-w-0 truncate text-sm font-semibold text-ink">{ws.label}</span>
+                  </div>
+                );
+              })()}
+              <div className="space-y-1.5">
+                {availDays.map(({ label, day, windows }) => (
+                  <div key={day} className="flex items-start justify-between gap-3 border-t border-divider pt-1.5 text-[13px] first:border-t-0 first:pt-0">
+                    <span className="shrink-0 font-semibold text-ink">{label}</span>
+                    <span className="min-w-0 text-right font-medium text-ink-soft">
+                      {windows.map((w) => `${fmtTime(w.start)}–${fmtTime(w.end)}`).join(", ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* Mobile puts the CTAs below Availability, not above it — keep that order. */}
+        {!isSelf && user && (sharedBooking || myOpenGigs.length > 0) && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {/* Deep-links into the Messages page, which opens the conversation for
+                that booking directly (?booking=<id>). */}
+            {sharedBooking && (
+              <Link href={`/messages?booking=${sharedBooking.id}`} className={buttonClasses("primary", "md", "flex-1")}>
+                <MessageCircle className="size-4 shrink-0" /> <span className="truncate">Message</span>
+              </Link>
+            )}
+            {myOpenGigs.length > 0 && (
+              <Button className="flex-1" variant={sharedBooking ? "outline" : "primary"} onClick={() => setInviteOpen(true)}>
+                <Send className="size-4 shrink-0" /> <span className="truncate">Invite to a gig</span>
+              </Button>
+            )}
           </div>
         )}
 
-        {/* Two columns once the content box clears 64rem: a fixed identity/trust
-            rail (availability, skills, certifications) beside the fluid activity
-            feed. Below that the two stack in exactly the mobile screen's order.
-            A container step, not `lg:` — `<main>` is the @container, and a viewport
-            query is wrong by one sidebar width: `lg:` fired at a 784px content box,
-            splitting 720px of content into a 320px rail and a ~376px column, so the
-            cards on the right got NARROWER at 1024px than they had been stacked. */}
-        <div className="@5xl:grid @5xl:grid-cols-[20rem_minmax(0,1fr)] @5xl:items-start @5xl:gap-6">
-          <div className="min-w-0 space-y-4">
-            {canShowAvailability && (
-              <Section title="Availability">
-                <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                  {profile.work_status && (() => {
-                    const ws = workStatusMeta(profile.work_status);
-                    return (
-                      <div className="mb-3 flex items-center gap-2 border-b border-divider pb-3">
-                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: ws.color }} />
-                        <span className="min-w-0 truncate text-sm font-bold text-ink">{ws.label}</span>
-                      </div>
-                    );
-                  })()}
-                  <div className="space-y-1.5">
-                    {availDays.map(({ label, day, windows }) => (
-                      <div key={day} className="flex items-start justify-between gap-3 border-t border-divider pt-1.5 text-sm first:border-t-0 first:pt-0">
-                        <span className="shrink-0 font-semibold text-ink">{label}</span>
-                        <span className="min-w-0 text-right font-medium text-ink-soft">
-                          {windows.map((w) => `${fmtTime(w.start)}–${fmtTime(w.end)}`).join(", ")}
-                        </span>
-                      </div>
-                    ))}
+        {profile.bio && (
+          <Section title="About">
+            <p className="text-[15px] leading-relaxed text-ink-soft">{profile.bio}</p>
+          </Section>
+        )}
+
+        {profile.skills && profile.skills.length > 0 && (
+          <Section title="Skills">
+            <div className="flex flex-wrap gap-2">
+              {profile.skills.map((s) => (
+                <span key={s} className="inline-flex max-w-full items-center rounded-full border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-soft">
+                  <span className="truncate">
+                    {s}
+                    {profile.skill_rates?.[s] ? ` · ${money(profile.skill_rates[s])}/hr` : ""}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {certified.length > 0 && (
+          <Section title="Hustlr Certified">
+            <div className="flex flex-wrap gap-2">
+              {certified.map((c) => (
+                <div
+                  key={c.label}
+                  className="flex max-w-full items-center gap-2 rounded-xl bg-success-light px-3 py-2.5 text-success"
+                >
+                  <ShieldCheck className="size-[18px] shrink-0" />
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold">Certified · {c.label}</p>
+                    <p className="mt-1 truncate text-xs">{c.count} jobs</p>
                   </div>
                 </div>
-              </Section>
-            )}
+              ))}
+            </div>
+          </Section>
+        )}
 
-            {!isSelf && user && (sharedBooking || myOpenGigs.length > 0) && (
-              // `@5xl:flex-col` is keyed to the same step as the two-column split
-              // above: once this becomes a 20rem rail the two CTAs have to stack
-              // again. It must move with the grid, not with the viewport.
-              <div className="flex flex-col gap-2 sm:flex-row @5xl:flex-col">
-                {/* Deep-links into the Messages page, which opens the conversation for
-                    that booking directly (?booking=<id>). */}
-                {sharedBooking && (
-                  <Link href={`/messages?booking=${sharedBooking.id}`} className={buttonClasses("primary", "md", "flex-1")}>
-                    <MessageCircle className="size-4 shrink-0" /> <span className="truncate">Message</span>
-                  </Link>
-                )}
-                {myOpenGigs.length > 0 && (
-                  <Button className="flex-1" variant={sharedBooking ? "outline" : "primary"} onClick={() => setInviteOpen(true)}>
-                    <span className="truncate">Invite to a gig</span>
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {profile.bio && (
-              <Section title="About">
-                <p className="text-[15px] leading-relaxed text-ink-soft">{profile.bio}</p>
-              </Section>
-            )}
-
-            {profile.skills && profile.skills.length > 0 && (
-              <Section title="Skills">
-                <div className="flex flex-wrap gap-2">
-                  {profile.skills.map((s) => (
-                    <span key={s} className="inline-flex max-w-full items-center rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-ink-soft">
-                      <span className="truncate">
-                        {s}
-                        {profile.skill_rates?.[s] ? ` · ${money(profile.skill_rates[s])}/hr` : ""}
-                      </span>
-                    </span>
-                  ))}
+        {isSelf && certified.length === 0 && progress.length > 0 && (
+          <Section title="Progress to certification">
+            <div className="space-y-1.5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+              {progress.map((p) => (
+                <div key={p.label} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium text-ink">{p.label}</span>
+                  <span className="shrink-0 font-semibold text-ink-muted">
+                    {p.count}/{p.needed}
+                  </span>
                 </div>
-              </Section>
-            )}
+              ))}
+            </div>
+          </Section>
+        )}
 
-            {certified.length > 0 && (
-              <Section title="Hustlr Certified">
-                <div className="flex flex-wrap gap-2">
-                  {certified.map((c) => (
-                    <div
-                      key={c.label}
-                      className="flex max-w-full items-center gap-2 rounded-xl bg-success-light px-3.5 py-2.5 text-success"
-                    >
-                      <ShieldCheck className="size-5 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold">Certified · {c.label}</p>
-                        <p className="truncate text-xs font-semibold">{c.count} jobs</p>
+        {certs.length > 0 && (
+          <Section title={`Certifications (${certs.length})`}>
+            <div className="space-y-2">
+              {certs.map((c) => {
+                const certImg = safeCertUrl(c.image_url);
+                const body = (
+                  <>
+                    {certImg ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={certImg} alt={c.title} className="size-11 shrink-0 rounded-xl bg-canvas object-cover" />
+                    ) : (
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-canvas">
+                        <Ribbon className="size-5 text-ink-muted" />
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {isSelf && certified.length === 0 && progress.length > 0 && (
-              <Section title="Progress to certification">
-                <div className="space-y-1.5 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                  {progress.map((p) => (
-                    <div key={p.label} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="min-w-0 truncate font-semibold text-ink">{p.label}</span>
-                      <span className="shrink-0 font-semibold text-ink-muted">
-                        {p.count}/{p.needed}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {certs.length > 0 && (
-              <Section title="Certifications">
-                <div className="space-y-2">
-                  {certs.map((c) => {
-                    const certImg = safeCertUrl(c.image_url);
-                    return (
-                    <div key={c.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                      {certImg && (
-                        <a href={certImg} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={certImg} alt={c.title} className="size-12 rounded-lg bg-divider object-cover" />
-                        </a>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold text-ink">{c.title}</p>
+                      {(c.issuer || c.year) && (
+                        <p className="mt-1 truncate text-xs text-ink-muted">{[c.issuer, c.year].filter(Boolean).join(" · ")}</p>
                       )}
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-ink">{c.title}</p>
-                        {(c.issuer || c.year) && (
-                          <p className="truncate text-xs text-ink-muted">{[c.issuer, c.year].filter(Boolean).join(" · ")}</p>
-                        )}
+                    </div>
+                    {/* No link icon when there's no safe URL: the card is inert, and
+                        an affordance that does nothing is worse than none. */}
+                    {certImg && <ExternalLink className="size-4 shrink-0 text-ink-muted" />}
+                  </>
+                );
+                const cls = "flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]";
+                return certImg ? (
+                  <a key={c.id} href={certImg} target="_blank" rel="noopener noreferrer" className={classNames(cls, "transition hover:bg-canvas")}>
+                    {body}
+                  </a>
+                ) : (
+                  <div key={c.id} className={cls}>
+                    {body}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
+        {listings.length > 0 && (
+          <Section title={`Open gigs they posted (${listings.length})`}>
+            <div className="space-y-2">
+              {listings.map((j) => (
+                <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] transition hover:bg-canvas">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold text-ink">{j.title}</p>
+                    {/* maskLocation, never the raw address: a public listing row must
+                        not leak the street/unit a poster typed in. */}
+                    <p className="mt-1 truncate text-xs text-ink-muted">
+                      {payLabel({ pay: j.pay, payType: j.pay_type })} · {j.category} · {maskLocation(j.location)}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-ink-muted" />
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* The count is the FULL worker-review total even though the list stops at
+            10 — it reads as a reputation stat, not a list length. */}
+        {workerReviews.length > 0 && (
+          <Section title={`Recent work (${workerReviews.length})`}>
+            <div className="space-y-2">
+              {recentWork.map((r) => (
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{r.job?.title || "Completed gig"}</p>
+                    <RatingStars value={r.rating} size={13} display />
+                  </div>
+                  {r.text && <p className="mt-2 line-clamp-2 text-sm text-ink-soft">{r.text}</p>}
+                  {r.date && <p className="mt-1 text-xs text-ink-muted">{r.date}</p>}
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* The only unconditional section, and always last: an empty profile still
+            shows "Reviews (0)" so the absence is stated rather than implied. */}
+        <Section title={`Reviews (${reviews.length})`}>
+          {reviews.length === 0 ? (
+            <p className="text-sm text-ink-muted">No reviews yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {shownReviews.map((r) => (
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  <div className="flex items-start gap-2.5">
+                    <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{r.reviewer?.name || "User"}</p>
+                      <div className="mt-1 flex min-w-0 items-center gap-2">
+                        <RatingStars value={r.rating} size={11} display />
+                        <span className="min-w-0 truncate rounded-lg bg-canvas px-2 py-1 text-[11px] font-medium text-ink-muted">
+                          {r.role === "poster" ? "as a client" : "as a worker"}
+                        </span>
                       </div>
                     </div>
-                    );
-                  })}
+                    {r.date && <span className="shrink-0 text-xs text-ink-muted">{r.date}</span>}
+                  </div>
+                  {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
                 </div>
-              </Section>
-            )}
-          </div>
-
-          {/* Its own `@container`: below the split this column is the full content
-              measure, above it that minus the 20rem rail. Querying the column
-              itself is the only way a card grid inside it can count columns
-              correctly on both sides of that split. */}
-          <div className="@container mt-4 min-w-0 space-y-4 @5xl:mt-0">
-            {listings.length > 0 && (
-              <Section title="Open gigs">
-                <div className="grid gap-2 @2xl:grid-cols-2">
-                  {listings.map((j) => (
-                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] transition hover:bg-canvas">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-ink">{j.title}</p>
-                        <p className="truncate text-xs text-ink-muted">{j.category} · {maskLocation(j.location)}</p>
-                      </div>
-                      <span className="shrink-0 text-[15px] font-bold text-ink">{payLabel({ pay: j.pay, payType: j.pay_type })}</span>
-                    </Link>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {recentWork.length > 0 && (
-              <Section title="Recent work">
-                <div className="grid gap-2.5 @2xl:grid-cols-2">
-                  {recentWork.map((r) => (
-                    <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate font-bold text-ink">{r.job?.title || "Completed gig"}</p>
-                        <RatingStars value={r.rating} size={13} />
-                      </div>
-                      {r.text && <p className="mt-1 line-clamp-3 text-sm text-ink-soft">{r.text}</p>}
-                      {r.date && <p className="mt-1 text-xs text-ink-muted">{r.date}</p>}
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            <Section title="Reviews">
-              {reviews.length === 0 ? (
-                <p className="text-sm text-ink-muted">No reviews yet.</p>
-              ) : (
-                <div className="grid gap-2.5 @2xl:grid-cols-2">
-                  {reviews.map((r) => (
-                    <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-ink">{r.reviewer?.name || "User"}</p>
-                          <RatingStars value={r.rating} size={12} />
-                        </div>
-                        {r.date && <span className="shrink-0 text-xs text-ink-muted">{r.date}</span>}
-                      </div>
-                      {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
-                    </div>
-                  ))}
-                </div>
+              ))}
+              {reviews.length > 3 && (
+                <button
+                  onClick={() => setShowAllReviews((s) => !s)}
+                  className="flex h-11 w-full items-center justify-center gap-1 text-[13px] font-semibold text-ink transition hover:text-primary"
+                  aria-expanded={showAllReviews}
+                >
+                  <span className="truncate">{showAllReviews ? "Show fewer reviews" : `See all ${reviews.length} reviews`}</span>
+                  <ChevronRight className={classNames("size-4 shrink-0 transition-transform", showAllReviews && "-rotate-90")} />
+                </button>
               )}
-            </Section>
-          </div>
-        </div>
+            </div>
+          )}
+        </Section>
       </PageContainer>
 
       <Modal

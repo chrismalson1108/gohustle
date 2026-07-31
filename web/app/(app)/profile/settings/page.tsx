@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Trash2, Plus, X, Camera, Loader2, LogOut } from "lucide-react";
+import {
+  ChevronDown, Trash2, Plus, X, Camera, Loader2, LogOut, Lock, Award,
+  GraduationCap, ClipboardList, Zap, Star, Banknote, MessageCircle, Briefcase,
+} from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
@@ -27,16 +30,31 @@ import { classNames } from "@/lib/format";
 const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+// Icon + label, matching mobile's role chips (school / clipboard / flash).
+// "Post Jobs" is title case on purpose — it is the one label mobile does not
+// write in sentence case, and the two clients should read identically.
 const ROLES = [
-  { id: "earner", label: "Earn" },
-  { id: "poster", label: "Post jobs" },
-  { id: "both", label: "Both" },
+  { id: "earner", label: "Earn", Icon: GraduationCap },
+  { id: "poster", label: "Post Jobs", Icon: ClipboardList },
+  { id: "both", label: "Both", Icon: Zap },
 ] as const;
 
 // Selectable pill. One size, one radius, one active treatment — the four
 // near-identical local Chips across the app each drifted to a different scale.
 // min-h-11 keeps it above the 44px touch minimum; the label never wraps.
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+// `icon` sits OUTSIDE the truncating span so a long label clips its own text
+// instead of eating the glyph.
+function Chip({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -47,9 +65,18 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
         active ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:border-primary",
       )}
     >
+      {icon}
       <span className="truncate">{children}</span>
     </button>
   );
+}
+
+// Mirrors mobile's formatDob: parse at noon UTC so the stored calendar date
+// never shifts a day under a negative-offset timezone.
+function formatDob(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
 // The shared `Select` sets `appearance-none pr-10`, which suppresses the native
@@ -65,10 +92,14 @@ function SelectWrap({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Chunks the long settings form into labeled sections (divider above each).
+// Chunks the long settings form into labeled sections. Mobile separates them
+// with whitespace alone (32 above / 16 below, 17px ink) — the rule that used to
+// sit above each heading is a line the rest of the app never draws.
 function SectionHeader({ children, first }: { children: React.ReactNode; first?: boolean }) {
   return (
-    <h2 className={classNames("text-lg font-bold text-ink", first ? "" : "border-t border-line pt-5")}>{children}</h2>
+    <h2 className={classNames("text-[17px] font-bold tracking-[-0.01em] text-ink", first ? "mb-4" : "mb-4 mt-8")}>
+      {children}
+    </h2>
   );
 }
 
@@ -96,8 +127,12 @@ export default function SettingsPage() {
   const [savingCert, setSavingCert] = useState(false);
   const [cert, setCert] = useState({ title: "", issuer: "", year: "", file: null as File | null });
   // One-time 18+ DOB backfill for legacy accounts created before the age floor.
-  // Once a DOB exists it is write-once (server guard pins it), so we lock the field.
-  const [dobLocked, setDobLocked] = useState(false);
+  // Once a DOB exists it is write-once (server guard pins it), so we lock the
+  // field. Holding the ISO value (not just a boolean) lets the locked state show
+  // WHAT is on file, the way mobile does — a bare disappearing field left users
+  // unable to tell whether a birth date had ever been recorded.
+  const [existingDob, setExistingDob] = useState<string | null>(null);
+  const dobLocked = !!existingDob;
   const [dobM, setDobM] = useState("");
   const [dobD, setDobD] = useState("");
   const [dobY, setDobY] = useState("");
@@ -144,7 +179,7 @@ export default function SettingsPage() {
         // A legacy account may have no DOB yet — offer the one-time backfill; if it's
         // already set, keep the field locked/omitted (write-once).
         const { data: mine } = await supabase.rpc("my_profile");
-        setDobLocked(!!mine?.date_of_birth);
+        setExistingDob(mine?.date_of_birth || null);
         setF({
           name: data.name || "", username: data.username || "", bio: data.bio || "", city: data.city || "",
           role: data.role || "earner", skills: data.skills || [], radiusMiles: data.radius_miles || 25,
@@ -301,7 +336,7 @@ export default function SettingsPage() {
     let dobIso: string | null = null;
     if (!dobLocked && dob) {
       dobIso = parseDob(dob);
-      if (!dobIso) { setDobError("Select a valid date of birth."); return; }
+      if (!dobIso) { setDobError("Enter a valid date of birth."); return; }
       if (!isAdult(dobIso)) { setDobError(`You must be ${MIN_AGE} or older to use GoHustlr.`); return; }
       setDobError("");
     }
@@ -397,6 +432,9 @@ export default function SettingsPage() {
               Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
             </p>
             <Button className="mt-2" onClick={() => window.location.reload()}>Try again</Button>
+            {/* Mobile pairs the retry with a way out, so a persistent failure is
+                not a dead end on a page whose form is deliberately withheld. */}
+            <Button variant="ghost" size="sm" onClick={() => router.push("/profile")}>Go back</Button>
           </div>
         </PageContainer>
       </div>
@@ -408,12 +446,15 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Profile settings"
-        subtitle="Your info, role, location, skills & college"
+        subtitle="Change your info, role, location, and skills"
         width="form"
         back="/profile"
       />
       <PageContainer width="form">
-        <div className="space-y-5">
+        {/* No `space-y` on this wrapper: section spacing is carried by
+            SectionHeader's own top margin, and a `space-y-*` on the parent wins
+            on specificity and would flatten it. */}
+        <div>
           {/* The only place on web to change the profile photo — the Profile page's
               avatar links to the public profile instead of opening a picker. */}
           <SectionHeader first>Photo</SectionHeader>
@@ -444,185 +485,150 @@ export default function SettingsPage() {
           </label>
 
           <SectionHeader>Basics</SectionHeader>
-          {/* Short fields pair two-up once the column is wide enough. Container
-              queries, not viewport ones: `main` is the query container, so this
-              measures the space the form actually has instead of guessing from the
-              window and being wrong by one sidebar width. */}
-          <div className="grid gap-5 @2xl:grid-cols-2">
-            <div className="min-w-0">
-              <Label>Display name</Label>
-              <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" />
+          <div className="space-y-6">
+            {/* Short fields pair two-up once the column is wide enough. Container
+                queries, not viewport ones: `main` is the query container, so this
+                measures the space the form actually has instead of guessing from the
+                window and being wrong by one sidebar width. */}
+            <div className="grid gap-6 @2xl:grid-cols-2">
+              <div className="min-w-0">
+                <Label>Display name</Label>
+                <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" autoCapitalize="words" />
+              </div>
+              <div className="min-w-0">
+                <Label>Username</Label>
+                <Input
+                  value={f.username}
+                  onChange={(e) => { set("username", e.target.value); setUsernameError(""); }}
+                  placeholder="e.g. chris_hustler"
+                  maxLength={30}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                />
+                {usernameError && <p className="mt-1.5 text-sm font-medium text-urgent">{usernameError}</p>}
+                {/* Mobile keeps the handle preview AND the format rule visible at all
+                    times — the rule used to appear only after a rejected save, which
+                    is exactly when it is too late to be useful. */}
+                <p className="mt-1.5 truncate text-xs text-ink-muted">
+                  @{f.username || "username"} · 3–30 lowercase chars
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <Label>Username</Label>
-              <Input value={f.username} onChange={(e) => { set("username", e.target.value); setUsernameError(""); }} placeholder="e.g. chris_hustler" maxLength={30} />
-              {usernameError ? <p className="mt-1 text-sm font-medium text-urgent">{usernameError}</p> : <p className="mt-1 truncate text-xs text-ink-muted">@{f.username || "username"}</p>}
+            <div>
+              <Label>Bio</Label>
+              <Textarea value={f.bio} onChange={(e) => set("bio", e.target.value)} maxLength={280} placeholder="A short bio about yourself..." />
             </div>
-          </div>
-          <div>
-            <Label>Bio</Label>
-            <Textarea value={f.bio} onChange={(e) => set("bio", e.target.value)} maxLength={280} placeholder="A short bio about yourself…" />
-          </div>
-          <div>
-            <Label>I&apos;m here to…</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {ROLES.map((r) => (
-                <Chip key={r.id} active={f.role === r.id} onClick={() => set("role", r.id)}>{r.label}</Chip>
-              ))}
+            <div>
+              <Label>I&apos;m here to...</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {ROLES.map((r) => (
+                  <Chip
+                    key={r.id}
+                    active={f.role === r.id}
+                    onClick={() => set("role", r.id)}
+                    icon={<r.Icon className="size-4 shrink-0" />}
+                  >
+                    {r.label}
+                  </Chip>
+                ))}
+              </div>
             </div>
-          </div>
-          <div>
-            <Label>Location</Label>
-            <LocationPicker value={f.city} onChange={(label) => set("city", label)} placeholder="Your city or 'Remote'" />
-          </div>
+            <div>
+              <Label>Location</Label>
+              <LocationPicker value={f.city} onChange={(label) => set("city", label)} placeholder="Your city or 'Remote'" />
+            </div>
 
-          {!dobLocked && (
             <div>
               <Label>Date of birth</Label>
-              {/* Stacked until the column can hold three selects. As three
-                  flex-basis columns the Day select got ~84px on a 375px screen, and
-                  Select's `appearance-none pr-10` spends 40px of that on the right —
-                  "September" had nowhere to go. Container step, not `sm:`, for the
-                  same reason as the pairs above: `main` is the query container, so
-                  this measures the form column instead of the window. */}
-              <div className="grid grid-cols-1 gap-2 @2xl:grid-cols-3">
-                <SelectWrap>
-                  <Select
-                    value={dobM}
-                    onChange={(e) => {
-                      const m = e.target.value;
-                      setDobM(m);
-                      setDobError("");
-                      // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
-                      if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
-                    }}
-                    aria-label="Month"
-                  >
-                    <option value="">Month</option>
-                    {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                  </Select>
-                </SelectWrap>
-                <SelectWrap>
-                  <Select value={dobD} onChange={(e) => { setDobD(e.target.value); setDobError(""); }} aria-label="Day">
-                    <option value="">Day</option>
-                    {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-                  </Select>
-                </SelectWrap>
-                <SelectWrap>
-                  <Select
-                    value={dobY}
-                    onChange={(e) => {
-                      const y = e.target.value;
-                      setDobY(y);
-                      setDobError("");
-                      if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
-                    }}
-                    aria-label="Year"
-                  >
-                    <option value="">Year</option>
-                    {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </Select>
-                </SelectWrap>
-              </div>
-              {dobError ? (
-                <p className="mt-1 text-sm font-medium text-urgent">{dobError}</p>
+              {dobLocked ? (
+                <>
+                  {/* Write-once: the DB guard pins date_of_birth once it exists, so
+                      this is a read-only echo. Showing the stored value (mobile does)
+                      is the only way a user can confirm what is on file — the field
+                      simply vanishing read as "we never asked". */}
+                  <div className="flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-3">
+                    <Lock className="size-4 shrink-0 text-ink-muted" />
+                    <span className="min-w-0 truncate text-base text-ink sm:text-[15px]">{formatDob(existingDob!)}</span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-ink-muted">Your date of birth is set and can&apos;t be changed.</p>
+                </>
               ) : (
-                <p className="mt-1 text-xs text-ink-muted">You must be {MIN_AGE}+ to use GoHustlr. This can only be set once.</p>
+                <>
+                  {/* Stacked until the column can hold three selects. As three
+                      flex-basis columns the Day select got ~84px on a 375px screen, and
+                      Select's `appearance-none pr-10` spends 40px of that on the right —
+                      "September" had nowhere to go. Container step, not `sm:`, for the
+                      same reason as the pairs above: `main` is the query container, so
+                      this measures the form column instead of the window. */}
+                  <div className="grid grid-cols-1 gap-2 @2xl:grid-cols-3">
+                    <SelectWrap>
+                      <Select
+                        value={dobM}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          setDobM(m);
+                          setDobError("");
+                          // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
+                          if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
+                        }}
+                        aria-label="Month"
+                      >
+                        <option value="">Month</option>
+                        {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                      </Select>
+                    </SelectWrap>
+                    <SelectWrap>
+                      <Select value={dobD} onChange={(e) => { setDobD(e.target.value); setDobError(""); }} aria-label="Day">
+                        <option value="">Day</option>
+                        {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+                      </Select>
+                    </SelectWrap>
+                    <SelectWrap>
+                      <Select
+                        value={dobY}
+                        onChange={(e) => {
+                          const y = e.target.value;
+                          setDobY(y);
+                          setDobError("");
+                          if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
+                        }}
+                        aria-label="Year"
+                      >
+                        <option value="">Year</option>
+                        {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                      </Select>
+                    </SelectWrap>
+                  </div>
+                  {dobError ? (
+                    <p className="mt-1.5 text-sm font-medium text-urgent">{dobError}</p>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-ink-muted">
+                      You must be {MIN_AGE}+ to use GoHustlr. This is saved once and can&apos;t be changed later.
+                    </p>
+                  )}
+                </>
               )}
             </div>
-          )}
+          </div>
 
-          {showEarnerFields && (
-            <>
-              <SectionHeader>Work Preferences</SectionHeader>
-              <div>
-                <Label>Travel radius</Label>
-                <div className="flex flex-wrap gap-2">
-                  {RADIUS_OPTIONS.map((r) => (
-                    <Chip key={r} active={f.radiusMiles === r} onClick={() => set("radiusMiles", r)}>{r} mi</Chip>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Label>My skills</Label>
-                <div className="flex flex-wrap gap-2">
-                  {SKILL_OPTIONS.map((s) => (
-                    <Chip key={s} active={f.skills.includes(s)} onClick={() => toggleSkill(s)}>{s}</Chip>
-                  ))}
-                </div>
-              </div>
-              {f.skills.length > 0 && (
-                <div>
-                  <Label>Hourly rates (optional)</Label>
-                  <div className="grid gap-2 @2xl:grid-cols-2 @2xl:gap-x-6">
-                    {f.skills.map((s) => (
-                      <div key={s} className="flex items-center justify-between gap-3">
-                        <span className="min-w-0 truncate text-sm font-semibold text-ink">{s}</span>
-                        <div className="flex w-28 shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 py-2.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
-                          <span className="shrink-0 text-ink-soft">$</span>
-                          <input
-                            value={f.skillRates?.[s] || ""}
-                            onChange={(e) => setF((p) => ({ ...p, skillRates: { ...p.skillRates, [s]: e.target.value.replace(/[^0-9]/g, "") } }))}
-                            inputMode="numeric"
-                            placeholder="—"
-                            aria-label={`Hourly rate for ${s}`}
-                            className="w-full min-w-0 bg-transparent text-base font-bold outline-none sm:text-sm"
-                          />
-                          <span className="shrink-0 text-xs text-ink-muted">/hr</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-ink">Show my availability on my profile</p>
-                  <p className="mt-0.5 text-xs text-ink-muted">Lets signed-in clients see when you&apos;re free.</p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={f.showAvailability}
-                  onClick={() => toggleShowAvailability(!f.showAvailability)}
-                  className={classNames(
-                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
-                    f.showAvailability ? "bg-primary" : "bg-line",
-                  )}
-                >
-                  <span
-                    className={classNames(
-                      "inline-block size-5 transform rounded-full bg-white shadow transition",
-                      f.showAvailability ? "translate-x-[22px]" : "translate-x-0.5",
-                    )}
-                  />
-                </button>
-              </div>
-            </>
-          )}
-
+          {/* Education sits between Basics and Work preferences, as on mobile —
+              it is the section every role sees, so it must not be stranded after a
+              block that only earners get. */}
           <SectionHeader>Education</SectionHeader>
-          {/* College */}
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-            <Label>College (optional)</Label>
-            <Input value={f.school} onChange={(e) => set("school", e.target.value)} placeholder="e.g. University of Texas at Austin" />
-            <p className="mt-1.5 text-xs text-ink-muted">
-              Verify your .edu email on the{" "}
-              <a href="/verify-student" className="font-bold text-primary">Verify Student</a> page to earn a badge.
-            </p>
+          <div className="space-y-6">
+            <div>
+              <Label>College (optional)</Label>
+              <Input value={f.school} onChange={(e) => set("school", e.target.value)} placeholder="e.g. University of Texas at Austin" />
+              <p className="mt-1.5 text-xs text-ink-muted">
+                Verify your .edu email on the{" "}
+                <a href="/verify-student" className="font-bold text-primary">Verify Student</a> page to earn a Verified Student badge.
+              </p>
+            </div>
             {f.school && (
-              <div className="mt-4 space-y-4">
-                {/* Major and graduation year are the two short fields here, so they
-                    pair once the column can hold both. */}
-                <div className="grid gap-4 @2xl:grid-cols-2 @2xl:gap-x-6">
-                  <div className="min-w-0">
-                    <Label>Major</Label>
-                    <Input value={f.major} onChange={(e) => set("major", e.target.value)} placeholder="e.g. Computer Science" />
-                  </div>
-                  <div className="min-w-0">
-                    <Label>Graduation year</Label>
-                    <Input value={f.gradYear} onChange={(e) => set("gradYear", e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} inputMode="numeric" maxLength={4} placeholder="e.g. 2027" />
-                  </div>
+              <>
+                <div>
+                  <Label>Major</Label>
+                  <Input value={f.major} onChange={(e) => set("major", e.target.value)} placeholder="e.g. Computer Science" />
                 </div>
                 <div>
                   <Label>Class standing</Label>
@@ -640,28 +646,111 @@ export default function SettingsPage() {
                     ))}
                   </div>
                 </div>
-              </div>
+                {/* Grad year is four digits — it takes one column of the pair grid so
+                    it never stretches to a 760px-wide text box. Mobile's field order
+                    puts it last, after the two chip grids, so it cannot pair with Major. */}
+                <div className="grid gap-6 @2xl:grid-cols-2">
+                  <div className="min-w-0">
+                    <Label>Graduation year</Label>
+                    <Input value={f.gradYear} onChange={(e) => set("gradYear", e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} inputMode="numeric" maxLength={4} placeholder="e.g. 2027" />
+                  </div>
+                </div>
+              </>
             )}
           </div>
 
-          {/* Certifications */}
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-            <div className="flex items-center justify-between">
-              <Label className="mb-0">Certifications</Label>
-              <Button variant="outline" size="sm" onClick={() => setCertModalOpen(true)}>
-                <Plus className="size-4" /> Add
-              </Button>
-            </div>
-            <p className="mt-1.5 text-xs text-ink-muted">
+          {showEarnerFields && (
+            <>
+              <SectionHeader>Work preferences</SectionHeader>
+              <div className="space-y-6">
+                <div>
+                  <Label>Travel radius</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {RADIUS_OPTIONS.map((r) => (
+                      <Chip key={r} active={f.radiusMiles === r} onClick={() => set("radiusMiles", r)}>{r} mi</Chip>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>My skills</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {SKILL_OPTIONS.map((s) => (
+                      <Chip key={s} active={f.skills.includes(s)} onClick={() => toggleSkill(s)}>{s}</Chip>
+                    ))}
+                  </div>
+                </div>
+                {f.skills.length > 0 && (
+                  <div>
+                    <Label>Hourly rates (optional)</Label>
+                    <div className="grid gap-2 @2xl:grid-cols-2 @2xl:gap-x-6">
+                      {f.skills.map((s) => (
+                        <div key={s} className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate text-sm font-semibold text-ink">{s}</span>
+                          <div className="flex w-28 shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 py-2.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+                            <span className="shrink-0 text-ink-soft">$</span>
+                            <input
+                              value={f.skillRates?.[s] || ""}
+                              onChange={(e) => setF((p) => ({ ...p, skillRates: { ...p.skillRates, [s]: e.target.value.replace(/[^0-9]/g, "") } }))}
+                              inputMode="numeric"
+                              placeholder="—"
+                              aria-label={`Hourly rate for ${s}`}
+                              className="w-full min-w-0 bg-transparent text-base font-bold outline-none sm:text-sm"
+                            />
+                            <span className="shrink-0 text-xs text-ink-muted">/hr</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Saves on toggle, not on "Save changes" — the only control on this
+                    page that writes immediately (mobile behaves the same way). */}
+                <div className="flex items-center justify-between gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-ink">Show my availability on my profile</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">Lets signed-in clients see when you&apos;re free.</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={f.showAvailability}
+                    onClick={() => toggleShowAvailability(!f.showAvailability)}
+                    className={classNames(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+                      f.showAvailability ? "bg-primary" : "bg-line",
+                    )}
+                  >
+                    <span
+                      className={classNames(
+                        "inline-block size-5 transform rounded-full bg-white shadow transition",
+                        f.showAvailability ? "translate-x-[22px]" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Certifications — every role, outside the earner-only block. */}
+          <div className="mt-8">
+            <Label>Certifications</Label>
+            <p className="text-xs text-ink-muted">
               Trade certs &amp; credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.
             </p>
             {certs.length > 0 && (
               <div className="mt-3 grid gap-2 @2xl:grid-cols-2">
                 {certs.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 rounded-xl bg-canvas px-3 py-2.5">
-                    {c.image_url && (
+                  <div key={c.id} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)]">
+                    {c.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={c.image_url} alt={c.title} className="size-10 shrink-0 rounded-lg bg-divider object-cover" />
+                    ) : (
+                      // Placeholder tile so an image-less cert still lines its title
+                      // up with the ones that have artwork.
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-canvas text-ink-soft">
+                        <Award className="size-[18px]" />
+                      </span>
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-ink">{c.title}</p>
@@ -686,12 +775,18 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+            {/* Mobile puts the add control after the list, reading "Add
+                certification" in full — a bare "Add" beside the label was
+                ambiguous next to the page's other add affordances. */}
+            <Button variant="outline" fullWidth className="mt-3" onClick={() => setCertModalOpen(true)}>
+              <Plus className="size-4" /> Add certification
+            </Button>
           </div>
 
           {/* Sticky save bar: the form is ~14 controls tall, and Save used to be
               reachable only from the very bottom. Offset above the mobile tab bar
               (which is `md:hidden`, so the offset drops at md too). */}
-          <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 border-t border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:bottom-0 lg:-mx-8 lg:px-8">
+          <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-8 border-t border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:bottom-0 lg:-mx-8 lg:px-8">
             <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
           </div>
 
@@ -848,11 +943,21 @@ export default function SettingsPage() {
         {deleteStep === 1 ? (
           <>
             <p className="text-sm text-ink-soft">This can&apos;t be undone. You&apos;ll permanently lose:</p>
-            <ul className="mt-3 space-y-2 text-sm text-ink">
-              <li>Your rating and every review you&apos;ve earned</li>
-              <li>Your earnings history and tax records</li>
-              <li>All your messages and booking history</li>
-              <li>Any gigs you&apos;ve posted</li>
+            {/* Icon per consequence, in mobile's order. The glyphs are what make
+                this read as four distinct losses rather than one block of text —
+                this is the step that has to actually land before step 2. */}
+            <ul className="mt-3 space-y-2.5 text-sm text-ink">
+              {[
+                { Icon: Star, text: "Your rating and every review you’ve earned" },
+                { Icon: Banknote, text: "Your earnings history and tax records" },
+                { Icon: MessageCircle, text: "All your messages and booking history" },
+                { Icon: Briefcase, text: "Any gigs you’ve posted" },
+              ].map((row) => (
+                <li key={row.text} className="flex items-start gap-2.5">
+                  <row.Icon className="mt-0.5 size-4 shrink-0 text-urgent" />
+                  <span className="min-w-0">{row.text}</span>
+                </li>
+              ))}
             </ul>
             <p className="mt-4 rounded-xl bg-canvas p-3 text-sm text-ink-soft">
               Just need a break? Setting your work status to Offline hides you from new gigs without

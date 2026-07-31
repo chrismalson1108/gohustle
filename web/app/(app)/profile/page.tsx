@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Settings, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search,
+  Settings, Wallet, Receipt, Heart, ShieldCheck, GraduationCap, Gift, FileText, ChevronRight, Star, Bookmark, CalendarClock, Eye, Briefcase, Bell, BellRing, LifeBuoy, Search, AlertCircle, CreditCard,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BADGE_DEFS, collegeLine, computeEarnerInsights } from "@gohustlr/shared";
@@ -37,7 +37,7 @@ interface Review {
 export default function ProfilePage() {
   const u = useUser();
   const { refreshProfile, showToast } = u;
-  const { postedJobs, profileBadgeCount, bookings } = useJobs();
+  const { postedJobs, posterBookings, profileBadgeCount, bookings, getPaymentReadiness } = useJobs();
   const { user } = useAuth();
   const [alertCount, setAlertCount] = useState(0);
 
@@ -46,6 +46,9 @@ export default function ProfilePage() {
   const [refCode, setRefCode] = useState("");
   const [refCount, setRefCount] = useState(0);
   const [reviews, setReviews] = useState<Review[]>([]);
+  // null until checked — the nudge stays hidden rather than flashing "set up
+  // payouts" at someone who already has.
+  const [payReady, setPayReady] = useState<Awaited<ReturnType<typeof getPaymentReadiness>> | null>(null);
 
   const loadReviews = useCallback(async () => {
     if (!user) return;
@@ -71,7 +74,12 @@ export default function ProfilePage() {
       .eq("read", false)
       .eq("archived", false)
       .then(({ count }) => setAlertCount(count || 0), () => {});
-  }, [user, loadReviews]);
+    // Payout/card readiness drives the pinned nudge above the pane switch.
+    // Failure is non-blocking: payReady stays null and the nudge simply doesn't
+    // render, which is the right default — never tell someone their payouts are
+    // broken because a status call timed out.
+    getPaymentReadiness().then(setPayReady).catch(() => {});
+  }, [user, loadReviews, getPaymentReadiness]);
 
   const verifyIdentity = async () => {
     if (idv.verified) return;
@@ -108,7 +116,40 @@ export default function ProfilePage() {
 
   // Avg $/job is over VERIFIED bookings — earnings only accrue on verify.
   const completedCount = (bookings || []).filter((b) => b.status === "verified").length;
+  // "Jobs done" is derived from bookings that actually FINISHED (mutual
+  // completion or verified), never a counter bumped at apply time — the same
+  // rule mobile's stats strip uses.
+  const jobsDone = (bookings || []).filter((b) => b.status === "completed" || b.status === "verified").length;
   const insights = computeEarnerInsights(bookings);
+
+  // ── Payment readiness ───────────────────────────────────────────────────────
+  // Ported from mobile ProfileScreen. Every user can both earn and post, so both
+  // halves are always checked.
+  //
+  // 'pending' means Stripe is REVIEWING and the user has nothing to do — nagging
+  // them to "finish setup" in that state is a circular prompt with no exit, which
+  // is a bug mobile already fixed. Hence payoutWaiting suppresses the nudge.
+  const payoutState = payReady?.payout?.state ?? "none";
+  const payoutWaiting = payoutState === "pending";
+  const needsPayout = !!payReady && !payReady.payoutReady && !payoutWaiting;
+  const needsCard = !!payReady && !payReady.paymentMethodReady;
+  const payoutAlertCopy =
+    payoutState === "restricted"
+      ? { title: "There's a problem with your payout account", sub: "Tap for details and support →" }
+      : payReady?.payout?.hasAccount
+        ? { title: "Finish your payout setup", sub: "Stripe still needs a few details →" }
+        : { title: "Set up payouts to get paid", sub: "Connect your bank to receive earnings →" };
+  const paymentAlert =
+    needsPayout && needsCard
+      ? { title: "Finish setting up payments", sub: "Connect a bank and add a card →" }
+      : needsPayout
+        ? payoutAlertCopy
+        : needsCard
+          ? { title: "Add a payment method to hire", sub: "Save a card so you can book gigs →" }
+          : null;
+  // The always-visible Payments row says what's actually true, rather than one
+  // hard-coded string that reads the same whether or not you can be paid.
+  const paymentsSub = !payReady ? "Manage your payment info" : "Manage payout & payment methods";
 
   const college = collegeLine({ school: u.school, major: u.major, gradYear: u.gradYear });
   const workerReviews = reviews.filter((r) => r.role === "earner");
@@ -145,13 +186,31 @@ export default function ProfilePage() {
         title="You"
         width="content"
         right={
-          <Link
-            href="/profile/settings"
-            aria-label="Profile settings"
-            className="flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
-          >
-            <Settings className="size-5" />
-          </Link>
+          // Bell + gear, pinned to the header exactly as on mobile's You tab, so
+          // both live OUTSIDE the Progress/Profile switch and stay reachable from
+          // either pane. The bell duplicates the "Alerts" row on purpose — it is
+          // the one-tap path; the row is the discoverable one.
+          <div className="flex items-center gap-1">
+            <Link
+              href="/notifications"
+              aria-label={alertCount > 0 ? `Alerts, ${alertCount} unread` : "Alerts"}
+              className="relative flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
+            >
+              <Bell className="size-5" />
+              {alertCount > 0 && (
+                <span className="absolute right-1.5 top-1.5 inline-flex min-w-4 shrink-0 items-center justify-center rounded-full bg-urgent px-1 text-[10px] font-bold leading-4 text-white">
+                  {alertCount > 9 ? "9+" : alertCount}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/profile/settings"
+              aria-label="Profile settings"
+              className="flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
+            >
+              <Settings className="size-5" />
+            </Link>
+          </div>
         }
       >
         <div className="mt-4 flex items-center gap-4">
@@ -188,14 +247,27 @@ export default function ProfilePage() {
             {college && <p className="mt-0.5 truncate text-sm font-semibold text-ink-soft">{college}</p>}
           </div>
         </div>
-        {/* Capped: a level bar stretched across 1120px of desktop reads as a
-            loading bar rather than progress. */}
-        <div className="mt-4 max-w-lg">
-          <XPBar levelInfo={u.levelInfo} xp={u.xp} />
-        </div>
       </PageHeader>
 
       <PageContainer width="content" className="space-y-5">
+        {/* Pinned ABOVE the pane switch, exactly as on mobile: "you can't get
+            paid" must never be one tab away on the page people open most. */}
+        {paymentAlert && (
+          <Link
+            href="/profile/payouts"
+            className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] transition hover:bg-canvas"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-canvas">
+              <CreditCard className="size-[18px] text-primary" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block line-clamp-2 text-sm font-semibold text-ink">{paymentAlert.title}</span>
+              <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-ink-muted">{paymentAlert.sub}</span>
+            </span>
+            <ChevronRight className="size-[18px] shrink-0 text-ink-muted" />
+          </Link>
+        )}
+
         {/* Progress vs Profile, the split the mobile You tab uses. Deliberately a
             client-state toggle on ONE page rather than the native swipe pager or
             two routes: on web a second URL for the same identity page just hurts
@@ -232,8 +304,8 @@ export default function ProfilePage() {
 
         {pane === "progress" ? (
           <>
-        {/* Stats — XP lives in the header level bar, so the third stat shows the
-            trust-relevant rating instead of duplicating XP.
+        {/* Stats — the same three mobile opens the Progress pane with, in the same
+            order: Jobs done / Total earned / Avg rating.
 
             One card with three hairline-separated columns, as on mobile, rather
             than three separate tiles. The old version sized its values with an
@@ -244,9 +316,9 @@ export default function ProfilePage() {
             both smaller and correct at every width. */}
         <div className="grid grid-cols-3 rounded-2xl bg-white px-2 py-4 shadow-[var(--shadow-card)]">
           {[
-            { label: "Earned", value: money(u.earningsTotal) },
-            { label: "Streak", value: `${u.streakDays}w` },
-            { label: "Rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)}★` : "—" },
+            { label: "Jobs done", value: String(jobsDone) },
+            { label: "Total earned", value: money(u.earningsTotal) },
+            { label: "Avg rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)} ★` : "—" },
           ].map((s, i) => (
             <div
               key={s.label}
@@ -259,10 +331,13 @@ export default function ProfilePage() {
         </div>
 
         {/* Goals, earnings and insights — all moved off My Jobs, which is now gigs
-            in flight and nothing else. Everything here reads from context. */}
-        <MoneyGoalCard />
+            in flight and nothing else. Everything here reads from context.
 
-        <WeeklyGoalsCard />
+            The order below is mobile's Progress pane verbatim: money goal →
+            earnings → weekly goals → challenges → XP → insights → badges →
+            Gigs & earnings → Saved & alerts. It is deliberate, not incidental —
+            money first, XP and insights last. */}
+        <MoneyGoalCard />
 
         {/* Container queries, not viewport ones: `main` is the query container, so
             these count the columns the card ACTUALLY has rather than guessing from
@@ -274,7 +349,7 @@ export default function ProfilePage() {
               { label: "Today", value: money(u.earningsToday) },
               { label: "This week", value: money(u.earningsWeek) },
               { label: "All time", value: money(u.earningsTotal) },
-              { label: "Avg / job", value: completedCount ? money(u.earningsTotal / completedCount) : "—" },
+              { label: "Avg/job", value: completedCount ? money(u.earningsTotal / completedCount) : "—" },
             ].map((s) => (
               <div key={s.label} className="min-w-0 rounded-xl bg-canvas px-3 py-2.5 text-center">
                 <p className="truncate text-base font-bold text-ink">{s.value}</p>
@@ -284,13 +359,39 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        <WeeklyGoalsCard />
+
+        {u.challenges.length > 0 && (
+          <section>
+            <h2 className="mb-2 ml-1 text-[13px] font-semibold text-ink-muted">Challenges</h2>
+            <div className="grid gap-3 @4xl:grid-cols-2">
+              {u.challenges.map((c) => (
+                <ChallengeCard key={c.id} challenge={c} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* XP sits low in the pane, below money and challenges, because that is
+            where mobile puts it — it is the least important number here. That is
+            also why the level bar left the page header. The streak rides along:
+            it was the strip's third stat before the strip took mobile's
+            Jobs done / Total earned / Avg rating, and it had nowhere else to go. */}
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+          <XPBar levelInfo={u.levelInfo} xp={u.xp} />
+          <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-divider pt-3">
+            <span className="min-w-0 truncate text-[13px] font-semibold text-ink">Streak</span>
+            <span className="shrink-0 text-[13px] font-bold text-ink">{u.streakDays}w</span>
+          </div>
+        </div>
+
         {insights && insights.jobCount > 0 && (
           <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
             <p className="mb-3 text-[13px] font-semibold text-ink-muted">Your insights</p>
             <div className="grid grid-cols-1 gap-2 @2xl:grid-cols-3">
               {[
                 { label: "Top area", value: insights.topArea?.label ?? "—" },
-                { label: "Busiest day", value: insights.busiestDay?.label ?? "—" },
+                { label: "Busiest", value: insights.busiestDay?.label ?? "—" },
                 {
                   label: "Best day",
                   value: insights.mostProfitableDay
@@ -306,39 +407,6 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
-
-        {u.challenges.length > 0 && (
-          <section>
-            <h2 className="mb-2 ml-1 text-[13px] font-semibold text-ink-muted">Challenges</h2>
-            <div className="grid gap-3 @4xl:grid-cols-2">
-              {u.challenges.map((c) => (
-                <ChallengeCard key={c.id} challenge={c} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        <div className="grid gap-5 @4xl:grid-cols-2">
-          <Group title="Gigs & Earnings">
-            {postedJobs.length > 0 && (
-              <Row
-                icon={Briefcase}
-                title="Manage my gigs"
-                sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? "s" : ""} attention` : "Posted gigs & booking requests"}
-                href="/hiring"
-                badge={profileBadgeCount || undefined}
-              />
-            )}
-            <Row icon={Wallet} title="Payouts & payments" sub="Manage payout & payment methods" href="/profile/payouts" />
-            <Row icon={Receipt} title="Tax Center" sub="Track expenses & export for taxes" href="/profile/taxes" />
-          </Group>
-
-          <Group title="Saved & Alerts">
-            <Row icon={Bell} title="Alerts" sub="Booking updates & gig matches" href="/notifications" badge={alertCount || undefined} badgeTone="primary" />
-            <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
-            <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
-          </Group>
-        </div>
 
         {/* Badges — auto-fill rather than a wrap of fixed 80px tiles, so the row
             packs 3-up on a 320px phone and keeps filling a 1120px column. */}
@@ -369,59 +437,89 @@ export default function ProfilePage() {
             })}
           </div>
         </section>
+
+        <div className="grid gap-5 @4xl:grid-cols-2">
+          <Group title="Gigs & earnings">
+            {/* Shown to anyone with a posting history — a listing OR a booking on
+                one. Someone whose only gig is finished and archived still needs
+                the way back into it. */}
+            {(postedJobs.length > 0 || posterBookings.length > 0) && (
+              <Row
+                icon={Briefcase}
+                title="Manage my gigs"
+                sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? "s" : ""} attention` : "Posted gigs & booking requests"}
+                href="/hiring"
+                badge={profileBadgeCount || undefined}
+              />
+            )}
+            <Row icon={Wallet} title="Payments" sub={paymentsSub} href="/profile/payouts" />
+            <Row icon={Receipt} title="Tax Center" sub="Track expenses & export for taxes" href="/profile/taxes" />
+          </Group>
+
+          <Group title="Saved & alerts">
+            <Row icon={Bell} title="Alerts" sub="Booking updates & gig matches" href="/notifications" badge={alertCount || undefined} badgeTone="primary" />
+            <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
+            <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
+          </Group>
+        </div>
           </>
         ) : (
           <>
-        {/* Primary action — tied to the identity header above. */}
+        {/* Primary action — tied to the identity header above. Web-only: mobile
+            reaches settings from the pinned gear alone, which this page also has,
+            but a full-width CTA is the desktop affordance people look for. */}
         <Link href="/profile/settings" className={buttonClasses("primary", "lg", "w-full sm:w-auto sm:min-w-[18rem]")}>
           <Settings className="size-[18px] shrink-0" />
           <span className="truncate">Edit Profile &amp; Settings</span>
         </Link>
 
-        <div className="grid gap-5 @4xl:grid-cols-2">
-        <Group title="Preferences">
-          <Row icon={BellRing} title="Notification settings" sub="Push & email preferences" href="/profile/notifications" />
-          <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
-        </Group>
-
-        <Group title="Profile & Trust">
+        {/* Trust opens the Profile pane on mobile, ahead of reviews and settings —
+            it is what a stranger judges you on. */}
+        <Group title="Profile & trust">
           <Row icon={Eye} title="View my public profile" sub="See exactly how others see you" href={user ? `/u/${user.id}` : "/profile"} />
           <Row
-            icon={ShieldCheck}
-            tone={idv.verified ? "success" : "primary"}
-            title={idv.verified ? "Identity verified" : idv.status === "pending" ? "Verification in progress" : "Verify your identity"}
-            sub={idv.verified ? "Your profile shows a Verified badge" : idv.status === "pending" ? "Tap to finish or resume your ID check" : "Get a Verified badge to build trust"}
+            icon={idv.status === "rejected" && !idv.verified ? AlertCircle : ShieldCheck}
+            tone={idv.verified ? "success" : idv.status === "rejected" ? "urgent" : "primary"}
+            title={
+              idv.verified
+                ? "Identity verified"
+                : idv.status === "pending"
+                  ? "Verification in progress"
+                  : idv.status === "rejected"
+                    ? "Verification failed"
+                    : "Verify your identity"
+            }
+            sub={
+              idv.verified
+                ? "Your profile shows a Verified badge"
+                : idv.status === "pending"
+                  ? "Tap to finish or resume your ID check"
+                  : idv.status === "rejected"
+                    ? "We couldn't verify your ID — tap to try again"
+                    : "Get a Verified badge to build trust"
+            }
             onClick={idv.verified ? undefined : verifyIdentity}
             disabled={idv.verified}
           />
           <Row
             icon={GraduationCap}
             tone={u.studentVerified ? "success" : "primary"}
-            title={u.studentVerified ? "Verified Student" : "Verify student status"}
+            title={u.studentVerified ? (u.studentStatus === "alumni" ? "Verified Alumni" : "Verified Student") : "Verify Student Status"}
             sub={u.studentVerified ? "Your profile shows a Verified Student badge" : "Confirm your .edu email for a badge"}
             href={u.studentVerified ? undefined : "/verify-student"}
             disabled={u.studentVerified}
           />
         </Group>
 
-        <Group title="Grow">
-          <Row icon={Search} title="Find people" sub="Search anyone by name or username" href="/people" />
-          <Row
-            icon={Gift}
-            title="Invite friends"
-            sub={refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · share your code` : "Share your referral code"}
-            onClick={invite}
-          />
-        </Group>
-        </div>
-
         {/* Reviews received */}
         <section>
           <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Reviews I&apos;ve received</h2>
           {reviews.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span className="text-ink-soft">As a worker: <span className="font-bold text-ink">{avg(workerReviews)}★</span> ({workerReviews.length})</span>
-              <span className="text-ink-soft">As a client: <span className="font-bold text-ink">{avg(clientReviews)}★</span> ({clientReviews.length})</span>
+              {/* No star glyph at all — mobile's breakdown is "As a worker: 4.8 (3)".
+                  `avg` already returns an em dash for a role with no reviews. */}
+              <span className="text-ink-soft">As a worker: <span className="font-bold text-ink">{avg(workerReviews)}</span> ({workerReviews.length})</span>
+              <span className="text-ink-soft">As a client: <span className="font-bold text-ink">{avg(clientReviews)}</span> ({clientReviews.length})</span>
             </div>
           )}
           {reviews.length === 0 ? (
@@ -460,7 +558,9 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* Posted gigs */}
+        {/* Posted gigs — web-only, kept from the previous layout. Mobile has no
+            equivalent list on this tab (it lives on Hiring); here it sits with
+            the other "how you look to other people" content. */}
         {postedJobs.length > 0 && (
           <section>
             <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Your gigs</h2>
@@ -475,7 +575,24 @@ export default function ProfilePage() {
           </section>
         )}
 
-        <Group title="Support & Legal">
+        <div className="grid gap-5 @4xl:grid-cols-2">
+          <Group title="Preferences">
+            <Row icon={BellRing} title="Notification settings" sub="Push & email preferences" href="/profile/notifications" />
+            <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
+          </Group>
+
+          <Group title="Grow">
+            <Row icon={Search} title="Find people" sub="Search anyone by name or username" href="/people" />
+            <Row
+              icon={Gift}
+              title="Invite friends"
+              sub={refCount > 0 ? `${refCount} friend${refCount !== 1 ? "s" : ""} joined · share your code` : "Share your referral code"}
+              onClick={invite}
+            />
+          </Group>
+        </div>
+
+        <Group title="Legal & support">
           <Row icon={FileText} title="Terms of Service" href="/legal/terms" />
           <Row icon={FileText} title="Privacy Policy" href="/legal/privacy" />
           <Row icon={FileText} title="Independent Contractor Agreement" href="/legal/contractor" />
