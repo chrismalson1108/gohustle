@@ -380,7 +380,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     supabase
       .from("user_challenges")
       .upsert(
-        { user_id: user.id, challenge_id: id, progress: (c?.progress || 0) + delta, target: c?.target || 1 },
+        // updated_at is what dates this progress into a period — livingProgress()
+        // shows the stored value only when it falls in the CURRENT day/week and
+        // returns 0 otherwise. The column's `default now()` fires on INSERT only, so
+        // an upsert that conflicts kept the original timestamp forever: after the
+        // first period rolled, every challenge on web read 0 no matter what the user
+        // did. Mobile has always written it explicitly.
+        {
+          user_id: user.id,
+          challenge_id: id,
+          progress: (c?.progress || 0) + delta,
+          target: c?.target || 1,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: "user_id,challenge_id" },
       )
       .then(({ error }) => {
