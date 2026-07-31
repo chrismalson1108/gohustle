@@ -2,7 +2,6 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
@@ -44,14 +43,15 @@ function PostGigInner() {
 
   return (
     <div>
+      {/* width="form" on BOTH the header and the container — they have to agree
+          or the title floats out of alignment with the fields under it. */}
       <PageHeader
-        title={fromJob ? "Duplicate Gig" : "Post a Gig"}
+        width="form"
+        back={{ href: "/hiring", label: "Hire" }}
+        title={fromJob ? "Duplicate gig" : "Post a gig"}
         subtitle={fromJob ? "Review the details, then post your copy" : "Hire a motivated college student"}
       />
-      <PageContainer>
-        <button onClick={() => router.back()} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
+      <PageContainer width="form">
         {waitingForDuplicate ? (
           <FullPageSpinner />
         ) : (

@@ -25,25 +25,51 @@
   --color-ink-soft: #5b5570;
   --color-ink-muted: #9a93ad;
   --color-line: #e8e2d5;
+  /* Rules INSIDE a card (the poster row on a job card, list separators), vs
+     --color-line for a component's outer border. This token was missing while
+     `border-divider` / `divide-divider` were used in 9 places — Tailwind v4
+     generates no utility for an undefined token, so each of those hairlines
+     silently fell back to currentColor and rendered near-black ink. */
+  --color-divider: #f0ebdf;
   --color-canvas: #f7f3ec;
   --color-success: #15803d;
   --color-success-light: #e7f8ee;
 
-  --radius-xl: 1rem;
-  --radius-2xl: 1.25rem;
-  --radius-3xl: 1.75rem;
+  /* ── Radius system ────────────────────────────────────────────────────────
+     Four sizes only, mirroring `radii` in shared/theme.js. Mixing 6/8/12/16/22
+     across one screen is the "AI template" tell the mobile app moved away from,
+     so the stock Tailwind steps are RETUNED to land on the system values:
+       rounded-lg  → 10px  small inline chips, badges, tags
+       rounded-xl  → 14px  inputs, buttons, controls
+       rounded-2xl → 20px  cards, panels
+       rounded-3xl → 28px  bottom sheets / modals
+       rounded-full → true pills only (chips, avatars, the tab bar)
+     Semantic aliases below are preferred in new code. */
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+  --radius-3xl: 28px;
 
-  --shadow-sm: 0 1px 4px rgba(24, 18, 49, 0.06);
-  --shadow-card: 0 2px 8px rgba(24, 18, 49, 0.07);
-  --shadow-soft: 0 4px 16px rgba(63, 37, 254, 0.12);
-  --shadow-pop: 0 10px 30px rgba(63, 37, 254, 0.2);
+  --radius-chip: 10px;
+  --radius-control: 14px;
+  --radius-card: 20px;
+  --radius-sheet: 28px;
 
-  /* Header/hero surfaces stay in the Electric Blue family so white text and the
-     existing white-on-dark header children remain legible. Hustle Orange lives in
-     the wordmark, pay pills, stars and hero accents instead. */
-  --background-image-brand: linear-gradient(135deg, #3f25fe, #2b17c2);
-  --background-image-earn: linear-gradient(135deg, #4733ff, #1e2a8f);
-  --background-image-gold: linear-gradient(160deg, #5538ff, #2b17c2);
+  /* ── Weight ceiling ───────────────────────────────────────────────────────
+     Mobile caps at 700. Black/extrabold weights are one of the AI-template
+     tells, so both utilities resolve to 700 — a backstop that keeps any future
+     `font-black` from reintroducing the old look. */
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
+
+  /* ── Elevation ────────────────────────────────────────────────────────────
+     Neutral black, low opacity — mirrors `shadows` in shared/theme.js.
+     Brand-tinted shadows read as "glow" and were removed from mobile; the
+     `soft`/`pop` names are kept (many call sites) but are no longer purple. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.14);
 }
 
 /* Font tokens reference next/font runtime CSS variables; `@theme inline` keeps the
@@ -81,17 +107,11 @@ h2 {
   letter-spacing: -0.02em;
 }
 
-/* Brand gradient helpers used across hero/header surfaces. All three are in the
-   Electric Blue family and carry white text. */
-.bg-brand {
-  background-image: var(--background-image-brand);
-}
-.bg-earn {
-  background-image: var(--background-image-earn);
-}
-.bg-gold {
-  background-image: var(--background-image-gold);
-}
+/* The `.bg-brand` / `.bg-earn` / `.bg-gold` gradient helpers were REMOVED along
+   with the gradient hero headers they backed (mobile deleted GradientHeader;
+   web's PageHeader is now flat). `bg-gold` still resolves — as the flat Hustle
+   Orange from --color-gold, which is what the remaining call sites want.
+   Marketing surfaces keep their gradients inline; this is the app shell only. */
 
 /* Signature Hustlr treatment: orange mark with an Action-Red offset shadow,
    echoing the logo's red drop. Use on the wordmark / hero display text. */
@@ -104,6 +124,26 @@ h2 {
   scrollbar-width: thin;
   scrollbar-color: #d8d0bf transparent;
 }
+
+/* Horizontal rails (category chips, segmented controls) scroll but shouldn't
+   show a bar — a visible track under a chip row reads as a rendering artifact. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Deliberately NO `overflow-x: hidden` on the root. It is tempting as a
+   guarantee that the page never scrolls sideways, but on html/body it
+   propagates to the viewport and clips instead — turning "this element is too
+   wide" into silently truncated content, and making documentElement.scrollWidth
+   useless as a diagnostic. Overflow is prevented at the source instead: every
+   flex/grid row carries `min-w-0` on its text column and `truncate` on the text
+   (see components/JobCard.tsx), and grids use auto-fill with a `min(…,100%)`
+   floor so a track can never exceed its container. If a page ever does scroll
+   sideways, that is a bug to fix at the offending element, not to mask here. */
 
 /* Leaflet map container needs an explicit height wherever it's used. */
 .leaflet-container {

@@ -40,7 +40,7 @@ export default function Modal({ open, onClose, title, children, footer, size = "
       >
         {title && (
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <h2 className="text-lg font-black text-ink">{title}</h2>
+            <h2 className="text-lg font-bold text-ink">{title}</h2>
             <button onClick={onClose} className="rounded-full p-1.5 text-ink-muted hover:bg-line/60" aria-label="Close">
               <X className="size-5" />
             </button>

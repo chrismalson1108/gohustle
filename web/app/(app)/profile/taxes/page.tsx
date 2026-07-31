@@ -118,6 +118,11 @@ export default function TaxesPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Pending destructive action — drives the confirm Modal below.
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: "expense"; row: Expense } | { kind: "income"; row: IncomeEntry } | null
+  >(null);
+
   const load = useCallback(async () => {
     if (!user) return;
     try {
@@ -258,23 +263,28 @@ export default function TaxesPage() {
     setSaving(false);
   };
 
-  const handleDeleteExpense = async (exp: Expense) => {
-    if (!window.confirm(`Delete this expense?\n${categoryMeta(exp.category).label} · ${money(exp.amount)}`)) return;
-    setExpenses((p) => p.filter((e) => e.id !== exp.id));
-    try {
-      await deleteExpense(exp.id);
-    } catch {
-      load();
-    }
-  };
-
-  const handleDeleteIncome = async (inc: IncomeEntry) => {
-    if (!window.confirm(`Delete this income entry?\n${sourceMeta(inc.source).label} · ${money(inc.amount)}`)) return;
-    setIncome((p) => p.filter((e) => e.id !== inc.id));
-    try {
-      await deleteIncome(inc.id);
-    } catch {
-      load();
+  // Deletes confirm through the shared Modal, like every other destructive action
+  // in the app (settings delete-account, hiring delete-gig). `window.confirm` was
+  // an unstyled, render-blocking OS dialog prefixed with the site's hostname on
+  // mobile Safari. The optimistic remove + reload-on-failure behaviour is unchanged.
+  const confirmDelete = async () => {
+    const target = pendingDelete;
+    if (!target) return;
+    setPendingDelete(null);
+    if (target.kind === "expense") {
+      setExpenses((p) => p.filter((e) => e.id !== target.row.id));
+      try {
+        await deleteExpense(target.row.id);
+      } catch {
+        load();
+      }
+    } else {
+      setIncome((p) => p.filter((e) => e.id !== target.row.id));
+      try {
+        await deleteIncome(target.row.id);
+      } catch {
+        load();
+      }
     }
   };
 
@@ -306,34 +316,46 @@ export default function TaxesPage() {
 
   return (
     <div>
-      <PageHeader title="Tax Center" subtitle="Track income & deductible expenses" variant="earn">
-        <div className="mt-5 rounded-2xl bg-white/15 p-5">
-          <p className="text-xs font-bold text-white/75">{year} net profit</p>
-          <p className="text-3xl font-black text-white">{money(summary.net)}</p>
-          <div className="mt-4 flex items-stretch gap-3 text-white">
+      <PageHeader title="Tax Center" subtitle="Track income & deductible expenses" width="form" back="/profile" />
+
+      <PageContainer width="form" className="space-y-4 pb-8">
+        {/* Year summary — flat white cards on the page canvas, mirroring mobile's
+            ExpensesScreen summary card. It used to be a translucent glass panel
+            floating on the gradient hero, split by two hairline rules into a 3-up
+            row that left each stat ~82px at 375px ("Set aside ~27%" barely fit).
+            Same numbers, same order, no gradient and no dividers. */}
+        <section>
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+            <p className="text-xs font-medium text-ink-muted">{year} net profit</p>
+            <p className="mt-1 truncate text-[32px] font-bold leading-10 tracking-[-0.6px] text-ink">
+              {money(summary.net)}
+            </p>
+          </div>
+          {/* Container query, not a viewport one: this column is capped at the form
+              measure, so it stacks on a phone and goes 3-up as soon as the content
+              box — not the window — has room for it. */}
+          <div className="mt-3 grid grid-cols-1 gap-3 @lg:grid-cols-3">
             <SummaryStat label="Income" value={money(summary.grossIncome)} />
-            <div className="w-px bg-white/25" />
             <SummaryStat label="Expenses" value={money(summary.expTotal)} />
-            <div className="w-px bg-white/25" />
             <SummaryStat label="Set aside ~27%" value={money(summary.setAside)} />
           </div>
-        </div>
-      </PageHeader>
+        </section>
 
-      <PageContainer className="space-y-4">
-        {/* Segmented control */}
-        <div className="flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        {/* Segmented control — pill track, no shadow on the active segment, and the
+            weight stays at 600 in both states so switching tabs can't re-measure. */}
+        <div className="flex w-full rounded-full border border-line bg-white p-1">
           <SegmentBtn label="Expenses" active={tab === "expenses"} onClick={() => setTab("expenses")} />
           <SegmentBtn label="Income" active={tab === "income"} onClick={() => setTab("income")} />
         </div>
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Button onClick={openAdd} fullWidth>
-            <Plus className="size-4" /> {tab === "expenses" ? "Add Expense" : "Add Income"}
+          <Button onClick={openAdd} fullWidth className="min-w-0">
+            <Plus className="size-4 shrink-0" />
+            <span className="truncate">{tab === "expenses" ? "Add Expense" : "Add Income"}</span>
           </Button>
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="size-4" /> Export
+          <Button variant="outline" className="shrink-0" onClick={handleExport}>
+            <Download className="size-4 shrink-0" /> Export
           </Button>
         </div>
 
@@ -345,14 +367,14 @@ export default function TaxesPage() {
 
         {/* By-job expense breakdown */}
         {tab === "expenses" && jobGroups.length > 0 && (
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">By job · {year}</p>
-            <ul className="space-y-1.5">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+            <p className="mb-2 text-[13px] font-semibold text-ink-muted">By job · {year}</p>
+            <ul>
               {jobGroups.map((g) => (
-                <li key={g.bookingId} className="flex items-center gap-2">
-                  <Briefcase className="size-3.5 shrink-0 text-primary" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{g.title}</span>
-                  <span className="font-black text-ink">{money(g.total)}</span>
+                <li key={g.bookingId} className="flex items-center gap-2 py-1.5">
+                  <Briefcase className="size-3.5 shrink-0 text-ink-muted" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{g.title}</span>
+                  <span className="shrink-0 text-[13px] font-semibold text-ink">{money(g.total)}</span>
                 </li>
               ))}
             </ul>
@@ -367,7 +389,7 @@ export default function TaxesPage() {
         ) : tab === "expenses" ? (
           expenses.length === 0 ? (
             <EmptyState
-              icon={<Receipt className="size-12" />}
+              icon={<Receipt className="size-10" />}
               title="No expenses yet"
               body='Tap "Add Expense" to start tracking write-offs.'
             />
@@ -381,18 +403,21 @@ export default function TaxesPage() {
                 return (
                   <li
                     key={exp.id}
-                    className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)] ring-1 ring-line/70"
+                    className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]"
                   >
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-canvas text-ink-soft">
                       <Icon className="size-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-bold text-ink">{meta.label}</p>
-                      {exp.description && <p className="truncate text-xs text-ink-soft">{exp.description}</p>}
-                      <div className="flex items-center gap-2">
-                        <p className="text-[11px] text-ink-muted">{exp.date}</p>
+                      <p className="truncate text-sm font-semibold text-ink">{meta.label}</p>
+                      {exp.description && (
+                        <p className="mt-0.5 truncate text-xs leading-4 text-ink-soft">{exp.description}</p>
+                      )}
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                        <p className="shrink-0 text-xs text-ink-muted">{exp.date}</p>
                         {exp.booking_id && (
-                          <span className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                          // Neutral tag: the row's one piece of emphasis is the amount.
+                          <span className="inline-flex min-w-0 shrink items-center gap-1 rounded-lg bg-canvas px-1.5 py-0.5 text-[11px] font-medium text-ink-soft">
                             <Briefcase className="size-2.5 shrink-0" />
                             <span className="truncate">{jobTitleFor[exp.booking_id] || "Gig"}</span>
                           </span>
@@ -401,17 +426,21 @@ export default function TaxesPage() {
                     </div>
                     {thumb && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb} alt="receipt" className="size-9 rounded-xl object-cover" />
+                      <img src={thumb} alt="receipt" className="size-9 shrink-0 rounded-lg bg-divider object-cover" />
                     )}
-                    <div className="text-right">
-                      <p className="font-black text-ink">{money(exp.amount)}</p>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[15px] font-bold text-ink">{money(exp.amount)}</p>
                       {exp.miles != null && (
-                        <p className="text-[10px] font-bold text-ink-muted">{exp.miles.toFixed(1)} mi</p>
+                        <p className="text-[11px] font-medium text-ink-muted">{exp.miles.toFixed(1)} mi</p>
                       )}
                     </div>
                     <button
-                      onClick={() => handleDeleteExpense(exp)}
-                      className="rounded-full p-1.5 text-urgent hover:bg-urgent/10"
+                      onClick={() => setPendingDelete({ kind: "expense", row: exp })}
+                      // An explicit 44px box. Padding around the glyph only reached
+                      // 36px (preflight sets `svg { display: block }`, so there is no
+                      // line-box strut to help), and `-m-1` pulls the LAYOUT in — it
+                      // does not enlarge a hit area.
+                      className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-urgent transition hover:bg-urgent/10"
                       aria-label="Delete expense"
                     >
                       <Trash2 className="size-4" />
@@ -423,7 +452,7 @@ export default function TaxesPage() {
           )
         ) : income.length === 0 ? (
           <EmptyState
-            icon={<Wallet className="size-12" />}
+            icon={<Wallet className="size-10" />}
             title="No cash income logged"
             body='Tap "Add Income" to log cash payments and tips.'
           />
@@ -435,20 +464,24 @@ export default function TaxesPage() {
               return (
                 <li
                   key={inc.id}
-                  className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)] ring-1 ring-line/70"
+                  className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]"
                 >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-light text-accent-deep">
+                  {/* Money that has actually landed — success green, same as mobile. */}
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-light text-success">
                     <Icon className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold text-ink">{meta.label}</p>
-                    {inc.description && <p className="truncate text-xs text-ink-soft">{inc.description}</p>}
-                    <p className="text-[11px] text-ink-muted">{inc.date}</p>
+                    <p className="truncate text-sm font-semibold text-ink">{meta.label}</p>
+                    {inc.description && (
+                      <p className="mt-0.5 truncate text-xs leading-4 text-ink-soft">{inc.description}</p>
+                    )}
+                    <p className="mt-1 truncate text-xs text-ink-muted">{inc.date}</p>
                   </div>
-                  <p className="font-black text-accent-deep">{money(inc.amount)}</p>
+                  <p className="shrink-0 text-[15px] font-bold text-success">{money(inc.amount)}</p>
                   <button
-                    onClick={() => handleDeleteIncome(inc)}
-                    className="rounded-full p-1.5 text-urgent hover:bg-urgent/10"
+                    onClick={() => setPendingDelete({ kind: "income", row: inc })}
+                    // Same explicit 44px box as the expense delete above.
+                    className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-urgent transition hover:bg-urgent/10"
                     aria-label="Delete income"
                   >
                     <Trash2 className="size-4" />
@@ -479,10 +512,10 @@ export default function TaxesPage() {
         <div className="space-y-4">
           <div>
             <Label>Amount</Label>
-            <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-4 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
-              <span className="text-xl font-black text-primary">$</span>
+            <div className="flex min-h-14 items-center gap-1.5 rounded-xl border border-line bg-white px-4 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+              <span className="shrink-0 text-lg font-semibold text-ink-muted">$</span>
               <input
-                className="w-full bg-transparent py-3 text-xl font-bold text-ink outline-none placeholder:text-ink-muted"
+                className="w-full min-w-0 bg-transparent py-3 text-xl font-semibold text-ink outline-none placeholder:text-ink-muted"
                 placeholder="0.00"
                 inputMode="decimal"
                 value={amount}
@@ -561,18 +594,18 @@ export default function TaxesPage() {
               {receiptPreview ? (
                 <div className="relative inline-block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={receiptPreview} alt="receipt preview" className="size-24 rounded-xl object-cover" />
+                  <img src={receiptPreview} alt="receipt preview" className="size-24 rounded-xl bg-divider object-cover" />
                   <button
                     onClick={clearReceipt}
-                    className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-urgent text-white ring-2 ring-white"
+                    className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-urgent text-white ring-1 ring-white"
                     aria-label="Remove receipt"
                   >
                     <X className="size-3.5" />
                   </button>
                 </div>
               ) : (
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-primary bg-primary-light py-3.5 text-sm font-bold text-primary">
-                  <Camera className="size-5" /> Attach receipt
+                <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-canvas py-3.5 text-sm font-semibold text-ink-soft transition hover:border-primary hover:text-primary">
+                  <Camera className="size-5 shrink-0" /> Attach receipt
                   <input type="file" accept="image/*" className="hidden" onChange={onPickReceipt} />
                 </label>
               )}
@@ -582,15 +615,48 @@ export default function TaxesPage() {
           {formError && <p className="text-sm font-medium text-urgent">{formError}</p>}
         </div>
       </Modal>
+
+      {/* Delete confirm — replaces two `window.confirm()` calls. */}
+      <Modal
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        title={pendingDelete?.kind === "income" ? "Delete this income entry?" : "Delete this expense?"}
+        size="sm"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" fullWidth onClick={() => setPendingDelete(null)}>
+              Keep it
+            </Button>
+            <Button variant="danger" fullWidth onClick={confirmDelete}>
+              <Trash2 className="size-4 shrink-0" /> Delete
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          {pendingDelete && (
+            <span className="font-semibold text-ink">
+              {pendingDelete.kind === "expense"
+                ? categoryMeta(pendingDelete.row.category).label
+                : sourceMeta(pendingDelete.row.source).label}{" "}
+              · {money(pendingDelete.row.amount)}
+            </span>
+          )}
+          <br />
+          This can&apos;t be undone, and it will drop out of your {year} tax summary.
+        </p>
+      </Modal>
     </div>
   );
 }
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex-1">
-      <p className="text-[10px] font-semibold text-white/70">{label}</p>
-      <p className="mt-0.5 text-sm font-black text-white">{value}</p>
+    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+      {/* min-h-8 reserves two lines so "Set aside ~27%" wraps instead of
+          truncating and all three values still share a baseline. */}
+      <p className="min-h-8 text-xs font-medium leading-4 text-ink-muted">{label}</p>
+      <p className="mt-0.5 truncate text-[15px] font-semibold text-ink">{value}</p>
     </div>
   );
 }
@@ -599,9 +665,10 @@ function SegmentBtn({ label, active, onClick }: { label: string; active: boolean
   return (
     <button
       onClick={onClick}
+      aria-pressed={active}
       className={classNames(
-        "flex-1 rounded-xl py-2 text-sm font-bold transition",
-        active ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+        "flex-1 truncate rounded-full px-2 py-2.5 text-[13px] font-semibold transition",
+        active ? "bg-primary text-white" : "text-ink-soft hover:text-ink",
       )}
     >
       {label}
@@ -622,8 +689,9 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={classNames(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition",
+        "inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold transition",
         active ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:border-primary/50",
       )}
     >

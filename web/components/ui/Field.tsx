@@ -1,8 +1,13 @@
 import React from "react";
 import { classNames } from "@/lib/format";
 
+// text-base (16px) at the small end is deliberate, not a style choice: iOS
+// Safari force-zooms the page on focus for any input under 16px, which is why
+// every text field in the product used to punch the viewport. Drops to the
+// mobile app's 15px only from `sm` up, where no touch keyboard is involved.
+// Radius is `xl` = 14px, the control step of the shared radius scale.
 const base =
-  "w-full rounded-2xl border border-line bg-white px-4 py-3 text-[15px] text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-ink-muted disabled:opacity-60";
+  "w-full rounded-xl border border-line bg-white px-4 py-3 text-base text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-ink-muted disabled:opacity-60 sm:text-[15px]";
 
 export function Label({
   children,

@@ -5,18 +5,22 @@ import { classNames } from "@/lib/format";
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline";
 type Size = "sm" | "md" | "lg";
 
+// Flat fills, no shadow. The primary button used to carry --shadow-soft, which
+// was a purple glow — the single most repeated AI-template tell in the app.
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-primary text-white hover:bg-primary-dark shadow-[var(--shadow-soft)]",
+  primary: "bg-primary text-white hover:bg-primary-dark",
   secondary: "bg-primary-light text-primary hover:bg-[#dcd6ff]",
-  ghost: "bg-transparent text-ink-soft hover:bg-primary-light/60",
+  ghost: "bg-transparent text-ink-soft hover:bg-canvas",
   outline: "bg-white text-ink border border-line hover:border-primary hover:text-primary",
   danger: "bg-urgent text-white hover:brightness-95",
 };
 
+// All three sizes clear the 44px touch-target minimum (`sm` was 36px). Radius is
+// the 14px control step across the board — a button is a control at every size.
 const SIZES: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm rounded-xl",
-  md: "h-11 px-5 text-[15px] rounded-2xl",
-  lg: "h-13 px-6 text-base rounded-2xl",
+  sm: "h-11 px-3.5 text-sm rounded-xl",
+  md: "h-12 px-5 text-[15px] rounded-xl",
+  lg: "h-[52px] px-6 text-base rounded-xl",
 };
 
 export function buttonClasses(variant: Variant = "primary", size: Size = "md", extra = ""): string {

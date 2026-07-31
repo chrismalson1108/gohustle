@@ -54,7 +54,7 @@ export default function LegalDocPage() {
 
   return (
     <BrandShell>
-      <div className="min-h-screen bg-canvas">
+      <div className="min-h-dvh bg-canvas">
       <header className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5">
         <Link href="/">
           <BrandLockup />

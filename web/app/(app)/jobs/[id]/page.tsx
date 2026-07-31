@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { CATEGORY_COLORS, findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
+import { findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
@@ -35,10 +35,16 @@ const STATUS_CONTENT: Record<string, { Icon: typeof Clock; title: string; desc: 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-6">
-      <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</h2>
+      <h2 className="mb-3 text-[13px] font-semibold text-ink-muted">{title}</h2>
       {children}
     </section>
   );
+}
+
+// Section heading inside the booking panel — same label token, tighter rhythm
+// because the panel packs four blocks into one card.
+function PanelLabel({ children }: { children: React.ReactNode }) {
+  return <h2 className="mb-2.5 text-[13px] font-semibold text-ink-muted">{children}</h2>;
 }
 
 export default function JobDetailPage() {
@@ -94,7 +100,7 @@ export default function JobDetailPage() {
   if (!job) {
     if (!fetchTried) return <FullPageSpinner label="Loading gig…" />;
     return (
-      <PageContainer>
+      <PageContainer width="content">
         <EmptyState
           icon={<AlertTriangle className="size-10" />}
           title="Gig not found"
@@ -119,7 +125,6 @@ export default function JobDetailPage() {
   const displayLocation = showExactAddress ? (exactLocation || job.location) : maskLocation(job.location);
   const addressMasked = !showExactAddress && !String(job.location || "").toLowerCase().includes("remote");
   const jobPosterBookings = posterBookings.filter((b) => b.jobId === job.id);
-  const catColor = CATEGORY_COLORS[job.category] || "#3F25FE";
   const estPay =
     job.payType === "hourly"
       ? `${payLabel(job)} · ~${money(job.pay * job.estimatedHours)} estimated`
@@ -205,241 +210,312 @@ export default function JobDetailPage() {
 
   const status = currentBooking ? STATUS_CONTENT[currentBooking.status] || STATUS_CONTENT.pending : null;
   const canMessage = !!currentBooking && ["pending", "confirmed", "completed"].includes(currentBooking.status);
+  // Slots / counter-offer / note / payment only exist for a viewer who can still book.
+  const showBookingForm = !alreadyBooked && !isOwnJob;
+
+  // The one decision control on the page. Built once and rendered in exactly ONE
+  // place at a time: inside the sticky panel from `lg` up, and in the bottom action
+  // bar below it. Sharing the node keeps the two placements from drifting apart.
+  const bookingAction =
+    job.status === "cancelled" ? (
+      <div className="rounded-xl bg-canvas py-4 text-center text-sm font-medium text-ink-soft">
+        This listing has been removed
+      </div>
+    ) : isOwnJob ? (
+      <div>
+        <div className="rounded-2xl bg-canvas p-3.5">
+          <p className="text-sm font-semibold text-ink">
+            {jobPosterBookings.length > 0
+              ? `${jobPosterBookings.length} application${jobPosterBookings.length !== 1 ? "s" : ""} received`
+              : "Your gig — awaiting applications"}
+          </p>
+        </div>
+        {jobPosterBookings.length > 0 && (
+          <Button fullWidth className="mt-2.5" onClick={() => router.push("/hiring")}>
+            Manage in Hiring →
+          </Button>
+        )}
+      </div>
+    ) : alreadyBooked && status ? (
+      <div>
+        <div className={classNames("flex items-start gap-3 rounded-2xl p-3.5", status.bg)}>
+          <status.Icon className={classNames("mt-0.5 size-5 shrink-0", status.color)} />
+          <div className="min-w-0">
+            <p className={classNames("text-sm font-bold", status.color)}>{status.title}</p>
+            <p className="mt-0.5 text-xs leading-[17px] text-ink-soft">{status.desc}</p>
+          </div>
+        </div>
+        {canMessage && (
+          <Button variant="outline" fullWidth className="mt-2.5" onClick={() => router.push("/messages")}>
+            <MessageCircle className="size-4 shrink-0" /> <span className="truncate">Message poster</span>
+          </Button>
+        )}
+      </div>
+    ) : (
+      <Button
+        fullWidth
+        size="lg"
+        loading={booking}
+        disabled={!hasAvailableSlot || !selectedSlot}
+        onClick={handleBook}
+      >
+        <span className="truncate">
+          {!hasAvailableSlot
+            ? "No times available"
+            : selectedSlot
+              ? Number.isFinite(parseFloat(counterPrice)) && parseFloat(counterPrice) > 0
+                ? `Book · counter ${money(parseFloat(counterPrice))}`
+                : "Book this gig"
+              : "Select a time slot first"}
+        </span>
+      </Button>
+    );
 
   return (
-    <PageContainer className="pb-32">
-      {job.urgent && (
-        <div className="mb-4 flex items-center justify-center gap-1.5 rounded-2xl bg-urgent-light py-2.5 text-sm font-extrabold text-urgent">
-          <Zap className="size-4" /> URGENT — Needed ASAP
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-block rounded-full px-2.5 py-1 text-xs font-bold" style={{ backgroundColor: catColor + "22", color: catColor }}>
-            {job.category}
-          </span>
-        </div>
-        <button
-          onClick={() => toggleSavedJob(job.id)}
-          className="rounded-full p-2 text-ink-muted ring-1 ring-line hover:text-primary"
-          aria-label={savedJobIds.has(job.id) ? "Unsave" : "Save"}
-        >
-          <Bookmark className={savedJobIds.has(job.id) ? "size-5 fill-primary text-primary" : "size-5"} />
-        </button>
-      </div>
-      <h1 className="mt-3 text-2xl font-black leading-tight text-ink">{job.title}</h1>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-ink">
-          <DollarSign className="size-4" /> {estPay}
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-xl bg-canvas px-3 py-2 text-sm font-semibold text-ink-soft">
-          <MapPin className="size-4" /> {displayLocation}
-        </span>
-        {RECUR_LABEL[job.recurrence] && (
-          <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary-light px-3 py-2 text-sm font-bold text-primary">
-            <Repeat className="size-4" /> Repeats {RECUR_LABEL[job.recurrence]}
-          </span>
-        )}
-      </div>
-
-      {addressMasked && (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
-          <Lock className="size-3.5" /> The poster shares the exact address once your booking is accepted.
-        </p>
-      )}
-
-      {job.tags?.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {job.tags.map((t) => (
-            <span key={t} className="rounded-full bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-soft ring-1 ring-line">
-              #{t}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {job.hazards?.length > 0 && (
-        <div className="mt-5 rounded-2xl border-2 border-urgent bg-urgent-light p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-urgent">
-            <AlertTriangle className="size-5" /> Safety notes
-          </div>
-          <ul className="space-y-1.5">
-            {job.hazards.map((h) => (
-              <li key={h} className="flex items-start gap-2 text-sm font-semibold text-ink">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-urgent" />
-                {h}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {job.photos?.length > 0 && (
-        <div className="mt-5 flex gap-3 overflow-x-auto">
-          {job.photos.map((u, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={u} alt="" className="h-44 w-64 shrink-0 rounded-2xl object-cover" />
-          ))}
-        </div>
-      )}
-
-      <div className="mt-7">
-        <Section title="About this gig">
-          <p className="whitespace-pre-wrap leading-relaxed text-ink">{job.description}</p>
-        </Section>
-
-        {job.requirements?.length > 0 && (
-          <Section title="Requirements">
-            <ul className="space-y-1.5">
-              {job.requirements.map((r, i) => (
-                <li key={i} className="flex gap-2 text-ink">
-                  <span className="text-primary">•</span> {r}
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        <Section title="About the poster">
-          <PosterTrustCard poster={job.poster} posterId={job.posterId} />
-          {!isOwnJob && (
-            <button onClick={() => setReportOpen(true)} className="mt-3 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-ink-muted hover:text-urgent">
-              <Flag className="size-3.5" /> Report this gig
-            </button>
+    // The old `pb-32` existed to clear a FIXED action bar. The bar below is sticky
+    // and therefore in flow, so the page only needs ordinary tail spacing — a large
+    // reserve would just leave a dead cream band under the bar at full scroll.
+    <PageContainer width="content" className="pb-8">
+      {/* Two columns once there is room: the booking decision sits beside the
+          listing instead of below it, so nobody has to scroll past the whole gig to
+          book. Container steps, not `lg:`/`xl:` — `<main>` is the @container, and a
+          viewport query is wrong by one sidebar width (at a 1024px viewport the
+          content box is only 784px). `@3xl` (768px container) is that same 1024px
+          viewport and `@5xl` (1024px container) the 1280px one, so the split lands
+          where it always did while measuring the space the page ACTUALLY has.
+          The sticky aside, the two CTA placements and the bottom bar below are all
+          keyed to `@3xl` too — they must switch with the grid or the Book button
+          renders twice (or not at all) at some widths. */}
+      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_22rem] @5xl:grid-cols-[minmax(0,1fr)_24rem]">
+        {/* ── Listing ────────────────────────────────────────────────────────
+            Its own `@container`: the photo gallery below has to size against THIS
+            column, which is ~344px once the aside splits off, not against `<main>`
+            or the viewport. */}
+        <div className="@container min-w-0">
+          {job.urgent && (
+            <div className="mb-4 flex items-center justify-center gap-1.5 rounded-xl bg-urgent-light px-3 py-2.5 text-[13px] font-semibold text-urgent">
+              <Zap className="size-4 shrink-0" /> <span className="truncate">Urgent — needed ASAP</span>
+            </div>
           )}
-        </Section>
 
-        {job.slots?.length > 0 && !alreadyBooked && !isOwnJob && (
-          <Section title="Available times">
-            <SlotPicker slots={job.slots} selected={selectedSlot} onSelect={setSelectedSlot} />
-            {!selectedSlot && hasAvailableSlot && <p className="mt-2 text-sm italic text-ink-muted">Pick a time slot to select it</p>}
-          </Section>
-        )}
+          {/* Category is plain muted metadata, not a per-category colored chip —
+              the runtime CATEGORY_COLORS tint made the page's palette change
+              identity per gig. */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-[13px] font-medium text-ink-muted">{job.category}</span>
+            <button
+              onClick={() => toggleSavedJob(job.id)}
+              className="flex size-11 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink-muted transition hover:text-primary"
+              aria-label={savedJobIds.has(job.id) ? "Unsave" : "Save"}
+            >
+              <Bookmark className={savedJobIds.has(job.id) ? "size-5 fill-primary text-primary" : "size-5"} />
+            </button>
+          </div>
 
-        {!alreadyBooked && !isOwnJob && (
-          <Section title="Counter-offer (optional)">
-            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <p className="text-sm text-ink-soft">
-                Listed rate: <span className="font-bold text-ink">{estPay}</span>
-              </p>
-              <p className="mb-3 mt-1 text-xs text-ink-muted">
-                Propose a different rate to negotiate before booking (minimum ${MIN_JOB_PAY}).
-              </p>
-              <div className="flex items-center gap-2 rounded-2xl border border-line bg-white px-3 py-2 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
-                <span className="text-lg font-bold text-primary">$</span>
-                <input
-                  inputMode="decimal"
-                  value={counterPrice}
-                  onChange={(e) => setCounterPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-                  placeholder={String(job.pay)}
-                  className="flex-1 bg-transparent text-lg font-bold text-ink outline-none"
-                />
-                <span className="text-sm font-medium text-ink-muted">{job.payType === "hourly" ? "/ hr" : "flat"}</span>
-              </div>
-            </div>
-          </Section>
-        )}
+          <h1 className="mt-3 text-[26px] font-bold leading-[32px] tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-[34px]">
+            {job.title}
+          </h1>
 
-        {!alreadyBooked && !isOwnJob && (
-          <Section title="Add a note to the poster (optional)">
-            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <p className="mb-3 text-xs text-ink-muted">Tell the poster why you&apos;re a great fit.</p>
-              <Textarea
-                value={applicationNote}
-                onChange={(e) => setApplicationNote(e.target.value)}
-                placeholder="Why you're a great fit…"
-                maxLength={500}
-                rows={3}
-              />
-            </div>
-          </Section>
-        )}
+          {/* One soft accent (pay) and neutral outlines for the rest — mobile's
+              pillRow. Amber never carries white text: accent-light + accent-deep. */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent-light px-3 py-2 text-[13px] font-semibold text-accent-deep">
+              <DollarSign className="size-3.5 shrink-0" /> <span className="truncate">{estPay}</span>
+            </span>
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-white px-3 py-2 text-[13px] font-medium text-ink-soft">
+              <MapPin className="size-3.5 shrink-0" /> <span className="truncate">{displayLocation}</span>
+            </span>
+            {RECUR_LABEL[job.recurrence] && (
+              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-white px-3 py-2 text-[13px] font-medium text-ink-soft">
+                <Repeat className="size-3.5 shrink-0" />
+                <span className="truncate">Repeats {RECUR_LABEL[job.recurrence]}</span>
+              </span>
+            )}
+          </div>
 
-        {!alreadyBooked && !isOwnJob && (
-          <Section title="Payment">
-            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
-              <Row label={`GoHustlr service fee (${Math.round(SERVICE_FEE_PCT * 100)}%)`} value={`−${money(fee)}`} />
-              <div className="my-2 h-px bg-line" />
-              <Row label="You receive" value={money(net)} bold />
-              <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
-                Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.
-              </p>
-            </div>
-          </Section>
-        )}
+          {addressMasked && (
+            <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-[17px] text-ink-muted">
+              <Lock className="mt-0.5 size-3.5 shrink-0" />
+              The poster shares the exact address once your booking is accepted.
+            </p>
+          )}
 
-        {job.reviews?.length > 0 && (
-          <Section title={`Reviews (${job.reviews.length})`}>
-            <div className="space-y-2.5">
-              {job.reviews.map((r) => (
-                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-ink">{r.author}</span>
-                    <RatingStars value={r.rating} size={12} />
-                    <span className="ml-auto text-xs text-ink-muted">{r.date}</span>
-                  </div>
-                  {r.text && <p className="mt-1.5 text-sm text-ink-soft">{r.text}</p>}
-                </div>
+          {job.photos?.length > 0 && (
+            // A grid, not a fixed-width horizontal scroller: 176×256px thumbs showed
+            // 1.3 images on a phone and stayed a cramped rail on desktop.
+            // `@xl` is measured against the listing column (see its @container), not
+            // the viewport: a `sm:` step went 3-up at a 640px WINDOW, which on a
+            // 1024px desktop meant three ~99px thumbs inside the ~344px column.
+            <div className="mt-5 grid grid-cols-2 gap-3 @xl:grid-cols-3">
+              {job.photos.map((u, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={u} alt="" className="aspect-[4/3] w-full rounded-2xl bg-divider object-cover" />
               ))}
             </div>
-          </Section>
-        )}
-      </div>
+          )}
 
-      {/* Sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 backdrop-blur md:left-64">
-        <div className="mx-auto w-full max-w-3xl px-5 py-4 pb-6 md:pb-4">
-          {job.status === "cancelled" ? (
-            <div className="rounded-2xl bg-canvas py-4 text-center font-bold text-ink-muted">This listing has been removed</div>
-          ) : isOwnJob ? (
-            <div className="rounded-2xl border border-primary/30 bg-primary-light py-3.5 text-center">
-              <p className="font-bold text-primary">
-                {jobPosterBookings.length > 0
-                  ? `${jobPosterBookings.length} application${jobPosterBookings.length !== 1 ? "s" : ""} received`
-                  : "Your gig — awaiting applications"}
-              </p>
-              {jobPosterBookings.length > 0 && (
-                <button onClick={() => router.push("/hiring")} className="mt-1 text-sm font-bold text-primary underline">
-                  Manage in Hiring →
+          <div className="mt-6">
+            <Section title="About this gig">
+              <p className="whitespace-pre-wrap text-[15px] leading-[23px] text-ink-soft">{job.description}</p>
+              {job.tags?.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {job.tags.map((t) => (
+                    <span
+                      key={t}
+                      className="max-w-full truncate rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink-soft"
+                    >
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            {job.hazards?.length > 0 && (
+              // The tinted fill carries the warning on its own — a 2px red border on
+              // top of a red fill and a red heading was three emphasis mechanisms
+              // stacked on one block.
+              <div className="mb-6 rounded-2xl bg-urgent-light p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-urgent">
+                  <AlertTriangle className="size-[18px] shrink-0" /> Safety notes
+                </div>
+                <ul className="space-y-1.5">
+                  {job.hazards.map((h) => (
+                    <li key={h} className="flex items-start gap-2 text-sm leading-5 text-ink">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-urgent" />
+                      <span className="min-w-0">{h}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {job.requirements?.length > 0 && (
+              <Section title="Requirements">
+                <ul className="space-y-2">
+                  {job.requirements.map((r, i) => (
+                    <li key={i} className="flex gap-2 text-sm leading-[21px] text-ink-soft">
+                      <span className="shrink-0 text-ink-muted">•</span>
+                      <span className="min-w-0">{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            <Section title="About the poster">
+              <PosterTrustCard poster={job.poster} posterId={job.posterId} />
+              {!isOwnJob && (
+                <button onClick={() => setReportOpen(true)} className="mt-2 flex w-full items-center justify-center gap-1.5 py-3 text-[13px] font-medium text-ink-muted hover:text-urgent">
+                  <Flag className="size-3.5 shrink-0" /> Report this gig
                 </button>
               )}
-            </div>
-          ) : alreadyBooked && status ? (
-            <div>
-              <div className={classNames("flex items-start gap-3 rounded-2xl p-3.5", status.bg)}>
-                <status.Icon className={classNames("mt-0.5 size-5 shrink-0", status.color)} />
-                <div>
-                  <p className={classNames("font-extrabold", status.color)}>{status.title}</p>
-                  <p className="text-xs text-ink-soft">{status.desc}</p>
+            </Section>
+
+            {job.reviews?.length > 0 && (
+              <Section title={`Reviews (${job.reviews.length})`}>
+                <div className="space-y-3">
+                  {job.reviews.map((r) => (
+                    <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 truncate text-[13px] font-semibold text-ink">{r.author}</span>
+                        <RatingStars value={r.rating} size={12} />
+                        <span className="ml-auto shrink-0 text-[11px] text-ink-muted">{r.date}</span>
+                      </div>
+                      {r.text && <p className="mt-2 text-[13px] leading-5 text-ink-soft">{r.text}</p>}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+          </div>
+        </div>
+
+        {/* ── Booking panel ────────────────────────────────────────────────
+            Sticks beside the listing from `@3xl`; below that it is a normal block
+            in the flow and the CTA lives in the bottom bar instead. */}
+        <aside className="@3xl:sticky @3xl:top-6 @3xl:self-start">
+          {showBookingForm ? (
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+              {job.slots?.length > 0 && (
+                <div className="mb-5">
+                  <PanelLabel>Available times</PanelLabel>
+                  <SlotPicker slots={job.slots} selected={selectedSlot} onSelect={setSelectedSlot} />
+                  {!selectedSlot && hasAvailableSlot && (
+                    <p className="mt-3 text-center text-xs text-ink-muted">Pick a time slot to select it</p>
+                  )}
+                </div>
+              )}
+
+              <div className="mb-5">
+                <PanelLabel>Counter-offer (optional)</PanelLabel>
+                <p className="text-sm leading-5 text-ink-soft">
+                  Listed rate: <span className="font-semibold text-ink">{estPay}</span>
+                </p>
+                <p className="mb-3 mt-1 text-xs leading-[18px] text-ink-muted">
+                  Propose a different rate to negotiate before booking (minimum ${MIN_JOB_PAY}).
+                </p>
+                {/* Sunken fill inside a white card — the input has to contrast its
+                    container, and canvas is the neutral for that. */}
+                <div className="flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3.5 py-2.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+                  <span className="shrink-0 text-lg font-semibold text-ink-muted">$</span>
+                  <input
+                    inputMode="decimal"
+                    value={counterPrice}
+                    onChange={(e) => setCounterPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                    placeholder={String(job.pay)}
+                    aria-label="Counter-offer amount"
+                    className="min-w-0 flex-1 bg-transparent text-xl font-semibold text-ink outline-none placeholder:text-ink-muted"
+                  />
+                  <span className="shrink-0 text-sm font-medium text-ink-muted">{job.payType === "hourly" ? "/ hr" : "flat"}</span>
                 </div>
               </div>
-              {canMessage && (
-                <Button variant="secondary" fullWidth className="mt-2.5" onClick={() => router.push("/messages")}>
-                  <MessageCircle className="size-4" /> Message poster
-                </Button>
-              )}
+
+              <div className="mb-5">
+                <PanelLabel>Add a note to the poster (optional)</PanelLabel>
+                <p className="mb-2.5 text-xs leading-[18px] text-ink-muted">Tell the poster why you&apos;re a great fit.</p>
+                <Textarea
+                  value={applicationNote}
+                  onChange={(e) => setApplicationNote(e.target.value)}
+                  placeholder="Why you're a great fit…"
+                  aria-label="Note to the poster"
+                  maxLength={500}
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <PanelLabel>Payment</PanelLabel>
+                <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
+                <Row label={`GoHustlr service fee (${Math.round(SERVICE_FEE_PCT * 100)}%)`} value={`−${money(fee)}`} />
+                <div className="my-2 h-px bg-divider" />
+                <Row label="You receive" value={money(net)} bold />
+                <p className="mt-3 text-xs leading-[17px] text-ink-muted">
+                  Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.
+                </p>
+              </div>
+
+              <div className="mt-5 hidden border-t border-divider pt-4 @3xl:block">{bookingAction}</div>
             </div>
           ) : (
-            <Button
-              fullWidth
-              size="lg"
-              loading={booking}
-              disabled={!hasAvailableSlot || !selectedSlot}
-              onClick={handleBook}
-            >
-              {!hasAvailableSlot
-                ? "No times available"
-                : selectedSlot
-                  ? Number.isFinite(parseFloat(counterPrice)) && parseFloat(counterPrice) > 0
-                    ? `Book · counter ${money(parseFloat(counterPrice))}`
-                    : "Book this gig"
-                  : "Select a time slot first"}
-            </Button>
+            <div className="hidden @3xl:block">{bookingAction}</div>
           )}
-        </div>
+        </aside>
+      </div>
+
+      {/* ── Bottom action bar (below `@3xl` only) ────────────────────────────
+          `sticky`, not `fixed`: a fixed bar has to be told where the sidebar is,
+          and the old `md:left-64` hardcoded a rail width the shell no longer has
+          (it is 76px at md and the shell is no longer centered), so the bar painted
+          over the sidebar. Sticky inherits the content column's geometry for free.
+          The bottom offset clears AppShell's fixed tab bar, which is z-40 and used
+          to paint over this bar (it sat at z-30) — on a notched phone that hid the
+          Book button completely.
+          `md:bottom-0` stays a VIEWPORT query on purpose: it tracks AppShell's
+          `md:hidden` tab bar, which is keyed to the window. Only the show/hide of
+          this bar is a container query, because that pairs with the grid split. */}
+      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-6 border-t border-divider bg-white px-4 py-4 sm:-mx-6 sm:px-6 md:bottom-0 @3xl:hidden">
+        {bookingAction}
       </div>
 
       <Modal open={reportOpen} onClose={() => setReportOpen(false)} title="Report this gig" size="sm">
@@ -449,7 +525,7 @@ export default function JobDetailPage() {
             <button
               key={reason}
               onClick={() => report(reason)}
-              className="w-full rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-ink ring-1 ring-line/70 hover:text-urgent hover:ring-urgent"
+              className="w-full rounded-xl border border-line bg-white px-4 py-3.5 text-left text-sm font-semibold text-ink transition hover:border-urgent hover:text-urgent"
             >
               {reason}
             </button>
@@ -462,9 +538,11 @@ export default function JobDetailPage() {
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className={bold ? "font-extrabold text-ink" : "text-sm text-ink-soft"}>{label}</span>
-      <span className={bold ? "text-base font-black text-success" : "text-sm font-semibold text-ink"}>{value}</span>
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className={classNames("min-w-0", bold ? "text-[15px] font-semibold text-ink" : "text-sm text-ink-soft")}>{label}</span>
+      {/* Money reads as ink + weight. Green is reserved for confirmed/paid/verified —
+          this figure is an estimate, not a payout (same rule as mobile's feeCard). */}
+      <span className={classNames("shrink-0", bold ? "text-base font-bold text-ink" : "text-sm font-medium text-ink")}>{value}</span>
     </div>
   );
 }

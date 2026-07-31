@@ -136,13 +136,19 @@ export default function LocationPicker({
 
   return (
     <div className="relative">
+      {/* Same box as ui/Field's Input — rounded-xl (the 14px control step),
+          border-line, px/py-3, text-base on touch. It used to be an h-12 input
+          inside this wrapper, which gave the app a second control height: the
+          Location field sat visibly taller than every Input/Button beside it. */}
       <div
         className={classNames(
-          "flex items-center gap-2 rounded-2xl border border-line bg-white px-3.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15",
+          "flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-3 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15",
           disabled && "opacity-60",
         )}
       >
         <MapPin className="size-4 shrink-0 text-ink-muted" />
+        {/* min-w-0: a flex item defaults to min-width:auto, so without this a long
+            typed city pushes the clear/locate buttons out of the box. */}
         <input
           value={value}
           disabled={disabled}
@@ -152,7 +158,7 @@ export default function LocationPicker({
           onBlur={() => setTimeout(() => setOpen(false), 180)}
           autoCapitalize="words"
           autoCorrect="off"
-          className="h-12 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed"
+          className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed sm:text-[15px]"
         />
         {locating ? (
           <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
@@ -162,7 +168,9 @@ export default function LocationPicker({
               type="button"
               onClick={useDeviceLocation}
               aria-label="Use my current location"
-              className="shrink-0 rounded-full p-1 text-primary transition hover:bg-primary-light/60"
+              // after:-inset-2.5 grows the tap target past 44px without growing
+              // the icon (which would make the field taller than every other one).
+              className="relative shrink-0 rounded-full p-1.5 text-primary transition after:absolute after:-inset-2.5 hover:bg-primary-light/60"
             >
               <LocateFixed className="size-4" />
             </button>
@@ -173,7 +181,7 @@ export default function LocationPicker({
             type="button"
             onClick={() => { onChange("", null); setResults([]); }}
             aria-label="Clear location"
-            className="shrink-0 rounded-full p-1 text-ink-muted transition hover:bg-line/60"
+            className="relative shrink-0 rounded-full p-1.5 text-ink-muted transition after:absolute after:-inset-2.5 hover:bg-line/60"
           >
             <X className="size-4" />
           </button>
@@ -183,17 +191,18 @@ export default function LocationPicker({
       {locError && <p className="mt-1.5 text-sm font-medium text-urgent">{locError}</p>}
 
       {showDropdown && (
-        <div className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-50 max-h-60 overflow-y-auto rounded-2xl bg-white py-1 shadow-[var(--shadow-pop)] ring-1 ring-line/70">
+        // One elevation mechanism: the shadow carries the float, so no ring on top of it.
+        <div className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-50 max-h-60 overflow-y-auto rounded-2xl bg-white py-1 shadow-[var(--shadow-pop)]">
           {remoteFiltered.map((loc) => (
             <button
               key={loc}
               type="button"
               // onMouseDown (not onClick) fires before the input's onBlur closes the dropdown.
               onMouseDown={(e) => { e.preventDefault(); select(loc); }}
-              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-ink transition hover:bg-primary-light/40"
+              className="flex min-h-11 w-full items-center gap-2.5 px-4 py-2.5 text-left text-[15px] text-ink transition hover:bg-primary-light/40"
             >
               <Globe className="size-4 shrink-0 text-ink-muted" />
-              {loc}
+              <span className="min-w-0 truncate">{loc}</span>
             </button>
           ))}
           {searching && (
@@ -206,10 +215,10 @@ export default function LocationPicker({
               key={loc.label}
               type="button"
               onMouseDown={(e) => { e.preventDefault(); select(loc); }}
-              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-ink transition hover:bg-primary-light/40"
+              className="flex min-h-11 w-full items-center gap-2.5 px-4 py-2.5 text-left text-[15px] text-ink transition hover:bg-primary-light/40"
             >
               <MapPin className="size-4 shrink-0 text-ink-muted" />
-              {loc.label}
+              <span className="min-w-0 truncate">{loc.label}</span>
             </button>
           ))}
         </div>

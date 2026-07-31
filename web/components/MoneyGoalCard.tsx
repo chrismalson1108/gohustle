@@ -12,12 +12,14 @@ import { SERVICE_FEE_PCT } from "@/lib/config";
 import Button from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 
+// Pace reads as plain coloured text, not a fourth filled pill — mirrors mobile's
+// MoneyGoalCard fg colours. The progress bar is this card's one accent.
 const PACE = {
-  reached: { label: "Goal reached 🎉", cls: "bg-success/15 text-success" },
-  ahead: { label: "Ahead of pace", cls: "bg-success/15 text-success" },
-  onTrack: { label: "On track", cls: "bg-primary-light text-primary" },
-  behind: { label: "Behind pace", cls: "bg-urgent/10 text-urgent" },
-  unset: { label: "Set a goal", cls: "bg-line text-ink-muted" },
+  reached: { label: "Goal reached 🎉", cls: "text-success" },
+  ahead: { label: "Ahead of pace", cls: "text-success" },
+  onTrack: { label: "On track", cls: "text-ink-soft" },
+  behind: { label: "Behind pace", cls: "text-urgent" },
+  unset: { label: "Set a goal", cls: "text-ink-muted" },
 } as const;
 
 function isThisMonth(iso: string | null): boolean {
@@ -87,25 +89,28 @@ export default function MoneyGoalCard() {
   };
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-      <div className="flex items-center gap-2">
-        <div className="flex size-9 items-center justify-center rounded-full bg-primary-light text-primary">
-          <Target className="size-5" />
-        </div>
+    // Shadow, no ring — one elevation mechanism per surface.
+    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2.5">
+        {/* Plain muted glyph, not a tinted puck. */}
+        <Target className="size-5 shrink-0 text-ink-muted" />
         <div className="min-w-0 flex-1">
-          <p className="font-black text-ink">Money goal</p>
-          <p className="text-xs text-ink-muted">
+          <p className="truncate text-[15px] font-bold tracking-[-0.2px] text-ink">Money goal</p>
+          <p className="truncate text-xs text-ink-muted">
             {plan.daysLeft} {plan.daysLeft === 1 ? "day" : "days"} left this month
           </p>
         </div>
-        <span className={classNames("rounded-full px-2.5 py-1 text-[11px] font-bold", pace.cls)}>{pace.label}</span>
+        <span className={classNames("shrink-0 text-[11px] font-semibold", pace.cls)}>{pace.label}</span>
       </div>
 
       {/* Goal + progress */}
-      <div className="mt-3">
+      <div className="mt-4">
         {editing ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-ink-soft">Monthly goal $</span>
+          // flex-wrap + a flexible input: the label, a fixed w-28 field and the
+          // save button together outran the card interior at 320px, and would do
+          // so again the moment this card sits in a narrower column.
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="shrink-0 text-[13px] font-medium text-ink-soft">Monthly goal $</span>
             <Input
               type="number"
               inputMode="numeric"
@@ -113,53 +118,61 @@ export default function MoneyGoalCard() {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveGoal()}
               autoFocus
-              className="w-28 px-3 py-1.5 text-sm font-bold"
+              className="w-24 min-w-0 flex-1 px-3 py-2 font-semibold sm:w-28 sm:flex-none"
             />
-            <Button size="sm" onClick={saveGoal} aria-label="Save goal" className="size-9 shrink-0 px-0">
+            {/* size-11, not size-9 — 36px is under the 44px touch minimum. */}
+            <Button size="sm" onClick={saveGoal} aria-label="Save goal" className="size-11 shrink-0 px-0">
               <Check className="size-4" />
             </Button>
           </div>
         ) : (
-          <button onClick={() => { setDraft(String(monthlyEarningGoal || 1000)); setEditing(true); }} className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-ink">{money(plan.earned)}</span>
-            <span className="text-sm font-bold text-ink-muted">of {money(plan.goal)}</span>
-            <Pencil className="size-3.5 text-ink-muted" />
+          <button
+            onClick={() => { setDraft(String(monthlyEarningGoal || 1000)); setEditing(true); }}
+            className="flex max-w-full flex-wrap items-baseline gap-x-2 text-left"
+          >
+            <span className="min-w-0 truncate text-[26px] font-bold leading-tight tracking-[-0.4px] text-ink">
+              {money(plan.earned)}
+            </span>
+            <span className="min-w-0 truncate text-[13px] font-medium text-ink-muted">of {money(plan.goal)}</span>
+            <Pencil className="size-3.5 shrink-0 text-ink-muted" />
           </button>
         )}
-        <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-line">
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-divider">
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, pct)}%` }} />
         </div>
       </div>
 
-      {/* Plan stats */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      {/* Plan stats — three across at every width, as on mobile. The value drops
+          to 15px and truncates so a "$1,250" money string can't burst a ~93px
+          tile on a 360px phone. */}
+      <div className="mt-4 grid grid-cols-3 gap-2">
         {[
           { label: "Left to go", value: money(plan.remaining) },
           { label: "Gigs to go", value: plan.gigsNeeded == null ? "—" : String(plan.gigsNeeded) },
           { label: "Per week", value: money(plan.perWeekNeeded) },
         ].map((s) => (
-          <div key={s.label} className="rounded-xl bg-canvas px-2 py-2 text-center">
-            <p className="text-base font-black text-ink">{s.value}</p>
-            <p className="text-[11px] text-ink-muted">{s.label}</p>
+          <div key={s.label} className="min-w-0 rounded-xl bg-canvas px-2 py-3 text-center">
+            <p className="truncate text-[15px] font-bold text-ink">{s.value}</p>
+            <p className="mt-1 truncate text-[11px] text-ink-muted">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Goal-matched gigs */}
       {picks.length > 0 && plan.status !== "reached" && (
-        <div className="mt-3 border-t border-divider pt-3">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink-soft">
-            <TrendingUp className="size-3.5 text-primary" /> Best gigs to hit your goal
+        <div className="mt-4 border-t border-divider pt-4">
+          <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink-muted">
+            <TrendingUp className="size-3.5 shrink-0" /> Best gigs to hit your goal
           </p>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {picks.map((j) => (
               <Link
                 key={j.id}
                 href={`/jobs/${j.id}`}
-                className="flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2 transition hover:bg-primary-light/40"
+                className="flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-3 transition hover:bg-divider"
               >
-                <span className="min-w-0 truncate text-sm font-semibold text-ink">{j.title}</span>
-                <span className="shrink-0 text-sm font-black text-primary">{money(j.pay)}</span>
+                <span className="min-w-0 truncate text-sm font-medium text-ink">{j.title}</span>
+                <span className="shrink-0 text-sm font-bold text-ink">{money(j.pay)}</span>
               </Link>
             ))}
           </div>

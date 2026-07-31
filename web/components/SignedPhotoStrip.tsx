@@ -12,7 +12,10 @@ export default function SignedPhotoStrip({
   label,
   values,
   bucket,
-  thumbClass = "size-16 ring-1 ring-line",
+  // Size only — the thumb carries no border. Mobile's photoThumb is a plain
+  // 64px tile on the divider fill, and a ring here doubled up with the card
+  // that already surrounds the strip.
+  thumbClass = "size-16",
 }: {
   label?: string;
   values: string[] | null | undefined;
@@ -45,16 +48,15 @@ export default function SignedPhotoStrip({
   if (!values?.length) return null;
   return (
     <div>
-      {label && (
-        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">{label}</p>
-      )}
+      {/* Sentence-case section label at mobile's 12/600 — no uppercase, no tracking. */}
+      {label && <p className="mb-2 text-xs font-semibold text-ink-muted">{label}</p>}
       <div className="flex gap-2 overflow-x-auto">
         {values.map((v, i) =>
           urls[v] ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={urls[v]} alt="" className={`shrink-0 rounded-xl object-cover ${thumbClass}`} />
+            <img key={i} src={urls[v]} alt="" className={`shrink-0 rounded-xl bg-divider object-cover ${thumbClass}`} />
           ) : (
-            <div key={i} className={`shrink-0 animate-pulse rounded-xl bg-line/40 ${thumbClass}`} />
+            <div key={i} className={`shrink-0 animate-pulse rounded-xl bg-divider ${thumbClass}`} />
           ),
         )}
       </div>

@@ -43,6 +43,38 @@ const needsAction = (b: Booking) =>
   (b.status === "confirmed" && !b.earnerDone) ||
   (b.status === "verified" && !b.posterRating);
 
+// ── One notice recipe for every page-level nudge ─────────────────────────────
+// Up to three saturated tinted bands used to stack above the fold (purple payout /
+// red payout / purple amendment / gold rate), each with its own coloured ring,
+// icon and arrow — the user hit a wall of colour before any content. There is now
+// a single neutral recipe: white surface, ink copy, a plain primary link.
+const NOTICE =
+  "flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[var(--shadow-card)] transition hover:bg-canvas";
+// The blocking case (payouts are off, so no money can reach the earner) used to add
+// a 2px urgent rail on top of this recipe. That put a border AND a shadow on one
+// card — the same doubling that was removed from the gig cards — and a coloured
+// edge bar is exactly the tell JobCard dropped. The urgent icon and the copy carry
+// the severity on their own, so blocking and non-blocking notices share one surface.
+
+// One card recipe for a booked gig. The list used to mix purple-striped,
+// gold-striped and unstriped cards, each stacking a ring AND a shadow AND a 4px
+// coloured rail. "Needs your action" is now a single ink label with one urgent
+// dot, rendered inside the card (see the Active/Awaiting list below).
+const GIG_CARD = "rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]";
+
+// Booking lists fill the width they're given: one column on a phone, two once the
+// content box clears 64rem, three past 80rem. Container queries, not viewport
+// ones — `<main>` is the @container, so this measures the space actually
+// available rather than the viewport minus an unknown sidebar.
+const GIG_GRID = "grid grid-cols-1 gap-3 @5xl:grid-cols-2 @7xl:grid-cols-3";
+
+// Proof-of-work thumbnails: auto-fill keeps a thumb ~84px wide at every width, so
+// they neither shrink to 80px inside a 320px sheet nor blow up into oversized
+// squares in a wide desktop modal. A hard grid-cols-3 did both.
+const PHOTO_GRID = "mt-2 grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(5.25rem,1fr))]";
+const PHOTO_ADD =
+  "mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3 text-sm font-semibold text-ink-soft transition hover:border-primary hover:text-primary disabled:opacity-50";
+
 export default function MyJobsPage() {
   const { bookings, jobs, markEarnerDone, cancelBooking, ratePoster, respondToAmendment, startJob, claimEarnerPayment, getPayoutStatus, bookingsLoading } = useJobs();
   const { earningsWeek, showToast, updateChallenge, profileStatus } = useUser();
@@ -234,17 +266,19 @@ export default function MyJobsPage() {
   const TrackRow = ({ b }: { b: Booking }) => {
     const tracked = trackedByBooking[b.id] || 0;
     return (
-      <div className="mt-2.5 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <button
           onClick={() => setTrackBooking(b)}
-          className="flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-primary"
+          className="flex shrink-0 items-center gap-1.5 py-1 text-xs font-semibold text-ink-muted transition hover:text-primary"
         >
-          <Car className="size-3.5" /> Track miles &amp; expenses
+          <Car className="size-3.5 shrink-0" /> Track miles &amp; expenses
         </button>
+        {/* A plain text link, not a tinted success chip — these cards already
+            carry a StatusBadge, and money isn't green until it's paid. */}
         {tracked > 0 && (
           <Link
             href="/profile/taxes"
-            className="ml-auto inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-extrabold text-success transition hover:bg-success/15"
+            className="ml-auto shrink-0 py-1 text-sm font-semibold text-primary transition hover:underline"
           >
             {money(tracked)} tracked →
           </Link>
@@ -272,9 +306,13 @@ export default function MyJobsPage() {
   function GigActions({ b }: { b: Booking }) {
     if (b.status === "pending") {
       return (
-        <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <MessageBtn bookingId={b.id} />
-          <button className="text-sm font-bold text-urgent hover:underline" onClick={() => cancelBooking(b.id)}>
+          {/* Danger is a red text link, never a filled red button. */}
+          <button
+            className="shrink-0 py-2 text-[13px] font-semibold text-urgent hover:underline"
+            onClick={() => cancelBooking(b.id)}
+          >
             Withdraw
           </button>
         </div>
@@ -288,9 +326,12 @@ export default function MyJobsPage() {
             <Play className="size-4" /> Start job · I&apos;m on site
           </Button>
           <p className="mt-1.5 text-xs text-ink-muted">Next: tap when you arrive on site.</p>
-          <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <MessageBtn bookingId={b.id} />
-            <button className="text-sm font-bold text-urgent hover:underline" onClick={() => cancelBooking(b.id)}>
+            <button
+              className="shrink-0 py-2 text-[13px] font-semibold text-urgent hover:underline"
+              onClick={() => cancelBooking(b.id)}
+            >
               Cancel
             </button>
           </div>
@@ -301,16 +342,21 @@ export default function MyJobsPage() {
     if (b.status === "confirmed" && b.startedAt && !b.earnerDone) {
       return (
         <div className="mt-3">
-          <span className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold text-success">
-            <span className="size-2 rounded-full bg-success" /> In progress
+          <span className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+            <span className="size-2 shrink-0 rounded-full bg-success" /> In progress
           </span>
           <Button fullWidth onClick={() => openFinish(b)}>
             <Check className="size-4" /> Mark done
           </Button>
           <p className="mt-1.5 text-xs text-ink-muted">Next: mark the job done when you&apos;ve finished.</p>
-          <div className="mt-2 flex items-center justify-between gap-2">
+          {/* The sentence owns a full line whenever the row is narrow — beside
+              the button it compressed to a 3-4 line sliver at 320-360px. Basis +
+              wrap rather than an `sm:` breakpoint, because this card is also a
+              cell in a 3-column grid where the viewport is wide but the row is
+              not. */}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <MessageBtn bookingId={b.id} />
-            <span className="text-xs italic text-ink-muted">
+            <span className="min-w-0 shrink-0 grow basis-64 text-xs italic text-ink-muted">
               Can&apos;t cancel — you&apos;ve started. Open a dispute if there&apos;s a problem.
             </span>
           </div>
@@ -324,8 +370,13 @@ export default function MyJobsPage() {
       return (
         <>
           <ClaimCta b={b} />
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-ink-muted">You marked done — waiting for the poster to confirm.</span>
+          {/* The status line keeps a 16rem basis it can't shrink past, so it drops
+              to its own row whenever the card is narrow — a full sentence packed
+              beside the Message button squeezed to ~96px on a phone. */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 shrink-0 grow basis-64 text-sm font-medium text-ink-muted">
+              You marked done — waiting for the poster to confirm.
+            </span>
             <MessageBtn bookingId={b.id} />
           </div>
         </>
@@ -335,8 +386,10 @@ export default function MyJobsPage() {
       return (
         <>
           <ClaimCta b={b} />
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-ink-muted">Waiting for the poster to verify &amp; pay.</span>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 shrink-0 grow basis-64 text-sm font-medium text-ink-muted">
+              Waiting for the poster to verify &amp; pay.
+            </span>
             <MessageBtn bookingId={b.id} />
           </div>
         </>
@@ -349,13 +402,15 @@ export default function MyJobsPage() {
   function AmendmentBlock({ b }: { b: Booking }) {
     if (b.amendmentStatus === "pending") {
       return (
-        <div className="mt-3 rounded-2xl border border-primary/30 bg-primary-light/40 p-3">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-primary">
-            <FileText className="size-4" /> Change proposed by poster
+        // A sunken canvas block inside the white card — bg-canvas is the only
+        // neutral for a nested area, and it needs no border of its own.
+        <div className="mt-3 rounded-xl bg-canvas p-3">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <FileText className="size-4 shrink-0 text-ink-soft" /> Change proposed by poster
           </div>
-          {b.amendmentNote && <p className="mt-1 text-sm text-ink-soft">{b.amendmentNote}</p>}
+          {b.amendmentNote && <p className="mt-1 text-[13px] leading-[19px] text-ink-soft">{b.amendmentNote}</p>}
           <p className="mt-1 text-xs text-ink-muted">Accepting lets the poster update the gig terms.</p>
-          <div className="mt-2.5 flex gap-2">
+          <div className="mt-2.5 flex flex-wrap gap-2">
             <Button size="sm" onClick={() => respondAmend(b, true)}>
               <Check className="size-4" /> Accept
             </Button>
@@ -367,72 +422,61 @@ export default function MyJobsPage() {
       );
     }
     if (b.amendmentStatus === "accepted") {
-      return <p className="mt-3 rounded-xl bg-success/10 px-3 py-2 text-xs font-bold text-success">Change accepted — the poster can update the terms.</p>;
+      return (
+        <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-semibold text-success">
+          Change accepted — the poster can update the terms.
+        </p>
+      );
     }
     if (b.amendmentStatus === "declined") {
-      return <p className="mt-3 rounded-xl bg-urgent/10 px-3 py-2 text-xs font-bold text-urgent">Change declined — original terms remain.</p>;
+      return (
+        <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-semibold text-urgent">
+          Change declined — original terms remain.
+        </p>
+      );
     }
     return null;
   }
 
-  // Card chrome by role: actionable gigs stand out (accent left border), passive ones recede (canvas).
-  const cardClass = (b: Booking) => {
-    if (needsAction(b)) {
-      const gold = b.status === "verified" && !b.posterRating;
-      return classNames(
-        "rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70 border-l-4",
-        gold ? "border-accent" : "border-primary",
-      );
-    }
-    const passive =
-      (b.status === "confirmed" && b.earnerDone && !b.posterDone) || b.status === "completed";
-    // Passive = de-emphasized but still legible: white card, lighter ring, no shadow
-    // or accent border (vs. actionable). Previously bg-canvas, which matched the page
-    // background and made the card disappear.
-    if (passive) return "rounded-2xl bg-white p-4 ring-1 ring-line/70";
-    return "rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70";
-  };
-
   return (
     <div>
-      <PageHeader title="My Jobs" subtitle="Gigs you've booked" variant="earn">
+      <PageHeader title="My Jobs" subtitle="Gigs you've booked" width="feed">
+        {/* Flat header → the stat chip is a white pill with ink text (mobile's
+            weekChip), not a translucent frosted chip on a gradient. */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-baseline gap-1.5 rounded-full bg-white/15 px-4 py-2">
-            <span className="text-lg font-black leading-none">{profileStatus === "ready" ? money(earningsWeek) : "—"}</span>
-            <span className="text-xs font-semibold text-white/75">this week</span>
+          <span className="inline-flex min-w-0 shrink items-baseline gap-1.5 rounded-full bg-white px-3.5 py-2">
+            <span className="truncate text-base font-bold leading-none text-ink">
+              {profileStatus === "ready" ? money(earningsWeek) : "—"}
+            </span>
+            <span className="truncate text-xs font-medium text-ink-soft">this week</span>
           </span>
         </div>
       </PageHeader>
 
-      <PageContainer className="space-y-4">
+      <PageContainer width="feed" className="space-y-4">
         {/* Payout reminder — earners must set up payouts to receive money. Non-blocking. */}
         {!payoutReady &&
           (payout?.state === "pending" ? (
-            // Under review: there is nothing for them to do, so don't nag — just explain.
-            <Link
-              href="/profile/payouts"
-              className="flex items-center gap-2.5 rounded-2xl bg-primary-light px-4 py-3 ring-1 ring-primary/20 transition hover:bg-primary-light/70"
-            >
-              <Clock className="size-5 shrink-0 text-primary" />
-              <span className="flex-1 text-sm font-bold text-primary">
+            // Under review: there is nothing for them to do, so don't nag — just
+            // explain, and don't mark it as blocking.
+            <Link href="/profile/payouts" className={NOTICE}>
+              <Clock className="size-5 shrink-0 text-ink-soft" />
+              <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
                 Stripe is verifying your details — payouts switch on automatically.
               </span>
-              <span className="shrink-0 text-sm font-extrabold text-primary">Details →</span>
+              <span className="shrink-0 text-sm font-semibold text-primary">Details →</span>
             </Link>
           ) : (
-            <Link
-              href="/profile/payouts"
-              className="flex items-center gap-2.5 rounded-2xl bg-urgent-light px-4 py-3 ring-1 ring-urgent/20 transition hover:bg-urgent-light/70"
-            >
+            <Link href="/profile/payouts" className={NOTICE}>
               <AlertCircle className="size-5 shrink-0 text-urgent" />
-              <span className="flex-1 text-sm font-bold text-urgent">
+              <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
                 {payout?.state === "restricted"
                   ? "There's a problem with your payout account."
                   : payout?.hasAccount
                     ? "Finish your payout setup so you can get paid."
                     : "Set up payouts so you can get paid for your work."}
               </span>
-              <span className="shrink-0 text-sm font-extrabold text-urgent">
+              <span className="shrink-0 text-sm font-semibold text-primary">
                 {payout?.hasAccount && payout.state !== "restricted" ? "Finish →" : "Set up →"}
               </span>
             </Link>
@@ -440,43 +484,46 @@ export default function MyJobsPage() {
 
         {/* Action-needed band — only appears when a decision is waiting. */}
         {(pendingAmendments.length > 0 || (unrated.length > 0 && tab !== "completed")) && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {pendingAmendments.length > 0 && (
-              <button
-                onClick={() => setTab("active")}
-                className="flex w-full items-center gap-2.5 rounded-2xl bg-primary-light px-4 py-3 text-left ring-1 ring-primary/20 transition hover:bg-primary-light/70"
-              >
-                <FileText className="size-5 shrink-0 text-primary" />
-                <span className="flex-1 text-sm font-bold text-primary">
+              <button onClick={() => setTab("active")} className={NOTICE}>
+                <FileText className="size-5 shrink-0 text-ink-soft" />
+                <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
                   {pendingAmendments.length} change {pendingAmendments.length === 1 ? "request" : "requests"} to respond to
                 </span>
-                <ChevronDown className="size-4 -rotate-90 text-primary" />
+                <ChevronDown className="size-4 shrink-0 -rotate-90 text-ink-muted" />
               </button>
             )}
             {unrated.length > 0 && tab !== "completed" && (
-              <button
-                onClick={() => setTab("completed")}
-                className="flex w-full items-center gap-2.5 rounded-2xl bg-accent-light px-4 py-3 text-left ring-1 ring-accent/30 transition hover:brightness-[0.98]"
-              >
-                <Star className="size-5 shrink-0 text-accent-deep" />
-                <span className="flex-1 text-sm font-bold text-accent-deep">
+              <button onClick={() => setTab("completed")} className={NOTICE}>
+                <Star className="size-5 shrink-0 text-ink-soft" />
+                <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
                   Rate {unrated.length} completed {unrated.length === 1 ? "gig" : "gigs"} to finish up
                 </span>
-                <ChevronDown className="size-4 -rotate-90 text-accent-deep" />
+                <ChevronDown className="size-4 shrink-0 -rotate-90 text-ink-muted" />
               </button>
             )}
           </div>
         )}
 
-        {/* Segmented control — the spine of the page. */}
-        <div className="flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        {/* Segmented control — the spine of the page. White track with a 1px
+            border, pill radius, and an INK fill on the active segment (browse's
+            chip convention). No shadow on the pill — a filled pill needs no
+            elevation, and the old one used the purple-glow token.
+            The weight stays font-semibold in BOTH states: a 600→700 bump
+            re-measures "Completed (12)" and clips it at 320px the moment the tab
+            is selected (the same note lives in mobile's EarnScreen styles). */}
+        <div className="flex w-full rounded-full border border-line bg-white p-1">
           {SEGMENTS.map((s) => (
             <button
               key={s.id}
               onClick={() => setTab(s.id)}
               className={classNames(
-                "flex-1 rounded-xl py-2 text-sm font-bold transition",
-                tab === s.id ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                "min-h-11 min-w-0 flex-1 truncate rounded-full px-2 py-2.5 text-[13px] font-semibold transition",
+                // Primary, not ink: mobile's segmented control fills the active
+                // pill with colors.primary (EarnScreen `segBtnActive`). Ink is the
+                // active state for CATEGORY chips on Browse — a different control.
+                tab === s.id ? "bg-primary text-white" : "text-ink-soft hover:text-ink",
               )}
             >
               {s.label}
@@ -502,53 +549,59 @@ export default function MyJobsPage() {
             }
           />
         ) : tab === "completed" ? (
-          // Completed history: collapsed one-line rows that expand on tap.
-          <div className="space-y-3">
+          // Completed history: collapsed rows that expand on tap. `items-start`
+          // so expanding one row doesn't stretch its neighbours in the grid.
+          <div className={classNames(GIG_GRID, "items-start")}>
             {shown.map((b) => {
               const expanded = expandedId === b.id;
               const canRate = b.status === "verified" && !b.posterRating;
               return (
-                <div
-                  key={b.id}
-                  className={classNames(
-                    "overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70",
-                    canRate && "border-l-4 border-accent",
-                  )}
-                >
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    <Link href={`/jobs/${b.jobId}`} className="min-w-0 flex-1">
-                      <p className="truncate font-bold text-ink">{titleOf(b)}</p>
-                      <p className="truncate text-sm text-ink-soft">{payLine(b)}</p>
+                // No ring beside the shadow, and no gold rail: the Rate button is
+                // already the "this one needs you" signal on these rows.
+                <div key={b.id} className="overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)]">
+                  {/* Wraps rather than crushing: at 360px the badge, Rate button
+                      and chevron alone ate ~264px of the row, leaving ~96px for
+                      the title and clipping the button's label. The title claims
+                      a 14rem basis it may not shrink below, so the action cluster
+                      drops to its own line whenever there isn't room — driven by
+                      the ROW's width, not the viewport's, which is what a card in
+                      a 3-column grid cell needs. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                    <Link href={`/jobs/${b.jobId}`} className="min-w-0 shrink-0 grow basis-56">
+                      <p className="truncate text-[15px] font-bold text-ink">{titleOf(b)}</p>
+                      <p className="mt-0.5 text-[13px] text-ink-soft">{payLine(b)}</p>
                     </Link>
-                    <StatusBadge status={b.status} />
-                    {canRate && (
-                      <Button size="sm" onClick={() => openRate(b)}>
-                        <Star className="size-4" /> Rate
-                      </Button>
-                    )}
-                    <button
-                      onClick={() => setExpandedId(expanded ? null : b.id)}
-                      className="rounded-full p-1 text-ink-muted hover:bg-line/60"
-                      aria-label={expanded ? "Collapse" : "Expand"}
-                    >
-                      <ChevronDown className={classNames("size-5 transition", expanded && "rotate-180")} />
-                    </button>
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      <StatusBadge status={b.status} />
+                      {canRate && (
+                        <Button size="sm" className="shrink-0" onClick={() => openRate(b)}>
+                          <Star className="size-4 shrink-0" /> Rate
+                        </Button>
+                      )}
+                      <button
+                        onClick={() => setExpandedId(expanded ? null : b.id)}
+                        className="shrink-0 rounded-full p-2.5 text-ink-muted transition hover:text-ink"
+                        aria-label={expanded ? "Collapse" : "Expand"}
+                      >
+                        <ChevronDown className={classNames("size-5 transition", expanded && "rotate-180")} />
+                      </button>
+                    </div>
                   </div>
                   {expanded && (
                     <div className="space-y-3 border-t border-divider px-4 py-3">
                       {b.posterRating ? (
-                        <p className="text-sm font-bold text-success">You rated the poster {b.posterRating}★</p>
+                        <p className="text-xs italic text-ink-muted">You rated the poster {b.posterRating}★</p>
                       ) : null}
                       {b.earnerRating ? (
                         <div className="rounded-xl bg-success-light px-3 py-2">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <RatingStars value={b.earnerRating} size={14} />
-                            <span className="text-sm font-bold text-success">
+                            <span className="min-w-0 text-[13px] font-semibold text-success">
                               {b.earnerRating.toFixed(1)} from poster
                               {b.paymentMethod ? ` · Paid via ${b.paymentMethod}` : ""}
                             </span>
                           </div>
-                          {b.reviewText ? <p className="mt-1 text-sm italic text-ink-soft">&ldquo;{b.reviewText}&rdquo;</p> : null}
+                          {b.reviewText ? <p className="mt-1 text-[13px] italic text-ink-soft">&ldquo;{b.reviewText}&rdquo;</p> : null}
                         </div>
                       ) : null}
                       {(b.beforePhotos?.length > 0 || b.completionPhotos?.length > 0) && (
@@ -569,15 +622,25 @@ export default function MyJobsPage() {
           </div>
         ) : (
           // Active / Awaiting: full cards with one state-derived primary action.
-          <div className="space-y-3">
+          <div className={GIG_GRID}>
             {shown.map((b) => (
-              <div key={b.id} className={cardClass(b)}>
+              <div key={b.id} className={GIG_CARD}>
                 <div className="flex items-start justify-between gap-3">
-                  <Link href={`/jobs/${b.jobId}`} className="min-w-0">
-                    <p className="truncate font-bold text-ink">{titleOf(b)}</p>
-                    <p className="mt-0.5 text-sm text-ink-soft">{payLine(b)}</p>
+                  <Link href={`/jobs/${b.jobId}`} className="min-w-0 flex-1">
+                    {/* One small ink label + a lone urgent dot replaces the 4px
+                        coloured rail (which came in two different brand colours
+                        within the same list). */}
+                    {needsAction(b) && (
+                      <span className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-ink">
+                        <span className="size-1.5 shrink-0 rounded-full bg-urgent" /> Needs you
+                      </span>
+                    )}
+                    <p className="truncate text-[15px] font-bold text-ink">{titleOf(b)}</p>
+                    <p className="mt-0.5 text-[13px] text-ink-soft">{payLine(b)}</p>
                   </Link>
-                  <StatusBadge status={b.status} />
+                  <div className="shrink-0">
+                    <StatusBadge status={b.status} />
+                  </div>
                 </div>
                 <AmendmentBlock b={b} />
                 <GigActions b={b} />
@@ -634,14 +697,14 @@ export default function MyJobsPage() {
       >
         <p className="text-sm text-ink-soft">Add before &amp; after photos of the finished work (optional) so the poster can verify and release payment.</p>
 
-        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-ink-muted">Before photos (optional)</p>
+        <p className="mt-4 text-[13px] font-semibold text-ink-muted">Before photos (optional)</p>
         <input ref={beforeFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "before"); e.target.value = ""; }} />
         {beforePhotos.length > 0 && (
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className={PHOTO_GRID}>
             {beforePhotos.map((item, i) => (
               <div key={item.path} className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl bg-divider object-cover" />
                 <button
                   onClick={() => setBeforePhotos((p) => { URL.revokeObjectURL(item.preview); return p.filter((_, j) => j !== i); })}
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
@@ -653,22 +716,18 @@ export default function MyJobsPage() {
             ))}
           </div>
         )}
-        <button
-          onClick={() => beforeFileRef.current?.click()}
-          disabled={uploading}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
-        >
-          <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
+        <button onClick={() => beforeFileRef.current?.click()} disabled={uploading} className={PHOTO_ADD}>
+          <Camera className="size-4 shrink-0" /> {uploading ? "Uploading…" : "Add photos"}
         </button>
 
-        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-ink-muted">After photos (optional)</p>
+        <p className="mt-4 text-[13px] font-semibold text-ink-muted">After photos (optional)</p>
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files, "after"); e.target.value = ""; }} />
         {photos.length > 0 && (
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className={PHOTO_GRID}>
             {photos.map((item, i) => (
               <div key={item.path} className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl object-cover ring-1 ring-line" />
+                <img src={item.preview} alt="" className="aspect-square w-full rounded-xl bg-divider object-cover" />
                 <button
                   onClick={() => setPhotos((p) => { URL.revokeObjectURL(item.preview); return p.filter((_, j) => j !== i); })}
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-ink text-white"
@@ -680,12 +739,8 @@ export default function MyJobsPage() {
             ))}
           </div>
         )}
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-bold text-ink-soft hover:border-primary hover:text-primary disabled:opacity-50"
-        >
-          <Camera className="size-4" /> {uploading ? "Uploading…" : "Add photos"}
+        <button onClick={() => fileRef.current?.click()} disabled={uploading} className={PHOTO_ADD}>
+          <Camera className="size-4 shrink-0" /> {uploading ? "Uploading…" : "Add photos"}
         </button>
       </Modal>
     </div>

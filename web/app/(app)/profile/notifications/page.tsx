@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { useUser } from "@/lib/user";
@@ -25,7 +23,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
     >
       <span
         className={classNames(
-          "inline-block size-5 transform rounded-full bg-white shadow transition",
+          "inline-block size-5 transform rounded-full bg-white shadow-[var(--shadow-sm)] transition",
           checked ? "translate-x-[22px]" : "translate-x-0.5",
         )}
       />
@@ -34,7 +32,6 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function NotificationSettingsPage() {
-  const router = useRouter();
   const { showToast } = useUser();
   const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
   const [loading, setLoading] = useState(true);
@@ -61,36 +58,34 @@ export default function NotificationSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Notifications" subtitle="Choose how you hear about activity" variant="gold" />
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
-
-        <p className="mb-4 max-w-xl text-sm text-ink-soft">
+      <PageHeader title="Notifications" subtitle="Choose how you hear about activity" width="form" back="/profile" />
+      {/* Width comes from the `form` measure, not a local max-w — the header and the
+          container have to agree or the title floats out of line with the cards. */}
+      <PageContainer width="form">
+        <p className="mb-4 text-sm leading-5 text-ink-soft">
           In-app alerts always show up in your <span className="font-semibold text-ink">Alerts</span> inbox. Push and email
           delivery are optional and can be set per category below.
         </p>
 
-        <div className="max-w-xl space-y-3">
+        <div className="space-y-3 pb-8">
           {NOTIF_CATEGORIES.map((cat) => (
-            <div key={cat.key} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-              <p className="font-bold text-ink">{cat.label}</p>
-              <p className="mt-0.5 text-xs text-ink-muted">{cat.hint}</p>
-              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-3">
-                <label className="flex cursor-pointer items-center gap-2.5">
+            <div key={cat.key} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+              <p className="text-base font-bold tracking-[-0.2px] text-ink">{cat.label}</p>
+              <p className="mt-1 text-[13px] leading-[18px] text-ink-muted">{cat.hint}</p>
+              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1">
+                <label className="flex min-h-11 min-w-0 cursor-pointer items-center gap-2.5">
                   <Toggle
                     checked={prefs[`${cat.key}_push` as keyof NotifPrefs]}
                     onChange={(v) => toggle(`${cat.key}_push` as keyof NotifPrefs, v)}
                   />
-                  <span className="text-sm font-semibold text-ink-soft">Push</span>
+                  <span className="truncate text-sm font-medium text-ink-soft">Push</span>
                 </label>
-                <label className="flex cursor-pointer items-center gap-2.5">
+                <label className="flex min-h-11 min-w-0 cursor-pointer items-center gap-2.5">
                   <Toggle
                     checked={prefs[`${cat.key}_email` as keyof NotifPrefs]}
                     onChange={(v) => toggle(`${cat.key}_email` as keyof NotifPrefs, v)}
                   />
-                  <span className="text-sm font-semibold text-ink-soft">Email</span>
+                  <span className="truncate text-sm font-medium text-ink-soft">Email</span>
                 </label>
               </div>
             </div>

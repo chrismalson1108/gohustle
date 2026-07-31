@@ -134,30 +134,43 @@ export default function HiringPage() {
   return (
     <div>
       <PageHeader
+        width="feed"
         title="Hire"
         subtitle="Gigs you've posted"
         right={
-          <Link href="/hiring/new" className={buttonClasses("secondary", "sm", "bg-white text-primary hover:bg-white")}>
-            <Plus className="size-4" /> Post
+          // Solid primary, same as mobile GigsScreen's postBtn. The old white
+          // pill only existed to sit on the retired gradient header.
+          <Link href="/hiring/new" className={buttonClasses("primary", "sm")}>
+            <Plus className="size-4" /> Post a gig
           </Link>
         }
       />
-      <PageContainer>
-        {/* Active / Past segmented control */}
-        <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+      <PageContainer width="feed">
+        {/* Active / Past segmented control — pill track, primary active fill, no
+            shadow on the active pill, and font-semibold in BOTH states so a
+            600→700 bump can't re-measure and clip the label at 320px.
+            Each tab is an explicit `min-h-11` flex box: 13px text plus `py-2.5`
+            measured ~39.5px, under the 44px touch floor. The label keeps its own
+            `truncate` span because text-overflow does not apply to the anonymous
+            item inside a flex container. */}
+        <div role="tablist" aria-label="Hiring view" className="mb-4 flex w-full rounded-full border border-line bg-white p-1">
           {(["active", "past"] as const).map((t) => {
             const count = t === "active" ? activeJobs.length : pastBookings.length;
             return (
               <button
                 key={t}
+                role="tab"
+                aria-selected={tab === t}
                 onClick={() => setTab(t)}
                 className={classNames(
-                  "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
-                  tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                  "flex min-h-11 flex-1 items-center justify-center rounded-full px-2 text-[13px] font-semibold capitalize transition",
+                  tab === t ? "bg-primary text-white" : "text-ink-soft hover:bg-primary-light/40",
                 )}
               >
-                {t}
-                {count > 0 ? ` (${count})` : ""}
+                <span className="truncate">
+                  {t}
+                  {count > 0 ? ` (${count})` : ""}
+                </span>
               </button>
             );
           })}
@@ -167,63 +180,79 @@ export default function HiringPage() {
         {tab === "active" && (activeJobs.length === 0 ? (
           <EmptyState icon={<Megaphone className="size-10" />} title="You haven't posted any gigs" body="Post a gig to get help from students near you." />
         ) : (
-          <div className="space-y-4">
+          // Container query, not a viewport one: the grid's real width is the
+          // viewport minus the sidebar, so `lg:grid-cols-2` would always be off
+          // by one rail. Posted gigs get an explicit ladder rather than auto-fill
+          // because a card's height depends on how many applicants it holds.
+          <div className="grid grid-cols-1 gap-4 pb-8 @5xl:grid-cols-2 @7xl:grid-cols-3">
             {activeJobs.map((job) => {
               const reqs = sortApplicants(posterBookings.filter((b) => b.jobId === job.id && ACTIVE_STATUSES.has(b.status)), job, sortBy);
               return (
-                <div key={job.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                  <div className="flex items-center justify-between gap-3">
+                <div key={job.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  {/* flex-wrap + a basis on the title, so the three action buttons
+                      (~258px of unshrinkable width) drop to their own line on a
+                      phone instead of crushing the gig title to a few pixels. */}
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
                     {job.removed ? (
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-ink">{job.title}</p>
-                        <p className="text-sm text-ink-soft">
+                      <div className="min-w-0 grow basis-48">
+                        <p className="truncate text-base font-bold tracking-[-0.2px] text-ink">{job.title}</p>
+                        <p className="mt-0.5 text-xs text-ink-muted">
                           {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
                         </p>
                       </div>
                     ) : (
-                      <Link href={`/jobs/${job.id}`} className="min-w-0">
-                        <p className="truncate font-bold text-ink">{job.title}</p>
-                        <p className="text-sm text-ink-soft">
+                      <Link href={`/jobs/${job.id}`} className="min-w-0 grow basis-48">
+                        <p className="truncate text-base font-bold tracking-[-0.2px] text-ink">{job.title}</p>
+                        <p className="mt-0.5 text-xs text-ink-muted">
                           {payLabel(job)} · {reqs.length} request{reqs.length !== 1 ? "s" : ""}
                         </p>
                       </Link>
                     )}
                     {/* Job actions — hidden for removed gigs */}
-                    {job.removed ? (
-                      <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-accent-deep">
-                        <AlertCircle className="size-3.5" /> Gig removed — resolve the bookings below.
-                      </span>
-                    ) : (
-                      <div className="flex shrink-0 gap-2">
+                    {!job.removed && (
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           onClick={() => { bumpJob(job.id); showToast({ icon: "🚀", title: "Bumped!", message: "Your gig jumped to the top of Browse." }); }}
                           className={buttonClasses("ghost", "sm")}
                           title="Bump to top of the feed"
                         >
-                          <ArrowUpToLine className="size-3.5" /> Bump
+                          <ArrowUpToLine className="size-3.5 shrink-0" /> Bump
                         </button>
                         <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
-                          <Pencil className="size-3.5" /> Edit
+                          <Pencil className="size-3.5 shrink-0" /> Edit
                         </Link>
                         <Link href={`/hiring/new?from=${job.id}`} className={buttonClasses("outline", "sm")} title="Post a copy of this gig">
-                          <Copy className="size-3.5" /> Duplicate
+                          <Copy className="size-3.5 shrink-0" /> Duplicate
                         </Link>
                       </div>
                     )}
                   </div>
 
+                  {/* Full-width notice strip on its own line — it used to be a
+                      shrink-0 span inside the title row, which forced the row
+                      wider than the card on any phone. Mirrors mobile's
+                      removedNote (amber fill, accent-deep text). */}
+                  {job.removed && (
+                    <div className="mt-3 flex items-start gap-1.5 rounded-xl bg-accent-light px-3 py-2.5 text-xs font-semibold text-accent-deep">
+                      <AlertCircle className="mt-px size-3.5 shrink-0" />
+                      <span className="min-w-0">Gig removed — resolve the bookings below.</span>
+                    </div>
+                  )}
+
                   {reqs.length > 1 && (
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-divider pt-3">
-                      <span className="mr-0.5 text-xs font-bold text-ink-muted">Sort:</span>
+                    // Borderless text toggles. As filled pills these competed with
+                    // the StatusBadge on every applicant row underneath them.
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 border-t border-divider pt-2">
+                      <span className="shrink-0 text-[13px] font-semibold text-ink-muted">Sort</span>
                       {APPLICANT_SORTS.map((s) => (
                         <button
                           key={s.id}
                           onClick={() => setSortBy(s.id)}
-                          className={
-                            sortBy === s.id
-                              ? "rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white shadow-[var(--shadow-soft)]"
-                              : "rounded-full bg-canvas px-2.5 py-1 text-xs font-bold text-ink-soft ring-1 ring-line/70 hover:bg-primary-light/40"
-                          }
+                          aria-pressed={sortBy === s.id}
+                          className={classNames(
+                            "inline-flex min-h-11 items-center text-[13px] font-semibold transition",
+                            sortBy === s.id ? "text-primary underline underline-offset-4" : "text-ink-soft hover:text-ink",
+                          )}
                         >
                           {s.label}
                         </button>
@@ -232,15 +261,21 @@ export default function HiringPage() {
                   )}
 
                   {reqs.length > 0 && (
-                    <div className={`space-y-3 ${reqs.length > 1 ? "mt-3" : "mt-3 border-t border-divider pt-3"}`}>
+                    // Divided rows, not nested canvas cards: the applicants used
+                    // to be rounded-2xl tiles inside a rounded-2xl card, so one
+                    // gig stacked three radii and three fills.
+                    <div className="mt-3 divide-y divide-divider border-t border-divider">
                       {reqs.map((b) => (
-                        <div key={b.id} className="rounded-2xl bg-canvas p-3">
+                        <div key={b.id} className="py-3">
                           <div className="flex items-center gap-2.5">
                             <Link href={b.earner?.id ? `/u/${b.earner.id}` : "#"} className="shrink-0">
                               <Avatar url={b.earner?.avatarUrl} initial={b.earner?.avatarInitial} name={b.earner?.name} size={36} />
                             </Link>
+                            {/* One badge per row: the StatusBadge is the only pill.
+                                Rating, slot and counter-offer are plain ink/meta
+                                text, as on mobile's earner block. */}
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex min-w-0 items-center gap-1.5">
                                 <Link
                                   href={b.earner?.id ? `/u/${b.earner.id}` : "#"}
                                   className="truncate text-sm font-bold text-ink hover:text-primary hover:underline"
@@ -249,69 +284,75 @@ export default function HiringPage() {
                                 </Link>
                                 {b.earner?.studentVerified && <StudentBadge profile={b.earner} compact />}
                                 {b.earner?.reviewCount ? (
-                                  <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-ink-soft">
-                                    <Star className="size-3 fill-gold text-gold" /> {Number(b.earner.rating).toFixed(1)}
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 text-xs text-ink-muted">
+                                    <Star className="size-3 shrink-0 fill-gold text-gold" />
+                                    <span className="font-semibold text-ink">{Number(b.earner.rating).toFixed(1)}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-xs text-ink-muted">New</span>
+                                  <span className="shrink-0 text-xs text-ink-muted">New</span>
                                 )}
                               </div>
-                              <p className="text-xs text-ink-muted">
-                                {b.slotLabel || "Flexible"}
-                                {b.counterOffer ? ` · counter-offer ${money(b.counterOffer)}` : ""}
-                              </p>
+                              <p className="mt-0.5 truncate text-xs text-ink-muted">{b.slotLabel || "Flexible"}</p>
+                              {b.counterOffer ? (
+                                <p className="mt-0.5 text-xs text-ink-muted">
+                                  Counter-offer <span className="font-semibold text-ink">{money(b.counterOffer)}</span>
+                                </p>
+                              ) : null}
                             </div>
-                            <StatusBadge status={b.status} />
+                            <div className="shrink-0">
+                              <StatusBadge status={b.status} />
+                            </div>
                           </div>
 
                           {b.applicationNote && (
-                            <p className="mt-2 border-l-2 border-line pl-2.5 text-xs italic text-ink-soft">
+                            <p className="mt-2 border-l border-line pl-2.5 text-xs italic text-ink-soft">
                               &ldquo;{b.applicationNote}&rdquo;
                             </p>
                           )}
 
-                          {/* Actions */}
+                          {/* Actions — `grow basis-[45%]` wraps them 2-up inside a
+                              ~296px grid cell instead of overflowing the card. */}
                           <div className="mt-2.5 flex flex-wrap gap-2">
                             {b.status === "pending" && (
                               <>
-                                <Button size="sm" onClick={() => setPayBooking(b)}>
-                                  <Check className="size-4" /> Accept
+                                <Button size="sm" className="grow basis-[45%]" onClick={() => setPayBooking(b)}>
+                                  <Check className="size-4 shrink-0" /> Accept
                                 </Button>
-                                <Button size="sm" variant="outline" className="text-urgent" onClick={() => declineBooking(b.id)}>
-                                  <X className="size-4" /> Decline
+                                <Button size="sm" variant="outline" className="grow basis-[45%] text-urgent" onClick={() => declineBooking(b.id)}>
+                                  <X className="size-4 shrink-0" /> Decline
                                 </Button>
                               </>
                             )}
                             {b.status === "confirmed" && (
                               <>
                                 {b.startedAt && (
-                                  <span className="inline-flex items-center gap-1.5 self-center text-xs font-bold text-success">
-                                    <span className="size-2 rounded-full bg-success" /> In progress
+                                  <span className="inline-flex basis-full items-center gap-1.5 text-xs font-semibold text-success">
+                                    <span className="size-2 shrink-0 rounded-full bg-success" /> In progress
                                   </span>
                                 )}
                                 {!b.posterDone && (
-                                  <Button size="sm" onClick={() => markPosterDone(b.id)}>
+                                  <Button size="sm" className="grow basis-[45%]" onClick={() => markPosterDone(b.id)}>
                                     Mark done
                                   </Button>
                                 )}
-                                <Link href={`/messages?booking=${b.id}`} className={buttonClasses("secondary", "sm")}>
-                                  <MessageCircle className="size-4" /> Message
+                                <Link href={`/messages?booking=${b.id}`} className={buttonClasses("secondary", "sm", "grow basis-[45%]")}>
+                                  <MessageCircle className="size-4 shrink-0" /> Message
                                 </Link>
                                 {!b.startedAt ? (
-                                  <Button size="sm" variant="ghost" className="text-urgent" onClick={() => setCancelTarget(b)}>
+                                  <Button size="sm" variant="ghost" className="grow basis-[45%] text-urgent" onClick={() => setCancelTarget(b)}>
                                     Cancel
                                   </Button>
                                 ) : (
-                                  <span className="self-center text-xs italic text-ink-muted">
+                                  <span className="basis-full text-xs italic text-ink-muted">
                                     Can&apos;t cancel — the worker has started. Open a dispute if there&apos;s a problem.
                                   </span>
                                 )}
-                                {b.earnerDone && <span className="self-center text-xs font-bold text-success">Earner marked done ✓</span>}
+                                {b.earnerDone && <span className="basis-full text-xs font-semibold text-success">Earner marked done ✓</span>}
                               </>
                             )}
                             {b.status === "completed" && (
-                              <Button size="sm" onClick={() => setVerifyBooking(b)}>
-                                <ShieldCheck className="size-4" /> Verify &amp; rate
+                              <Button size="sm" className="grow basis-[45%]" onClick={() => setVerifyBooking(b)}>
+                                <ShieldCheck className="size-4 shrink-0" /> Verify &amp; rate
                               </Button>
                             )}
                           </div>
@@ -319,27 +360,33 @@ export default function HiringPage() {
                           {(b.status === "confirmed" || b.status === "completed") && b.amendmentStatus === "none" && (
                             <button
                               onClick={() => { setAmendTarget(b); setAmendNote(""); }}
-                              className="mt-2 flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+                              className="mt-2 flex min-h-11 items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
                             >
-                              <FileText className="size-3.5" /> Request a change to the terms
+                              <FileText className="size-3.5 shrink-0" /> Request a change to the terms
                             </button>
                           )}
+                          {/* All four amendment states share ONE neutral notice —
+                              they used to be three separate tinted blocks nested
+                              inside the (also tinted) applicant tile. Only the
+                              state word carries color. */}
                           {b.amendmentStatus === "pending" && (
-                            <p className="mt-2 rounded-xl bg-primary-light/50 px-3 py-2 text-xs font-semibold text-primary">
+                            <p className="mt-2 border-t border-divider pt-2 text-sm text-ink-soft">
                               Change requested — waiting for {b.earner?.name || "the earner"} to approve.
                             </p>
                           )}
                           {b.amendmentStatus === "accepted" && (
-                            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-success/10 px-3 py-2">
-                              <span className="text-xs font-bold text-success">Change approved — you can edit the gig terms.</span>
-                              <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm")}>
-                                <Pencil className="size-3.5" /> Edit terms
+                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-divider pt-2">
+                              <span className="min-w-0 grow basis-40 text-sm text-ink-soft">
+                                <span className="font-semibold text-success">Change approved</span> — you can edit the gig terms.
+                              </span>
+                              <Link href={`/hiring/${job.id}/edit`} className={buttonClasses("outline", "sm", "shrink-0")}>
+                                <Pencil className="size-3.5 shrink-0" /> Edit terms
                               </Link>
                             </div>
                           )}
                           {b.amendmentStatus === "declined" && (
-                            <p className="mt-2 rounded-xl bg-urgent/10 px-3 py-2 text-xs font-bold text-urgent">
-                              {b.earner?.name || "The earner"} declined the change — original terms remain.
+                            <p className="mt-2 border-t border-divider pt-2 text-sm text-ink-soft">
+                              {b.earner?.name || "The earner"} <span className="font-semibold text-urgent">declined</span> the change — original terms remain.
                             </p>
                           )}
                         </div>
@@ -356,7 +403,7 @@ export default function HiringPage() {
         {tab === "past" && (pastBookings.length === 0 ? (
           <EmptyState icon={<History className="size-10" />} title="No past gigs yet" body="Completed and declined bookings will show up here." />
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 pb-8 @5xl:grid-cols-2 @7xl:grid-cols-3">
             {pastBookings.map((b) => (
               <PastBookingCard key={b.id} booking={b} />
             ))}
@@ -432,14 +479,14 @@ function PastBookingCard({ booking }: { booking: Booking }) {
   const date = booking.completedAt ? new Date(booking.completedAt).toLocaleDateString() : null;
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+    <div className="h-full rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2.5">
         <Link href={earnerHref} className="shrink-0">
           <Avatar url={booking.earner?.avatarUrl} initial={booking.earner?.avatarInitial} name={earnerName} size={38} />
         </Link>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-bold text-ink">{booking.job?.title || "Gig"}</p>
-          <Link href={earnerHref} className="text-sm text-ink-soft hover:text-primary hover:underline">
+          <p className="truncate text-base font-bold tracking-[-0.2px] text-ink">{booking.job?.title || "Gig"}</p>
+          <Link href={earnerHref} className="block truncate text-sm text-ink-soft hover:text-primary hover:underline">
             {earnerName}
           </Link>
         </div>
@@ -451,23 +498,23 @@ function PastBookingCard({ booking }: { booking: Booking }) {
       {!noRatings && (
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-divider pt-2.5">
           {booking.earnerRating ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
               <RatingStars value={booking.earnerRating} size={13} />
-              You rated {earnerName} {Number(booking.earnerRating).toFixed(1)}
+              <span className="min-w-0 truncate">You rated {earnerName} {Number(booking.earnerRating).toFixed(1)}</span>
             </span>
           ) : (
             <span className="text-xs text-ink-muted">Completed</span>
           )}
           {booking.posterRating ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
               <RatingStars value={booking.posterRating} size={13} />
-              {earnerName} rated you {Number(booking.posterRating).toFixed(1)}
+              <span className="min-w-0 truncate">{earnerName} rated you {Number(booking.posterRating).toFixed(1)}</span>
             </span>
           ) : null}
         </div>
       )}
       {!noRatings && booking.reviewText && (
-        <p className="mt-2 border-l-2 border-line pl-2.5 text-xs italic text-ink-soft">&ldquo;{booking.reviewText}&rdquo;</p>
+        <p className="mt-2 border-l border-line pl-2.5 text-xs italic text-ink-soft">&ldquo;{booking.reviewText}&rdquo;</p>
       )}
     </div>
   );

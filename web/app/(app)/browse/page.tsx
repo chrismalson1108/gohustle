@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame, BarChart3 } from "lucide-react";
+import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame, BarChart3, School } from "lucide-react";
 import {
   CATEGORIES,
   DEFAULT_FILTERS,
@@ -19,12 +19,15 @@ import FilterSheet, { type Filters } from "@/components/FilterSheet";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import { MAP_FRAME } from "@/lib/mapFrame";
 import { classNames } from "@/lib/format";
 import type { Job } from "@/lib/types";
 
+// The skeleton reuses the map's own frame class, so switching to Map view doesn't
+// reflow the page when the (client-only) map chunk finishes loading.
 const JobsMap = dynamic(() => import("@/components/JobsMap"), {
   ssr: false,
-  loading: () => <div className="h-[70vh] w-full animate-pulse rounded-3xl bg-white/60" />,
+  loading: () => <div className={`${MAP_FRAME} animate-pulse bg-white/60`} />,
 });
 
 const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
@@ -138,26 +141,31 @@ export default function BrowsePage() {
       <PageHeader
         title={greeting}
         subtitle="Ready to hustle?"
-        variant="brand"
         right={
-          <div className="flex flex-col items-center rounded-2xl bg-white/15 px-3.5 py-2">
-            <Flame className="size-5 text-gold" />
-            <span className="text-xl font-black leading-none">{profileStatus === "ready" ? streakDays : "—"}</span>
-            <span className="text-[10px] text-white/75">week streak</span>
+          <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5">
+            <Flame className="size-3.5 text-accent-deep" />
+            {profileStatus === "ready" && streakDays > 0 ? (
+              <>
+                <span className="text-sm font-bold text-ink">{streakDays}</span>
+                <span className="text-xs font-medium text-ink-soft">week streak</span>
+              </>
+            ) : (
+              <span className="text-xs font-medium text-ink-soft">Start a streak</span>
+            )}
           </div>
         }
       >
-        <div className="mt-5 flex gap-2.5">
-          <div className="flex h-11 flex-1 items-center gap-2 rounded-2xl bg-white px-3.5">
-            <Search className="size-4 text-ink-muted" />
+        <div className="mt-4 flex gap-2.5">
+          <div className="flex h-12 flex-1 items-center gap-2 rounded-xl bg-white px-3.5">
+            <Search className="size-4 shrink-0 text-ink-muted" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search gigs..."
-              className="h-full flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted"
+              className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted"
             />
             {search && (
-              <button onClick={() => setSearch("")} aria-label="Clear">
+              <button onClick={() => setSearch("")} aria-label="Clear search">
                 <X className="size-4 text-ink-muted" />
               </button>
             )}
@@ -166,13 +174,13 @@ export default function BrowsePage() {
             onClick={() => setShowFilter(true)}
             aria-label={`Filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
             className={classNames(
-              "relative flex size-11 items-center justify-center rounded-2xl",
-              activeFilterCount > 0 ? "bg-white text-primary" : "bg-white/20 text-white",
+              "relative flex size-12 shrink-0 items-center justify-center rounded-xl text-white transition",
+              activeFilterCount > 0 ? "bg-primary" : "bg-ink",
             )}
           >
             <SlidersHorizontal className="size-5" />
             {activeFilterCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-urgent text-[10px] font-black">
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-urgent text-[10px] font-bold">
                 {activeFilterCount}
               </span>
             )}
@@ -181,17 +189,25 @@ export default function BrowsePage() {
       </PageHeader>
 
       <PageContainer>
-        {/* Category chips */}
-        <div className="-mx-1 flex gap-2 overflow-x-auto pb-4">
+        {/* Category chips — active state is ink, not brand purple. Purple is
+            reserved for links/CTAs and the active filter state. `no-scrollbar`
+            keeps the horizontal rail clean where it overflows.
+            Once the content column is wide enough the rail WRAPS instead of
+            scrolling: a mouse wheel can't scroll an x-overflow row, so on desktop
+            the trailing categories were reachable only by dragging a hairline
+            scrollbar. Container query, not `md:` — the row's real width is the
+            viewport minus the sidebar. */}
+        <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-4 @3xl:flex-wrap @3xl:overflow-visible">
           {CHIPS.map((cat) => {
             const active = selectedCat === cat.id;
             return (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCat(cat.id)}
+                aria-pressed={active}
                 className={classNames(
-                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px] font-bold transition",
-                  active ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:border-primary",
+                  "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition",
+                  active ? "bg-ink text-white" : "bg-white text-ink hover:bg-white/70",
                 )}
               >
                 <span>{cat.icon}</span>
@@ -201,27 +217,37 @@ export default function BrowsePage() {
           })}
         </div>
 
-        {/* Campus quick-toggle */}
+        {/* Campus quick-toggle — the same shortcut as before, restyled to read as
+            one more chip in the category row (lucide glyph, ink active state)
+            rather than a full-width tinted banner with an emoji on it. The
+            authoritative control still lives in the FilterSheet's Trust section. */}
         {school && (
           <button
             onClick={() => setFilters((f) => ({ ...f, campusOnly: !f.campusOnly }))}
+            aria-pressed={filters.campusOnly}
             className={classNames(
-              "mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl border px-4 py-2.5 text-sm font-bold transition",
-              filters.campusOnly ? "border-primary bg-primary text-white" : "border-primary/40 bg-primary-light/50 text-primary",
+              "mb-3 inline-flex max-w-full items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition",
+              filters.campusOnly ? "bg-ink text-white" : "bg-white text-ink hover:bg-white/70",
             )}
           >
-            🏫 {filters.campusOnly ? `Showing ${school} only` : `Show gigs from ${school}`}
+            <School className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              {filters.campusOnly ? `Showing ${school} only` : `Show gigs from ${school}`}
+            </span>
           </button>
         )}
 
         {/* Results bar */}
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
+        {/* The count yields space (and ellipsizes) so the right-hand action
+            cluster is never clipped when a filter is active — with "Clear
+            filters" showing, the two sides compete for a ~470px row. */}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-muted">
             {jobsFirstLoad
               ? "Loading gigs…"
               : `${filtered.length} gig${filtered.length !== 1 ? "s" : ""} available`}
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-3 md:gap-4">
             {activeFilterCount > 0 && (
               <button onClick={() => setFilters(DEFAULT_FILTERS)} className="text-sm font-bold text-primary">
                 Clear filters
@@ -249,21 +275,27 @@ export default function BrowsePage() {
             <JobsMap jobs={filtered} userCoords={userCoords} />
           </div>
         ) : filtered.length === 0 ? (
-          <div>
-            <EmptyState
-              icon={<Search className="size-10" />}
-              title="No gigs found"
-              body={
-                forYouNoSkills
-                  ? "Add skills to your profile to get gigs matched to you"
-                  : selectedCat === "foryou"
-                    ? "No gigs match your skills right now"
-                    : hasNarrowed
-                      ? "No gigs match your filters"
-                      : "No gigs near you yet — check back soon, or post one to get the ball rolling."
-              }
-            />
-            <div className="-mt-8 flex justify-center pb-16">
+          // The CTA used to be pulled back up into EmptyState's py-16 with a
+          // `-mt-8`, so two hardcoded numbers on opposite sides of a component
+          // boundary had to agree. Instead, neutralize EmptyState's own bottom
+          // padding here and let the CTA sit at a normal rhythm below it.
+          <div className="flex flex-col items-center pb-16">
+            <div className="w-full [&>div]:pb-4">
+              <EmptyState
+                icon={<Search className="size-10" />}
+                title="No gigs found"
+                body={
+                  forYouNoSkills
+                    ? "Add skills to your profile to get gigs matched to you"
+                    : selectedCat === "foryou"
+                      ? "No gigs match your skills right now"
+                      : hasNarrowed
+                        ? "No gigs match your filters"
+                        : "No gigs near you yet — check back soon, or post one to get the ball rolling."
+                }
+              />
+            </div>
+            <div className="flex justify-center">
               {forYouNoSkills ? (
                 <Link href="/profile/settings" className={buttonClasses("secondary", "md")}>
                   Add your skills
@@ -287,7 +319,11 @@ export default function BrowsePage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 pb-8 lg:grid-cols-2">
+          // Truly fluid: auto-fill + minmax lets the grid add a column whenever
+          // ~320px of room appears, so the feed fills a 2560px monitor the way
+          // Marketplace does and collapses to one column on a phone — without a
+          // breakpoint ladder that only works at the widths someone remembered.
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-4 pb-8">
             {filtered.map((job) => (
               <JobCard
                 key={job.id}

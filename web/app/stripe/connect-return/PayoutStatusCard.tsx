@@ -154,7 +154,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Heading({ children }: { children: React.ReactNode }) {
-  return <h1 className="font-display text-2xl font-black text-ink">{children}</h1>;
+  return <h1 className="font-display text-2xl font-bold text-ink">{children}</h1>;
 }
 
 function Body({ children }: { children: React.ReactNode }) {

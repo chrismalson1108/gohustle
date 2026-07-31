@@ -10,12 +10,12 @@ export const metadata = { title: "Identity Verification • GoHustlr" };
 // app rather than a Supabase Edge Function — see connect-return for the why.
 export default function IdentityReturnPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12">
+    <main className="flex min-h-dvh items-center justify-center bg-canvas px-6 py-12">
       <div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
         <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-primary-light text-primary">
           <ShieldCheck className="size-9" />
         </div>
-        <h1 className="font-display text-2xl font-black text-ink">Thanks — we&apos;re reviewing your ID</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">Thanks — we&apos;re reviewing your ID</h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">
           Your documents were submitted. Verification usually completes within a few minutes — your Verified
           badge appears once it&apos;s confirmed.

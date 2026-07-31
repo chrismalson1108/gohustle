@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -71,12 +71,10 @@ export default function EditGigPage() {
 
   return (
     <div>
-      <PageHeader title="Edit gig" subtitle={job.title} />
-      <PageContainer>
-        <button onClick={() => router.back()} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
-
+      {/* width="form" on BOTH the header and the container — they have to agree
+          or the title floats out of alignment with the fields under it. */}
+      <PageHeader width="form" back={{ href: "/hiring", label: "Hire" }} title="Edit gig" subtitle={job.title} />
+      <PageContainer width="form">
         <GigForm
           submitLabel="Save changes"
           lockedCore={lockedCore}

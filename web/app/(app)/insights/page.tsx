@@ -2,17 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { BarChart3, MapPin, TrendingUp, Sparkles, Users, Coins } from "lucide-react";
-import { CATEGORY_COLORS, computeAreaInsights } from "@gohustlr/shared";
+import { BarChart3, MapPin, TrendingUp, Sparkles, Users, Coins, Tag } from "lucide-react";
+import { computeAreaInsights } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { supabase } from "@/lib/supabaseClient";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
+import { MAP_FRAME } from "@/lib/mapFrame";
 import { money } from "@/lib/format";
 
+// The skeleton reuses the map's own frame class, so the page holds its shape
+// while the (client-only) map chunk loads instead of reflowing when it lands.
 const JobsMap = dynamic(() => import("@/components/JobsMap"), {
   ssr: false,
-  loading: () => <div className="h-[70vh] w-full animate-pulse rounded-3xl bg-line/60" />,
+  loading: () => <div className={`${MAP_FRAME} animate-pulse bg-white`} />,
 });
+
+// One responsive ladder shared by the real rows AND the loading skeletons —
+// container queries, so the columns track the width the cards actually have
+// (viewport minus the sidebar), not the window.
+const AREA_GRID = "grid grid-cols-1 gap-3 @3xl:grid-cols-2 @6xl:grid-cols-3";
 
 // One ranked area row, normalized so the RPC result and the client-side fallback
 // render through the same card. avgTip/workerCount only come from the RPC.
@@ -100,26 +108,28 @@ export default function InsightsPage() {
       <PageHeader
         title="Market Insights"
         subtitle="Where the demand is — by area"
+        width="feed"
         right={
-          <span className="flex items-center gap-1 rounded-full bg-gold/90 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-ink">
-            <Sparkles className="size-3.5" />
+          // Amber never carries white text — the pair is always accent-light
+          // fill + accent-deep ink (mirrors mobile's proPill).
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-light px-2.5 py-1 text-[11px] font-bold text-accent-deep">
+            <Sparkles className="size-3.5 shrink-0" />
             Pro
           </span>
         }
       />
 
-      <PageContainer className="space-y-4">
+      <PageContainer width="feed" className="space-y-4">
         {/* Optional map of open gigs */}
-        {jobs.some((j) => j.lat != null && j.lng != null) && (
-          <div>
-            <JobsMap jobs={jobs} />
-          </div>
-        )}
+        {jobs.some((j) => j.lat != null && j.lng != null) && <JobsMap jobs={jobs} />}
 
         {loading && rows === null ? (
-          <div className="space-y-3">
+          // Skeletons run through the SAME grid as the real rows (and a min-height
+          // rather than a fixed one), so the column count and card height don't
+          // change under the user when the data lands.
+          <div className={AREA_GRID}>
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-24 w-full animate-pulse rounded-2xl bg-line/60" />
+              <div key={i} className="min-h-24 w-full animate-pulse rounded-2xl bg-white" />
             ))}
           </div>
         ) : display.length === 0 ? (
@@ -129,58 +139,58 @@ export default function InsightsPage() {
             body="Once gigs are posted across a few areas, you'll see demand, pay, and worker density here."
           />
         ) : (
-          <div className="space-y-3">
-            {display.map((r, i) => {
-              const color = (r.topCategory && CATEGORY_COLORS[r.topCategory]) || "#3F25FE";
-              return (
-                <div
-                  key={r.area}
-                  className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-light text-xs font-black text-primary">
-                        {i + 1}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="size-4 text-ink-muted" />
-                        <h2 className="text-base font-bold text-ink">{r.area}</h2>
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-black text-primary">
-                      {r.jobCount} gig{r.jobCount !== 1 ? "s" : ""}
+          <div className={AREA_GRID}>
+            {display.map((r, i) => (
+              // One elevation mechanism: the shadow. No ring stacked on top.
+              <div key={r.area} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    {/* Rank is neutral — a brand-tinted counter competes with the
+                        row's actual signal (demand and pay). */}
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-canvas text-xs font-bold text-ink-soft">
+                      {i + 1}
                     </span>
+                    <MapPin className="size-4 shrink-0 text-ink-muted" />
+                    <h2 className="truncate text-[15px] font-semibold text-ink">{r.area}</h2>
                   </div>
+                  <span className="shrink-0 rounded-full bg-canvas px-2.5 py-1 text-xs font-semibold text-ink">
+                    {r.jobCount} gig{r.jobCount !== 1 ? "s" : ""}
+                  </span>
+                </div>
 
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                    {r.avgPay != null && (
-                      <span className="flex items-center gap-1.5 font-bold text-ink-soft">
-                        <TrendingUp className="size-4 text-accent" />
-                        avg {money(r.avgPay)}
-                      </span>
-                    )}
-                    {r.topCategory && (
-                      <span className="flex items-center gap-1.5 font-bold text-ink-soft">
-                        <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        mostly {r.topCategory}
-                      </span>
-                    )}
-                    {r.avgTip != null && (
-                      <span className="flex items-center gap-1.5 font-bold text-ink-soft">
-                        <Coins className="size-4 text-gold" />
-                        avg tip {money(r.avgTip)}
-                      </span>
-                    )}
-                    {r.workerCount != null && (
-                      <span className="flex items-center gap-1.5 font-bold text-ink-soft">
-                        <Users className="size-4 text-ink-muted" />
+                {/* Hierarchy: every stat is quiet except the money one, which is
+                    the number people came for. Four equally loud stats is no
+                    hierarchy at all. */}
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                  {r.avgPay != null && (
+                    <span className="flex min-w-0 items-center gap-1.5 font-semibold text-ink">
+                      <TrendingUp className="size-4 shrink-0 text-accent-deep" />
+                      <span className="truncate">avg {money(r.avgPay)}</span>
+                    </span>
+                  )}
+                  {r.topCategory && (
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink-soft">
+                      <Tag className="size-4 shrink-0 text-ink-muted" />
+                      <span className="truncate">mostly {r.topCategory}</span>
+                    </span>
+                  )}
+                  {r.avgTip != null && (
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink-soft">
+                      <Coins className="size-4 shrink-0 text-ink-muted" />
+                      <span className="truncate">avg tip {money(r.avgTip)}</span>
+                    </span>
+                  )}
+                  {r.workerCount != null && (
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink-soft">
+                      <Users className="size-4 shrink-0 text-ink-muted" />
+                      <span className="truncate">
                         {r.workerCount} worker{r.workerCount !== 1 ? "s" : ""}
                       </span>
-                    )}
-                  </div>
+                    </span>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </PageContainer>

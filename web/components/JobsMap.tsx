@@ -5,18 +5,22 @@ import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import Link from "next/link";
 import type { LatLngExpression } from "leaflet";
 import { CATEGORY_COLORS } from "@gohustlr/shared";
-import { payLabel } from "@/lib/format";
+import { payLabel, classNames } from "@/lib/format";
 import { maskLocation } from "@/lib/address";
+import { MAP_FRAME } from "@/lib/mapFrame";
 import type { Job } from "@/lib/types";
 
 interface Props {
   jobs: Job[];
   userCoords?: { lat: number; lng: number } | null;
+  /** Extra frame classes (e.g. a shorter height). Callers that override the
+      height must pass the same class to their skeleton. */
+  className?: string;
 }
 
 // Web map of nearby gigs (OpenStreetMap tiles — no API key). One colored pin per
 // gig with coordinates; click a pin to open the gig. Replaces react-native-maps.
-export default function JobsMap({ jobs, userCoords }: Props) {
+export default function JobsMap({ jobs, userCoords, className = "" }: Props) {
   const pins = jobs.filter((j) => j.lat != null && j.lng != null);
   const center: LatLngExpression = userCoords
     ? [userCoords.lat, userCoords.lng]
@@ -26,7 +30,9 @@ export default function JobsMap({ jobs, userCoords }: Props) {
   const zoom = userCoords ? 11 : pins[0] ? 11 : 4;
 
   return (
-    <div className="relative h-[70vh] w-full overflow-hidden rounded-3xl ring-1 ring-line">
+    // rounded-2xl (20px) is the card/panel radius — 28px is reserved for sheets
+    // and modals. No ring: the map is its own surface, it doesn't need a hairline.
+    <div className={classNames("relative", MAP_FRAME, className)}>
       <MapContainer center={center} zoom={zoom} scrollWheelZoom className="size-full">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -51,7 +57,9 @@ export default function JobsMap({ jobs, userCoords }: Props) {
         ))}
       </MapContainer>
       {pins.length === 0 && (
-        <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1.5 text-xs text-white">
+        // z-[500] clears Leaflet's own panes (z-index 400), which otherwise paint
+        // over a plain sibling and hide this notice.
+        <div className="pointer-events-none absolute inset-x-4 top-3 z-[500] mx-auto w-fit max-w-full truncate rounded-lg bg-black/60 px-3 py-1.5 text-center text-xs text-white">
           No gigs with a location to map yet.
         </div>
       )}
