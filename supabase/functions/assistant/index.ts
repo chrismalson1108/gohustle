@@ -119,6 +119,10 @@ const VALID_CATEGORIES = ['Tutoring', 'Delivery', 'Moving', 'Tech Help', 'Creati
 // $5 gig" works here and only fails later at escrow.
 // Keep in sync with shared/constants.js and stripe-create-payment-intent.
 const MIN_JOB_PAY = 10;
+// The ceiling matters for the same reason the floor does: stripe-create-payment-intent
+// rejects an escrow amount over 1_000_000 cents, so a gig posted above this can be
+// booked but never paid for. Refusing here beats dead-ending at accept time.
+const MAX_JOB_PAY = 10000;
 
 type Json = Record<string, unknown>;
 type Action = { type: string; [k: string]: unknown };
@@ -767,6 +771,12 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
       message: `Gigs have to pay at least $${MIN_JOB_PAY}${payType === 'hourly' ? ' per hour' : ''}. Want me to use $${MIN_JOB_PAY}?`,
     });
   }
+  if (pay > MAX_JOB_PAY) {
+    return JSON.stringify({
+      error: 'above_max_pay',
+      message: `Gigs can't pay more than $${MAX_JOB_PAY.toLocaleString()}${payType === 'hourly' ? ' per hour' : ''}, because that's the most the app can hold on a card.`,
+    });
+  }
   // Same moderation guards the manual PostJob path enforces — no bypass via the AI.
   // Layer 1: keyword filter (includes the requirements free-text, as PostJob does).
   const badGig = findProhibited(`${title} ${description} ${requirements.join(' ')}`);
@@ -877,6 +887,12 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     return JSON.stringify({
       error: 'below_min_pay',
       message: `Counter-offers have to be at least $${MIN_JOB_PAY}.`,
+    });
+  }
+  if (counter !== null && counter > MAX_JOB_PAY) {
+    return JSON.stringify({
+      error: 'above_max_pay',
+      message: `Counter-offers can't be more than $${MAX_JOB_PAY.toLocaleString()}.`,
     });
   }
   const status = 'pending';
@@ -1043,8 +1059,15 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
     .eq('earner_id', userId)
     .in('status', ['verified', 'completed'])
     .gte('created_at', monthStart);
+  // Net of the platform fee. monthly_earning_goal is a TAKE-HOME target — both clients'
+  // MoneyGoalCard multiplies by (1 - SERVICE_FEE_PCT) for exactly this reason — so
+  // summing gross list prices here made the assistant quote a different number than the
+  // app for the same account and the same month, and told the user they were closer to
+  // their goal than they are. Keep in sync with shared/constants + src/lib/stripeClient
+  // + web/lib/config (all 0.10).
+  const SERVICE_FEE_PCT = 0.10;
   const vals = (bookings ?? [])
-    .map((b: Json) => Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0)
+    .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
     .filter((v) => v > 0);
   const earned = vals.reduce((s, v) => s + v, 0);
 
@@ -1058,7 +1081,7 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
       .order('created_at', { ascending: false })
       .limit(10);
     const rv = (recent ?? [])
-      .map((b: Json) => Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0)
+      .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
       .filter((v) => v > 0);
     avg = rv.length ? rv.reduce((s, v) => s + v, 0) / rv.length : 40;
   }

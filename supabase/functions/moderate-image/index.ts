@@ -86,10 +86,22 @@ Deno.serve(async (req: Request) => {
       return json({ allowed: true, skipped: 'download_failed' });
     }
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    // The uploader already compresses/resizes; guard against anything huge.
+    // Fail CLOSED above the scan ceiling — this one is different from the fail-open
+    // paths around it.
+    //
+    // Everything else here allows on failure because the failure is a SYSTEM
+    // condition (Claude down, network stalled, download errored) that a user cannot
+    // arrange, and blocking every upload during an outage is the worse trade. Size is
+    // not that: the buckets accept 10,485,760 bytes (migration_security_hardening_2)
+    // and this scanner stopped at 8,000,000, so there was a ~2.4 MB band in which an
+    // image was stored, never looked at, and explicitly returned as allowed. Padding a
+    // file into that band is trivial, and the client-side compression that keeps real
+    // photos ~1 MB is exactly what an attacker skips by uploading straight to Storage.
+    //
+    // An image nobody can scan must not be published on a platform used by minors.
     if (bytes.byteLength > 8_000_000) {
-      console.error('moderate-image: object too large to scan, allowing', bytes.byteLength);
-      return json({ allowed: true, skipped: 'too_large' });
+      console.error('moderate-image: object too large to scan, rejecting', bytes.byteLength);
+      return json({ allowed: false, reason: 'too_large' });
     }
     const mediaType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg';
     const b64 = base64(bytes);

@@ -2,7 +2,7 @@
   "expo": {
     "name": "GoHustlr",
     "slug": "GoHustlr",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "scheme": "gohustlr",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": [

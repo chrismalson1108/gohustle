@@ -4,6 +4,20 @@
 // are read with the service role. Dead tokens (DeviceNotRegistered) are pruned.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+// Read the AAL claim straight from the access-token JWT (local decode, no network
+// round-trip). The admin console re-issues the token at aal2 after mfa.verify, so
+// this claim is authoritative for "did this session pass MFA".
+// Mirrors admin/lib/guard.ts and support-reply / support-ai-draft.
+function aalFromToken(token: string): string | null {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    return (JSON.parse(atob(b64 + pad)).aal as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -46,6 +60,15 @@ Deno.serve(async (req: Request) => {
       const { data: adminRow } = await supabase
         .from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
       if (!adminRow) return json({ error: 'Not an admin' }, 403);
+      // AND the session must have passed TOTP MFA, matching admin/lib/guard.ts and
+      // the isAdminCaller() in support-reply / support-ai-draft. Membership alone was
+      // the weaker half of that gate: this path writes caller-authored title/body to
+      // any user's lock screen and their permanent Alerts inbox, and (below) admin
+      // notices are exempt from block enforcement. A phished password-only (AAL1)
+      // staff token could do all of that — which is the precise case MFA exists for,
+      // and which every other admin-reachable function already refuses.
+      // getUser() above proved the token authentic, so its aal claim is trustworthy.
+      if (aalFromToken(authToken) !== 'aal2') return json({ error: 'MFA required' }, 403);
       isAdminNotice = true;
     }
 

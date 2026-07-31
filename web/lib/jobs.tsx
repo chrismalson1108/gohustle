@@ -66,7 +66,7 @@ const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count,
 // estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
 // transformJob row from state.jobs (carries payType + estimatedHours); booking.job
 // is a thin embed and may lack estimatedHours.
-function computeEffectivePay(booking: Booking, fullJob?: Job): number {
+export function computeEffectivePay(booking: Booking, fullJob?: Job): number {
   const payType = fullJob?.payType ?? booking?.job?.payType;
   const basePay = booking?.counterOffer ?? Number(fullJob?.pay ?? booking?.job?.pay ?? 0);
   const hours = Number(fullJob?.estimatedHours) || 1;

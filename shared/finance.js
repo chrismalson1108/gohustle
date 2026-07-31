@@ -1,8 +1,31 @@
 // Pure finance helpers for the hustler "money goal" coach (no native imports,
 // fully unit-testable). Used by mobile, web, and the AI assistant edge function.
+import { isJobBookable, isHiddenForViewer } from './filters.js';
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * The one way to render a dollar amount, so the three clients cannot disagree
+ * about what a number looks like.
+ *
+ * A bare `n.toLocaleString()` formats 2640.5 as "2,640.5" — one decimal place,
+ * which no currency uses — and 2640.567 as "2,640.567". Money is either whole
+ * dollars or exactly two decimals, never one and never three. Thousands
+ * separators are always on: mobile had them and web did not, so the same
+ * earnings total read "$2,640.5" in the app and "$2640.50" on the site.
+ */
+export function formatMoney(n) {
+  const v = Number(n) || 0;
+  const digits = v % 1 === 0 ? 0 : 2;
+  // Sign goes OUTSIDE the symbol: "-$12.50", not "$-12.50". Tax Center shows a
+  // negative net profit whenever expenses outrun income, so this is reachable.
+  const body = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `${v < 0 ? '-' : ''}$${body}`;
 }
 
 // IRS standard mileage rate for business use, in dollars per mile.
@@ -46,7 +69,11 @@ export function computeGoalPlan({
 
   const gigsNeeded = avg > 0 ? Math.ceil(remaining / avg) : null;
   const perDayNeeded = daysLeft > 0 ? remaining / daysLeft : remaining;
-  const perWeekNeeded = perDayNeeded * 7;
+  // Never quote a weekly figure larger than what is actually left to earn. With
+  // fewer than 7 days to go the raw daily-rate×7 overshoots the whole goal — on
+  // the last day of a month it read "$6,685 per week" to close a $955 gap, a
+  // number the user can neither owe nor act on.
+  const perWeekNeeded = Math.min(remaining, perDayNeeded * 7);
 
   // Pace projection: extrapolate the current run-rate to month end.
   const projectedTotal = dayOfMonth > 0 ? (earned / dayOfMonth) * daysInMonth : earned;
@@ -137,8 +164,23 @@ export function scoreGig(job, { skills = [], remaining = 0 } = {}) {
 }
 
 // Rank gigs best-first for closing the user's goal.
+//
+// Eligibility is applied HERE rather than left to each caller. "Best gigs to hit
+// your goal" is a call to action — every row has to be a gig the reader can
+// actually book — and both callers previously filtered on `status === 'open'`
+// alone. That let two kinds of dead row through:
+//   * a gig whose every slot is already taken (bookable by nobody), because
+//     jobs.status never leaves 'open' (its 'booked' value is a dead enum), and
+//   * a gig THIS viewer already won, which Browse hides but the goal card still
+//     recommended — so the same gig appeared twice on the card and once in Browse.
+// isJobBookable/isHiddenForViewer are the same rules Browse applies, so the two
+// surfaces can no longer disagree about what is bookable.
+//
+// `myBookings` is optional: omitted, only the viewer-independent rule applies.
 export function rankGigsForGoal(jobs = [], opts = {}) {
+  const { myBookings } = opts;
   return [...(jobs || [])]
+    .filter((j) => isJobBookable(j) && !isHiddenForViewer(j, myBookings))
     .map((j) => ({ job: j, score: scoreGig(j, opts) }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.job);

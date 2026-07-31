@@ -1,8 +1,11 @@
+import { formatMoney } from "@gohustlr/shared";
 import type { Job } from "./types";
 
+// Delegates to the shared formatter so web and mobile render an amount
+// identically — web used to omit thousands separators, so the same earnings
+// total read "$2640.50" here and "$2,640.50" in the app.
 export function money(n: number | null | undefined, opts: { cents?: boolean } = {}): string {
-  const v = Number(n ?? 0) / (opts.cents ? 100 : 1);
-  return v % 1 === 0 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`;
+  return formatMoney(Number(n ?? 0) / (opts.cents ? 100 : 1));
 }
 
 // "$25/hr" for hourly, "$120" for flat.

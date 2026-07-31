@@ -31,7 +31,8 @@ import {
 } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
-import { useJobs } from "@/lib/jobs";
+import { useJobs, computeEffectivePay } from "@/lib/jobs";
+import { SERVICE_FEE_PCT } from "@/lib/config";
 import {
   fetchExpenses,
   addExpense,
@@ -146,9 +147,28 @@ export default function TaxesPage() {
   }, [load]);
 
   const year = new Date().getFullYear();
+
+  // Year-scoped, fee-net platform income — NOT profiles.earnings_total, which is a
+  // LIFETIME figure and was being labelled as this year's income (and driving the
+  // "set aside ~27%" prompt off it). Mobile's Tax Center was fixed for exactly this
+  // and web was left behind; its comment names the bug: "a year-scoped estimate is
+  // strictly better than a lifetime total presented as a single year's income."
+  //
+  // Approximate by nature — the authoritative per-booking net is
+  // payments.earner_amount_cents, which this screen does not load. Hourly gigs are
+  // valued at one hour because the booking embed carries no estimatedHours, so this
+  // under- rather than over-states income, the safer direction for a tax set-aside.
+  const platformIncome = useMemo(
+    () =>
+      (bookings || [])
+        .filter((b) => b?.status === "verified" && String(b?.completedAt || "").startsWith(String(year)))
+        .reduce((sum, b) => sum + computeEffectivePay(b) * (1 - SERVICE_FEE_PCT), 0),
+    [bookings, year],
+  );
+
   const summary = useMemo(
-    () => yearSummary({ year, stripeIncome: earningsTotal, expenses, income }),
-    [year, earningsTotal, expenses, income],
+    () => yearSummary({ year, stripeIncome: platformIncome, expenses, income }),
+    [year, platformIncome, expenses, income],
   );
 
   // Per-job expense breakdown for the current year.
@@ -260,13 +280,16 @@ export default function TaxesPage() {
 
   const handleExport = () => {
     const { yearExpenses, yearIncome } = summary;
-    if (!yearExpenses.length && !yearIncome.length && !earningsTotal) {
+    if (!yearExpenses.length && !yearIncome.length && !platformIncome) {
       showToast({ icon: "📄", title: "Nothing to export", message: `No income or expenses recorded for ${year} yet.` });
       return;
     }
     const csv = buildTaxSummaryCSV({
       year,
-      stripeIncome: earningsTotal,
+      // Same year-scoped figure the screen shows. This one ends up in front of an
+      // accountant, so a lifetime total under a "2026" heading is the worst place
+      // for it.
+      stripeIncome: platformIncome,
       income: yearIncome as unknown as Array<Record<string, unknown>>,
       expenses: yearExpenses as unknown as Array<Record<string, unknown>>,
     });

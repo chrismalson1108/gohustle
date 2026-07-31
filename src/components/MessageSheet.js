@@ -333,6 +333,26 @@ export default function MessageSheet({ visible, bookingId, jobId, jobTitle, othe
 
   return (
     <Host onClose={onClose}>
+      {/* Embedded mode hides the sheet header, and that header carried the ONLY
+          Report/Block entry point. ChatScreen (which is now how every conversation
+          opens on mobile) therefore shipped with no way to report or block the
+          person you are talking to — the one screen where you most need it, and
+          the one thing web's chat still has. Rather than duplicate the handlers
+          and the reason picker in ChatScreen, keep them here and give embedded
+          mode the same overflow control on its own slim row. */}
+      {embedded && otherPerson?.id && (
+        <View style={styles.embeddedActions}>
+          <TouchableOpacity
+            onPress={handleMenu}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Report or block ${otherName}`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
       {!embedded && (
           <View style={styles.header}>
             <View style={styles.handle} />
@@ -511,6 +531,9 @@ const styles = StyleSheet.create({
   reportCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
   overlay: { flex: 1, justifyContent: 'flex-end' },
   embedded: { flex: 1, backgroundColor: colors.surface },
+  // Slim right-aligned strip carrying the Report/Block overflow in embedded mode,
+  // where ChatScreen supplies the rest of the header.
+  embeddedActions: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 4 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     backgroundColor: colors.surface,

@@ -8,6 +8,28 @@ import TakedownControls from "./TakedownControls";
 
 export const metadata = { title: "Job detail" };
 
+// jobs.photos is poster-controlled free text — RLS checks ownership, and no guard pins
+// these to the project's storage host — so a poster can put any string in the array.
+// Both user-facing clients already refuse to render one unless it is a genuine https
+// Supabase public-storage URL (safeCertUrl in src/lib/certifications.js and its web
+// twin). The admin console did not, and rendered them straight into href and src.
+//
+// That is the worst place to skip the check. An admin opening a flagged gig would make
+// their browser fetch an attacker-chosen URL — confirming that a moderator looked, and
+// leaking the admin's IP — from the one browser in the system holding service-role
+// power. Same rule as the clients, so the three cannot drift.
+function safePhotoUrl(url: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return null;
+    if (!u.pathname.includes("/storage/v1/object/public/")) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAdminPage("support");
   const { id } = await params;
@@ -61,11 +83,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {photos.length > 0 && (
         <Section title={`Photos (${photos.length})`}>
           <div className="flex flex-wrap gap-3">
-            {photos.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noreferrer noopener">
-                <img src={url} alt={`job photo ${i + 1}`} className="h-40 w-40 rounded-lg border border-[var(--line)] object-cover" />
-              </a>
-            ))}
+            {photos.map((url, i) => {
+              const safe = safePhotoUrl(url);
+              if (!safe) {
+                // Show that a photo exists and was refused, rather than hiding it —
+                // an off-platform URL on a gig is itself worth a moderator seeing.
+                return (
+                  <div
+                    key={i}
+                    title={url}
+                    className="flex h-40 w-40 items-center justify-center rounded-lg border border-dashed border-[var(--line)] p-2 text-center text-xs text-[var(--muted)]"
+                  >
+                    Photo {i + 1} not shown — off-platform URL
+                  </div>
+                );
+              }
+              return (
+                <a key={i} href={safe} target="_blank" rel="noreferrer noopener">
+                  <img src={safe} alt={`job photo ${i + 1}`} className="h-40 w-40 rounded-lg border border-[var(--line)] object-cover" />
+                </a>
+              );
+            })}
           </div>
         </Section>
       )}

@@ -8,6 +8,7 @@ import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { money, classNames } from "@/lib/format";
+import { SERVICE_FEE_PCT } from "@/lib/config";
 import Button from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 
@@ -38,7 +39,13 @@ export default function MoneyGoalCard() {
     const paid = bookings.filter(
       (b) => (b.status === "verified" || b.status === "completed") && isThisMonth(b.completedAt),
     );
-    const vals = paid.map((b) => b.counterOffer ?? b.job?.pay ?? 0).filter((v) => v > 0);
+    // Net of the platform fee — this card tracks progress toward what the earner
+    // actually RECEIVES, and the gross list price overstates that by 10%. Mobile
+    // has done this since the fee-net goal fix; web was left on gross, so the same
+    // account read $45 here and $41 in the app at the same moment.
+    const vals = paid
+      .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
+      .filter((v) => v > 0);
     const earnedThisMonth = vals.reduce((s, v) => s + v, 0);
 
     // Average gig value: this month, else any verified booking, else $40.
@@ -46,7 +53,7 @@ export default function MoneyGoalCard() {
     if (!avg) {
       const anyPaid = bookings
         .filter((b) => b.status === "verified" || b.status === "completed")
-        .map((b) => b.counterOffer ?? b.job?.pay ?? 0)
+        .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
         .filter((v) => v > 0);
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }
@@ -58,8 +65,12 @@ export default function MoneyGoalCard() {
       gigsThisMonth: vals.length,
     });
 
-    const open = jobs.filter((j) => j.status === "open" && j.posterId !== user?.id);
-    const ranked = rankGigsForGoal(open, { skills, remaining: p.remaining }).slice(0, 3);
+    const open = jobs.filter((j) => j.posterId !== user?.id);
+    const ranked = rankGigsForGoal(open, {
+      skills,
+      remaining: p.remaining,
+      myBookings: bookings,
+    }).slice(0, 3);
     return { plan: p, picks: ranked };
   }, [bookings, jobs, monthlyEarningGoal, skills, user?.id]);
 
@@ -83,7 +94,9 @@ export default function MoneyGoalCard() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="font-black text-ink">Money goal</p>
-          <p className="text-xs text-ink-muted">{plan.daysLeft} days left this month</p>
+          <p className="text-xs text-ink-muted">
+            {plan.daysLeft} {plan.daysLeft === 1 ? "day" : "days"} left this month
+          </p>
         </div>
         <span className={classNames("rounded-full px-2.5 py-1 text-[11px] font-bold", pace.cls)}>{pace.label}</span>
       </div>

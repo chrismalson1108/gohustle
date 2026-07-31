@@ -29,16 +29,32 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
   // inside run(), which renders a thrown message straight back to the console (same
   // pattern as assertActionableTarget). So the admin is told what is outstanding and
   // can settle it, instead of silently destroying a worker's payout.
-  const [{ data: earnerUnsettled }, { data: ownedJobs }] = await Promise.all([
+  // Fail CLOSED on a query error. These .select()s return { data: null, error } when
+  // they fail, and the count below reads `earnerUnsettled?.length ?? 0` — so a
+  // transient failure silently produced "0 unsettled" and let the cascade run,
+  // disabling the one control protecting a worker's payout precisely when it was
+  // needed. Deletion is irreversible; not knowing has to mean "don't".
+  const [
+    { data: earnerUnsettled, error: earnerErr },
+    { data: ownedJobs, error: jobsErr },
+  ] = await Promise.all([
     service.from("bookings").select("id").eq("earner_id", userId).in("status", UNSETTLED_STATUSES),
     service.from("jobs").select("id").eq("poster_id", userId),
   ]);
   let posterUnsettled: { id: string }[] = [];
   const ownedJobIds = (ownedJobs ?? []).map((j) => j.id);
+  let posterErr: unknown = null;
   if (ownedJobIds.length) {
-    const { data } = await service
+    const { data, error } = await service
       .from("bookings").select("id").in("job_id", ownedJobIds).in("status", UNSETTLED_STATUSES);
     posterUnsettled = data ?? [];
+    posterErr = error;
+  }
+  if (earnerErr || jobsErr || posterErr) {
+    throw new Error(
+      "Could not verify this user's open bookings, so deletion was refused. " +
+        "Retry in a moment; if it keeps failing, settle their bookings manually before deleting.",
+    );
   }
   const unsettled = (earnerUnsettled?.length ?? 0) + posterUnsettled.length;
   if (unsettled > 0) {
@@ -106,7 +122,27 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
     console.error("admin deleteUserCascade: escrow release failed (continuing)", e);
   }
 
-  // 3. Delete the auth user → cascades profile + all user-scoped rows.
+  // 3. Scrub the support queue's copy of this person's identity. MUST run before the
+  // auth delete, while support_tickets.user_id still points at them.
+  //
+  // support_tickets.user_id is `on delete set null`, so the ticket deliberately
+  // outlives the account — but the table also denormalises `email` (not null) and
+  // `name`, which that cascade does not touch. Without this, a deleted user's plain
+  // email address and real name stay in the support queue indefinitely. Tombstoning
+  // keeps the operational record that `set null` was for, minus the identifiers.
+  // Best-effort, matching the edge function: a scrub failure must not strand the
+  // deletion half-done.
+  try {
+    const { error: scrubErr } = await service
+      .from("support_tickets")
+      .update({ email: "deleted-user@removed.invalid", name: null })
+      .eq("user_id", userId);
+    if (scrubErr) console.error("admin deleteUserCascade: support ticket scrub failed", scrubErr);
+  } catch (e) {
+    console.error("admin deleteUserCascade: support ticket scrub threw", e);
+  }
+
+  // 4. Delete the auth user → cascades profile + all user-scoped rows.
   const { error } = await service.auth.admin.deleteUser(userId);
   if (error) throw new Error(`auth delete failed: ${error.message}`);
 }

@@ -88,6 +88,13 @@ export interface BookingJobMini {
   pay: number;
   payType: PayType;
   location: string | null;
+  // transformBooking() has populated these three since the badge engine needed
+  // them, but they were never declared here — so web code could not reach a
+  // field that is present at runtime. Nullable, matching the transform: older
+  // joins may not have selected them.
+  category: string | null;
+  posterId: string | null;
+  createdAt: string | null;
 }
 
 export interface Booking {

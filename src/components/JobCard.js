@@ -5,6 +5,7 @@ import { colors, shadows } from '../theme';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { maskLocation, canSeeExactAddress } from '../lib/address';
+import { formatMoney } from '../lib/finance';
 import RatingStars from './RatingStars';
 import Avatar from './Avatar';
 import StudentBadge from './StudentBadge';
@@ -25,9 +26,13 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel, at
   const haptic = useHaptic();
   const { savedJobIds, toggleSavedJob } = useJobs();
   const saved = savedJobIds.has(job.id);
+  // Through formatMoney, not raw interpolation: these are IEEE-754 products, so a
+  // $12.50/hr gig over 3 hours rendered as "$37.5" and a rate like 33.33 could put a
+  // full float artifact on the browse card. Same formatter as everywhere else.
+  const hours = job.estimatedHours || 1;
   const estPay = job.payType === 'hourly'
-    ? `$${job.pay * (job.estimatedHours || 1)}–${job.pay * (job.estimatedHours || 1) + job.pay} est.`
-    : `$${job.pay} flat`;
+    ? `${formatMoney(job.pay * hours)}–${formatMoney(job.pay * hours + job.pay)} est.`
+    : `${formatMoney(job.pay)} flat`;
   const meta = RECUR_LABEL[job.recurrence]
     ? `${job.category} · ${RECUR_LABEL[job.recurrence]}`
     : job.category;

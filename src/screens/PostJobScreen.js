@@ -116,7 +116,10 @@ export default function PostJobScreen({ navigation, route }) {
       return;
     }
     const pay = parseFloat(form.pay);
-    const kwTerm = findProhibited([form.title, form.description, ...(form.tags || []), ...(form.hazards || [])].join(' '));
+    // location is included: LocationPicker commits whatever is typed (its
+    // autocomplete is a suggestion, not a constraint), and it renders on the
+    // Browse card and gig header like any other field.
+    const kwTerm = findProhibited([form.title, form.description, form.location, ...(form.tags || []), ...(form.hazards || [])].join(' '));
     if (kwTerm) {
       logModerationBlock(kwTerm, 'gig', `${form.title} ${form.description}`);
       haptic.error();

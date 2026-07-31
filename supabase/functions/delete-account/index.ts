@@ -61,16 +61,34 @@ Deno.serve(async (req: Request) => {
     // to clear, and every settle/cancel path remains available in-app. Apple 5.1.1(v)
     // requires that account deletion be offered, not that it override an unsettled
     // payment obligation to a third party.
-    const [{ data: earnerBookings }, { data: ownedJobs }] = await Promise.all([
+    // Fail CLOSED on a query error, for the same reason the report check below does.
+    // These three .select()s return { data: null, error } when they fail, and the
+    // count below reads `earnerBookings?.length ?? 0` — so a dropped connection or a
+    // PostgREST hiccup silently produced "0 unsettled" and let the deletion proceed,
+    // turning the one control protecting a worker's payout into a no-op at exactly
+    // the moment it was needed. The cascade is irreversible; not knowing has to mean
+    // "don't".
+    const [
+      { data: earnerBookings, error: earnerErr },
+      { data: ownedJobs, error: jobsErr },
+    ] = await Promise.all([
       admin.from('bookings').select('id').eq('earner_id', user.id).in('status', UNSETTLED_STATUSES),
       admin.from('jobs').select('id').eq('poster_id', user.id),
     ]);
     let posterUnsettled: { id: string }[] = [];
     const ownedJobIds = (ownedJobs ?? []).map((j) => j.id);
+    let posterErr: unknown = null;
     if (ownedJobIds.length) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from('bookings').select('id').in('job_id', ownedJobIds).in('status', UNSETTLED_STATUSES);
       posterUnsettled = data ?? [];
+      posterErr = error;
+    }
+    if (earnerErr || jobsErr || posterErr) {
+      return json({
+        error: 'SETTLEMENT_CHECK_FAILED',
+        message: 'We could not check your open bookings. Please try again, or contact support to delete your account.',
+      }, 503);
     }
     // Open safety report = evidence hold. Self-deletion cascades away the bookings,
     // messages, reviews and photos a moderator would need to act on a report filed
@@ -174,7 +192,35 @@ Deno.serve(async (req: Request) => {
       console.error('delete-account: escrow hold release failed (continuing)', e);
     }
 
-    // 3. Delete the auth user → cascades profile + all user-scoped rows.
+    // 3. Scrub the support queue's copy of this person's identity. MUST run before
+    // the auth delete, while support_tickets.user_id still points at them.
+    //
+    // support_tickets.user_id is `on delete set null` (20260705040000), so the ticket
+    // deliberately outlives the account — but the table also denormalises `email`
+    // (not null) and `name`, and those are NOT cleared by that cascade. The result is
+    // that someone who asked to be deleted keeps a plain-text email address and real
+    // name sitting in the support queue forever, with nothing left linking it to a
+    // profile to explain why.
+    //
+    // Tombstoning rather than deleting the rows preserves what `set null` was clearly
+    // for — the operational record of a support interaction — while removing the
+    // direct identifiers. Best-effort: a failure here must not strand the user in a
+    // half-deleted state, so it is logged and the deletion proceeds.
+    //
+    // RESIDUAL: support_ticket_messages.body is free text the user typed and may
+    // contain identifiers they volunteered. Scrubbing it would gut the support record;
+    // that is a retention-policy decision, not a code one.
+    try {
+      const { error: scrubErr } = await admin
+        .from('support_tickets')
+        .update({ email: 'deleted-user@removed.invalid', name: null })
+        .eq('user_id', user.id);
+      if (scrubErr) console.error('delete-account: support ticket scrub failed', scrubErr);
+    } catch (e) {
+      console.error('delete-account: support ticket scrub threw', e);
+    }
+
+    // 4. Delete the auth user → cascades profile + all user-scoped rows.
     const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
     if (delErr) return json({ error: delErr.message }, 500);
 

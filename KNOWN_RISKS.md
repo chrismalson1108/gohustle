@@ -2,6 +2,29 @@
 
 _Verified 2026-07-07 at commit a70c9b5 (master)._
 
+> **2026-07-30 update — read `AUDIT_2026-07-30.md` alongside this file.**
+> That round ran the apps rather than only reading them, and fixed 19 defects,
+> most of them money or safety. Two entries below are now **resolved by
+> measurement**, not by argument:
+>
+> - **§6.2 / §7.1 live-vs-tracked drift is no longer unverifiable.** `supabase
+>   migration list --linked` shows every tracked migration applied, in order, with
+>   **no drift**. Treat the tracked set as the live state.
+> - **§6.1's warning came true, in a form this file did not anticipate.** It says
+>   cross-user privacy rests entirely on the column grant. Correct — but the
+>   analogous failure was elsewhere: `support_tickets` denormalises `email` and
+>   `name`, and `on delete set null` never cleared them, so deleted users' direct
+>   identifiers persisted. Fixed. The lesson generalises: *a column grant protects
+>   the profiles table, not a copy of the data in another table.*
+>
+> Still true and still worth heeding: **this register is not exhaustive.** Two of
+> the 2026-07-30 findings — an earner pre-stamping `started_at` to freeze a
+> poster's escrow, and a ~2.4 MB band of images stored but never scanned — were
+> absent from it and had survived every prior round.
+>
+> §5.6 (CLAUDE.md has the amendment direction backwards) is **still uncorrected**
+> in CLAUDE.md. The code remains authoritative: poster proposes, earner responds.
+
 **Purpose.** This document enumerates the known risks, incomplete/stubbed areas, deploy-gated protections, deliberate fail-open designs, lifecycle/authorization gaps, data/privacy exposures, migration-hygiene issues, and live-config unknowns for the GoHustlr platform. It is a **documentation-only** register for an external auditor (Fable). **No fixes are proposed or applied here.** Every claim is grounded in source with `path:line` citations.
 
 **System shape (context).** GoHustlr is a two-sided, TaskRabbit-style gig marketplace for college students. Three front-ends run on one Supabase backend: **mobile** (Expo/React Native, `src/` + `App.js`), **web** (Next.js, `web/`), and an **admin console** (Next.js, `admin/`). Shared pure logic lives in `shared/`. Backend = Supabase (Postgres + RLS, Auth, Realtime, Storage) + Deno edge functions. Payments = Stripe (manual-capture escrow, Connect Express payouts, Identity, tips), in **TEST mode** for beta.

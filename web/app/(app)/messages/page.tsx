@@ -50,10 +50,17 @@ export default function MessagesPage() {
       const job = jobs.find((j) => j.id === b.jobId);
       list.push({
         bookingId: b.id,
-        otherId: job?.posterId ?? null,
-        name: job?.poster.name || b.job?.title || "Poster",
-        avatarUrl: job?.poster.avatarUrl || null,
-        avatarInitial: job?.poster.avatarInitial || "P",
+        otherId: job?.posterId ?? b.job?.posterId ?? null,
+        // Never fall back to the job title — this field is a PERSON'S name. The
+        // browse list holds only currently-listed gigs, so a conversation about a
+        // gig you already won, finished, or that was taken down finds no `job`
+        // here, and the row then rendered the GIG as the person you were talking
+        // to ("Fishing Assistance tutorial" sat where a name belongs, next to an
+        // avatar initialled from someone else). Mobile keeps the counterparty null
+        // in this case and never substitutes the title; web now matches.
+        name: job?.poster?.name || "Poster",
+        avatarUrl: job?.poster?.avatarUrl || null,
+        avatarInitial: job?.poster?.avatarInitial || "P",
         jobTitle: b.job?.title || job?.title || "Gig",
         jobId: b.jobId ?? null,
       });

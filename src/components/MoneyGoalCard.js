@@ -55,8 +55,12 @@ export default function MoneyGoalCard({ navigation }) {
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }
     const p = computeGoalPlan({ monthlyGoal: monthlyEarningGoal, earnedThisMonth: earned, avgGigValue: avg, gigsThisMonth: vals.length });
-    const open = (jobs || []).filter((j) => j.status === 'open' && j.posterId !== user?.id);
-    const ranked = rankGigsForGoal(open, { skills, remaining: p.remaining }).slice(0, 3);
+    const open = (jobs || []).filter((j) => j.posterId !== user?.id);
+    const ranked = rankGigsForGoal(open, {
+      skills,
+      remaining: p.remaining,
+      myBookings: bookings,
+    }).slice(0, 3);
     return { plan: p, picks: ranked };
   }, [bookings, jobs, monthlyEarningGoal, skills, user?.id]);
 
@@ -81,7 +85,9 @@ export default function MoneyGoalCard({ navigation }) {
         </View>
         <View style={styles.headerText}>
           <Text style={styles.title} numberOfLines={1}>Money goal</Text>
-          <Text style={styles.sub} numberOfLines={1}>{plan.daysLeft} days left this month</Text>
+          <Text style={styles.sub} numberOfLines={1}>
+            {plan.daysLeft} {plan.daysLeft === 1 ? 'day' : 'days'} left this month
+          </Text>
         </View>
         <View style={[styles.pacePill, { backgroundColor: pace.bg }]}>
           <Text style={[styles.paceText, { color: pace.fg }]} numberOfLines={1}>{pace.label}</Text>

@@ -58,14 +58,15 @@ Deno.serve(async (req: Request) => {
     // INSERT BEFORE COUNTING, so concurrent reports are visible to each other — the
     // same ordering send-push and student-verify-start rely on for their caps.
     // Over-limit rows are pruned immediately below rather than pre-checked.
-    await supabase.from('client_errors').insert({
+    // Keep the id so the row can actually be pruned if it turns out to be over cap.
+    const { data: inserted } = await supabase.from('client_errors').insert({
       user_id: user.id,
       platform,
       app_version: String(body.appVersion ?? '').slice(0, 32) || null,
       message,
       context,
       fatal: body.fatal === true,
-    });
+    }).select('id').single();
 
     const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count } = await supabase
@@ -74,8 +75,20 @@ Deno.serve(async (req: Request) => {
       .eq('user_id', user.id)
       .gte('created_at', since);
     if ((count ?? 0) > MAX_PER_USER_PER_HOUR) {
-      // Over cap: this row is noise. Report success anyway — the client must never
-      // retry or surface anything to the user for a telemetry write.
+      // Over cap: this row is noise, so actually remove it. The comment above has
+      // always said over-limit rows are "pruned immediately below" — but nothing
+      // pruned, so the cap only ever changed the response body while every single
+      // call still wrote a row. A client stuck in an error loop could grow the table
+      // without bound and bury real reports on the admin /errors page under its own
+      // noise, which is the opposite of what an error sink is for.
+      //
+      // Deleting by the id just inserted (rather than pruning oldest) keeps this
+      // scoped to the caller's own row: no other user's telemetry can be evicted.
+      if (inserted?.id) {
+        await supabase.from('client_errors').delete().eq('id', inserted.id);
+      }
+      // Report success anyway — the client must never retry or surface anything to
+      // the user for a telemetry write.
       return json({ ok: true, throttled: true });
     }
 

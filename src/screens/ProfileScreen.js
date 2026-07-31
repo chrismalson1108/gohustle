@@ -20,6 +20,7 @@ import MoneyGoalCard from '../components/MoneyGoalCard';
 import { EarningsTiles, InsightsCard } from '../components/MonthSummaryCard';
 import GoalsChallengesCard, { XpCard, ChallengesList } from '../components/GoalsChallengesCard';
 import { collegeLine } from '../lib/school';
+import { formatMoney } from '../lib/finance';
 import { pickImage, uploadImage } from '../lib/uploadImage';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
@@ -360,7 +361,7 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.statsRow}>
             <Stat label="Jobs done" value={bookings.filter(b => b.status === 'completed' || b.status === 'verified').length} />
             <View style={styles.statDiv} />
-            <Stat label="Total earned" value={`$${earningsTotal.toLocaleString()}`} />
+            <Stat label="Total earned" value={formatMoney(earningsTotal)} />
             <View style={styles.statDiv} />
             <Stat label="Avg rating" value={actualReviewCount > 0 ? actualRating.toFixed(1) + ' ★' : '—'} />
           </View>
