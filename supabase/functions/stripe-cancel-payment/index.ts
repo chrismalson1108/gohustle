@@ -43,6 +43,34 @@ Deno.serve(async (req: Request) => {
     if (['completed', 'verified'].includes(booking.status)) {
       return json({ error: 'This booking can no longer be cancelled.' }, 409);
     }
+    // ...and the booking must ALREADY be in a state where no work is expected.
+    //
+    // This function only voids the hold; it never writes to the bookings row. That is
+    // fine when it is called as the second half of decline/cancel — declineBooking
+    // calls it while the booking is still 'pending', and cancelBooking sets
+    // 'cancelled' FIRST and says so ("now it's safe to release the hold"). Both
+    // clients, both flows.
+    //
+    // But it is a plain authenticated endpoint, and nothing forced that pairing. A
+    // poster could accept a booking — escrow authorized, earner pushed "Booking
+    // accepted!", gig showing as Active — and then call this directly with their own
+    // token. Every guard passed: status 'confirmed' is not completed/verified,
+    // started_at is null because the earner has not tapped "I'm on site" yet, and the
+    // payment is still 'authorized'. The hold is voided, payments reads 'cancelled',
+    // and the BOOKING IS UNTOUCHED. Neither client reads the payments table, so the
+    // earner is shown a live, accepted gig with nothing behind it. They do the work
+    // and there is no money to capture.
+    //
+    // admin/lib/deleteUser.ts already names this contract — CANCELLABLE_STATUSES,
+    // commented "Only holds on un-started bookings may be voided. Mirrors the edge
+    // function." The edge function was the one place it was never actually enforced.
+    const CANCELLABLE_STATUSES = ['pending', 'declined', 'cancelled'];
+    if (!CANCELLABLE_STATUSES.includes(booking.status)) {
+      return json({
+        error: 'BOOKING_STILL_LIVE',
+        message: 'Cancel or decline the booking first — a live booking must keep its hold.',
+      }, 409);
+    }
     // Once the worker has started ("I'm on site"), the booking is locked the same
     // way the DB trigger trg_guard_started_booking_cancel locks the bookings row.
     // Without this, a client-side race could void the hold on a still-active job.
