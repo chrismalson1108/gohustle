@@ -1,9 +1,14 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { classNames } from "@/lib/format";
 import type { Slot } from "@/lib/types";
 
 // Single-select chip row from a job's slots. Taken slots are disabled.
+// Ported from src/components/SlotPicker.js: true pills, 1px line border, primary
+// fill when selected. The mobile version scrolls horizontally; on web the row
+// WRAPS instead — a mouse cannot scroll an x-overflow row, so a hidden slot would
+// be unreachable on desktop.
 export default function SlotPicker({
   slots,
   selected,
@@ -27,17 +32,24 @@ export default function SlotPicker({
             type="button"
             disabled={s.taken}
             onClick={() => onSelect(s.id)}
+            // The lock glyph replaces the old " · taken" suffix + line-through;
+            // aria-label keeps that information for assistive tech.
+            aria-label={s.taken ? `${s.label} — already taken` : s.label}
+            aria-pressed={active}
             className={classNames(
-              "rounded-2xl border px-3.5 py-2.5 text-sm font-bold transition",
+              "inline-flex min-h-11 max-w-full shrink-0 items-center gap-1.5 rounded-full border px-4 py-2.5 text-[13px] font-medium transition",
               s.taken
-                ? "cursor-not-allowed border-line bg-line/40 text-ink-muted line-through"
+                ? // Disabled state reads through COLOR alone — stacking opacity on
+                  // top of the fill faded the label into it and made taken slots
+                  // unreadable (same fix as mobile).
+                  "cursor-not-allowed border-divider bg-divider text-ink-soft"
                 : active
-                  ? "border-primary bg-primary text-white"
+                  ? "border-primary bg-primary font-semibold text-white"
                   : "border-line bg-white text-ink-soft hover:border-primary",
             )}
           >
-            {s.label}
-            {s.taken && " · taken"}
+            {s.taken && <Lock className="size-3.5 shrink-0" />}
+            <span className="truncate">{s.label}</span>
           </button>
         );
       })}

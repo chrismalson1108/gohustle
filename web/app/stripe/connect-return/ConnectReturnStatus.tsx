@@ -62,7 +62,7 @@ export default function ConnectReturnStatus() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12">
+    <main className="flex min-h-dvh items-center justify-center bg-canvas px-6 py-12">
       <PayoutStatusCard
         status={status}
         failed={failed}

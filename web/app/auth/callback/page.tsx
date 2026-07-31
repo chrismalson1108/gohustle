@@ -76,7 +76,7 @@ export default function AuthCallbackPage() {
           ? "This email already has a GoHustlr account with a password. Sign in with your email and password instead."
           : "We couldn't complete Google sign-in. Please try again, or sign in with your email and password.";
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-5 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas px-5 text-center">
         <p className="max-w-sm text-ink-soft">{message}</p>
         <Link href="/login" className="font-bold text-primary">
           {oauthError?.kind === "identity" ? "Go to sign in" : "Back to sign in"}
@@ -86,7 +86,7 @@ export default function AuthCallbackPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas">
+    <div className="flex min-h-dvh items-center justify-center bg-canvas">
       <FullPageSpinner label="Signing you in…" />
     </div>
   );

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Clock, GraduationCap } from "lucide-react";
+import { Plus, Trash2, Clock, GraduationCap } from "lucide-react";
 import { DAYS, fmtTime } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -13,7 +12,6 @@ import Button from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 
 export default function AvailabilityPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const { availability, setAvailability, showToast } = useUser();
 
@@ -72,110 +70,133 @@ export default function AvailabilityPage() {
 
   return (
     <div>
-      <PageHeader variant="earn" title="Availability" subtitle="When you can work — Hustlr AI uses this to match gigs" />
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
+      <PageHeader
+        title="Availability"
+        subtitle="When you can work — Hustlr AI uses this to match gigs"
+        width="form"
+        back="/profile"
+      />
+      <PageContainer width="form" className="space-y-4 pb-8">
+        <WorkStatusBar />
 
-        <div className="space-y-4">
-          <WorkStatusBar />
+        {/* Availability windows */}
+        <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+          <p className="mb-1 flex items-center gap-2 text-base font-bold tracking-[-0.2px] text-ink">
+            <Clock className="size-4 shrink-0 text-ink-muted" /> Weekly availability
+          </p>
+          <p className="mb-3 text-[13px] leading-[18px] text-ink-muted">
+            Add the times you&apos;re free to work each week.
+          </p>
 
-          {/* Availability windows */}
-          <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
-              <Clock className="size-4 text-primary" /> Weekly availability
-            </p>
-            <p className="mb-3 text-xs text-ink-muted">Add the times you&apos;re free to work each week.</p>
-
-            {availability.length > 0 ? (
-              <div className="mb-3 space-y-1.5">
-                {availability.map((w, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-xl bg-canvas px-3 py-2 text-sm">
-                    <span className="font-semibold text-ink">
-                      {DAYS[w.day]} · {fmtTime(w.start)}–{fmtTime(w.end)}
-                    </span>
-                    <button onClick={() => removeWindow(i)} aria-label="Remove" className="text-ink-muted hover:text-urgent">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mb-3 text-sm text-ink-muted">No availability set yet.</p>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={day} onChange={(e) => setDay(Number(e.target.value))} className="w-auto">
-                {DAYS.map((d, i) => (
-                  <option key={i} value={i}>{d}</option>
-                ))}
-              </Select>
-              <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-auto" />
-              <span className="text-ink-muted">to</span>
-              <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="w-auto" />
-              <Button size="sm" onClick={addWindow}>
-                <Plus className="size-4" /> Add
-              </Button>
-            </div>
-          </section>
-
-          {/* Class schedule */}
-          <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
-              <GraduationCap className="size-4 text-primary" /> Class schedule
-            </p>
-            <p className="mb-3 text-xs text-ink-muted">Your classes block the times you can&apos;t work.</p>
-
-            {classes.length > 0 ? (
-              <div className="mb-3 space-y-1.5">
-                {classes.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-xl bg-canvas px-3 py-2 text-sm">
-                    <span className="min-w-0">
-                      <span className="font-semibold text-ink">{c.title}</span>{" "}
-                      <span className="text-ink-muted">
-                        {(c.days || []).map((d) => DAYS[d]).join("/")} · {fmtTime(c.start_time)}–{fmtTime(c.end_time)}
-                      </span>
-                    </span>
-                    <button onClick={() => removeClass(c.id)} aria-label="Remove" className="shrink-0 text-ink-muted hover:text-urgent">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mb-3 text-sm text-ink-muted">No classes added yet.</p>
-            )}
-
-            <Input
-              value={cTitle}
-              onChange={(e) => setCTitle(e.target.value)}
-              placeholder="Class name (e.g. CS 101)"
-              className="mb-2 w-full"
-            />
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {DAYS.map((d, i) => (
-                <button
-                  key={i}
-                  onClick={() => toggleDay(i)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
-                    cDays.includes(i) ? "bg-primary text-white" : "bg-canvas text-ink-soft hover:bg-primary-light/50"
-                  }`}
-                >
-                  {d}
-                </button>
+          {availability.length > 0 ? (
+            <div className="mb-3 space-y-1.5">
+              {availability.map((w, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2">
+                  <span className="min-w-0 truncate text-sm font-semibold text-ink">
+                    {DAYS[w.day]} · {fmtTime(w.start)}–{fmtTime(w.end)}
+                  </span>
+                  <button
+                    onClick={() => removeWindow(i)}
+                    aria-label="Remove"
+                    // An explicit 44px box, not padding around a 16px glyph: padding
+                    // alone got this to 36px. `-m-2` pulls the extra 8px back out of
+                    // the layout so the row keeps its height and the icon stays put —
+                    // the negative margin is for layout only, it does NOT enlarge a
+                    // hit area, which is why the box is sized outright.
+                    className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-urgent"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input type="time" value={cStart} onChange={(e) => setCStart(e.target.value)} className="w-auto" />
-              <span className="text-ink-muted">to</span>
-              <Input type="time" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className="w-auto" />
-              <Button size="sm" onClick={saveClass} disabled={!cTitle.trim() || cDays.length === 0}>
-                <Plus className="size-4" /> Add class
-              </Button>
+          ) : (
+            <p className="mb-3 text-sm text-ink-muted">No availability set yet.</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={day} onChange={(e) => setDay(Number(e.target.value))} className="w-auto min-w-0">
+              {DAYS.map((d, i) => (
+                <option key={i} value={i}>{d}</option>
+              ))}
+            </Select>
+            <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-auto min-w-0" />
+            <span className="shrink-0 text-sm text-ink-muted">to</span>
+            <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="w-auto min-w-0" />
+            <Button size="sm" onClick={addWindow}>
+              <Plus className="size-4 shrink-0" /> Add
+            </Button>
+          </div>
+        </section>
+
+        {/* Class schedule */}
+        <section className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+          <p className="mb-1 flex items-center gap-2 text-base font-bold tracking-[-0.2px] text-ink">
+            <GraduationCap className="size-4 shrink-0 text-ink-muted" /> Class schedule
+          </p>
+          <p className="mb-3 text-[13px] leading-[18px] text-ink-muted">
+            Your classes block the times you can&apos;t work.
+          </p>
+
+          {classes.length > 0 ? (
+            <div className="mb-3 space-y-1.5">
+              {classes.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2">
+                  <span className="min-w-0 truncate text-sm">
+                    <span className="font-semibold text-ink">{c.title}</span>{" "}
+                    <span className="text-ink-muted">
+                      {(c.days || []).map((d) => DAYS[d]).join("/")} · {fmtTime(c.start_time)}–{fmtTime(c.end_time)}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => removeClass(c.id)}
+                    aria-label="Remove"
+                    // Same 44px box as the remove-window button above.
+                    className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-urgent"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              ))}
             </div>
-          </section>
-        </div>
+          ) : (
+            <p className="mb-3 text-sm text-ink-muted">No classes added yet.</p>
+          )}
+
+          <Input
+            value={cTitle}
+            onChange={(e) => setCTitle(e.target.value)}
+            placeholder="Class name (e.g. CS 101)"
+            className="mb-2 w-full"
+          />
+          {/* Wraps rather than sitting in seven fixed columns: `Wednesday` in a 1/7th
+              column clips on a narrow phone, and each chip clears the 44px touch
+              minimum in BOTH axes — `min-w-11` alone only floors the width, which
+              left these ~36px tall. The height floor is `min-h-11` with the label
+              centred, not more vertical padding. */}
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {DAYS.map((d, i) => (
+              <button
+                key={i}
+                onClick={() => toggleDay(i)}
+                aria-pressed={cDays.includes(i)}
+                className={`flex min-h-11 min-w-11 grow basis-11 items-center justify-center rounded-full px-2.5 text-[11px] font-semibold transition ${
+                  cDays.includes(i) ? "bg-primary text-white" : "bg-canvas text-ink-soft hover:text-ink"
+                }`}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input type="time" value={cStart} onChange={(e) => setCStart(e.target.value)} className="w-auto min-w-0" />
+            <span className="shrink-0 text-sm text-ink-muted">to</span>
+            <Input type="time" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className="w-auto min-w-0" />
+            <Button size="sm" onClick={saveClass} disabled={!cTitle.trim() || cDays.length === 0}>
+              <Plus className="size-4 shrink-0" /> Add class
+            </Button>
+          </div>
+        </section>
       </PageContainer>
     </div>
   );

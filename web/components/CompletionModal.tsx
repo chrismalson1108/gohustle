@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ShieldCheck } from "lucide-react";
+import { Check, ShieldCheck, Square, SquareCheckBig } from "lucide-react";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import RatingStars from "./ui/RatingStars";
@@ -33,7 +33,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       className={classNames(
-        "rounded-full border px-3 py-2 text-[13px] font-bold transition",
+        "max-w-full truncate rounded-full border px-3 py-2 text-[13px] font-semibold transition",
         active ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:border-primary",
       )}
     >
@@ -118,15 +118,19 @@ export default function CompletionModal({
 
       <div className="mb-5 flex items-center gap-3 rounded-2xl bg-canvas p-3.5">
         <Avatar url={booking.earner?.avatarUrl} initial={booking.earner?.avatarInitial} name={earnerName} size={48} />
-        <div>
-          <p className="font-extrabold text-ink">{earnerName}</p>
-          {booking.job && <p className="text-xs text-ink-muted">{payLabel(booking.job)} · {jobTitle}</p>}
+        {/* min-w-0 + truncate: both values are user-generated (profile name, job
+            title), and a flex item defaults to min-width:auto, so one long
+            unbroken token pushed this column past the sheet's content box and the
+            shell's overflow-hidden clipped it instead of ellipsizing. */}
+        <div className="min-w-0">
+          <p className="truncate font-bold text-ink">{earnerName}</p>
+          {booking.job && <p className="truncate text-xs text-ink-muted">{payLabel(booking.job)} · {jobTitle}</p>}
         </div>
       </div>
 
       {heldCents > 0 && (
         <div className="mb-5 rounded-2xl bg-success/10 p-3.5 ring-1 ring-success/25">
-          <p className="flex items-center gap-1.5 text-sm font-extrabold text-success">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-success">
             <ShieldCheck className="size-4" /> {money(heldCents, { cents: true })} held on your card
           </p>
           {!disputed && (
@@ -149,16 +153,16 @@ export default function CompletionModal({
         </div>
       )}
 
-      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Rate {earnerName}</p>
+      <p className="mb-2 text-[13px] font-semibold text-ink-muted">Rate {earnerName}</p>
       <div className="mb-1 flex items-center gap-3">
         <RatingStars value={rating} size={32} onChange={setRating} />
         <span className="text-sm italic text-ink-muted">{RATING_TEXT[rating]}</span>
       </div>
 
-      <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-ink-muted">Leave a review</p>
+      <p className="mb-2 mt-5 text-[13px] font-semibold text-ink-muted">Leave a review</p>
       <Textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder={`How did ${earnerName} do?`} className="min-h-[80px]" />
 
-      <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-ink-muted">Add a tip (optional)</p>
+      <p className="mb-2 mt-5 text-[13px] font-semibold text-ink-muted">Add a tip (optional)</p>
       <div className="flex flex-wrap gap-2">
         {TIPS.map((c) => (
           <Chip key={c} active={tipCents === c} onClick={() => setTipCents(c)}>
@@ -168,17 +172,27 @@ export default function CompletionModal({
       </div>
       {tipCents > 0 && <p className="mt-1.5 text-xs text-ink-muted">Charged to your saved card and sent to {earnerName}.</p>}
 
-      <button
-        type="button"
-        aria-pressed={disputed}
-        onClick={() => setDisputed((d) => !d)}
-        className="mt-5 flex w-full items-center gap-2 text-left text-sm font-semibold text-ink-soft"
-      >
-        <span className={classNames("flex size-5 items-center justify-center rounded border-2", disputed ? "border-urgent bg-urgent text-white" : "border-line")}>
-          {disputed && <Check className="size-3.5" />}
+      {/* A real checkbox, not a <button> wearing one: the hand-rolled version had
+          no native checkbox semantics and carried a 4px radius + 2px border that
+          exist nowhere else in the system. The glyph swap mirrors mobile's
+          square-outline → checkbox Ionicon. py-2 keeps a 44px touch target. */}
+      <label className="mt-5 flex w-full cursor-pointer items-center gap-2 py-2 text-left text-sm font-medium text-ink-soft">
+        <input
+          type="checkbox"
+          checked={disputed}
+          onChange={(e) => setDisputed(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span
+          className={classNames(
+            "flex shrink-0 rounded-lg peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40",
+            disputed ? "text-urgent" : "text-ink-muted",
+          )}
+        >
+          {disputed ? <SquareCheckBig className="size-[18px]" /> : <Square className="size-[18px]" />}
         </span>
         There was a problem — pay a reduced amount
-      </button>
+      </label>
       {disputed && (
         <div className="mt-3">
           <div className="flex flex-wrap gap-2">

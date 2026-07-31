@@ -84,24 +84,35 @@ export default function NotificationsPage() {
       <PageHeader
         title="Alerts"
         subtitle="Gig matches and updates"
+        width="feed"
         right={
           tab === "inbox" && hasUnread ? (
-            <button onClick={allRead} className="flex items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/25">
-              <CheckCheck className="size-3.5" /> Mark all read
+            // The header is a flat cream surface now — white-on-white text was
+            // invisible here. Mobile renders this as a plain primary text link.
+            <button
+              onClick={allRead}
+              className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-primary transition hover:bg-primary-light/60"
+            >
+              <CheckCheck className="size-4 shrink-0" /> Mark all read
             </button>
           ) : undefined
         }
       />
-      <PageContainer>
-        {/* Inbox / Archived segmented control */}
-        <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+      <PageContainer width="feed">
+        {/* Inbox / Archived segmented control — the same pill control the mobile
+            app uses on Messages / Hiring / My Jobs. No shadow on the active pill,
+            and the weight stays 600 in both states so the label can't re-measure
+            and clip when it becomes active. */}
+        <div role="tablist" aria-label="Alert folders" className="mb-4 flex w-full rounded-full border border-line bg-white p-1">
           {(["inbox", "archived"] as const).map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => setTab(t)}
               className={classNames(
-                "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
-                tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                "flex-1 truncate rounded-full px-2 py-2.5 text-[13px] font-semibold capitalize transition",
+                tab === t ? "bg-primary text-white" : "text-ink-soft hover:text-ink",
               )}
             >
               {t}
@@ -124,30 +135,39 @@ export default function NotificationsPage() {
             }
           />
         ) : (
-          <div className="space-y-2">
+          // Alerts arrive in bursts, so the list is a grid: one column on a
+          // phone, two once the content box (not the viewport) is wide enough.
+          <div className="grid grid-cols-1 gap-3 pb-8 @5xl:grid-cols-2">
             {items.map((n) => {
               const href = notificationHref(n);
+              const unread = !n.read && tab === "inbox";
               return (
-                <div
-                  key={n.id}
-                  className={classNames(
-                    "flex items-start gap-3 rounded-2xl p-4 shadow-[var(--shadow-card)] ring-1 transition",
-                    n.read || tab === "archived" ? "bg-white ring-line/70" : "bg-primary-light/40 ring-primary/30",
-                  )}
-                >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary">
+                // Every row is the same white card. Unread is carried by a single
+                // dot on the icon bubble (mobile's marker) — tinting the whole
+                // card turned a full inbox into a wall of purple.
+                <div key={n.id} className="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-canvas text-ink-soft">
                     {iconFor(n.type)}
+                    {unread && <span className="absolute right-0 top-0 size-2.5 rounded-full bg-primary" />}
                   </div>
                   <button onClick={() => open(n)} disabled={!href && n.read} className="min-w-0 flex-1 text-left">
-                    <p className="font-bold text-ink">{n.title}</p>
-                    {n.body && <p className="truncate text-sm text-ink-soft">{n.body}</p>}
-                    <p className="mt-0.5 text-[11px] text-ink-muted">{relTime(n.created_at)}</p>
+                    <p className={classNames("line-clamp-2 text-[15px] text-ink", unread ? "font-bold" : "font-semibold")}>
+                      {n.title}
+                    </p>
+                    {/* Two lines, not a hard one-line truncate: on a phone the
+                        second half of an alert was being cut off, and on a wide
+                        row the truncation was throwing away usable width. */}
+                    {n.body && <p className="mt-0.5 line-clamp-2 text-[13.5px] leading-[18px] text-ink-soft">{n.body}</p>}
+                    <p className="mt-1 text-xs text-ink-muted">{relTime(n.created_at)}</p>
                   </button>
                   <button
                     onClick={() => archive(n, tab === "inbox")}
                     aria-label={tab === "inbox" ? "Archive" : "Move to inbox"}
                     title={tab === "inbox" ? "Archive" : "Move to inbox"}
-                    className="shrink-0 rounded-full p-1.5 text-ink-muted hover:bg-line/60 hover:text-ink"
+                    // An explicit 44px box. Padding around a 16px glyph only
+                    // reached 36px, and the negative margin pulls the layout back
+                    // in — it does not enlarge the hit area.
+                    className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-ink"
                   >
                     {tab === "inbox" ? <X className="size-4" /> : <ArchiveRestore className="size-4" />}
                   </button>

@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2 } from "lucide-react";
+import { Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2 } from "lucide-react";
 import { NO_PAYOUT_ACCOUNT, type ConnectStatus } from "@/lib/connectStatus";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import { useJobs } from "@/lib/jobs";
@@ -24,7 +23,6 @@ type Readiness = {
 };
 
 export default function PayoutsPage() {
-  const router = useRouter();
   const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink, detachPaymentMethod } = useJobs();
   const { showToast } = useUser();
   const [ready, setReady] = useState<Readiness | null>(null);
@@ -142,21 +140,17 @@ export default function PayoutsPage() {
 
   return (
     <div>
-      <PageHeader title="Payouts & payments" subtitle="Get paid and manage your card" />
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
-
+      <PageHeader title="Payouts & payments" subtitle="Get paid and manage your card" width="form" back="/profile" />
+      <PageContainer width="form" className="space-y-4 pb-8">
         {/* Earner payouts */}
-        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-accent-light text-accent-deep">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-deep">
               <Wallet className="size-6" />
             </div>
-            <div>
-              <p className="font-black text-ink">Get paid (earner)</p>
-              <p className="text-sm text-ink-soft">Connect a bank to receive card earnings.</p>
+            <div className="min-w-0">
+              <p className="text-base font-bold tracking-[-0.2px] text-ink">Get paid (earner)</p>
+              <p className="text-[13px] leading-[18px] text-ink-soft">Connect a bank to receive card earnings.</p>
             </div>
           </div>
           {/* Four distinct outcomes. Collapsing them into payoutReady ? active : "set
@@ -194,9 +188,9 @@ export default function PayoutsPage() {
           ) : (
             <>
               {ready.payout.hasAccount && (
-                <div className="mt-4 rounded-2xl bg-urgent-light p-3 ring-1 ring-urgent/20">
+                <div className="mt-4 rounded-xl bg-urgent-light p-3.5">
                   <p className="flex items-center gap-1.5 text-sm font-bold text-urgent">
-                    <AlertTriangle className="size-4" /> {ready.payout.title}
+                    <AlertTriangle className="size-4 shrink-0" /> {ready.payout.title}
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-ink-soft">{ready.payout.message}</p>
                   {ready.payout.requirements.length > 0 && (
@@ -222,25 +216,25 @@ export default function PayoutsPage() {
         </div>
 
         {/* Poster card */}
-        <div className="mt-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-primary-light text-primary">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary-light text-primary">
               <CreditCard className="size-6" />
             </div>
-            <div>
-              <p className="font-black text-ink">Pay for gigs (poster)</p>
-              <p className="text-sm text-ink-soft">A card on file lets you book and pay securely.</p>
+            <div className="min-w-0">
+              <p className="text-base font-bold tracking-[-0.2px] text-ink">Pay for gigs (poster)</p>
+              <p className="text-[13px] leading-[18px] text-ink-soft">A card on file lets you book and pay securely.</p>
             </div>
           </div>
           <p
             className={classNames(
-              "mt-4 flex items-center gap-1.5 text-sm font-bold",
+              "mt-4 flex min-w-0 items-center gap-1.5 text-sm font-bold",
               ready.paymentMethodReady ? "text-success" : "text-ink-muted",
             )}
           >
             {ready.paymentMethodReady ? (
               <>
-                <CheckCircle2 className="size-4" /> {cardLabel}
+                <CheckCircle2 className="size-4 shrink-0" /> <span className="truncate">{cardLabel}</span>
               </>
             ) : (
               "No card on file yet"
@@ -252,9 +246,12 @@ export default function PayoutsPage() {
               <Button variant="outline" fullWidth onClick={() => setShowAddCard(true)}>
                 Replace card
               </Button>
+              {/* Destructive actions are a red text button, never a filled red slab —
+                  the confirmation is what actually guards the action. */}
               <Button
-                variant="danger"
+                variant="ghost"
                 fullWidth
+                className="text-urgent"
                 loading={busy === "removeCard"}
                 onClick={() => setConfirmRemove(true)}
               >
@@ -267,13 +264,15 @@ export default function PayoutsPage() {
             </Button>
           )}
 
-          <p className="mt-3 text-xs text-ink-muted">
+          <p className="mt-3 text-xs leading-5 text-ink-muted">
             Your card is saved securely with Stripe and only charged when you accept a booking — held in escrow until
             you verify the work.
           </p>
         </div>
 
-        <p className="mt-5 text-center text-xs text-ink-muted">Payments are processed securely by Stripe. GoHustlr never stores your card details.</p>
+        <p className="pt-1 text-center text-xs text-ink-muted">
+          Payments are processed securely by Stripe. GoHustlr never stores your card details.
+        </p>
       </PageContainer>
 
       <AddCardModal
@@ -283,19 +282,26 @@ export default function PayoutsPage() {
         onSaved={onCardSaved}
       />
 
-      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} title="Remove card?" size="sm">
+      <Modal
+        open={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        title="Remove card?"
+        size="sm"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" fullWidth onClick={() => setConfirmRemove(false)} disabled={busy === "removeCard"}>
+              Keep card
+            </Button>
+            <Button variant="danger" fullWidth loading={busy === "removeCard"} onClick={removeCard}>
+              <Trash2 className="size-4 shrink-0" /> Remove
+            </Button>
+          </div>
+        }
+      >
         <p className="text-sm text-ink-soft">
           We&apos;ll remove your saved card. You&apos;ll need to add one again before you can accept and pay for a
           booking.
         </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button variant="outline" fullWidth onClick={() => setConfirmRemove(false)} disabled={busy === "removeCard"}>
-            Keep card
-          </Button>
-          <Button variant="danger" fullWidth loading={busy === "removeCard"} onClick={removeCard}>
-            <Trash2 className="size-4" /> Remove card
-          </Button>
-        </div>
       </Modal>
     </div>
   );

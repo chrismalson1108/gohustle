@@ -47,19 +47,22 @@ export default function ConsentPage() {
     }
   };
 
-  if (!session) return <FullPageSpinner />;
+  // This one genuinely owns the whole page, so it opts into the full height.
+  if (!session) return <FullPageSpinner className="min-h-dvh" />;
   const ordered = REQUIRED_SLUGS.map((s) => docs?.[s]).filter(Boolean) as LegalDoc[];
 
   return (
     <BrandShell>
-      <div className="min-h-screen bg-canvas">
-      <div className="bg-brand flex flex-col items-center px-6 pb-9 pt-16 text-center text-white">
-        <FileText className="mb-3 size-11" />
-        <h1 className="text-[26px] font-semibold">We&apos;ve updated our terms</h1>
-        <p className="mt-1.5 text-white/75">Please review and accept to keep using Hustlr.</p>
+      {/* dvh: 100vh is the URL-bar-collapsed height on mobile browsers. */}
+      <div className="min-h-dvh bg-canvas px-4 pb-10 sm:px-6">
+      {/* Header and body share one measure so the title lines up with the list. */}
+      <div className="mx-auto flex w-full max-w-lg flex-col items-center pb-7 pt-12 text-center">
+        <FileText className="mb-3 size-9 text-primary" />
+        <h1 className="text-[26px] font-bold leading-[33px] text-ink">We&apos;ve updated our terms</h1>
+        <p className="mt-2 text-sm leading-5 text-ink-soft">Please review and accept to keep using Hustlr.</p>
       </div>
 
-      <div className="mx-auto w-full max-w-md p-6">
+      <div className="mx-auto w-full max-w-lg">
         <p className="mb-5 text-sm leading-relaxed text-ink-soft">
           By continuing you agree to our updated documents. As an Earner you operate as an independent
           contractor and are responsible for your own taxes.
@@ -68,11 +71,19 @@ export default function ConsentPage() {
         {docs === null ? (
           <FullPageSpinner />
         ) : (
-          <div className="divide-y divide-divider overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          // Each document is its own floating card, as on mobile — a hairline-
+          // divided group that ALSO carried a ring and a shadow was three
+          // elevation cues on one list, and `divide-divider` only started
+          // resolving to a soft rule once --color-divider was defined.
+          <div className="space-y-2.5">
             {ordered.map((d) => (
-              <button key={d.slug} onClick={() => setOpenDoc(d)} className="flex w-full items-center justify-between px-4 py-4 text-left hover:bg-primary-light/40">
-                <span className="font-bold text-ink">{d.title}</span>
-                <ChevronRight className="size-4 text-ink-muted" />
+              <button
+                key={d.slug}
+                onClick={() => setOpenDoc(d)}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-4 text-left shadow-[var(--shadow-card)] transition hover:bg-primary-light/40"
+              >
+                <span className="min-w-0 flex-1 text-[15px] font-semibold leading-5 text-ink">{d.title}</span>
+                <ChevronRight className="size-4 shrink-0 text-ink-muted" />
               </button>
             ))}
           </div>
@@ -93,8 +104,10 @@ export default function ConsentPage() {
         </Button>
       </div>
 
+      {/* Legal copy is read, not scanned — 15px at a generous leading rather than
+          the 14px used for UI text. */}
       <Modal open={!!openDoc} onClose={() => setOpenDoc(null)} title={openDoc?.title} size="lg">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{openDoc?.body}</p>
+        <p className="whitespace-pre-wrap text-[15px] leading-7 text-ink-soft">{openDoc?.body}</p>
       </Modal>
       </div>
     </BrandShell>

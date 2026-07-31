@@ -12,7 +12,7 @@ import { notify } from "@/lib/push";
 import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
 import { submitReport, REPORT_REASONS, moderateText, logModerationBlock } from "@/lib/moderation";
 import { findProhibited } from "@gohustlr/shared";
-import PageHeader, { EmptyState } from "@/components/PageHeader";
+import PageHeader, { EmptyState, WIDTHS } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
@@ -147,104 +147,167 @@ export default function MessagesPage() {
   };
 
   const shown = conversations.filter((c) => (tab === "archived" ? !!last[c.bookingId]?.archived : !last[c.bookingId]?.archived));
+  const inboxCount = conversations.filter((c) => !last[c.bookingId]?.archived).length;
+  const archivedCount = conversations.length - inboxCount;
 
   return (
-    <div>
-      <div className={classNames("relative", active && "hidden md:block")}>
-        <PageHeader title="Messages" subtitle="Your conversations" />
-        <Link
-          href="/people"
-          aria-label="Find people"
-          title="Find people"
-          className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2 text-ink-muted transition hover:bg-line/60 hover:text-primary"
-        >
-          <Search className="size-5" />
-        </Link>
+    // The messenger is an app surface, not a reading column: it fills the shell
+    // at full width and owns the viewport height as ONE flex column. The height
+    // is the screen minus the tab-bar clearance AppShell's <main> reserves
+    // (`pb-[4.5rem+safe-area]`, dropped at md) — the only place that offset is
+    // named. Everything below sizes with flex-1/min-h-0, so no child re-derives
+    // a viewport offset and drifts (the old panes subtracted 4rem on mobile,
+    // double-counting main's padding, and 2rem on desktop, ignoring the header).
+    //
+    // The feed measure is on THIS wrapper rather than on the panes individually:
+    // PageHeader caps its own inner box at the same 1760px, so without a matching
+    // cap the panes kept growing past the title on an ultra-wide monitor (at 2560px
+    // the header started ~272px in while the first conversation card started at 16px).
+    // A header and the content beneath it must share one box — see PageHeader WIDTHS.
+    <div className={classNames("mx-auto flex h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom))] w-full flex-col md:h-dvh", WIDTHS.feed)}>
+      <div className={classNames("shrink-0", active && "hidden lg:block")}>
+        <PageHeader
+          title="Messages"
+          subtitle="Your conversations"
+          right={
+            // In the header's flex row (not absolutely positioned over it), so it
+            // inherits the on-surface ink color and stays tied to the title.
+            <Link
+              href="/people"
+              aria-label="Find people"
+              title="Find people"
+              className="flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
+            >
+              <Search className="size-5" />
+            </Link>
+          }
+        />
       </div>
-      <div className="mx-auto flex w-full max-w-3xl">
-        {/* Conversation list */}
-        <div className={classNames("w-full md:w-80 md:border-r md:border-line", active && "hidden md:block")}>
-          {conversations.length === 0 ? (
-            <EmptyState icon={<MessageCircle className="size-10" />} title="No conversations yet" body="Book or accept a gig to start chatting." />
-          ) : (
-            <>
-              {/* Inbox / Archived segmented control */}
-              <div className="mx-4 mb-1 mt-3 flex gap-1 rounded-2xl bg-white p-1 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                {(["inbox", "archived"] as const).map((t) => (
+
+      {conversations.length === 0 ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <EmptyState icon={<MessageCircle className="size-10" />} title="No conversations yet" body="Book or accept a gig to start chatting." />
+        </div>
+      ) : (
+        // Two panes from lg only. At md the shell's icon rail is already showing,
+        // so a 768–1023px window minus the rail minus a 320px list left the chat
+        // ~190–400px wide — tablets stay single-pane instead.
+        <div className="flex min-h-0 w-full flex-1">
+          {/* Conversation list */}
+          <div
+            className={classNames(
+              "flex min-h-0 w-full flex-col lg:w-80 lg:shrink-0 lg:border-r lg:border-line xl:w-96",
+              active && "hidden lg:flex",
+            )}
+          >
+            {/* Inbox / Archived segmented control — mobile's pill control. No
+                shadow on the active pill, and the weight stays 600 in both
+                states so a label can't re-measure and clip when selected.
+                Same 44px box as Hiring's segmented control: 13px text plus
+                `py-2.5` only measured ~39.5px, and the label needs its own
+                `truncate` span once the button becomes a flex container. */}
+            <div className="shrink-0 px-4 pb-2 pt-3 sm:px-6 lg:px-4">
+              <div role="tablist" aria-label="Conversation folders" className="flex w-full rounded-full border border-line bg-white p-1">
+                {([["inbox", inboxCount], ["archived", archivedCount]] as const).map(([t, n]) => (
                   <button
                     key={t}
+                    role="tab"
+                    aria-selected={tab === t}
                     onClick={() => setTab(t)}
                     className={classNames(
-                      "flex-1 rounded-xl py-2 text-sm font-bold capitalize transition",
-                      tab === t ? "bg-primary text-white shadow-[var(--shadow-soft)]" : "text-ink-soft hover:bg-primary-light/40",
+                      "flex min-h-11 flex-1 items-center justify-center rounded-full px-2 text-[13px] font-semibold capitalize transition",
+                      tab === t ? "bg-primary text-white" : "text-ink-soft hover:text-ink",
                     )}
                   >
-                    {t}
+                    <span className="truncate">
+                      {t}
+                      {n > 0 ? ` (${n})` : ""}
+                    </span>
                   </button>
                 ))}
               </div>
+            </div>
 
-              {shown.length === 0 ? (
+            {shown.length === 0 ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 <EmptyState
                   icon={<MessageCircle className="size-10" />}
                   title={tab === "archived" ? "No archived chats" : "No messages yet"}
                   body={tab === "archived" ? "Archived conversations show up here." : "Everything is archived — check the Archived tab."}
                 />
-              ) : (
-                <ul>
-                  {shown
-                    .slice()
-                    .sort((a, b) => (last[b.bookingId]?.at || "").localeCompare(last[a.bookingId]?.at || ""))
-                    .map((c) => (
+              </div>
+            ) : (
+              // The list scrolls inside the pane; the composer next door never
+              // moves. Rows are floating cards (mobile's list), not hairline
+              // dividers, so the same markup reads right in a 320px rail.
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4 sm:px-6 lg:px-4">
+                {shown
+                  .slice()
+                  .sort((a, b) => (last[b.bookingId]?.at || "").localeCompare(last[a.bookingId]?.at || ""))
+                  .map((c) => {
+                    const unread = !!last[c.bookingId]?.unread;
+                    return (
                       <li key={c.bookingId}>
-                        <div className="flex w-full items-center gap-3 border-b border-divider px-4 py-3 hover:bg-primary-light/40">
+                        <div className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3.5 shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-soft)]">
                           {/* Avatar is its own link → the person's public profile. */}
                           {c.otherId ? (
                             <Link href={`/u/${c.otherId}`} aria-label={`View ${c.name}'s profile`} className="shrink-0 transition hover:opacity-85">
-                              <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
+                              <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={48} />
                             </Link>
                           ) : (
-                            <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={44} />
+                            <Avatar url={c.avatarUrl} initial={c.avatarInitial} name={c.name} size={48} />
                           )}
                           <button
                             onClick={() => { setActive(c); markConversationRead(user.id, c.bookingId).then(() => { loadPreviews(); refreshUnread(); }); }}
-                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            className="min-w-0 flex-1 text-left"
                           >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="truncate font-bold text-ink">{c.name}</span>
-                                {last[c.bookingId]?.at && <span className="shrink-0 text-[11px] text-ink-muted">{timeAgo(last[c.bookingId].at)}</span>}
-                              </div>
-                              <p className="truncate text-xs text-ink-muted">{c.jobTitle}</p>
-                              <p className={classNames("truncate text-sm", last[c.bookingId]?.unread ? "font-bold text-ink" : "text-ink-soft")}>
-                                {last[c.bookingId]?.text || "Say hi 👋"}
-                              </p>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={classNames("truncate text-[15px] text-ink", unread ? "font-bold" : "font-semibold")}>{c.name}</span>
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                {/* Unread marker: one 8px brand dot before the
+                                    timestamp — the app's single unread pattern. */}
+                                {unread && <span className="size-2 rounded-full bg-primary" />}
+                                {last[c.bookingId]?.at && (
+                                  <span className={classNames("text-[11px]", unread ? "font-semibold text-primary" : "text-ink-muted")}>
+                                    {timeAgo(last[c.bookingId].at)}
+                                  </span>
+                                )}
+                              </span>
                             </div>
-                            {last[c.bookingId]?.unread && <span className="size-2.5 shrink-0 rounded-full bg-urgent" />}
+                            <p className="mt-1 truncate text-xs text-ink-muted">{c.jobTitle}</p>
+                            <p className={classNames("mt-1 truncate text-[13px]", unread ? "font-semibold text-ink" : "text-ink-soft")}>
+                              {last[c.bookingId]?.text || "Say hi 👋"}
+                            </p>
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleArchive(c); }}
                             aria-label={tab === "inbox" ? "Archive conversation" : "Move to inbox"}
                             title={tab === "inbox" ? "Archive conversation" : "Move to inbox"}
-                            className="shrink-0 rounded-full p-1.5 text-ink-muted hover:bg-line/60 hover:text-ink"
+                            // An explicit 44px box. Padding around a 16px glyph only
+                            // reached 36px, and the negative margin pulls the LAYOUT
+                            // back so the row keeps its height — it does not enlarge
+                            // the hit area, which is why the box is sized outright.
+                            className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-ink"
                           >
                             {tab === "inbox" ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
                           </button>
                         </div>
                       </li>
-                    ))}
-                </ul>
-              )}
-            </>
+                    );
+                  })}
+              </ul>
+            )}
+          </div>
+
+          {/* Chat pane */}
+          {active && <ChatPane conversation={active} userId={user.id} onBack={() => { setActive(null); loadPreviews(); }} />}
+          {!active && (
+            <div className="hidden min-w-0 flex-1 items-center justify-center bg-white text-[15px] text-ink-muted lg:flex">
+              Select a conversation
+            </div>
           )}
         </div>
-
-        {/* Chat pane */}
-        {active && <ChatPane conversation={active} userId={user.id} onBack={() => { setActive(null); loadPreviews(); }} />}
-        {!active && conversations.length > 0 && (
-          <div className="hidden flex-1 items-center justify-center text-ink-muted md:flex">Select a conversation</div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -433,10 +496,15 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
   };
 
   return (
-    <div className="flex h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] w-full flex-col md:h-[calc(100dvh-2rem)] md:flex-1">
-      <div className="relative flex items-center gap-3 border-b border-line px-4 py-3">
-        <button onClick={onBack} className="md:hidden">
-          <ArrowLeft className="size-5 text-ink-soft" />
+    // No height math: the pane fills whatever the page's flex column gives it,
+    // and min-h-0 lets the message list (not the document) do the scrolling.
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col bg-white">
+      <div className="relative flex shrink-0 items-center gap-3 border-b border-divider px-4 py-3">
+        {/* Explicit 44px boxes on both header icon buttons — padding around the
+            glyph left them at 36/40px, and the negative margin only pulls the
+            layout in, it does not grow the target. */}
+        <button onClick={onBack} aria-label="Back to conversations" className="-m-3 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:text-ink lg:hidden">
+          <ArrowLeft className="size-5" />
         </button>
         {/* Person → their public profile; job line → the listing (works for past
             gigs via the job page's direct-fetch fallback). */}
@@ -449,11 +517,11 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
         )}
         <div className="min-w-0 flex-1">
           {conversation.otherId ? (
-            <Link href={`/u/${conversation.otherId}`} className="block truncate font-bold text-ink hover:text-primary">
+            <Link href={`/u/${conversation.otherId}`} className="block truncate text-[15px] font-bold text-ink hover:text-primary">
               {conversation.name}
             </Link>
           ) : (
-            <p className="truncate font-bold text-ink">{conversation.name}</p>
+            <p className="truncate text-[15px] font-bold text-ink">{conversation.name}</p>
           )}
           {conversation.jobId ? (
             <Link href={`/jobs/${conversation.jobId}`} className="block truncate text-xs font-semibold text-primary hover:underline">
@@ -463,35 +531,49 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
             <p className="truncate text-xs text-ink-muted">{conversation.jobTitle}</p>
           )}
         </div>
-        <button onClick={() => setMenuOpen((o) => !o)} className="rounded-full p-1.5 text-ink-muted hover:bg-line/60" aria-label="Conversation options">
+        <button onClick={() => setMenuOpen((o) => !o)} className="-m-1.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-ink" aria-label="Conversation options">
           <MoreVertical className="size-5" />
         </button>
         {menuOpen && (
-          <div className="absolute right-3 top-[52px] z-20 w-44 overflow-hidden rounded-xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-line">
+          // top-full so the menu follows the header's real height instead of a
+          // magic 52px, and one elevation (neutral shadow, no ring).
+          // `rounded-2xl` (20px): a floating menu is a PANEL, not a control — same
+          // step as the profile page's report/block menu and LocationPicker.
+          <div className="absolute right-3 top-full z-20 mt-1 w-44 overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-soft)]">
             <button onClick={() => { setMenuOpen(false); setReportOpen(true); }} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-ink hover:bg-canvas">
-              <Flag className="size-4" /> Report
+              <Flag className="size-4 shrink-0" /> Report
             </button>
             <button onClick={doBlock} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-urgent hover:bg-canvas">
-              <Ban className="size-4" /> Block
+              <Ban className="size-4 shrink-0" /> Block
             </button>
           </div>
         )}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto bg-canvas px-4 py-4" onClick={() => menuOpen && setMenuOpen(false)}>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4" onClick={() => menuOpen && setMenuOpen(false)}>
         {messages.map((m, i) => {
           const mine = m.sender_id === userId;
           const imgPath = chatObjectPath(m.image_url);
           const imgSrc = imgPath ? signedUrls[imgPath] : null;
           return (
             <div key={m.id || i} className={classNames("flex", mine ? "justify-end" : "justify-start")}>
-              <div className={classNames("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm", mine ? "bg-primary text-white" : "bg-white text-ink ring-1 ring-line")}>
+              {/* Measured in characters, not a percentage: a percentage of a
+                  wide desktop pane produces unreadable 200-character lines,
+                  while 70ch stays a comfortable measure at any pane width. */}
+              <div
+                className={classNames(
+                  "max-w-[70ch] break-words rounded-2xl px-3.5 py-2 text-sm leading-5",
+                  mine ? "rounded-br-lg bg-primary text-white" : "rounded-bl-lg bg-canvas text-ink",
+                )}
+              >
                 {imgPath && (
                   imgSrc ? (
+                    // max-w-full keeps a wide photo inside the bubble instead of
+                    // stretching it past the pane on a narrow screen.
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={imgSrc} alt="" className="mb-1 max-h-48 rounded-xl ring-1 ring-line" />
+                    <img src={imgSrc} alt="" className="mb-1 max-h-48 max-w-full rounded-xl bg-divider" />
                   ) : (
-                    <div className="mb-1 flex h-24 w-32 items-center justify-center rounded-xl bg-canvas text-ink-muted ring-1 ring-line">
+                    <div className="mb-1 flex h-24 w-32 items-center justify-center rounded-xl bg-divider text-ink-muted">
                       <Loader2 className="size-4 animate-spin" />
                     </div>
                   )
@@ -504,7 +586,7 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
         <div ref={endRef} />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-line p-3">
+      <div className="flex shrink-0 items-center gap-2 border-t border-divider p-3">
         <input
           ref={fileRef}
           type="file"
@@ -516,10 +598,13 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
             e.target.value = "";
           }}
         />
+        {/* Transparent attach control with a brand glyph, like mobile — this is
+            also what retires the off-token hardcoded hover fill that used to be
+            baked in here. */}
         <button
           onClick={() => fileRef.current?.click()}
           disabled={sending}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary transition-all hover:bg-[#dcd6ff] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-primary transition-all hover:bg-primary-light active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
           aria-label="Send a photo"
         >
           <ImagePlus className="size-5" />
@@ -529,12 +614,14 @@ function ChatPane({ conversation, userId, onBack }: { conversation: Conversation
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
           placeholder="Type a message…"
-          className="flex-1 rounded-full border border-line bg-white px-4 py-2.5 text-[15px] outline-none transition placeholder:text-ink-muted focus:border-primary focus:ring-2 focus:ring-primary/15"
+          // bg-canvas: the field sits on the white chat pane, so it has to be the
+          // sunken tone to read as a field. 16px at the small end (iOS zoom).
+          className="min-w-0 flex-1 rounded-full border border-line bg-canvas px-4 py-2.5 text-base text-ink outline-none transition placeholder:text-ink-muted focus:border-primary focus:ring-2 focus:ring-primary/15 sm:text-[15px]"
         />
         <button
           onClick={send}
           disabled={sending || !text.trim()}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-soft)] transition-all hover:bg-primary-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
           aria-label="Send message"
         >
           {sending ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}

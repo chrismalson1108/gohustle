@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Target, Pencil } from "lucide-react";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
-import { classNames, money } from "@/lib/format";
+import { money } from "@/lib/format";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import { Input } from "@/components/ui/Field";
+import { Input, Label } from "@/components/ui/Field";
 
 // Weekly goals — earnings + jobs-done progress bars with an edit modal.
 //
@@ -54,37 +54,44 @@ export default function WeeklyGoalsCard() {
   };
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-      <div className="flex items-center gap-2">
-        <div className="flex size-9 items-center justify-center rounded-full bg-primary-light text-primary">
-          <Target className="size-5" />
-        </div>
+    // Shadow, no ring — one elevation mechanism per surface.
+    <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2.5">
+        {/* Plain muted glyph, not a tinted puck: the progress bars are this
+            card's only accent. */}
+        <Target className="size-5 shrink-0 text-ink-muted" />
         <div className="min-w-0 flex-1">
-          <p className="font-black text-ink">Weekly goals</p>
-          <p className="text-xs text-ink-muted">Your pace this week</p>
+          <p className="truncate text-[15px] font-bold tracking-[-0.2px] text-ink">Weekly goals</p>
+          <p className="truncate text-xs text-ink-muted">Your pace this week</p>
         </div>
         <button
           onClick={openEdit}
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ink-muted transition hover:bg-line/60 hover:text-primary"
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold text-ink-muted transition hover:text-primary"
         >
-          <Pencil className="size-3.5" /> Edit
+          <Pencil className="size-3.5 shrink-0" /> Edit
         </button>
       </div>
 
-      <div className="mt-3 space-y-3.5">
+      <div className="mt-4 space-y-4">
+        {/* Both bars are bg-primary. Two brand colours in one card (gold Earnings
+            vs purple Jobs done) broke the one-accent-per-card rule; the metrics
+            are told apart by their labels, not by hue. */}
         {[
-          { label: "Earnings", value: money(earningsWeek), max: money(weeklyEarningGoal), pct: earningPct, barCls: "bg-accent" },
-          { label: "Jobs done", value: String(weeklyJobsDone), max: `${weeklyJobsGoal} gigs`, pct: jobsPct, barCls: "bg-primary" },
+          { label: "Earnings", value: money(earningsWeek), max: money(weeklyEarningGoal), pct: earningPct },
+          { label: "Jobs done", value: String(weeklyJobsDone), max: `${weeklyJobsGoal} gigs`, pct: jobsPct },
         ].map((g) => (
           <div key={g.label}>
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm font-bold text-ink-soft">{g.label}</span>
-              <span className="text-sm font-black text-ink">
-                {g.value} <span className="font-bold text-ink-muted">of {g.max}</span>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="min-w-0 truncate text-[13px] font-semibold text-ink">{g.label}</span>
+              <span className="shrink-0 text-[13px] font-bold text-ink">
+                {g.value} <span className="font-medium text-ink-muted">of {g.max}</span>
               </span>
             </div>
-            <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-line">
-              <div className={classNames("h-full rounded-full transition-all", g.barCls)} style={{ width: `${Math.round(g.pct * 100)}%` }} />
+            <div className="h-2 w-full overflow-hidden rounded-full bg-divider">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.round(g.pct * 100)}%` }}
+              />
             </div>
           </div>
         ))}
@@ -101,24 +108,26 @@ export default function WeeklyGoalsCard() {
           </Button>
         }
       >
-        <label className="text-sm font-bold text-ink-soft">Earnings goal ($)</label>
+        <Label htmlFor="weekly-earning-goal">Earnings goal ($)</Label>
         <Input
+          id="weekly-earning-goal"
           type="number"
           inputMode="numeric"
           value={earningDraft}
           onChange={(e) => setEarningDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && saveGoals()}
           autoFocus
-          className="mt-1.5"
         />
-        <label className="mt-4 block text-sm font-bold text-ink-soft">Jobs goal</label>
+        <Label htmlFor="weekly-jobs-goal" className="mt-4">
+          Jobs goal
+        </Label>
         <Input
+          id="weekly-jobs-goal"
           type="number"
           inputMode="numeric"
           value={jobsDraft}
           onChange={(e) => setJobsDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && saveGoals()}
-          className="mt-1.5"
         />
       </Modal>
     </div>

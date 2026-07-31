@@ -118,11 +118,13 @@ function LoginInner() {
     return (
       <Card>
         <div className="text-center">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
+          {/* Circular, matching the Avatar language — a 56px tile at the 20px card
+              radius read as a mini-card floating inside the panel. */}
+          <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary-light text-primary">
             <Mail className="size-7" />
           </div>
-          <h1 className="mt-5 text-[26px] font-semibold text-ink">Check your email</h1>
-          <p className="mt-2 text-ink-soft">
+          <h1 className="mt-5 text-[26px] font-bold text-ink">Check your email</h1>
+          <p className="mt-2 text-[15px] leading-[21px] text-ink-soft">
             We sent a confirmation link to <span className="font-bold text-ink">{pendingEmail}</span>.
             Click it, then come back to sign in.
           </p>
@@ -141,7 +143,7 @@ function LoginInner() {
           >
             {resent ? "Email re-sent ✓" : "Resend confirmation email"}
           </Button>
-          <button onClick={() => switchMode("signin")} className="mt-4 cursor-pointer text-sm font-bold text-primary">
+          <button onClick={() => switchMode("signin")} className="mt-2 min-h-11 w-full cursor-pointer text-sm font-semibold text-primary">
             Back to sign in
           </button>
         </div>
@@ -151,10 +153,10 @@ function LoginInner() {
 
   return (
     <Card>
-      <h1 className="text-[26px] font-semibold text-ink">
+      <h1 className="text-[26px] font-bold text-ink">
         {mode === "signin" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset your password"}
       </h1>
-      <p className="mt-1 text-ink-soft">
+      <p className="mt-1 text-[15px] leading-[21px] text-ink-soft">
         {mode === "signin"
           ? "Sign in to find gigs and get paid."
           : mode === "signup"
@@ -162,8 +164,11 @@ function LoginInner() {
             : "We'll email you a reset link."}
       </p>
 
+      {/* Inline status strip: a control, so the 14px control radius and the
+          success TINT (not a 10%-alpha wash) — same treatment as FieldError and
+          as the mobile AuthScreen's successBox. */}
       {justReset && mode === "signin" && (
-        <p role="status" className="mt-4 rounded-2xl bg-success/10 px-4 py-3 text-sm font-semibold text-success">
+        <p role="status" className="mt-4 rounded-xl bg-success-light px-4 py-3 text-[13px] font-semibold leading-[19px] text-success">
           Password updated — sign in with your new password.
         </p>
       )}
@@ -220,14 +225,14 @@ function LoginInner() {
         )}
 
         {mode === "signup" && (
-          <label className="flex cursor-pointer items-start gap-2.5 text-sm text-ink-soft">
+          <label className="flex cursor-pointer items-start gap-2.5 text-[13px] leading-[19px] text-ink-soft">
             <input
               type="checkbox"
               checked={agreed}
               onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 size-4 shrink-0 accent-primary"
+              className="mt-px size-5 shrink-0 accent-primary"
             />
-            <span>
+            <span className="min-w-0">
               I confirm I&apos;m 18 or older and agree to the{" "}
               <Link href="/legal/terms" target="_blank" className="font-semibold text-primary hover:underline">Terms</Link>,{" "}
               <Link href="/legal/privacy" target="_blank" className="font-semibold text-primary hover:underline">Privacy Policy</Link>, and{" "}
@@ -246,10 +251,12 @@ function LoginInner() {
 
         {mode !== "forgot" && (
           <>
+            {/* Lowercase, no letter-spacing: an uppercase + tracked micro-label is
+                one of the patterns stripped from all 24 mobile screens. */}
             <div className="flex items-center gap-3 pt-1">
-              <span className="h-px flex-1 bg-line" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">or</span>
-              <span className="h-px flex-1 bg-line" />
+              <span className="h-px flex-1 bg-divider" />
+              <span className="text-xs font-medium text-ink-muted">or</span>
+              <span className="h-px flex-1 bg-divider" />
             </div>
             <Button type="button" variant="outline" fullWidth size="lg" loading={googleBusy} onClick={onGoogle}>
               {!googleBusy && <GoogleG className="size-5" />}
@@ -259,15 +266,15 @@ function LoginInner() {
         )}
       </form>
 
-      <div className="mt-6 space-y-2 text-center text-sm">
+      <div className="mt-4 text-center text-sm">
         {mode === "signin" && (
           <>
-            <button onClick={() => switchMode("forgot")} className="block w-full cursor-pointer font-medium text-ink-soft hover:text-primary">
+            <button onClick={() => switchMode("forgot")} className="block min-h-11 w-full cursor-pointer font-medium text-ink-soft hover:text-primary">
               Forgot your password?
             </button>
             <p className="text-ink-soft">
               New here?{" "}
-              <button onClick={() => switchMode("signup")} className="cursor-pointer font-bold text-primary">
+              <button onClick={() => switchMode("signup")} className="cursor-pointer py-2 font-semibold text-primary">
                 Create an account
               </button>
             </p>
@@ -276,13 +283,13 @@ function LoginInner() {
         {mode === "signup" && (
           <p className="text-ink-soft">
             Already have an account?{" "}
-            <button onClick={() => switchMode("signin")} className="cursor-pointer font-bold text-primary">
+            <button onClick={() => switchMode("signin")} className="cursor-pointer py-2 font-semibold text-primary">
               Sign in
             </button>
           </p>
         )}
         {mode === "forgot" && (
-          <button onClick={() => switchMode("signin")} className="cursor-pointer font-bold text-primary">
+          <button onClick={() => switchMode("signin")} className="min-h-11 w-full cursor-pointer font-semibold text-primary">
             Back to sign in
           </button>
         )}
@@ -306,11 +313,18 @@ function GoogleG({ className = "" }: { className?: string }) {
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <BrandShell>
-      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-10">
+      {/* dvh, not vh: on iOS Safari / Chrome Android 100vh is the URL-bar-collapsed
+          height, so a "centred" card sat partly behind the browser chrome and the
+          page scrolled when it had no reason to. */}
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10 sm:px-6">
         <Link href="/" className="mb-6">
           <BrandLockup />
         </Link>
-        <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[var(--shadow-soft)] ring-1 ring-line/70">{children}</div>
+        {/* Card radius (20px), and a shadow as the ONLY elevation cue — this used
+            to stack the sheet radius (28px), a purple glow and a hairline ring all
+            at once, on the first screen every user sees. Mirrors the mobile
+            AuthScreen card: radii.lg + shadows.card, no border. */}
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] sm:p-7">{children}</div>
       </div>
     </BrandShell>
   );

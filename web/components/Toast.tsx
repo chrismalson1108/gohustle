@@ -17,17 +17,27 @@ export default function Toast() {
   if (!pendingToast) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex justify-center px-4">
+    // The layout viewport extends under the iOS status bar (layout.tsx sets
+    // viewportFit: "cover"), so a flat `top-4` put the toast partly behind the
+    // notch in a standalone/PWA window. Every other fixed element in the shell
+    // compensates for its inset; this was the only top-anchored one that didn't.
+    // z-60 sits one step above the overlay layer (modals + assistant panel at
+    // z-50) — a toast fired from inside a sheet has to be readable.
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(1rem+env(safe-area-inset-top))] z-[60] flex justify-center px-4">
       <div
-        className="pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-[var(--shadow-pop)] ring-1 ring-line/70"
+        className="pointer-events-auto flex w-full max-w-md cursor-pointer items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-soft)]"
         role="status"
         onClick={dismissToast}
       >
-        {pendingToast.icon && <span className="text-2xl">{pendingToast.icon}</span>}
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black text-ink">{pendingToast.title}</p>
+        {pendingToast.icon && (
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-canvas text-xl">
+            {pendingToast.icon}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold tracking-[-0.2px] text-ink">{pendingToast.title}</p>
           {pendingToast.message && (
-            <p className="truncate text-xs text-ink-soft">{pendingToast.message}</p>
+            <p className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-soft">{pendingToast.message}</p>
           )}
         </div>
       </div>

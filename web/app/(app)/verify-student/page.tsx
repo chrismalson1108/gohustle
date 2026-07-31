@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { GraduationCap, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { GraduationCap, CheckCircle2 } from "lucide-react";
 import { isEduEmail } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { startStudentVerification, confirmStudentVerification } from "@/lib/student";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
-import Button, { buttonClasses } from "@/components/ui/Button";
+import Button from "@/components/ui/Button";
 import { Input, Label, FieldError } from "@/components/ui/Field";
 
 export default function VerifyStudentPage() {
@@ -56,26 +56,29 @@ export default function VerifyStudentPage() {
 
   return (
     <div>
-      <PageHeader title="Verified Student" subtitle="Confirm your school email" />
-      <PageContainer className="max-w-md">
-        <button onClick={() => router.push("/profile")} className={buttonClasses("ghost", "sm", "mb-4 -ml-3")}>
-          <ArrowLeft className="size-4" /> Back to profile
-        </button>
-
-        <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary-light text-primary">
+      <PageHeader
+        title="Verified Student"
+        subtitle="Confirm your school email"
+        width="form"
+        back={{ href: "/profile", label: "Back to profile" }}
+      />
+      {/* `width="form"` instead of a local max-w-md: the header and the container
+          have to be given the same measure or the title stops lining up with the card. */}
+      <PageContainer width="form" className="pb-8">
+        <div className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)]">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-xl bg-primary-light text-primary">
             <GraduationCap className="size-6" />
           </div>
 
           {step === "done" || studentVerified ? (
             <div>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="size-6 text-success" />
-                <h2 className="text-xl font-black text-ink">
+                <CheckCircle2 className="size-6 shrink-0 text-success" />
+                <h2 className="min-w-0 text-xl font-bold tracking-[-0.3px] text-ink">
                   {studentStatus === "alumni" ? "Verified Alumni" : "You're a Verified Student"}
                 </h2>
               </div>
-              <p className="mt-2 text-sm text-ink-soft">
+              <p className="mt-2 text-sm leading-5 text-ink-soft">
                 Your Verified Student badge is live across GoHustlr — on your profile and every gig you post.
               </p>
               <Button className="mt-5" fullWidth onClick={() => router.push("/profile")}>
@@ -84,8 +87,8 @@ export default function VerifyStudentPage() {
             </div>
           ) : step === "email" ? (
             <div>
-              <h2 className="text-xl font-black text-ink">Verify your student status</h2>
-              <p className="mt-1 text-sm text-ink-soft">
+              <h2 className="text-xl font-bold tracking-[-0.3px] text-ink">Verify your student status</h2>
+              <p className="mt-1 text-sm leading-5 text-ink-soft">
                 We&apos;ll email a code to your school address. Adds a Verified Student badge that builds trust
                 with posters and earners.
               </p>
@@ -106,8 +109,10 @@ export default function VerifyStudentPage() {
             </div>
           ) : (
             <div>
-              <h2 className="text-xl font-black text-ink">Enter your code</h2>
-              <p className="mt-1 text-sm text-ink-soft">We sent a 6-digit code to {email}. It expires in 15 minutes.</p>
+              <h2 className="text-xl font-bold tracking-[-0.3px] text-ink">Enter your code</h2>
+              <p className="mt-1 break-words text-sm leading-5 text-ink-soft">
+                We sent a 6-digit code to {email}. It expires in 15 minutes.
+              </p>
               <div className="mt-5">
                 <Label>Verification code</Label>
                 <Input
@@ -115,7 +120,7 @@ export default function VerifyStudentPage() {
                   value={code}
                   onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(null); }}
                   placeholder="123456"
-                  className="text-center text-2xl font-black tracking-[0.4em]"
+                  className="text-center text-2xl font-semibold tracking-[0.4em]"
                   maxLength={6}
                 />
                 <FieldError>{error}</FieldError>

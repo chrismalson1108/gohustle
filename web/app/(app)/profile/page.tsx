@@ -21,9 +21,9 @@ import MoneyGoalCard from "@/components/MoneyGoalCard";
 import WeeklyGoalsCard from "@/components/WeeklyGoalsCard";
 import ChallengeCard from "@/components/ChallengeCard";
 import RatingStars from "@/components/ui/RatingStars";
-import Button from "@/components/ui/Button";
+import Button, { buttonClasses } from "@/components/ui/Button";
 import { FullPageSpinner } from "@/components/ui/Spinner";
-import { money } from "@/lib/format";
+import { classNames, money } from "@/lib/format";
 
 interface Review {
   id: string;
@@ -121,14 +121,14 @@ export default function ProfilePage() {
   if (u.profileStatus !== "ready") {
     return (
       <div>
-        <PageHeader title="You" variant="gold" />
-        <PageContainer>
+        <PageHeader title="You" width="content" />
+        <PageContainer width="content">
           {u.profileStatus === "loading" ? (
             <FullPageSpinner label="Loading your profile…" />
           ) : (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
+            <div className="flex min-h-[50dvh] flex-col items-center justify-center gap-3 text-center">
               <p className="text-lg font-bold text-ink">Couldn&apos;t load your profile</p>
-              <p className="max-w-xs text-sm text-ink-soft">
+              <p className="max-w-prose text-sm text-ink-soft">
                 Check your connection and try again — your account and data are safe.
               </p>
               <Button className="mt-2" onClick={u.retryProfile}>Try again</Button>
@@ -143,9 +143,13 @@ export default function ProfilePage() {
     <div>
       <PageHeader
         title="You"
-        variant="gold"
+        width="content"
         right={
-          <Link href="/profile/settings" className="rounded-full bg-white/15 p-2 text-white">
+          <Link
+            href="/profile/settings"
+            aria-label="Profile settings"
+            className="flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
+          >
             <Settings className="size-5" />
           </Link>
         }
@@ -159,19 +163,21 @@ export default function ProfilePage() {
             aria-label="View your public profile"
             className="relative shrink-0 rounded-full transition hover:opacity-90"
           >
-            <Avatar url={u.avatarUrl} initial={u.avatarInitial} name={u.name} size={64} ring />
+            <Avatar url={u.avatarUrl} initial={u.avatarInitial} name={u.name} size={64} />
           </Link>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <p className="text-xl font-black">{u.name}</p>
-              {idv.verified && <ShieldCheck className="size-4 text-white/90" />}
-              {u.studentVerified && <GraduationCap className="size-4 text-white/90" />}
+          {/* min-w-0 on the text column so a long name truncates instead of
+              pushing the block past the header's measure. */}
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-xl font-bold text-ink">{u.name}</p>
+              {idv.verified && <ShieldCheck className="size-4 shrink-0 text-success" />}
+              {u.studentVerified && <GraduationCap className="size-4 shrink-0 text-ink-soft" />}
             </div>
-            <div className="mt-0.5 flex items-center gap-2 text-white/85">
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-ink-soft">
               {u.reviewCount > 0 ? (
                 <>
                   <RatingStars value={u.rating} size={14} />
-                  <span className="text-sm">
+                  <span className="truncate text-sm">
                     {u.rating.toFixed(1)} · {u.reviewCount} review{u.reviewCount !== 1 ? "s" : ""}
                   </span>
                 </>
@@ -179,33 +185,47 @@ export default function ProfilePage() {
                 <span className="text-sm">No reviews yet</span>
               )}
             </div>
-            {college && <p className="mt-0.5 text-sm font-semibold text-white/90">{college}</p>}
+            {college && <p className="mt-0.5 truncate text-sm font-semibold text-ink-soft">{college}</p>}
           </div>
         </div>
-        <div className="mt-4">
-          <XPBar levelInfo={u.levelInfo} xp={u.xp} dark />
+        {/* Capped: a level bar stretched across 1120px of desktop reads as a
+            loading bar rather than progress. */}
+        <div className="mt-4 max-w-lg">
+          <XPBar levelInfo={u.levelInfo} xp={u.xp} />
         </div>
       </PageHeader>
 
-      <PageContainer className="space-y-5">
+      <PageContainer width="content" className="space-y-5">
         {/* Progress vs Profile, the split the mobile You tab uses. Deliberately a
             client-state toggle on ONE page rather than the native swipe pager or
             two routes: on web a second URL for the same identity page just hurts
-            linkability, and there is no back-stack cost to pay for. */}
-        <div className="flex gap-2 border-b border-line">
+            linkability, and there is no back-stack cost to pay for.
+
+            Underline segmented control ported from that tab. Weight stays 600 in
+            BOTH states — a 600→700 bump on selection re-measures the label and
+            clips it at 320px; only colour and the 2px indicator change. */}
+        <div role="tablist" className="flex border-b border-line">
           {([
             { id: "progress", label: "Progress" },
             { id: "profile", label: "Profile" },
           ] as const).map((p) => (
             <button
               key={p.id}
+              role="tab"
+              aria-selected={pane === p.id}
               onClick={() => setPane(p.id)}
-              aria-current={pane === p.id ? "page" : undefined}
-              className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-black transition ${
-                pane === p.id ? "border-primary text-ink" : "border-transparent text-ink-muted hover:text-ink-soft"
-              }`}
+              className={classNames(
+                "min-w-0 flex-1 pt-3 text-[15px] font-semibold transition sm:w-40 sm:flex-none",
+                pane === p.id ? "text-ink" : "text-ink-muted hover:text-ink-soft",
+              )}
             >
-              {p.label}
+              <span className="block truncate px-2">{p.label}</span>
+              <span
+                className={classNames(
+                  "mx-auto mt-2.5 block h-0.5 w-3/5 rounded-full",
+                  pane === p.id ? "bg-primary" : "bg-transparent",
+                )}
+              />
             </button>
           ))}
         </div>
@@ -213,27 +233,27 @@ export default function ProfilePage() {
         {pane === "progress" ? (
           <>
         {/* Stats — XP lives in the header level bar, so the third stat shows the
-            trust-relevant rating instead of duplicating XP. */}
-        <div className="grid grid-cols-3 gap-3">
+            trust-relevant rating instead of duplicating XP.
+
+            One card with three hairline-separated columns, as on mobile, rather
+            than three separate tiles. The old version sized its values with an
+            inline `clamp(…, 3.4vw, …)`: `vw` tracks the VIEWPORT while the tile
+            tracks the content column, and the content column loses ~256px the
+            moment the desktop sidebar appears — the two move in opposite
+            directions across that breakpoint. A static step plus `truncate` is
+            both smaller and correct at every width. */}
+        <div className="grid grid-cols-3 rounded-2xl bg-white px-2 py-4 shadow-[var(--shadow-card)]">
           {[
             { label: "Earned", value: money(u.earningsTotal) },
             { label: "Streak", value: `${u.streakDays}w` },
             { label: "Rating", value: u.reviewCount > 0 ? `${u.rating.toFixed(1)}★` : "—" },
-          ].map((s) => (
-            <div key={s.label} className="rounded-2xl bg-white p-2 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70 sm:p-4">
-              {/* Three fixed-width tiles: at 375px each has ~72px of inner room, and
-                  a four-figure earnings total ("$2,640.50") needs ~109px, so it spilled
-                  out of the card. The clamp reaches 1.25rem (text-xl, today's desktop
-                  size) at ~588px and shrinks below that, which fits totals up to six
-                  figures on the narrowest phone. Inline because Tailwind's arbitrary
-                  values are build-time and this needs to track the viewport. */}
-              <p
-                className="whitespace-nowrap font-black text-ink"
-                style={{ fontSize: "clamp(0.625rem, 3.4vw, 1.25rem)" }}
-              >
-                {s.value}
-              </p>
-              <p className="text-xs font-bold text-ink-muted">{s.label}</p>
+          ].map((s, i) => (
+            <div
+              key={s.label}
+              className={classNames("min-w-0 px-2 text-center", i > 0 && "border-l border-divider")}
+            >
+              <p className="truncate text-lg font-bold text-ink sm:text-xl">{s.value}</p>
+              <p className="mt-1 truncate text-xs font-medium text-ink-muted">{s.label}</p>
             </div>
           ))}
         </div>
@@ -244,86 +264,106 @@ export default function ProfilePage() {
 
         <WeeklyGoalsCard />
 
-        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Earnings</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {/* Container queries, not viewport ones: `main` is the query container, so
+            these count the columns the card ACTUALLY has rather than guessing from
+            the window and being wrong by one sidebar width. */}
+        <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+          <p className="mb-3 text-[13px] font-semibold text-ink-muted">Earnings</p>
+          <div className="grid grid-cols-2 gap-2 @2xl:grid-cols-4">
             {[
               { label: "Today", value: money(u.earningsToday) },
               { label: "This week", value: money(u.earningsWeek) },
               { label: "All time", value: money(u.earningsTotal) },
               { label: "Avg / job", value: completedCount ? money(u.earningsTotal / completedCount) : "—" },
             ].map((s) => (
-              <div key={s.label} className="rounded-xl bg-canvas px-3 py-2.5 text-center">
-                <p className="text-base font-black text-ink">{s.value}</p>
-                <p className="text-[11px] text-ink-muted">{s.label}</p>
+              <div key={s.label} className="min-w-0 rounded-xl bg-canvas px-3 py-2.5 text-center">
+                <p className="truncate text-base font-bold text-ink">{s.value}</p>
+                <p className="truncate text-[11px] text-ink-muted">{s.label}</p>
               </div>
             ))}
           </div>
         </div>
 
         {insights && insights.jobCount > 0 && (
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-muted">Your insights</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-ink-muted">Top area</p>
-                <p className="mt-0.5 truncate font-bold text-ink">{insights.topArea?.label ?? "—"}</p>
-              </div>
-              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-ink-muted">Busiest day</p>
-                <p className="mt-0.5 truncate font-bold text-ink">{insights.busiestDay?.label ?? "—"}</p>
-              </div>
-              <div className="rounded-xl bg-primary-light/40 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-ink-muted">Best day</p>
-                <p className="mt-0.5 truncate font-bold text-ink">
-                  {insights.mostProfitableDay
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+            <p className="mb-3 text-[13px] font-semibold text-ink-muted">Your insights</p>
+            <div className="grid grid-cols-1 gap-2 @2xl:grid-cols-3">
+              {[
+                { label: "Top area", value: insights.topArea?.label ?? "—" },
+                { label: "Busiest day", value: insights.busiestDay?.label ?? "—" },
+                {
+                  label: "Best day",
+                  value: insights.mostProfitableDay
                     ? `${insights.mostProfitableDay.label} (${money(insights.mostProfitableDay.total)})`
-                    : "—"}
-                </p>
-              </div>
+                    : "—",
+                },
+              ].map((s) => (
+                <div key={s.label} className="min-w-0 rounded-xl bg-canvas px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-ink-muted">{s.label}</p>
+                  <p className="mt-0.5 truncate font-bold text-ink">{s.value}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {u.challenges.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="ml-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Challenges</h2>
-            {u.challenges.map((c) => (
-              <ChallengeCard key={c.id} challenge={c} />
-            ))}
+          <section>
+            <h2 className="mb-2 ml-1 text-[13px] font-semibold text-ink-muted">Challenges</h2>
+            <div className="grid gap-3 @4xl:grid-cols-2">
+              {u.challenges.map((c) => (
+                <ChallengeCard key={c.id} challenge={c} />
+              ))}
+            </div>
           </section>
         )}
 
-        <Group title="Gigs & Earnings">
-          {postedJobs.length > 0 && (
-            <Row
-              icon={Briefcase}
-              title="Manage my gigs"
-              sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? "s" : ""} attention` : "Posted gigs & booking requests"}
-              href="/hiring"
-              badge={profileBadgeCount || undefined}
-            />
-          )}
-          <Row icon={Wallet} title="Payouts & payments" sub="Manage payout & payment methods" href="/profile/payouts" />
-          <Row icon={Receipt} title="Tax Center" sub="Track expenses & export for taxes" href="/profile/taxes" />
-        </Group>
+        <div className="grid gap-5 @4xl:grid-cols-2">
+          <Group title="Gigs & Earnings">
+            {postedJobs.length > 0 && (
+              <Row
+                icon={Briefcase}
+                title="Manage my gigs"
+                sub={profileBadgeCount > 0 ? `${profileBadgeCount} need${profileBadgeCount === 1 ? "s" : ""} attention` : "Posted gigs & booking requests"}
+                href="/hiring"
+                badge={profileBadgeCount || undefined}
+              />
+            )}
+            <Row icon={Wallet} title="Payouts & payments" sub="Manage payout & payment methods" href="/profile/payouts" />
+            <Row icon={Receipt} title="Tax Center" sub="Track expenses & export for taxes" href="/profile/taxes" />
+          </Group>
 
-        <Group title="Saved & Alerts">
-          <Row icon={Bell} title="Alerts" sub="Booking updates & gig matches" href="/notifications" badge={alertCount || undefined} badgeTone="primary" />
-          <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
-          <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
-        </Group>
+          <Group title="Saved & Alerts">
+            <Row icon={Bell} title="Alerts" sub="Booking updates & gig matches" href="/notifications" badge={alertCount || undefined} badgeTone="primary" />
+            <Row icon={Bookmark} title="Saved gigs" sub="Gigs you've bookmarked to book later" href="/profile/saved-gigs" />
+            <Row icon={Heart} title="Saved people" sub="Workers & clients you've favorited" href="/profile/saved" />
+          </Group>
+        </div>
 
-        {/* Badges */}
+        {/* Badges — auto-fill rather than a wrap of fixed 80px tiles, so the row
+            packs 3-up on a 320px phone and keeps filling a 1120px column. */}
         <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Badges</h2>
-          <div className="flex flex-wrap gap-3">
+          <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Badges</h2>
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(min(4.75rem,100%),1fr))]">
             {Object.entries(BADGE_DEFS).map(([key, def]) => {
               const unlocked = u.badges[key]?.unlocked;
               return (
-                <div key={key} className={`flex w-20 flex-col items-center gap-1 rounded-2xl p-3 text-center ${unlocked ? "bg-gold-light ring-1 ring-gold" : "bg-white ring-1 ring-line/70"}`}>
-                  <span className={`text-2xl ${unlocked ? "" : "opacity-40"}`}>{def.icon}</span>
-                  <span className={`text-[10px] font-bold leading-tight ${unlocked ? "text-ink" : "text-ink-muted"}`}>{def.label}</span>
+                <div
+                  key={key}
+                  className={classNames(
+                    "flex min-h-[5.5rem] min-w-0 flex-col items-center gap-1 rounded-xl p-3 text-center",
+                    unlocked ? "bg-gold-light" : "bg-white",
+                  )}
+                >
+                  <span className={classNames("text-2xl", !unlocked && "opacity-40")}>{def.icon}</span>
+                  <span
+                    className={classNames(
+                      "line-clamp-2 w-full text-[10px] font-semibold leading-tight",
+                      unlocked ? "text-ink" : "text-ink-muted",
+                    )}
+                  >
+                    {def.label}
+                  </span>
                 </div>
               );
             })}
@@ -333,13 +373,12 @@ export default function ProfilePage() {
         ) : (
           <>
         {/* Primary action — tied to the identity header above. */}
-        <Link
-          href="/profile/settings"
-          className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 font-black text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark"
-        >
-          <Settings className="size-[18px]" /> Edit Profile &amp; Settings
+        <Link href="/profile/settings" className={buttonClasses("primary", "lg", "w-full sm:w-auto sm:min-w-[18rem]")}>
+          <Settings className="size-[18px] shrink-0" />
+          <span className="truncate">Edit Profile &amp; Settings</span>
         </Link>
 
+        <div className="grid gap-5 @4xl:grid-cols-2">
         <Group title="Preferences">
           <Row icon={BellRing} title="Notification settings" sub="Push & email preferences" href="/profile/notifications" />
           <Row icon={CalendarClock} title="Availability & schedule" sub="Set your work status, hours & classes" href="/profile/availability" />
@@ -374,18 +413,19 @@ export default function ProfilePage() {
             onClick={invite}
           />
         </Group>
+        </div>
 
         {/* Reviews received */}
         <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Reviews I&apos;ve received</h2>
+          <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Reviews I&apos;ve received</h2>
           {reviews.length > 0 && (
-            <div className="mb-3 flex gap-3 text-sm">
+            <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <span className="text-ink-soft">As a worker: <span className="font-bold text-ink">{avg(workerReviews)}★</span> ({workerReviews.length})</span>
               <span className="text-ink-soft">As a client: <span className="font-bold text-ink">{avg(clientReviews)}★</span> ({clientReviews.length})</span>
             </div>
           )}
           {reviews.length === 0 ? (
-            <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)] ring-1 ring-line/70">
+            <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)]">
               <Star className="size-7 text-gold" />
               <p className="font-bold text-ink">No reviews yet</p>
               <p className="text-sm text-ink-soft">Complete gigs as a worker or client to start earning reviews.</p>
@@ -394,16 +434,16 @@ export default function ProfilePage() {
             /* Only the three most recent. This page renders on every visit, and
                rendering every review inline grows without bound — the rest live
                behind "See all". */
-            <div className="space-y-2.5">
+            <div className="grid gap-2.5 @4xl:grid-cols-2">
               {reviews.slice(0, 3).map((r) => (
-                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+                <div key={r.id} className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
                   <div className="flex items-center gap-2.5">
                     <Avatar url={r.reviewer?.avatar_url} initial={r.reviewer?.avatar_initial || r.reviewer?.name?.[0]} name={r.reviewer?.name} size={32} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-ink">{r.reviewer?.name || "User"}</p>
                       <RatingStars value={r.rating} size={12} />
                     </div>
-                    {r.date && <span className="text-xs text-ink-muted">{r.date}</span>}
+                    {r.date && <span className="shrink-0 text-xs text-ink-muted">{r.date}</span>}
                   </div>
                   {r.text && <p className="mt-2 text-sm text-ink-soft">{r.text}</p>}
                 </div>
@@ -411,9 +451,9 @@ export default function ProfilePage() {
               {reviews.length > 3 && (
                 <Link
                   href="/profile/reviews"
-                  className="flex items-center justify-center gap-1 rounded-2xl bg-white p-3.5 text-sm font-bold text-primary shadow-[var(--shadow-card)] ring-1 ring-line/70 transition hover:bg-primary-light/40"
+                  className="flex items-center justify-center gap-1 rounded-2xl bg-white p-3.5 text-sm font-bold text-primary shadow-[var(--shadow-card)] transition hover:bg-canvas @4xl:col-span-2"
                 >
-                  See all {reviews.length} reviews <ChevronRight className="size-4" />
+                  See all {reviews.length} reviews <ChevronRight className="size-4 shrink-0" />
                 </Link>
               )}
             </div>
@@ -423,12 +463,12 @@ export default function ProfilePage() {
         {/* Posted gigs */}
         {postedJobs.length > 0 && (
           <section>
-            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Your gigs</h2>
-            <div className="space-y-2">
+            <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Your gigs</h2>
+            <div className="grid gap-2 @4xl:grid-cols-2">
               {postedJobs.map((j) => (
-                <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-2xl bg-white p-3.5 shadow-[var(--shadow-card)] ring-1 ring-line/70">
-                  <span className="truncate font-bold text-ink">{j.title}</span>
-                  <span className="text-sm font-bold text-success">{money(j.pay)}</span>
+                <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-3.5 shadow-[var(--shadow-card)] transition hover:bg-canvas">
+                  <span className="min-w-0 truncate font-bold text-ink">{j.title}</span>
+                  <span className="shrink-0 text-sm font-bold text-success">{money(j.pay)}</span>
                 </Link>
               ))}
             </div>
@@ -452,21 +492,29 @@ export default function ProfilePage() {
 }
 
 // A titled group of rows rendered as one rounded card (matches the mobile app).
+// One elevation mechanism: the shadow. The ring that used to sit on top of it is
+// the doubled-border tell the de-AI pass removed everywhere else.
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section>
-      <h2 className="mb-2 ml-1 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</h2>
-      <div className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] ring-1 ring-line/70">
+    // min-w-0 is load-bearing: every Group is a grid item, and a grid item's
+    // default `min-width: auto` refuses to shrink below its content's min-content
+    // width. Without it the row labels held the track open and the section spilled
+    // ~32px past the page gutter at 320px, scrolling the whole document sideways.
+    <section className="min-w-0">
+      <h2 className="mb-2 ml-1 text-[13px] font-semibold text-ink-muted">{title}</h2>
+      <div className="divide-y divide-divider overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)]">
         {children}
       </div>
     </section>
   );
 }
 
+// The icon tile is a NEUTRAL canvas puck with a tinted glyph, as on mobile — a
+// column of tinted pucks turns a settings list into a colour chart.
 const ROW_TONES = {
-  primary: { tile: "bg-primary-light", icon: "text-primary" },
-  success: { tile: "bg-success-light", icon: "text-success" },
-  urgent: { tile: "bg-urgent-light", icon: "text-urgent" },
+  primary: "text-primary",
+  success: "text-success",
+  urgent: "text-urgent",
 } as const;
 
 // A single row inside a Group: tinted icon tile + title/subtitle + optional
@@ -486,25 +534,29 @@ function Row({
   tone?: keyof typeof ROW_TONES;
   disabled?: boolean;
 }) {
-  const t = ROW_TONES[tone];
   const content = (
     <>
-      <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${t.tile}`}>
-        <Icon className={`size-[18px] ${t.icon}`} />
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-canvas">
+        <Icon className={classNames("size-[18px]", ROW_TONES[tone])} />
       </span>
+      {/* min-w-0 on the text column + shrink-0 on badge/chevron: this is what
+          keeps a long row title from evicting the badge past the card edge. */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-bold text-ink">{title}</span>
-        {sub && <span className="block truncate text-xs text-ink-muted">{sub}</span>}
+        <span className="block truncate text-[15px] font-semibold text-ink">{title}</span>
+        {sub && <span className="mt-0.5 block truncate text-xs leading-4 text-ink-muted">{sub}</span>}
       </span>
       {badge ? (
-        <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-black text-white ${badgeTone === "primary" ? "bg-primary" : "bg-urgent"}`}>
+        <span className={classNames(
+          "inline-flex min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white",
+          badgeTone === "primary" ? "bg-primary" : "bg-urgent",
+        )}>
           {badge}
         </span>
       ) : null}
-      {!disabled && <ChevronRight className="size-4 text-ink-muted" />}
+      {!disabled && <ChevronRight className="size-4 shrink-0 text-ink-muted" />}
     </>
   );
-  const cls = "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-primary-light/40";
+  const cls = "flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-canvas";
   if (disabled) return <div className={`${cls} cursor-default`}>{content}</div>;
   if (externalHref) return <a href={externalHref} className={cls}>{content}</a>;
   if (href) return <Link href={href} className={cls}>{content}</Link>;

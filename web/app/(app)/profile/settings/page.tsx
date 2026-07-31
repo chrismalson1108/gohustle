@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2, Plus, X, Camera, Loader2, LogOut } from "lucide-react";
+import { ChevronDown, Trash2, Plus, X, Camera, Loader2, LogOut } from "lucide-react";
 import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
@@ -33,25 +33,42 @@ const ROLES = [
   { id: "both", label: "Both" },
 ] as const;
 
+// Selectable pill. One size, one radius, one active treatment — the four
+// near-identical local Chips across the app each drifted to a different scale.
+// min-h-11 keeps it above the 44px touch minimum; the label never wraps.
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={classNames(
-        "rounded-full border px-3.5 py-2 text-[13px] font-bold transition",
+        "inline-flex min-h-11 max-w-full shrink-0 items-center justify-center gap-1.5 rounded-full border px-4 text-[13px] font-semibold transition",
         active ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:border-primary",
       )}
     >
-      {children}
+      <span className="truncate">{children}</span>
     </button>
+  );
+}
+
+// The shared `Select` sets `appearance-none pr-10`, which suppresses the native
+// dropdown arrow and then reserves 40px for a chevron nobody draws — every select
+// on this page read as a plain text box. Until the affordance moves into
+// components/ui/Field.tsx itself, this wrapper supplies it.
+function SelectWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative min-w-0">
+      {children}
+      <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted" />
+    </div>
   );
 }
 
 // Chunks the long settings form into labeled sections (divider above each).
 function SectionHeader({ children, first }: { children: React.ReactNode; first?: boolean }) {
   return (
-    <h2 className={classNames("text-lg font-black text-ink", first ? "" : "border-t border-line pt-5")}>{children}</h2>
+    <h2 className={classNames("text-lg font-bold text-ink", first ? "" : "border-t border-line pt-5")}>{children}</h2>
   );
 }
 
@@ -357,25 +374,31 @@ export default function SettingsPage() {
     router.replace("/login");
   };
 
-  if (loading) return <FullPageSpinner />;
+  if (loading) return <FullPageSpinner className="min-h-[60dvh]" />;
 
   // The profile failed to load. Render a retry state rather than the form: the form
   // would show every field blank, and saving it would overwrite the stored profile.
+  //
+  // Built from the app primitives (PageHeader/PageContainer/Button). The previous
+  // version hand-rolled it with `text-[var(--ink)]`, `text-[var(--muted)]` and
+  // `bg-[var(--brand)]` — none of which are defined (the tokens are --color-ink,
+  // --color-ink-muted, --color-primary), so an undefined custom property made the
+  // background invalid at computed-value time and the button rendered white text
+  // on the cream canvas: invisible, on the one screen whose whole job is to offer
+  // a retry.
   if (loadError) {
     return (
-      <div className="mx-auto max-w-md px-6 py-20 text-center">
-        <h1 className="text-lg font-semibold text-[var(--ink)]">
-          Couldn&apos;t load your profile
-        </h1>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
-        </p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-6 rounded-lg bg-[var(--brand)] px-6 py-2.5 text-sm font-semibold text-white"
-        >
-          Try again
-        </button>
+      <div>
+        <PageHeader title="Profile settings" width="form" back="/profile" />
+        <PageContainer width="form">
+          <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-3 text-center">
+            <p className="text-lg font-bold text-ink">Couldn&apos;t load your profile</p>
+            <p className="max-w-prose text-sm text-ink-soft">
+              Your settings weren&apos;t loaded, so they can&apos;t be edited safely right now.
+            </p>
+            <Button className="mt-2" onClick={() => window.location.reload()}>Try again</Button>
+          </div>
+        </PageContainer>
       </div>
     );
   }
@@ -383,19 +406,20 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Profile settings" subtitle="Your info, role, location, skills & college" variant="gold" />
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
-
+      <PageHeader
+        title="Profile settings"
+        subtitle="Your info, role, location, skills & college"
+        width="form"
+        back="/profile"
+      />
+      <PageContainer width="form">
         <div className="space-y-5">
           {/* The only place on web to change the profile photo — the Profile page's
               avatar links to the public profile instead of opening a picker. */}
           <SectionHeader first>Photo</SectionHeader>
           <label
             className={classNames(
-              "flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70",
+              "flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]",
               uploadingAvatar ? "cursor-default opacity-60" : "cursor-pointer",
             )}
           >
@@ -420,14 +444,20 @@ export default function SettingsPage() {
           </label>
 
           <SectionHeader>Basics</SectionHeader>
-          <div>
-            <Label>Display name</Label>
-            <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" />
-          </div>
-          <div>
-            <Label>Username</Label>
-            <Input value={f.username} onChange={(e) => { set("username", e.target.value); setUsernameError(""); }} placeholder="e.g. chris_hustler" maxLength={30} />
-            {usernameError ? <p className="mt-1 text-sm font-medium text-urgent">{usernameError}</p> : <p className="mt-1 text-xs text-ink-muted">@{f.username || "username"}</p>}
+          {/* Short fields pair two-up once the column is wide enough. Container
+              queries, not viewport ones: `main` is the query container, so this
+              measures the space the form actually has instead of guessing from the
+              window and being wrong by one sidebar width. */}
+          <div className="grid gap-5 @2xl:grid-cols-2">
+            <div className="min-w-0">
+              <Label>Display name</Label>
+              <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" />
+            </div>
+            <div className="min-w-0">
+              <Label>Username</Label>
+              <Input value={f.username} onChange={(e) => { set("username", e.target.value); setUsernameError(""); }} placeholder="e.g. chris_hustler" maxLength={30} />
+              {usernameError ? <p className="mt-1 text-sm font-medium text-urgent">{usernameError}</p> : <p className="mt-1 truncate text-xs text-ink-muted">@{f.username || "username"}</p>}
+            </div>
           </div>
           <div>
             <Label>Bio</Label>
@@ -435,7 +465,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <Label>I&apos;m here to…</Label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {ROLES.map((r) => (
                 <Chip key={r.id} active={f.role === r.id} onClick={() => set("role", r.id)}>{r.label}</Chip>
               ))}
@@ -449,40 +479,50 @@ export default function SettingsPage() {
           {!dobLocked && (
             <div>
               <Label>Date of birth</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={dobM}
-                  onChange={(e) => {
-                    const m = e.target.value;
-                    setDobM(m);
-                    setDobError("");
-                    // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
-                    if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
-                  }}
-                  aria-label="Month"
-                  className="flex-[1.6]"
-                >
-                  <option value="">Month</option>
-                  {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                </Select>
-                <Select value={dobD} onChange={(e) => { setDobD(e.target.value); setDobError(""); }} aria-label="Day" className="flex-1">
-                  <option value="">Day</option>
-                  {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-                </Select>
-                <Select
-                  value={dobY}
-                  onChange={(e) => {
-                    const y = e.target.value;
-                    setDobY(y);
-                    setDobError("");
-                    if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
-                  }}
-                  aria-label="Year"
-                  className="flex-[1.2]"
-                >
-                  <option value="">Year</option>
-                  {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                </Select>
+              {/* Stacked until the column can hold three selects. As three
+                  flex-basis columns the Day select got ~84px on a 375px screen, and
+                  Select's `appearance-none pr-10` spends 40px of that on the right —
+                  "September" had nowhere to go. Container step, not `sm:`, for the
+                  same reason as the pairs above: `main` is the query container, so
+                  this measures the form column instead of the window. */}
+              <div className="grid grid-cols-1 gap-2 @2xl:grid-cols-3">
+                <SelectWrap>
+                  <Select
+                    value={dobM}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setDobM(m);
+                      setDobError("");
+                      // Changing month/year can invalidate the chosen day (e.g. Feb 30) — clear it.
+                      if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
+                    }}
+                    aria-label="Month"
+                  >
+                    <option value="">Month</option>
+                    {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                  </Select>
+                </SelectWrap>
+                <SelectWrap>
+                  <Select value={dobD} onChange={(e) => { setDobD(e.target.value); setDobError(""); }} aria-label="Day">
+                    <option value="">Day</option>
+                    {Array.from({ length: dobDayCount }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </Select>
+                </SelectWrap>
+                <SelectWrap>
+                  <Select
+                    value={dobY}
+                    onChange={(e) => {
+                      const y = e.target.value;
+                      setDobY(y);
+                      setDobError("");
+                      if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
+                    }}
+                    aria-label="Year"
+                  >
+                    <option value="">Year</option>
+                    {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </Select>
+                </SelectWrap>
               </div>
               {dobError ? (
                 <p className="mt-1 text-sm font-medium text-urgent">{dobError}</p>
@@ -514,27 +554,28 @@ export default function SettingsPage() {
               {f.skills.length > 0 && (
                 <div>
                   <Label>Hourly rates (optional)</Label>
-                  <div className="space-y-2">
+                  <div className="grid gap-2 @2xl:grid-cols-2 @2xl:gap-x-6">
                     {f.skills.map((s) => (
                       <div key={s} className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-ink">{s}</span>
-                        <div className="flex w-28 items-center gap-1 rounded-2xl border border-line bg-white px-3 py-1.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
-                          <span className="text-ink-soft">$</span>
+                        <span className="min-w-0 truncate text-sm font-semibold text-ink">{s}</span>
+                        <div className="flex w-28 shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 py-2.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+                          <span className="shrink-0 text-ink-soft">$</span>
                           <input
                             value={f.skillRates?.[s] || ""}
                             onChange={(e) => setF((p) => ({ ...p, skillRates: { ...p.skillRates, [s]: e.target.value.replace(/[^0-9]/g, "") } }))}
                             inputMode="numeric"
                             placeholder="—"
-                            className="w-full bg-transparent text-sm font-bold outline-none"
+                            aria-label={`Hourly rate for ${s}`}
+                            className="w-full min-w-0 bg-transparent text-base font-bold outline-none sm:text-sm"
                           />
-                          <span className="text-xs text-ink-muted">/hr</span>
+                          <span className="shrink-0 text-xs text-ink-muted">/hr</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+              <div className="flex items-center justify-between gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-ink">Show my availability on my profile</p>
                   <p className="mt-0.5 text-xs text-ink-muted">Lets signed-in clients see when you&apos;re free.</p>
@@ -562,7 +603,7 @@ export default function SettingsPage() {
 
           <SectionHeader>Education</SectionHeader>
           {/* College */}
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
             <Label>College (optional)</Label>
             <Input value={f.school} onChange={(e) => set("school", e.target.value)} placeholder="e.g. University of Texas at Austin" />
             <p className="mt-1.5 text-xs text-ink-muted">
@@ -571,9 +612,17 @@ export default function SettingsPage() {
             </p>
             {f.school && (
               <div className="mt-4 space-y-4">
-                <div>
-                  <Label>Major</Label>
-                  <Input value={f.major} onChange={(e) => set("major", e.target.value)} placeholder="e.g. Computer Science" />
+                {/* Major and graduation year are the two short fields here, so they
+                    pair once the column can hold both. */}
+                <div className="grid gap-4 @2xl:grid-cols-2 @2xl:gap-x-6">
+                  <div className="min-w-0">
+                    <Label>Major</Label>
+                    <Input value={f.major} onChange={(e) => set("major", e.target.value)} placeholder="e.g. Computer Science" />
+                  </div>
+                  <div className="min-w-0">
+                    <Label>Graduation year</Label>
+                    <Input value={f.gradYear} onChange={(e) => set("gradYear", e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} inputMode="numeric" maxLength={4} placeholder="e.g. 2027" />
+                  </div>
                 </div>
                 <div>
                   <Label>Class standing</Label>
@@ -591,16 +640,12 @@ export default function SettingsPage() {
                     ))}
                   </div>
                 </div>
-                <div>
-                  <Label>Graduation year</Label>
-                  <Input value={f.gradYear} onChange={(e) => set("gradYear", e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} inputMode="numeric" maxLength={4} placeholder="e.g. 2027" />
-                </div>
               </div>
             )}
           </div>
 
           {/* Certifications */}
-          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-line/70">
+          <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
             <div className="flex items-center justify-between">
               <Label className="mb-0">Certifications</Label>
               <Button variant="outline" size="sm" onClick={() => setCertModalOpen(true)}>
@@ -611,12 +656,12 @@ export default function SettingsPage() {
               Trade certs &amp; credentials (e.g. EPA 608, OSHA 10) — shown on your public profile.
             </p>
             {certs.length > 0 && (
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 grid gap-2 @2xl:grid-cols-2">
                 {certs.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 rounded-xl bg-canvas px-3 py-2.5 ring-1 ring-line/70">
+                  <div key={c.id} className="flex items-center gap-3 rounded-xl bg-canvas px-3 py-2.5">
                     {c.image_url && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={c.image_url} alt={c.title} className="size-10 shrink-0 rounded-lg object-cover" />
+                      <img src={c.image_url} alt={c.title} className="size-10 shrink-0 rounded-lg bg-divider object-cover" />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-ink">{c.title}</p>
@@ -626,10 +671,13 @@ export default function SettingsPage() {
                         </p>
                       )}
                     </div>
+                    {/* An explicit 44px box. Padding around the glyph only reached
+                        36px (the old p-1.5 was 28px), and the negative margin pulls
+                        the layout back in — it does not enlarge the hit area. */}
                     <button
                       type="button"
                       onClick={() => removeCert(c.id)}
-                      className="rounded-full p-1.5 text-ink-muted hover:bg-line/60 hover:text-urgent"
+                      className="-m-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:text-urgent"
                       aria-label={`Remove ${c.title}`}
                     >
                       <X className="size-4" />
@@ -640,15 +688,20 @@ export default function SettingsPage() {
             )}
           </div>
 
-          <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
+          {/* Sticky save bar: the form is ~14 controls tall, and Save used to be
+              reachable only from the very bottom. Offset above the mobile tab bar
+              (which is `md:hidden`, so the offset drops at md too). */}
+          <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 border-t border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:bottom-0 lg:-mx-8 lg:px-8">
+            <Button fullWidth size="lg" loading={saving} onClick={save}>Save changes</Button>
+          </div>
 
           {/* Sign out. Both clients moved this off the profile tab so it could not be
               mis-tapped, leaving the comment "Sign out lives in Settings only" — but on
               web the second half never happened, so there was NO way to end a web
               session at all. Mobile's SettingsScreen has had confirmSignOut the whole
               time. Confirmed, like mobile, because this is still a one-tap exit. */}
-          <div className="mt-6 rounded-2xl border border-line bg-white p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Account</p>
+          <div className="mt-6 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+            <p className="text-[13px] font-semibold text-ink-muted">Account</p>
             <p className="mt-1 text-sm text-ink-soft">
               You&apos;ll need to sign in again to get back to your gigs.
             </p>
@@ -663,8 +716,10 @@ export default function SettingsPage() {
           </div>
 
           {/* Danger zone */}
-          <div className="mt-8 rounded-2xl border border-urgent/30 bg-urgent/5 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-urgent">Danger zone</p>
+          {/* Tinted surface rather than an alpha border + alpha fill — the tinted
+              bg / deep text pair is the palette's one convention for a warning. */}
+          <div className="mt-8 rounded-2xl bg-urgent-light p-4">
+            <p className="text-[13px] font-semibold text-urgent">Danger zone</p>
             <p className="mt-1 text-sm text-ink-soft">
               Permanently delete your account, profile, gigs, bookings, messages, reviews, and photos. This can&apos;t be undone.
             </p>

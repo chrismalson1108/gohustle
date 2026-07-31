@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Bookmark } from "lucide-react";
+import { Bookmark } from "lucide-react";
 import { isJobBookable, isHiddenForViewer } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
@@ -10,7 +9,6 @@ import JobCard from "@/components/JobCard";
 import type { Job } from "@/lib/types";
 
 export default function SavedGigsPage() {
-  const router = useRouter();
   const { jobs, savedJobIds, bookings } = useJobs();
   const { user } = useAuth();
 
@@ -29,19 +27,19 @@ export default function SavedGigsPage() {
 
   return (
     <div>
-      <PageHeader title="Saved gigs" subtitle="Gigs you've bookmarked" variant="gold" />
-      <PageContainer>
-        <button onClick={() => router.push("/profile")} className="mb-4 flex items-center gap-1 text-sm font-bold text-primary">
-          <ArrowLeft className="size-4" /> Back
-        </button>
+      <PageHeader title="Saved gigs" subtitle="Gigs you've bookmarked" width="feed" back="/profile" />
+      <PageContainer width="feed" className="pb-8">
         {saved.length === 0 ? (
           <EmptyState icon={<Bookmark className="size-10" />} title="No saved gigs yet" body="Tap the bookmark on any gig to save it here to book later." />
         ) : (
           <>
             {open.length > 0 && (
               <>
-                {closed.length > 0 && <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Ready to book</h2>}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {closed.length > 0 && <h2 className="mb-2 text-[13px] font-semibold text-ink-muted">Ready to book</h2>}
+                {/* The same auto-fill feed grid Browse uses: a column appears
+                    whenever ~320px of room does, so saved gigs fill a wide monitor
+                    and collapse to one column on a phone without a breakpoint ladder. */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-4">
                   {open.map((job) => (
                     <JobCard key={job.id} job={job} bookingStatus={bookings.find((b) => b.jobId === job.id)?.status} />
                   ))}
@@ -50,9 +48,9 @@ export default function SavedGigsPage() {
             )}
             {closed.length > 0 && (
               <>
-                <h2 className="mb-1 mt-6 text-xs font-bold uppercase tracking-wide text-ink-muted">No longer open</h2>
+                <h2 className="mb-1 mt-6 text-[13px] font-semibold text-ink-muted">No longer open</h2>
                 <p className="mb-3 text-xs text-ink-soft">Fully booked, or your own listing. Unsave to tidy this list up.</p>
-                <div className="grid grid-cols-1 gap-4 opacity-60 lg:grid-cols-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-4 opacity-60">
                   {closed.map((job) => (
                     <JobCard key={job.id} job={job} bookingStatus={bookings.find((b) => b.jobId === job.id)?.status} />
                   ))}

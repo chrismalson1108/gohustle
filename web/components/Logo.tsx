@@ -17,9 +17,19 @@ import { HustlrLockup, HustlrMark } from "@/components/brand/glyphs";
 //
 // `light` swaps to the Cream colourway for dark / Blue surfaces. `mark` renders the
 // compact H-monogram instead of the full lockup (used in the app sidebar).
+//
+// Sizing is CLASS-driven by default (`h-8 w-auto`, overridable with any height
+// utility including responsive ones). An inline px `height` can't be overridden by
+// a utility, so a caller could never say "h-8 on mobile, h-9 on desktop"; the
+// numeric prop is kept for the call sites that genuinely need an exact px height.
+//
+// Colours come from the theme, not literals: `text-canvas` resolves to the app
+// cream normally and to the Brand-v1 cream inside BrandShell (which re-points
+// --color-canvas for its subtree) — which is exactly what the two hardcoded hexes
+// used to approximate, one of them silently forking from --color-primary.
 export default function Logo({
   light = false,
-  height = 32,
+  height,
   mark = false,
   className = "",
 }: {
@@ -34,8 +44,13 @@ export default function Logo({
       role="img"
       aria-label="Hustlr"
       aria-hidden={undefined}
-      style={{ height, width: "auto" }}
-      className={classNames("select-none", light ? "text-[#FEF4E5]" : "text-[#3F25FE]", className)}
+      style={height ? { height, width: "auto" } : undefined}
+      className={classNames(
+        "select-none",
+        !height && "h-8 w-auto",
+        light ? "text-canvas" : "text-primary",
+        className,
+      )}
     />
   );
 }

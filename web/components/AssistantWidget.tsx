@@ -209,36 +209,43 @@ export default function AssistantWidget() {
 
   return (
     <>
-      {/* Floating launcher — sits above the mobile tab bar and clears the safe area. */}
+      {/* Floating launcher — sits above the mobile tab bar and clears the safe area.
+          One elevation cue only: the 4px brand-purple halo it used to wear was a
+          tinted glow stacked on a shadow, and it read as a notification state. */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
           aria-label="Open Hustlr AI assistant"
-          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-card)] ring-4 ring-primary/20 transition hover:scale-105 md:bottom-6 md:right-6"
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-40 flex size-12 cursor-pointer items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark md:bottom-6 md:right-6 md:size-14"
         >
           <Sparkles className="size-6" />
         </button>
       )}
 
-      {/* Chat panel */}
+      {/* Chat panel. `dvh` rather than `vh` so the sheet doesn't run under mobile
+          Safari's collapsing toolbar, and the desktop panel is expressed as a
+          min() of the ideal size and the viewport — a hard 400×600 overflowed a
+          short laptop window and looked identical on a 4K display. */}
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[80vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-line/70 md:inset-auto md:bottom-6 md:right-6 md:h-[600px] md:w-[400px] md:rounded-3xl">
+        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[80dvh] flex-col overflow-hidden rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-soft)] md:inset-auto md:bottom-6 md:right-6 md:h-[min(40rem,80dvh)] md:w-[min(26rem,90vw)] md:rounded-3xl md:pb-0 xl:w-[29rem]">
           {/* Header */}
           <div className="flex items-center gap-2.5 bg-primary px-4 py-3 text-white">
             <div className="flex size-9 items-center justify-center rounded-full bg-white/20">
               <Sparkles className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-black leading-tight">Hustlr AI</p>
-              <p className="text-xs text-white/80">Your gig sidekick</p>
+              <p className="truncate font-semibold leading-tight">Hustlr AI</p>
+              <p className="truncate text-xs text-white/80">Your gig sidekick</p>
             </div>
-            <button onClick={newChat} disabled={busy} aria-label="New chat" title="New chat" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
+            {/* size-11 (44px) on each: these were 32px squares stacked three
+                across in the corner of a sheet, the hardest thing to hit on a phone. */}
+            <button onClick={newChat} disabled={busy} aria-label="New chat" title="New chat" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15 disabled:opacity-40">
               <Plus className="size-5" />
             </button>
-            <button onClick={openHistory} disabled={busy} aria-label="Past conversations" title="Past conversations" className="rounded-full p-1.5 hover:bg-white/15 disabled:opacity-40">
+            <button onClick={openHistory} disabled={busy} aria-label="Past conversations" title="Past conversations" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15 disabled:opacity-40">
               <History className="size-5" />
             </button>
-            <button onClick={() => { stopListening(); setOpen(false); }} aria-label="Close" className="rounded-full p-1.5 hover:bg-white/15">
+            <button onClick={() => { stopListening(); setOpen(false); }} aria-label="Close" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15">
               <X className="size-5" />
             </button>
           </div>
@@ -270,7 +277,7 @@ export default function AssistantWidget() {
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:border-primary hover:text-primary"
+                    className="cursor-pointer rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-ink-soft transition hover:border-primary hover:text-primary"
                   >
                     {s}
                   </button>
@@ -288,7 +295,7 @@ export default function AssistantWidget() {
                   onClick={listening ? stopListening : startListening}
                   aria-label={listening ? "Stop voice input" : "Start voice input"}
                   className={classNames(
-                    "flex size-10 shrink-0 items-center justify-center rounded-full transition",
+                    "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition",
                     listening ? "animate-pulse bg-urgent text-white" : "bg-primary-light text-primary hover:bg-[#dcd6ff]",
                   )}
                 >
@@ -307,13 +314,15 @@ export default function AssistantWidget() {
                 rows={1}
                 disabled={listening}
                 placeholder={listening ? "Listening…" : "Ask anything, or describe a gig…"}
-                className="max-h-28 min-h-10 flex-1 resize-none rounded-2xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-70"
+                // text-base at the small end: iOS Safari force-zooms the page on
+                // focus for any field under 16px.
+                className="max-h-28 min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-line bg-canvas px-3 py-2.5 text-base text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-70 sm:text-sm"
               />
               <button
                 onClick={() => send(input)}
                 disabled={busy || !input.trim()}
                 aria-label="Send"
-                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-soft)] transition hover:bg-primary-dark disabled:opacity-40"
+                className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition hover:bg-primary-dark disabled:opacity-40"
               >
                 <Send className="size-5" />
               </button>
@@ -344,8 +353,8 @@ function HistoryPanel({
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-canvas">
-      <button onClick={onBack} className="flex items-center gap-1 px-4 py-3 text-sm font-bold text-primary">
-        <ArrowLeft className="size-4" /> Back to chat
+      <button onClick={onBack} className="flex min-h-11 cursor-pointer items-center gap-1 self-start px-4 text-sm font-semibold text-primary">
+        <ArrowLeft className="size-4 shrink-0" /> Back to chat
       </button>
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         {loading ? (
@@ -360,18 +369,18 @@ function HistoryPanel({
               <div
                 key={t.id}
                 className={classNames(
-                  "group flex items-center gap-2 rounded-xl px-3 py-2.5 ring-1 transition",
-                  t.id === activeId ? "bg-primary-light ring-primary/30" : "bg-white ring-line/70 hover:bg-primary-light/40",
+                  "group flex items-center gap-2 rounded-xl px-3 transition",
+                  t.id === activeId ? "bg-primary-light ring-1 ring-primary/30" : "bg-white ring-1 ring-line/70 hover:bg-primary-light/40",
                 )}
               >
-                <button onClick={() => onPick(t)} className="min-w-0 flex-1 text-left">
+                <button onClick={() => onPick(t)} className="min-h-11 min-w-0 flex-1 cursor-pointer py-2 text-left">
                   <p className="truncate text-sm font-semibold text-ink">{t.title || "Conversation"}</p>
-                  <p className="text-[11px] text-ink-muted">{relTime(t.updated_at)}</p>
+                  <p className="truncate text-[11px] text-ink-muted">{relTime(t.updated_at)}</p>
                 </button>
                 <button
                   onClick={() => onDelete(t.id)}
                   aria-label="Delete conversation"
-                  className="rounded-full p-1.5 text-ink-muted opacity-60 transition hover:bg-urgent/10 hover:text-urgent"
+                  className="-mr-1 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-muted opacity-60 transition hover:bg-urgent/10 hover:text-urgent"
                 >
                   <Trash2 className="size-4" />
                 </button>

@@ -57,15 +57,20 @@ export default function SlotBuilder({
 
   return (
     <div>
-      <div className="flex gap-2">
+      {/* A native datetime-local control has a large intrinsic width and a flex
+          item's default min-width:auto refuses to shrink below it, so `flex-1`
+          alone overflowed the row on a phone. `min-w-0` lets it compress and
+          `flex-wrap` + a growable button drops "Add" to its own line when the
+          picker still needs more room than the card has. */}
+      <div className="flex flex-wrap gap-2">
         <Input
           type="datetime-local"
           value={value}
           min={minLocal}
           onChange={(e) => { setValue(e.target.value); if (error) setError(""); }}
-          className="flex-1"
+          className="min-w-0 grow basis-56"
         />
-        <Button type="button" onClick={add} disabled={!value}>
+        <Button type="button" onClick={add} disabled={!value} className="shrink-0 grow basis-24 sm:grow-0">
           <Plus className="size-4" /> Add
         </Button>
       </div>
@@ -73,9 +78,19 @@ export default function SlotBuilder({
       {slots.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {slots.map((s) => (
-            <span key={s.id} className="flex items-center gap-1.5 rounded-full bg-primary-light px-3 py-1.5 text-sm font-bold text-primary">
-              {s.label}
-              <button type="button" onClick={() => onChange(slots.filter((x) => x.id !== s.id))} aria-label="Remove">
+            <span key={s.id} className="flex max-w-full items-center gap-1.5 rounded-full bg-primary-light px-3 py-1.5 text-[13px] font-semibold text-primary">
+              <span className="min-w-0 truncate">{s.label}</span>
+              {/* -m-1 p-1 keeps the glyph the same size while the hit area grows.
+                  A 14px glyph + p-1 is a 22px button, so the invisible `after` box
+                  needs a 12px inset to reach 46px — `-inset-2` was only 38px, under
+                  the 44px touch minimum. (Same recipe as GigForm's CHIP_REMOVE; a
+                  real min-h-11 box would force the whole pill to 44px tall.) */}
+              <button
+                type="button"
+                onClick={() => onChange(slots.filter((x) => x.id !== s.id))}
+                aria-label={`Remove ${s.label}`}
+                className="relative -m-1 shrink-0 rounded-full p-1 after:absolute after:-inset-3"
+              >
                 <X className="size-3.5" />
               </button>
             </span>

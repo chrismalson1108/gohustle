@@ -153,14 +153,18 @@ export default function OnboardingPage() {
   // effect above navigates an onboarded/logged-out visitor away.
   if (authLoading || !session || !onboardingResolved || onboardingDone) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-canvas">
+      <div className="flex min-h-dvh items-center justify-center bg-canvas">
         <FullPageSpinner label="Loading…" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-canvas via-primary-light to-white">
+    // Flat cream, like the mobile OnboardingScreen and the login shell. The
+    // three-stop vertical brand gradient this replaced painted the whole wizard
+    // and is the same class of tell as the gradient hero headers.
+    // dvh, not vh — 100vh is the URL-bar-collapsed height on mobile browsers.
+    <div className="flex min-h-dvh flex-col bg-canvas">
       {step > 0 && step < totalSteps - 1 && (
         <div className="flex justify-center gap-1.5 py-5">
           {Array.from({ length: totalSteps - 2 }).map((_, i) => (
@@ -175,7 +179,7 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 pb-10 text-center">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 pb-10 text-center sm:px-6">
         {step === 0 && (
           <Step icon={<Sparkles className="size-14 text-primary" />} title="Welcome to GoHustlr!" sub="The gig marketplace for college students. Let's set up your profile in 60 seconds.">
             <Button size="lg" fullWidth onClick={next}>Let&apos;s go <ArrowRight className="size-5" /></Button>
@@ -194,8 +198,15 @@ export default function OnboardingPage() {
             />
             {usernameError && <p role="alert" className="mt-1.5 text-left text-sm font-medium text-urgent">{usernameError}</p>}
             <p className="mb-4 mt-1.5 text-left text-xs text-ink-muted">@{username.toLowerCase() || "username"}</p>
-            <p className="mb-1.5 text-left text-sm font-bold text-ink-soft">Date of birth</p>
-            <div className="flex gap-2">
+            <p className="mb-2 text-left text-[13px] font-semibold text-ink-soft">Date of birth</p>
+            {/* A grid, not three flex-basis columns. Each Select carries ~56px of
+                chrome (px-4 plus the appearance-none pr-10 the chevron needs), so
+                three of them side by side at 320–375px left the Month field about
+                48px of usable width and clipped "September". Month owns a full row
+                on a phone and a double track from `sm` up; Day and Year need very
+                little. `min-w-0` stops a select's widest <option> from setting the
+                track's minimum and blowing the grid out. */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Select
                 value={dobM}
                 onChange={(e) => {
@@ -206,7 +217,7 @@ export default function OnboardingPage() {
                   if (dobD && Number(dobD) > new Date(Number(dobY) || 2000, Number(m) || 12, 0).getDate()) setDobD("");
                 }}
                 aria-label="Month"
-                className="flex-[1.6]"
+                className="col-span-2 min-w-0"
               >
                 <option value="">Month</option>
                 {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
@@ -215,7 +226,7 @@ export default function OnboardingPage() {
                 value={dobD}
                 onChange={(e) => { setDobD(e.target.value); setDobError(""); }}
                 aria-label="Day"
-                className="flex-1"
+                className="min-w-0"
               >
                 <option value="">Day</option>
                 {/* Day list adapts to the chosen month/year — no Feb 30. */}
@@ -230,7 +241,7 @@ export default function OnboardingPage() {
                   if (dobD && Number(dobD) > new Date(Number(y) || 2000, Number(dobM) || 12, 0).getDate()) setDobD("");
                 }}
                 aria-label="Year"
-                className="flex-[1.2]"
+                className="min-w-0"
               >
                 <option value="">Year</option>
                 {dobYears.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -251,17 +262,20 @@ export default function OnboardingPage() {
                 <button
                   key={r.id}
                   onClick={() => setRole(r.id)}
+                  // 1px border, not 2: borderWidth > 1 was eliminated across the
+                  // mobile app, and a 2px purple ring is a hard line in a system
+                  // built on soft ones. Selection now reads through the tint + hue.
                   className={classNames(
-                    "flex w-full items-center gap-3 rounded-2xl border-2 p-4 text-left transition",
+                    "flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border p-4 text-left transition",
                     role === r.id ? "border-primary bg-primary-light" : "border-line bg-white",
                   )}
                 >
                   <r.Icon className={classNames("size-6 shrink-0", role === r.id ? "text-primary" : "text-ink-soft")} />
-                  <span className="flex-1">
-                    <span className={classNames("block font-bold", role === r.id ? "text-primary" : "text-ink")}>{r.label}</span>
-                    <span className="block text-sm text-ink-muted">{r.desc}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={classNames("block text-base font-bold leading-[21px]", role === r.id ? "text-primary" : "text-ink")}>{r.label}</span>
+                    <span className="mt-0.5 block text-[13px] leading-[18px] text-ink-soft">{r.desc}</span>
                   </span>
-                  {role === r.id && <Check className="size-5 text-primary" />}
+                  {role === r.id && <Check className="size-5 shrink-0 text-primary" />}
                 </button>
               ))}
             </div>
@@ -275,7 +289,7 @@ export default function OnboardingPage() {
               <LocationPicker value={city} onChange={(label) => setCity(label)} placeholder="e.g. Austin, TX" />
             </div>
             <Button size="lg" fullWidth className="mt-5" disabled={!city} onClick={next}>Continue <ArrowRight className="size-5" /></Button>
-            <button onClick={next} className="mt-4 text-sm font-semibold text-ink-muted">Skip for now</button>
+            <button onClick={next} className="mt-2 min-h-11 w-full cursor-pointer text-sm font-semibold text-ink-soft">Skip for now</button>
           </Step>
         )}
 
@@ -288,7 +302,7 @@ export default function OnboardingPage() {
                     key={s}
                     onClick={() => toggleSkill(s)}
                     className={classNames(
-                      "rounded-full border px-3.5 py-2 text-sm font-bold transition",
+                      "cursor-pointer rounded-full border px-3.5 py-2 text-[13px] font-semibold transition",
                       skills.includes(s) ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:bg-primary-light/40",
                     )}
                   >
@@ -297,13 +311,16 @@ export default function OnboardingPage() {
                 ))}
               </div>
               <p className="mt-5 text-sm text-ink-soft">How far will you travel?</p>
+              {/* Pills, same as the skill chips directly above — these used to be
+                  16px rounded rectangles three lines away from a row of 999px
+                  pills, two chip languages in one step. */}
               <div className="mt-2 flex flex-wrap justify-center gap-2">
                 {RADIUS_OPTIONS.map((r) => (
                   <button
                     key={r}
                     onClick={() => setRadius(r)}
                     className={classNames(
-                      "rounded-xl border px-4 py-2.5 text-sm font-bold transition",
+                      "cursor-pointer rounded-full border px-4 py-2 text-sm font-semibold transition",
                       radius === r ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:bg-primary-light/40",
                     )}
                   >
@@ -323,14 +340,14 @@ export default function OnboardingPage() {
         {step === 5 && (
           <Step icon={<Rocket className="size-14 text-primary" />} title="You're all set!" sub={`Welcome to GoHustlr, @${username || "hustler"}. Time to start hustling!`}>
             {needsConsent && (
-              <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-left text-sm text-ink-soft">
+              <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-left text-[13px] leading-[19px] text-ink-soft">
                 <input
                   type="checkbox"
                   checked={agreedTerms}
                   onChange={(e) => setAgreedTerms(e.target.checked)}
-                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                  className="mt-px size-5 shrink-0 accent-primary"
                 />
-                <span>
+                <span className="min-w-0">
                   I confirm I&apos;m 18 or older and agree to the{" "}
                   <Link href="/legal/terms" target="_blank" className="font-semibold text-primary hover:underline">Terms</Link>,{" "}
                   <Link href="/legal/privacy" target="_blank" className="font-semibold text-primary hover:underline">Privacy Policy</Link>, and{" "}
@@ -347,12 +364,14 @@ export default function OnboardingPage() {
   );
 }
 
+// Step heading matches the mobile OnboardingScreen's stepTitle (26/700/-0.4) and
+// the screen-title role used by PageHeader — capped at 700, never heavier.
 function Step({ icon, title, sub, children }: { icon: React.ReactNode; title: string; sub: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="mb-4">{icon}</div>
-      <h1 className="text-2xl font-black text-ink">{title}</h1>
-      <p className="mb-7 mt-2 max-w-xs text-sm text-ink-soft">{sub}</p>
+      <div className="mb-5">{icon}</div>
+      <h1 className="text-[26px] font-bold leading-[33px] text-ink">{title}</h1>
+      <p className="mb-7 mt-2 max-w-sm text-[15px] leading-[22px] text-ink-soft">{sub}</p>
       <div className="w-full">{children}</div>
     </div>
   );
