@@ -203,9 +203,11 @@ export default function ProfilePage() {
                 </span>
               )}
             </Link>
+            {/* The gear opens the settings HUB, as on mobile — not the profile
+                form, which is the hub's first row. */}
             <Link
-              href="/profile/settings"
-              aria-label="Profile settings"
+              href="/settings"
+              aria-label="Settings"
               className="flex size-11 items-center justify-center rounded-full bg-white text-ink transition hover:text-primary"
             >
               <Settings className="size-5" />
@@ -467,10 +469,12 @@ export default function ProfilePage() {
           <>
         {/* Primary action — tied to the identity header above. Web-only: mobile
             reaches settings from the pinned gear alone, which this page also has,
-            but a full-width CTA is the desktop affordance people look for. */}
+            but a full-width CTA is the desktop affordance people look for.
+            Goes to the profile FORM, not the settings hub — the gear covers the
+            hub, and two controls landing on the same page would be a dead end. */}
         <Link href="/profile/settings" className={buttonClasses("primary", "lg", "w-full sm:w-auto sm:min-w-[18rem]")}>
           <Settings className="size-[18px] shrink-0" />
-          <span className="truncate">Edit Profile &amp; Settings</span>
+          <span className="truncate">Edit profile</span>
         </Link>
 
         {/* Trust opens the Profile pane on mobile, ahead of reviews and settings —
