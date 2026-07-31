@@ -1059,8 +1059,15 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
     .eq('earner_id', userId)
     .in('status', ['verified', 'completed'])
     .gte('created_at', monthStart);
+  // Net of the platform fee. monthly_earning_goal is a TAKE-HOME target — both clients'
+  // MoneyGoalCard multiplies by (1 - SERVICE_FEE_PCT) for exactly this reason — so
+  // summing gross list prices here made the assistant quote a different number than the
+  // app for the same account and the same month, and told the user they were closer to
+  // their goal than they are. Keep in sync with shared/constants + src/lib/stripeClient
+  // + web/lib/config (all 0.10).
+  const SERVICE_FEE_PCT = 0.10;
   const vals = (bookings ?? [])
-    .map((b: Json) => Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0)
+    .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
     .filter((v) => v > 0);
   const earned = vals.reduce((s, v) => s + v, 0);
 
@@ -1074,7 +1081,7 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
       .order('created_at', { ascending: false })
       .limit(10);
     const rv = (recent ?? [])
-      .map((b: Json) => Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0)
+      .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
       .filter((v) => v > 0);
     avg = rv.length ? rv.reduce((s, v) => s + v, 0) / rv.length : 40;
   }
