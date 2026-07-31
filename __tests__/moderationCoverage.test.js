@@ -94,6 +94,15 @@ describe('server-side moderation backstop coverage', () => {
     ['profiles', 'name'],
     ['profiles', 'username'],
     ['profiles', 'bio'],
+    ['profiles', 'work_status_note'],
+    // The rest of the public profile. Every one of these renders on /u/[id] beside
+    // the bio, so an attacker blocked from putting a slur in the bio could put it in
+    // their major and have it show two lines below. `skills` is a text[], which is
+    // how it avoided looking like a text field that needed checking.
+    ['profiles', 'city'],
+    ['profiles', 'school'],
+    ['profiles', 'major'],
+    ['profiles', 'skills'],
     ['bookings', 'application_note'],
   ];
 
