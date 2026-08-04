@@ -169,6 +169,18 @@ Deno.serve(async (req: Request) => {
     } = await admin.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
+    // Kill switch. Hustlr AI can post gigs, book work and edit profiles on a user's
+    // behalf — the widest blast radius in the product — and until now it had no off
+    // switch short of undeploying the function. Flipped from /flags in the console.
+    // Defaults to ON for an unknown key, so this can never itself take the feature down.
+    const { data: aiFlag } = await admin.rpc('app_flag', { p_key: 'assistant_enabled' });
+    if (aiFlag === false) {
+      return json({
+        error: 'assistant_paused',
+        message: 'Hustlr AI is temporarily unavailable. Everything else in the app works normally.',
+      }, 503);
+    }
+
     // Per-user rate limit (cost guard) — caps requests so a scripted loop can't
     // run up the Anthropic bill. Service-role table; best-effort (fails open if
     // the table is missing). 12/min and 300/day per user.

@@ -36,6 +36,13 @@ Deno.serve(async (req: Request) => {
     }
 
     const { bookingId } = await req.json();
+
+    // Kill switch. Placing a new escrow hold is the one thing to stop first during a
+    // Stripe incident — in-flight bookings still capture, so nobody mid-gig is stranded.
+    const { data: payFlag } = await supabase.rpc('app_flag', { p_key: 'payments_enabled' });
+    if (payFlag === false) {
+      return json({ error: 'PAYMENTS_PAUSED', message: 'Payments are briefly paused. Please try again shortly.' }, 503);
+    }
     errBookingId = typeof bookingId === 'string' ? bookingId : null;
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 

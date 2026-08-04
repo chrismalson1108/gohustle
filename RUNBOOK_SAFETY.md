@@ -81,8 +81,9 @@ hardened in `..._40000`), with `date_of_birth` pinned once set.
 If an under-age account is discovered anyway:
 
 1. **Suspend immediately.** Reason: `age floor`.
-2. Cancel any live bookings — note that the console cannot force-cancel, so this
-   means voiding the hold in Stripe and messaging both parties by hand.
+2. Cancel any live bookings — `/bookings/<id>` → Intervene → **Force cancel**. It
+   releases the escrow hold first and refuses to proceed if that release fails, so a
+   cancelled booking never strands a live authorization. Message both parties.
 3. **Delete the account** (`/users/<id>` → type `DELETE`). Deletion refuses while
    escrow is unsettled — settle or void the hold first.
 4. Record what was found and when, in `admin_user_notes` **before** deleting — the
@@ -128,9 +129,11 @@ If a term is producing constant false positives, edit the list in
 `shared/contentFilter.js` and the corresponding migration rather than resolving the
 same report shape forever.
 
-> `moderate-text` **fails open** on outage — content passes through unchecked. There is
-> currently no kill switch to force it closed. Until `app_flags` ships, an outage in
-> that dependency means unmoderated content, silently.
+> `moderate-text` **fails open** on outage — content passes through unchecked, silently.
+> `/flags` does NOT cover this: there is no `moderation_enabled` switch, because failing
+> closed would block all posting and messaging outright. The blunt instrument today is
+> to pause `posting_enabled` and rely on the client-side blocklist in
+> `shared/contentFilter.js`, which runs regardless. A real fail-closed mode is not built.
 
 ---
 
@@ -138,6 +141,9 @@ same report shape forever.
 
 - No message or review redaction — suspend or delete only.
 - No profile-level report → evidence path.
+- (Since 2026-08-04 it **can** pause signups, posting, payments, tips and the AI
+  assistant from `/flags`, close the beta from `/access`, and force-cancel a booking
+  from `/bookings/<id>` — useful when a safety case needs a gig stopped now.)
 - No verification review queue: ID (`id_verification_status`) and student status are
   fully automated. `setVerified` is a boolean with no reason and no evidence, and it
   drives a badge other users act on **in person**. Use it sparingly and note why.

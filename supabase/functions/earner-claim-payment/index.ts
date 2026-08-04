@@ -141,8 +141,14 @@ Deno.serve(async (req: Request) => {
     // multi-row error and slip past a genuine open report), and that error was
     // previously swallowed so the gate failed OPEN. Block when the count is > 0 OR the
     // query errored at all.
+    // `resolved_at is null` is load-bearing. Without it ANY dispute row — including
+    // one an admin has already investigated and closed — blocked settlement forever,
+    // so the disputes table had no lifecycle and this gate could never reopen. That
+    // withheld a worker's pay permanently, by construction. Still fail-CLOSED: a
+    // count query, blocking on >0 OR on any error.
     const { count: disputeCount, error: disputeErr } = await supabase
-      .from('disputes').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId);
+      .from('disputes').select('id', { count: 'exact', head: true })
+      .eq('booking_id', bookingId).is('resolved_at', null);
     if (disputeErr || (disputeCount ?? 1) > 0) {
       return json({ error: 'DISPUTE_OPEN', message: 'This booking has an open dispute and can\'t be auto-settled.' }, 409);
     }

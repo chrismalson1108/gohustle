@@ -6,6 +6,7 @@ import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
 import { auditRead } from "@/lib/audit";
 import { signChatImage, signCompletionPhoto } from "@/lib/media";
+import InterventionPanel from "./InterventionPanel";
 
 export const metadata = { title: "Booking detail" };
 
@@ -140,9 +141,34 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             {/* Renamed: a field labelled "Captured" holding a DATE sat directly
                 beside money fields, reading as a fourth amount. */}
             <div><dt className="text-[var(--muted)]">Captured at</dt><dd>{fmtDate(pay.captured_at)}</dd></div>
+            {pay.refunded_cents > 0 && (
+              <div>
+                <dt className="text-[var(--muted)]">Refunded</dt>
+                <dd className="text-[var(--danger)]">{fmtCents(pay.refunded_cents)}</dd>
+              </div>
+            )}
             <div className="col-span-3"><dt className="text-[var(--muted)]">PaymentIntent</dt><dd className="font-mono text-xs">{pay.payment_intent_id}</dd></div>
           </dl>
         )}
+      </Section>
+
+      <Section title="Intervene">
+        <p className="mb-3 text-xs text-[var(--muted)]">
+          These override the normal flow. Every one is recorded in the audit log against your
+          account, with the reason you give.
+        </p>
+        <InterventionPanel
+          bookingId={booking.id}
+          status={booking.status}
+          startedAt={booking.started_at ?? null}
+          paymentStatus={pay?.status ?? null}
+          refundableCents={
+            pay && pay.status === "captured"
+              ? Math.max(0, (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0) - (pay.refunded_cents ?? 0))
+              : 0
+          }
+          isAdmin={ctx.role === "admin"}
+        />
       </Section>
 
       {beforePhotos.length > 0 && (

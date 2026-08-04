@@ -21,9 +21,15 @@ interface Metrics {
   fees_captured_cents: number;
   escrow_held_cents: number;
   disputes_total: number;
+  disputes_open: number;
   disputes_7d: number;
   reports_total: number;
+  reports_open: number;
   reports_7d: number;
+  refunded_cents: number;
+  holds_expiring_48h: number;
+  bookings_one_sided: number;
+  errors_fatal_7d: number;
 }
 
 export default async function DashboardPage() {
@@ -32,12 +38,9 @@ export default async function DashboardPage() {
   const { data: m, error } = await ctx.service.rpc("admin_dashboard_metrics");
   const metrics = (m ?? {}) as Metrics;
 
-  // The admin_dashboard_metrics RPC's reports_total counts ALL reports ever filed
-  // (no resolved_at filter, includes machine-filed source='auto' rows), so it never
-  // drops on resolve and is inflated by auto-moderation. Count OPEN genuine reports
-  // directly instead — unresolved (resolved_at IS NULL) and not auto-filed — matching
-  // the reports_open_idx partial index the moderation queue triages against.
-  const [recentUsers, recentAudit, openReportsRes] = await Promise.all([
+  // reports_open / disputes_open now come from the RPC with the same predicates this
+  // page used to compute by hand (unresolved, and for reports non-auto-filed).
+  const [recentUsers, recentAudit] = await Promise.all([
     ctx.service
       .from("profiles")
       .select("id, name, username, created_at, verified, suspended_at")
@@ -50,13 +53,8 @@ export default async function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] as { id: number; action: string; target_id: string | null; created_at: string }[] }),
-    ctx.service
-      .from("reports")
-      .select("id", { count: "exact", head: true })
-      .is("resolved_at", null)
-      .neq("source", "auto"),
   ]);
-  const openReports = openReportsRes.count ?? 0;
+  const openReports = metrics.reports_open ?? 0;
 
   return (
     <div className="space-y-6">
@@ -74,32 +72,57 @@ export default async function DashboardPage() {
           tone={openReports ? "red" : undefined}
         />
         <StatCard
-          label="Disputes"
-          value={metrics.disputes_total ?? 0}
-          sub={`${metrics.disputes_7d ?? 0} in last 7d`}
-          href="/payments"
-          tone={metrics.disputes_total ? "amber" : undefined}
+          label="Open disputes"
+          value={metrics.disputes_open ?? 0}
+          sub={`${metrics.disputes_7d ?? 0} raised in 7d`}
+          href="/disputes"
+          tone={metrics.disputes_open ? "amber" : undefined}
+        />
+        {/* Every one of these is a worker who may go unpaid on completed work when the
+            ~7-day Stripe authorization lapses. Red because it is time-bounded — unlike
+            the other tiles, waiting makes it unfixable. */}
+        <StatCard
+          label="Holds expiring"
+          value={metrics.holds_expiring_48h ?? 0}
+          sub="authorized 5+ days"
+          href="/bookings?filter=expiring"
+          tone={metrics.holds_expiring_48h ? "red" : undefined}
         />
         <StatCard
-          label="Suspended"
-          value={metrics.suspended_users ?? 0}
-          href="/users"
-          tone={metrics.suspended_users ? "amber" : undefined}
-        />
-        <StatCard
-          label="Escrow held"
-          value={fmtCents(metrics.escrow_held_cents)}
-          sub="authorized, uncaptured"
-          href="/payments"
+          label="One-sided bookings"
+          value={metrics.bookings_one_sided ?? 0}
+          sub="one party pressed done"
+          href="/bookings?filter=one_sided"
+          tone={metrics.bookings_one_sided ? "amber" : undefined}
         />
       </div>
 
       {/* Growth */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Total users" value={metrics.users_total ?? 0} />
+        <StatCard label="Total users" value={metrics.users_total ?? 0} href="/users" />
         <StatCard label="New today" value={metrics.signups_today ?? 0} />
         <StatCard label="New (7d)" value={metrics.signups_7d ?? 0} />
         <StatCard label="New (30d)" value={metrics.signups_30d ?? 0} />
+      </div>
+
+      {/* Second attention row — state worth seeing, but not time-critical. */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard
+          label="Suspended"
+          value={metrics.suspended_users ?? 0}
+          href="/users?filter=suspended"
+          tone={metrics.suspended_users ? "amber" : undefined}
+        />
+        <StatCard label="Escrow held" value={fmtCents(metrics.escrow_held_cents)} sub="authorized, uncaptured" href="/bookings" />
+        <StatCard label="Refunded" value={fmtCents(metrics.refunded_cents)} sub="all-time" href="/payments" />
+        {/* Production only — dev-build crashes are excluded, so this is a real signal. */}
+        <StatCard
+          label="Fatal errors (7d)"
+          value={metrics.errors_fatal_7d ?? 0}
+          sub="production builds"
+          href="/errors?fatal=1"
+          tone={metrics.errors_fatal_7d ? "red" : undefined}
+        />
       </div>
 
       {/* Marketplace + money */}
@@ -111,8 +134,8 @@ export default async function DashboardPage() {
           sub={`${metrics.bookings_verified ?? 0} verified`}
           href="/jobs"
         />
-        <StatCard label="GMV captured" value={fmtCents(metrics.gmv_captured_cents)} sub="all-time" />
-        <StatCard label="Platform fees" value={fmtCents(metrics.fees_captured_cents)} sub="all-time" />
+        <StatCard label="GMV captured" value={fmtCents(metrics.gmv_captured_cents)} sub="all-time, net of refunds" />
+        <StatCard label="Platform fees" value={fmtCents(metrics.fees_captured_cents)} sub="all-time, net of refunds" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

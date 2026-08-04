@@ -47,10 +47,13 @@ is nothing behind it.
    completion photos, the conversation.
 3. If the work is genuine, nudge the poster — `/users/<posterId>` → **Notify user**
    (writes their in-app inbox, pushes to their device, optionally emails).
+   The whole at-risk set is at `/bookings?filter=expiring`, and the dashboard's
+   **Holds expiring** tile counts them.
 4. If the poster is unresponsive and the scheduled start was **3+ days** ago, the
    earner can self-settle in-app via `earner-claim-payment`. Tell them to.
-   - That path **refuses** if there is an open dispute or report on the booking.
-     There is currently **no console override** — see §7.
+   - That path refuses if there is an **open** dispute or an unresolved report on the
+     booking. Resolve them (`/disputes`, `/moderation`) and the earner can claim —
+     or settle it yourself from `/bookings/<id>`.
 5. If the hold has already lapsed: there is no way to recover it. The poster must
    re-pay. Record it in `admin_user_notes` on both accounts.
 
@@ -72,9 +75,12 @@ is nothing behind it.
 5. If the same poster appears twice: suspend. `/users/<id>` → **Suspend**, reason
    `repeat chargeback`. A second chargeback should never be able to place a third hold.
 
-> **Known gap:** the dashboard's `GMV captured` and `Platform fees` are **not**
-> reduced by refunds or chargebacks — `payments.status` has no `refunded` state. Treat
-> those tiles as gross, not net, until that ships.
+> **GMV and Platform fees are now NET** of anything recorded in
+> `payments.refunded_cents` (fees reverse proportionally). But a chargeback you LOSE in
+> Stripe does not write that column by itself — the `charge.dispute.created` handler
+> still only inserts a `disputes` row and emails. Until that handler is wired to the
+> refund columns, record a lost chargeback yourself with the Refund control on
+> `/bookings/<id>` so the ledger matches reality.
 
 ---
 
@@ -145,19 +151,29 @@ daily, so an uncapped tip channel is a laundering vector, not a generosity featu
 
 ---
 
-## 7. What the console still cannot do
+## 7. What the console CAN and cannot do
 
-Be honest with the user rather than promising something that doesn't exist:
+**It can, as of 2026-08-04:**
 
-- **No refunds.** There is no refund code anywhere in the repo. Refunds happen in the
-  Stripe Dashboard and the ledger will not reflect them.
-- **No dispute resolution.** `disputes` rows have no status or owner. Once one exists,
-  `earner-claim-payment` is blocked on that booking **permanently**.
-- **No booking intervention.** No force-cancel, force-complete, re-open, or
-  clear-`started_at`.
-- **No bulk anything**, and `/payments` is capped at 60 rows with no search.
+- **Refund** a captured charge, fully or partially — `/bookings/<id>` → Intervene →
+  Refund. Reverses the earner's transfer and our platform fee, records
+  `payments.refunded_cents`, and reduces dashboard GMV. Admin role only, reason required.
+- **Release an escrow hold** — voids the authorization; the poster is never charged.
+- **Force-cancel / force-complete / re-open / clear `started_at`** a booking. Force-cancel
+  releases any open hold first, and refuses to proceed if that release fails.
+- **Resolve a dispute** — `/disputes`. Closing one unblocks the earner's payout path,
+  which was permanently blocked before.
+- **Pause payments, tips, posting, signups, or the AI assistant** — `/flags`.
+- **See the work queues** — `/bookings?filter=attention` (one-sided + expiring holds),
+  `/disputes`, and the dashboard's "Holds expiring" tile.
 
-Each of these is scoped in `ADMIN_AUDIT_2026-08-04.md` §4.
+**It still cannot:**
+
+- Submit chargeback evidence — that is Stripe Dashboard only.
+- Bulk-action anything; every operation is one row at a time.
+- Search `/payments` by PaymentIntent or user, and that list is still capped at 60 rows.
+
+Scope for the rest is in `ADMIN_AUDIT_2026-08-04.md` §4.
 
 ---
 

@@ -29,6 +29,11 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'A valid tip amount (50¢–$1000) is required' }, 400);
     }
 
+    const { data: tipFlag } = await supabase.rpc('app_flag', { p_key: 'tips_enabled' });
+    if (tipFlag === false) {
+      return json({ error: 'TIPS_PAUSED', message: 'Tipping is briefly paused. Please try again shortly.' }, 503);
+    }
+
     // Verify the caller is the poster of this booking
     const { data: booking } = await supabase
       .from('bookings')
