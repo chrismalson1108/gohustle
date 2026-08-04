@@ -47,6 +47,7 @@ const ICONS = {
   '🚩': { name: 'flag',             color: colors.urgent },
   '🚫': { name: 'ban',              color: colors.urgent },
   '📷': { name: 'camera',           color: colors.primary },
+  '📨': { name: 'mail',             color: colors.primary },
 };
 
 export default function AchievementToast() {

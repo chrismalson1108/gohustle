@@ -1,8 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, ScrollView, Alert, Linking,
-} from 'react-native';
+  ActivityIndicator, ScrollView, Alert, } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,7 +10,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { SUPPORT_EMAIL } from '../lib/legal';
+import SupportSheet from '../components/SupportSheet';
 import { colors, radii, shadows } from '../theme';
 
 // Unified "GoHustlr Payments" hub — always reachable from Profile so users can
@@ -35,6 +34,7 @@ export default function PayoutSetupScreen({ navigation }) {
 
   const [payout, setPayout]     = useState(null); // full ConnectStatus (src/lib/connectStatus.js)
   const [cardInfo, setCardInfo] = useState(null); // { hasPaymentMethod, brand, last4 }
+  const [supportOpen, setSupportOpen]     = useState(false);
   const [loadingPayout, setLoadingPayout] = useState(false);
   const [loadingCard, setLoadingCard]     = useState(false);
 
@@ -223,7 +223,7 @@ export default function PayoutSetupScreen({ navigation }) {
               </View>
               <TouchableOpacity
                 style={styles.btnOutline}
-                onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+                onPress={() => setSupportOpen(true)}
                 activeOpacity={0.8}
               >
                 <Text style={styles.btnOutlineText} numberOfLines={1}>Contact support</Text>
@@ -326,6 +326,16 @@ export default function PayoutSetupScreen({ navigation }) {
       >
         <Text style={styles.btnGhostText} numberOfLines={1}>Done</Text>
       </TouchableOpacity>
+
+      {/* Pre-scoped: a restricted payout account is the one state where the user
+          cannot get paid and cannot self-serve, so the ticket should arrive already
+          categorised rather than making them explain where they were. */}
+      <SupportSheet
+        visible={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        presetCategory="payment"
+        presetSubject="Payout account restricted"
+      />
     </ScrollView>
   );
 }

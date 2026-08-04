@@ -9,7 +9,11 @@ const corsHeaders = {
 };
 
 const SUPPORT_FROM = 'GoHustlr Support <support@gohustlr.com>';
-const SUPPORT_NOTIFY = 'mainmail@gohustlr.com';
+// Routable without a redeploy, matching SAFETY_ONCALL_EMAIL in safety-alert and
+// stripe-webhook. This was the only alert destination still hardcoded, so pointing
+// support at a shared inbox or an on-call rotation meant editing and redeploying
+// the function. Falls back to the founder's address so it can never go nowhere.
+const SUPPORT_NOTIFY = Deno.env.get('SUPPORT_ONCALL_EMAIL') || 'mainmail@gohustlr.com';
 const ADMIN_URL = 'https://admin.gohustlr.com';
 
 function isEmail(e: string): boolean {

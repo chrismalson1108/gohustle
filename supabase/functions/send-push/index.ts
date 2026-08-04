@@ -53,20 +53,29 @@ Deno.serve(async (req: Request) => {
     // swapped for "There's an update on one of your gigs" even if it hadn't.
     // A safety warning that arrives as a generic gig update is worse than none.
     //
-    // So: a narrow, separately-authorised path. Membership of admin_users is
-    // checked HERE with the service role — the client asking for it proves nothing.
+    // So: a narrow, separately-authorised path, authorised HERE with the service
+    // role — the client asking for it proves nothing.
     let isAdminNotice = false;
     if (adminNotice === true) {
-      const { data: adminRow } = await supabase
-        .from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
-      if (!adminRow) return json({ error: 'Not an admin' }, 403);
+      // ROLE, not bare membership. This path writes caller-authored title/body to
+      // any user's lock screen and their permanent Alerts inbox — the console gates
+      // exactly that at requireAdmin('admin') (users/[id]/actions.ts notifyUser), so
+      // a support-tier token, which is issued at aal2 like any other, must not be
+      // able to reach it by POSTing this function directly and skipping the UI.
+      // FAIL CLOSED on a dropped lookup: unauthenticated push to arbitrary users is
+      // not a failure mode worth degrading into.
+      const { data: adminRow, error: adminErr } = await supabase
+        .from('admin_users').select('role').eq('user_id', user.id).maybeSingle();
+      if (adminErr) {
+        console.error('send-push: admin_users lookup failed — refusing (fail-closed):', adminErr);
+        return json({ error: 'admin_check_unavailable' }, 503);
+      }
+      if (adminRow?.role !== 'admin') return json({ error: 'Not an admin' }, 403);
       // AND the session must have passed TOTP MFA, matching admin/lib/guard.ts and
-      // the isAdminCaller() in support-reply / support-ai-draft. Membership alone was
-      // the weaker half of that gate: this path writes caller-authored title/body to
-      // any user's lock screen and their permanent Alerts inbox, and (below) admin
-      // notices are exempt from block enforcement. A phished password-only (AAL1)
-      // staff token could do all of that — which is the precise case MFA exists for,
-      // and which every other admin-reachable function already refuses.
+      // requireAdminCaller() in support-reply / support-ai-draft. Membership alone was
+      // the weaker half of that gate. A phished password-only (AAL1) staff token could
+      // otherwise do all of the above — the precise case MFA exists for, and which
+      // every other admin-reachable function already refuses.
       // getUser() above proved the token authentic, so its aal claim is trustworthy.
       if (aalFromToken(authToken) !== 'aal2') return json({ error: 'MFA required' }, 403);
       isAdminNotice = true;

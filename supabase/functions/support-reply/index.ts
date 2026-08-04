@@ -1,43 +1,38 @@
 // Sends a support reply email (Resend). Called by the admin console server with
-// the signed-in admin's Supabase JWT (verify_jwt=false; we validate the token and
-// admin_users membership in-function). The console records the reply row itself;
-// this function just delivers the email.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// the signed-in admin's Supabase JWT (verify_jwt stays true; we ALSO validate the
+// token, admin_users ROLE and MFA in-function via _shared/adminAuth). The console
+// records the reply row itself; this function just delivers the email.
+//
+// THE RECIPIENT IS RESOLVED SERVER-SIDE, NEVER TAKEN FROM THE REQUEST. It used to
+// read `toEmail` straight from the body and hand it to Resend, so anyone who could
+// reach this function could send mail from `GoHustlr Support <support@gohustlr.com>`
+// to any address on earth — a phishing relay wearing our own brand. Now the caller
+// names a SUBJECT (a ticket, or a user) and the address is looked up here:
+//
+//   • { ticketId } → support_tickets.email   — role: support (ordinary queue work)
+//   • { userId }   → that auth user's email  — role: admin  (unsolicited contact)
+//
+// The second form is deliberately admin-only: mailing someone who never opened a
+// ticket is the capability the console gates at requireAdmin('admin') for "Notify
+// user", so it is gated identically at the function.
+//
+// RESIDUAL, stated plainly so nobody mistakes this for an absolute guarantee: the
+// ticket branch is only as trustworthy as support_tickets.email, and those rows are
+// written by support-submit, which is `verify_jwt = false` (the public website
+// contact form) and validates the address with a regex and nothing else. So a
+// support-tier insider can still reach an arbitrary recipient in two steps — file a
+// ticket naming the victim, then reply to it. What the change buys is that the
+// recipient is now always tied to a persisted, timestamped, IP-stamped ticket row
+// and to a `support.reply` audit entry, instead of being an unlogged parameter. It
+// is bounded by traceability, not by construction. Closing it properly means giving
+// support-submit an ownership proof (or an admin-visible "unverified sender" flag),
+// which is tracked in ADMIN_AUDIT_2026-08-04.md.
+import { requireAdminCaller } from '../_shared/adminAuth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// Read the AAL claim straight from the (already-authenticated) access-token JWT
-// (local decode, no network round-trip). The console re-issues the token at aal2
-// after mfa.verify, so this claim is authoritative for "did this session pass MFA".
-// Mirrors admin/lib/guard.ts aalFromToken.
-function aalFromToken(token: string): string | null {
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
-    return (JSON.parse(atob(b64 + pad)).aal as string) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// True only for a valid Supabase user who is in admin_users AND whose session
-// passed TOTP MFA (AAL2) — the same gate the admin console server enforces
-// (admin/lib/guard.ts). Without the AAL2 check a phished password-only (AAL1)
-// staff token could send branded email straight through this function.
-async function isAdminCaller(req: Request): Promise<boolean> {
-  const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
-  if (!token) return false;
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const { data: { user } } = await admin.auth.getUser(token);
-  if (!user) return false;
-  // getUser above proved the token authentic, so trusting its aal claim is sound.
-  if (aalFromToken(token) !== 'aal2') return false;
-  const { data: row } = await admin.from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
-  return !!row;
-}
 
 const SUPPORT_FROM = 'GoHustlr Support <support@gohustlr.com>';
 const REPLY_TO = 'mainmail@gohustlr.com'; // until a support@ inbox/alias exists
@@ -49,10 +44,39 @@ function esc(s: string): string {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    if (!(await isAdminCaller(req))) return json({ error: 'forbidden' }, 403);
+    const { ticketId, userId, subject, body } = await req.json();
+    if (!body) return json({ error: 'missing_fields' }, 400);
+    if (!ticketId && !userId) return json({ error: 'ticket_or_user_required' }, 400);
 
-    const { ticketId, toEmail, subject, body } = await req.json();
-    if (!toEmail || !body) return json({ error: 'missing_fields' }, 400);
+    // Pick the tier from what is being asked for, then authorise.
+    const auth = await requireAdminCaller(req, ticketId ? 'support' : 'admin');
+    if (!auth.ok) return json({ error: auth.denial.error }, auth.denial.status);
+    const { service } = auth.caller;
+
+    // Resolve the recipient from the subject the caller named. The caller never
+    // supplies an address.
+    let toEmail: string;
+    if (ticketId) {
+      const { data: ticket, error } = await service
+        .from('support_tickets')
+        .select('email')
+        .eq('id', ticketId)
+        .maybeSingle();
+      if (error) {
+        console.error('support-reply: ticket lookup failed:', error);
+        return json({ error: 'lookup_failed' }, 503);
+      }
+      if (!ticket?.email) return json({ error: 'ticket_not_found' }, 404);
+      toEmail = ticket.email;
+    } else {
+      const { data, error } = await service.auth.admin.getUserById(String(userId));
+      if (error) {
+        console.error('support-reply: user lookup failed:', error);
+        return json({ error: 'lookup_failed' }, 503);
+      }
+      if (!data?.user?.email) return json({ error: 'user_has_no_email' }, 404);
+      toEmail = data.user.email;
+    }
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) return json({ error: 'email_not_configured' }, 503);
@@ -62,7 +86,7 @@ Deno.serve(async (req: Request) => {
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: SUPPORT_FROM,
-        to: [String(toEmail).trim()],
+        to: [toEmail],
         reply_to: REPLY_TO,
         subject: String(subject || `Re: your GoHustlr support request${ticketId ? ` (#${ticketId})` : ''}`).slice(0, 200),
         html: `<div style="font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.6;color:#181231;">

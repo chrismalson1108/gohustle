@@ -2,6 +2,7 @@
 // Charged to poster immediately on card auth; captured to earner after job verification.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,12 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Hoisted so the terminal catch can identify the failure. The service client,
+  // `user` and `bookingId` are all declared inside the try below and are therefore
+  // out of scope there; without these the error row names only the function.
+  let errBookingId: string | null = null;
+  let errUserId: string | null = null;
+
   try {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
     const supabase = createClient(
@@ -23,11 +30,13 @@ Deno.serve(async (req: Request) => {
     // Auth
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    errUserId = user?.id ?? null;
     if (authErr || !user) {
       return json({ error: 'Unauthorized' }, 401);
     }
 
     const { bookingId } = await req.json();
+    errBookingId = typeof bookingId === 'string' ? bookingId : null;
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
     // Fetch booking + job + earner
@@ -227,6 +236,11 @@ Deno.serve(async (req: Request) => {
     });
   } catch (err: any) {
     console.error('stripe-create-payment-intent:', err);
+    // Land it where an operator will actually see it (/errors in the admin
+    // console). This used to stop at console.error, so a money-path failure
+    // was invisible unless someone was tailing Supabase function logs.
+    await logServerError('stripe-create-payment-intent', `Could not place the escrow hold — booking cannot be confirmed: ${errMessage(err)}`,
+      { booking_id: errBookingId }, { fatal: true, userId: errUserId });
     return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
