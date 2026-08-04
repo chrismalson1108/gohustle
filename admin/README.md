@@ -9,8 +9,17 @@ Internal support tool (v1: user support & accounts). **Never expose publicly bey
   key (`lib/serviceClient.ts`, a `server-only` module). The browser only ever holds
   a normal anon-key session used to prove identity.
 - `lib/guard.ts requireAdmin(minRole)` is THE enforcement point: authentic session
-  → TOTP MFA (AAL2) → `admin_users` membership → role (`admin` full, `support`
-  read-only). Every server page and server action calls it. `proxy.ts` is UX only.
+  → TOTP MFA (AAL2) → `admin_users` membership → role. Every server page and server
+  action calls it. `proxy.ts` is UX only.
+- Roles: `admin` = full. **`support` is read-only EXCEPT the ticket queue** — it may
+  reply to tickets, set ticket status, and request an AI draft (`support/actions.ts`
+  gates those at `requireAdmin('support')` deliberately; triaging support is the whole
+  job). It cannot suspend, verify, notify, edit, or delete.
+- The edge functions the console calls with the admin's own JWT (`support-reply`,
+  `support-ai-draft`, `send-push`) enforce the SAME role tier themselves via
+  `supabase/functions/_shared/adminAuth.ts`. They must — a support user's browser
+  holds a valid AAL2 token, so a membership-only check there would hand them
+  admin-tier capability the moment they bypass the UI.
 - Every mutation and sensitive read writes to `admin_audit_log` (append-only —
   UPDATE/DELETE revoked even from service_role). Fail-closed.
 - Suspension = GoTrue `banned_until` + `profiles.suspended_at/suspension_reason`.
