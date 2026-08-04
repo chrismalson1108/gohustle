@@ -47,7 +47,10 @@ export async function setDisputeStatus(formData: FormData): Promise<ActionResult
     const patch: Record<string, unknown> = {
       status,
       assigned_to: ctx.user.id,
-      resolution_note: note || null,
+      // Preserve the previous decision when re-opening: nulling it destroyed the only
+      // record of why a dispute was closed, which is exactly what an appeal reviews.
+      // Only overwrite when the operator actually wrote something.
+      ...(note ? { resolution_note: note } : {}),
       // resolved_at is the column earner-claim-payment gates on, so it must track
       // the OPEN/CLOSED distinction exactly — not merely the label.
       resolved_at: closing ? new Date().toISOString() : null,

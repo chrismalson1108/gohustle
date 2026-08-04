@@ -39,7 +39,11 @@ Deno.serve(async (req: Request) => {
 
     // Kill switch. Placing a new escrow hold is the one thing to stop first during a
     // Stripe incident — in-flight bookings still capture, so nobody mid-gig is stranded.
-    const { data: payFlag } = await supabase.rpc('app_flag', { p_key: 'payments_enabled' });
+    // Fails OPEN by design — a broken flag check must not stop a legitimate payment
+    // — but it is logged, because a silent fail-open means /flags shows the feature
+    // paused while it is still running.
+    const { data: payFlag, error: payFlagErr } = await supabase.rpc('app_flag', { p_key: 'payments_enabled' });
+    if (payFlagErr) console.error('stripe-create-payment-intent: app_flag check failed — proceeding (fail-open):', payFlagErr);
     if (payFlag === false) {
       return json({ error: 'PAYMENTS_PAUSED', message: 'Payments are briefly paused. Please try again shortly.' }, 503);
     }

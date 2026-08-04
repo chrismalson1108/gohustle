@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   forceComplete, reopenBooking, clearStartedAt, forceCancel, releaseHold, refundPayment,
-  type ActionResult,
+  recordReversal, type ActionResult,
 } from "../actions";
 
 type Action = (fd: FormData) => Promise<ActionResult>;
@@ -131,6 +131,18 @@ export default function InterventionPanel({
             }
           >
             Refund
+          </button>
+          <button
+            className={btn}
+            disabled={pending || refundableCents <= 0}
+            onClick={() =>
+              fire(
+                recordReversal,
+                "Record a LOST CHARGEBACK against this booking?\n\nLedger only — no Stripe call. Use this when the money is already gone and Stripe refuses a refund.",
+              )
+            }
+          >
+            Record chargeback
           </button>
           <span className="text-xs text-[var(--muted)]">
             {paymentStatus === "authorized"

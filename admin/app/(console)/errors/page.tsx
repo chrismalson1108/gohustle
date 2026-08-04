@@ -38,11 +38,14 @@ export default async function ClientErrorsPage({
 
   const { data: rows, error, count } = await query;
 
-  // How much is being hidden, so "queue is clear" is never a lie of omission.
-  const { count: devCount } = await ctx.service
-    .from("client_errors")
-    .select("id", { count: "exact", head: true })
-    .eq("dev", true);
+  // How much is being hidden, so "queue is clear" is never a lie of omission — using
+  // the SAME q/fatal filters as the list. A global count printed beside a filtered
+  // one reads as commensurate and sends the operator hunting suppressed rows that
+  // this view was never going to show anyway.
+  let devQuery = ctx.service.from("client_errors").select("id", { count: "exact", head: true }).eq("dev", true);
+  if (q) devQuery = devQuery.ilike("message", `%${q}%`);
+  if (fatalOnly) devQuery = devQuery.eq("fatal", true);
+  const { count: devCount } = await devQuery;
 
   const userIds = [...new Set((rows ?? []).map((r) => r.user_id).filter(Boolean))] as string[];
   const users = userIds.length

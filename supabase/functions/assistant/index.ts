@@ -173,8 +173,14 @@ Deno.serve(async (req: Request) => {
     // behalf — the widest blast radius in the product — and until now it had no off
     // switch short of undeploying the function. Flipped from /flags in the console.
     // Defaults to ON for an unknown key, so this can never itself take the feature down.
-    const { data: aiFlag } = await admin.rpc('app_flag', { p_key: 'assistant_enabled' });
-    if (aiFlag === false) {
+    // FAIL CLOSED on an error, unlike the payment flags below. This function can post
+    // gigs and book work on a user's behalf; if we cannot confirm the switch is ON,
+    // not running is the cheap outcome and running anyway is the expensive one.
+    // (Distinct from app_flag's deliberate unknown-key-defaults-true: that is a
+    // missing row, this is a broken check.)
+    const { data: aiFlag, error: aiFlagErr } = await admin.rpc('app_flag', { p_key: 'assistant_enabled' });
+    if (aiFlagErr) console.error('assistant: app_flag check failed — refusing (fail-closed):', aiFlagErr);
+    if (aiFlagErr || aiFlag === false) {
       return json({
         error: 'assistant_paused',
         message: 'Hustlr AI is temporarily unavailable. Everything else in the app works normally.',

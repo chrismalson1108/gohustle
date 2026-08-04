@@ -123,6 +123,13 @@ export async function reopenBooking(formData: FormData): Promise<ActionResult> {
     if (b.status === "verified") {
       throw new Error("A verified booking has already been paid out — refund it instead of re-opening.");
     }
+    // The panel disables this for a cancelled booking, but client-side disabling is
+    // cosmetic — a crafted POST reaches the action directly. Re-opening a cancelled
+    // booking would resurrect it with no escrow behind it (the hold was released on
+    // cancel), so the earner would work against nothing.
+    if (b.status === "cancelled") {
+      throw new Error("This booking was cancelled and its hold released — re-opening it would leave no escrow behind the work.");
+    }
     const { error } = await ctx.service
       .from("bookings")
       .update({ status: "confirmed", earner_done: false, poster_done: false })
@@ -167,8 +174,24 @@ export async function forceCancel(formData: FormData): Promise<ActionResult> {
     // still live would leave the poster's card holding funds against a gig that no
     // longer exists, and nothing else in the system would ever release it.
     let holdNote = "no open hold to release";
-    const { data: pay } = await ctx.service
+    // FAIL CLOSED. Dropping this error meant a timed-out lookup read as "no hold",
+    // and the booking was cancelled while a live authorization stayed on the
+    // poster's card with nothing left in the system that would ever release it.
+    const { data: pay, error: payErr } = await ctx.service
       .from("payments").select("status").eq("booking_id", bookingId).maybeSingle();
+    if (payErr) {
+      throw new Error(
+        `Couldn't check whether this booking has an escrow hold (${payErr.message}). Nothing was changed — retry in a moment.`,
+      );
+    }
+    // A captured payment is money already taken. Cancelling the booking around it
+    // would leave a settled charge attached to a cancelled gig, and the poster with
+    // no refund — refund first, deliberately, then cancel.
+    if (pay?.status === "captured") {
+      throw new Error(
+        "This booking's payment is already CAPTURED — the poster has been charged. Refund it first, then cancel.",
+      );
+    }
     if (pay?.status === "authorized") {
       const { ok, body } = await callPaymentAction({ bookingId, op: "release_hold", reason });
       if (!ok) throw new Error(`Could not release the escrow hold: ${body.message ?? body.error}. Booking NOT cancelled.`);
@@ -193,6 +216,25 @@ export async function releaseHold(formData: FormData): Promise<ActionResult> {
     const { ok, body } = await callPaymentAction({ bookingId, op: "release_hold", reason });
     if (!ok) throw new Error(String(body.message ?? body.error ?? "Release failed."));
     return { released_cents: body.released_cents, __message: "Hold released. The poster was never charged." };
+  });
+}
+
+// For a chargeback we LOST: the money is already gone from the platform balance and
+// Stripe refuses a refund on a disputed charge, so the ledger has to be told directly.
+export async function recordReversal(formData: FormData): Promise<ActionResult> {
+  const bookingId = String(formData.get("bookingId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!bookingId) return { ok: false, message: "Missing booking id." };
+  if (!reason) return { ok: false, message: "A reason is required (e.g. 'chargeback lost, case dp_123')." };
+
+  return run("payment.record_reversal", bookingId, { reason }, async () => {
+    const { ok, body } = await callPaymentAction({ bookingId, op: "record_reversal", reason });
+    if (!ok) throw new Error(String(body.message ?? body.error ?? "Failed."));
+    const cents = Number(body.refunded_cents ?? 0);
+    return {
+      reversed_cents: cents,
+      __message: `Recorded $${(cents / 100).toFixed(2)} as reversed. GMV, fees and the earner's earnings now reflect it. No Stripe call was made — the money already moved.`,
+    };
   });
 }
 

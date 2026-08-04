@@ -76,11 +76,12 @@ is nothing behind it.
    `repeat chargeback`. A second chargeback should never be able to place a third hold.
 
 > **GMV and Platform fees are now NET** of anything recorded in
-> `payments.refunded_cents` (fees reverse proportionally). But a chargeback you LOSE in
-> Stripe does not write that column by itself — the `charge.dispute.created` handler
-> still only inserts a `disputes` row and emails. Until that handler is wired to the
-> refund columns, record a lost chargeback yourself with the Refund control on
-> `/bookings/<id>` so the ledger matches reality.
+> `payments.refunded_cents` (fees reverse proportionally). A chargeback you LOSE does
+> not write that column by itself — the `charge.dispute.created` handler only inserts a
+> `disputes` row and emails. Record it with **Record chargeback** on `/bookings/<id>`.
+> That is ledger-only and makes no Stripe call, which is deliberate: Stripe rejects
+> `refunds.create` on a disputed charge (`charge_disputed`), so the Refund button
+> cannot do this and will error if you try.
 
 ---
 

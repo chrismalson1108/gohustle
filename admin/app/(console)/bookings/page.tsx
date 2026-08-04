@@ -57,33 +57,37 @@ export default async function BookingsPage({
     .order("created_at", { ascending: false })
     .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
+  // The predicate goes in the QUERY, not in JavaScript afterwards. Filtering the
+  // 50 rows a page already returned meant the stuck bookings — old by definition,
+  // and the list is newest-first — were never in the page-0 window, so the default
+  // queue rendered "nothing needs attention" while the dashboard tile counted
+  // dozens. That is a false negative in the one view built to catch them.
+  const ONE_SIDED = "and(earner_done.is.true,poster_done.not.is.true),and(poster_done.is.true,earner_done.not.is.true)";
+  const noMatch = ["00000000-0000-0000-0000-000000000000"];
+
   if (filter === "expiring") {
     // No at-risk holds is a real answer, not an empty filter — pin an impossible id
     // so the query returns nothing rather than everything.
-    query = query.in("id", expiringIds.length ? expiringIds : ["00000000-0000-0000-0000-000000000000"]);
+    query = query.in("id", expiringIds.length ? expiringIds : noMatch);
   } else if (filter === "one_sided") {
-    query = query.in("status", ["confirmed", "completed"]);
+    query = query.in("status", ["confirmed", "completed"]).or(ONE_SIDED);
   } else if (filter === "active") {
     query = query.in("status", ["pending", "confirmed", "completed"]);
   } else if (filter === "attention") {
-    query = query.in("status", ["pending", "confirmed", "completed"]);
+    // One-sided OR an expiring hold. Both branches are expressed server-side so the
+    // count and the pager describe the real result set.
+    query = query
+      .in("status", ["pending", "confirmed", "completed"])
+      .or(
+        `or(${ONE_SIDED}),id.in.(${(expiringIds.length ? expiringIds : noMatch).join(",")})`,
+      );
   }
 
   const { data: rowsRaw, error, count } = await query;
-  let rows = rowsRaw ?? [];
+  const rows = rowsRaw ?? [];
 
-  // PostgREST cannot express "exactly one of two booleans" — filter in code, and be
-  // explicit that the count above is the pre-filter total for these two views.
   const oneSided = (b: { earner_done: boolean | null; poster_done: boolean | null }) =>
     Boolean(b.earner_done) !== Boolean(b.poster_done);
-  let filteredInCode = false;
-  if (filter === "one_sided") {
-    rows = rows.filter(oneSided);
-    filteredInCode = true;
-  } else if (filter === "attention") {
-    rows = rows.filter((b) => oneSided(b) || expiringBy.has(b.id));
-    filteredInCode = true;
-  }
 
   const jobIds = [...new Set(rows.map((b) => b.job_id).filter(Boolean))] as string[];
   const earnerIds = [...new Set(rows.map((b) => b.earner_id).filter(Boolean))] as string[];
@@ -136,11 +140,10 @@ export default async function BookingsPage({
 
       {error && <p className="text-sm text-[var(--danger)]">Failed to load: {error.message}</p>}
 
-      <Section title={`${rows.length} booking${rows.length === 1 ? "" : "s"}`}>
-        {filteredInCode && (
+      <Section title={`${count ?? rows.length} booking${(count ?? rows.length) === 1 ? "" : "s"}`}>
+        {(count ?? 0) > rows.length && (
           <p className="mb-3 text-xs text-[var(--muted)]">
-            Narrowed from the {count ?? 0} active bookings on this page. Paging moves through the
-            underlying list, so a later page may hold more.
+            {count} match this filter in total — page through for the rest.
           </p>
         )}
         {rows.length === 0 ? (

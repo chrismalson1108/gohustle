@@ -49,9 +49,13 @@ export async function inviteEmails(formData: FormData): Promise<ActionResult> {
 
   try {
     await audit(ctx, "access.invite", "beta_allowlist", undefined, { emails, count: emails.length, note: note || null });
+    // Only write `note` when one was given. Upserting note:null wiped the annotation
+    // on any address already on the list (including the seeded 'founder' row) while
+    // reporting a clean "Invited N addresses".
+    const rows = emails.map((email) => (note ? { email, note } : { email }));
     const { error } = await ctx.service
       .from("beta_allowlist")
-      .upsert(emails.map((email) => ({ email, note: note || null })), { onConflict: "email" });
+      .upsert(rows, { onConflict: "email" });
     if (error) throw new Error(error.message);
     revalidatePath("/access");
     return { ok: true, message: `Invited ${emails.length} address${emails.length === 1 ? "" : "es"}.` };
@@ -74,8 +78,16 @@ export async function revokeEmail(formData: FormData): Promise<ActionResult> {
   }
   try {
     await audit(ctx, "access.revoke", "beta_allowlist", email);
-    const { error } = await ctx.service.from("beta_allowlist").delete().eq("email", email);
+    // Match case-insensitively: handle_new_user compares with lower(), so a row
+    // stored as 'Foo@Bar.com' still grants access but an .eq() on the lowercased
+    // input would not delete it — and the action would report success having
+    // revoked nothing.
+    const { data, error } = await ctx.service
+      .from("beta_allowlist").delete().ilike("email", email).select("email");
     if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      return { ok: false, message: `${email} isn't on the invite list — nothing to revoke.` };
+    }
     revalidatePath("/access");
     // Say what this does NOT do. Revoking only closes the door to a future signup;
     // an operator who reads "revoked" as "removed from the beta" will not think to

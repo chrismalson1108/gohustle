@@ -29,7 +29,11 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'A valid tip amount (50¢–$1000) is required' }, 400);
     }
 
-    const { data: tipFlag } = await supabase.rpc('app_flag', { p_key: 'tips_enabled' });
+    // Fails OPEN by design — a broken flag check must not stop a legitimate payment
+    // — but it is logged, because a silent fail-open means /flags shows the feature
+    // paused while it is still running.
+    const { data: tipFlag, error: tipFlagErr } = await supabase.rpc('app_flag', { p_key: 'tips_enabled' });
+    if (tipFlagErr) console.error('stripe-tip: app_flag check failed — proceeding (fail-open):', tipFlagErr);
     if (tipFlag === false) {
       return json({ error: 'TIPS_PAUSED', message: 'Tipping is briefly paused. Please try again shortly.' }, 503);
     }
