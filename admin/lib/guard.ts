@@ -58,11 +58,22 @@ export async function requireAdmin(minRole: AdminRole = "support"): Promise<Admi
   const service = getServiceClient();
   const { data: row, error: lookupErr } = await service
     .from("admin_users")
-    .select("role")
+    .select("role, status")
     .eq("user_id", user.id)
     .maybeSingle();
   if (lookupErr) throw new Error(`admin_users lookup failed: ${lookupErr.message}`);
   if (!row) throw new AdminAuthError("forbidden");
+
+  // STATUS, not just membership. A row added from /team starts 'pending' and grants
+  // nothing until an existing admin activates it — which they do only after the
+  // person has enrolled TOTP and confirmed the factor out of band.
+  //
+  // This is what closes the trust-on-first-use window: app/mfa/page.tsx will happily
+  // enroll a fresh authenticator for whoever presents valid credentials, so seeding
+  // a membership before enrollment used to mean a password-only compromise walked
+  // into a service-role console. Now winning that race gets you a pending row and a
+  // denial. 'disabled' keeps the row for audit attribution while revoking access.
+  if (row.status !== "active") throw new AdminAuthError("forbidden");
 
   const role = row.role as AdminRole;
   if (minRole === "admin" && role !== "admin") throw new AdminAuthError("forbidden");

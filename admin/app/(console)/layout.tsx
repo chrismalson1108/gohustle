@@ -29,7 +29,10 @@ export default async function ConsoleLayout({
             <Link href="/access" className="hover:text-[var(--brand)]">Access</Link>
             <Link href="/flags" className="hover:text-[var(--brand)]">Flags</Link>
             {ctx.role === "admin" && (
-              <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
+              <>
+                <Link href="/team" className="hover:text-[var(--brand)]">Team</Link>
+                <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
+              </>
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">

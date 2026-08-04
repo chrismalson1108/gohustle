@@ -79,7 +79,7 @@ export async function requireAdminCaller(
 
   const { data: row, error: lookupErr } = await service
     .from('admin_users')
-    .select('role')
+    .select('role, status')
     .eq('user_id', user.id)
     .maybeSingle();
   // A dropped lookup must not read as "not an admin" OR as "is an admin" — deny,
@@ -96,6 +96,10 @@ export async function requireAdminCaller(
     return { ok: false, denial: { status: 503, error: 'admin_check_unavailable' } };
   }
   if (!row) return { ok: false, denial: { status: 403, error: 'forbidden' } };
+  // Mirrors admin/lib/guard.ts: a pending or disabled membership is not access.
+  // Enforced here too because these functions are reachable with the admin's own
+  // JWT, without going through the console.
+  if (row.status !== 'active') return { ok: false, denial: { status: 403, error: 'forbidden' } };
 
   const role = row.role as AdminRole;
   if (minRole === 'admin' && role !== 'admin') {

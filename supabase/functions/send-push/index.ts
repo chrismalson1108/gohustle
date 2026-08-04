@@ -65,12 +65,12 @@ Deno.serve(async (req: Request) => {
       // FAIL CLOSED on a dropped lookup: unauthenticated push to arbitrary users is
       // not a failure mode worth degrading into.
       const { data: adminRow, error: adminErr } = await supabase
-        .from('admin_users').select('role').eq('user_id', user.id).maybeSingle();
+        .from('admin_users').select('role, status').eq('user_id', user.id).maybeSingle();
       if (adminErr) {
         console.error('send-push: admin_users lookup failed — refusing (fail-closed):', adminErr);
         return json({ error: 'admin_check_unavailable' }, 503);
       }
-      if (adminRow?.role !== 'admin') return json({ error: 'Not an admin' }, 403);
+      if (adminRow?.role !== 'admin' || adminRow?.status !== 'active') return json({ error: 'Not an admin' }, 403);
       // AND the session must have passed TOTP MFA, matching admin/lib/guard.ts and
       // requireAdminCaller() in support-reply / support-ai-draft. Membership alone was
       // the weaker half of that gate. A phished password-only (AAL1) staff token could
