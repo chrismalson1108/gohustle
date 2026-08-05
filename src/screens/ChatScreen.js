@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MessageSheet from '../components/MessageSheet';
@@ -32,10 +32,11 @@ export default function ChatScreen({ route, navigation }) {
     return () => { active = false; };
   }, [jobId, job, fetchJobById]);
 
-  // The person's name belongs in the native title — it's who you're talking to.
-  useLayoutEffect(() => {
-    navigation.setOptions({ title: otherPerson?.name || 'Chat' });
-  }, [navigation, otherPerson?.name]);
+  // No native title on purpose. DETAIL_OPTS keeps `title: ''` app-wide precisely so
+  // a screen that draws its own header doesn't show the same name twice (App.js), and
+  // this screen already names the person in the pinned context bar below — which is
+  // also the tap target for their profile. Setting a title here put "Roman Hinton" in
+  // the nav bar and again two lines under it.
 
   const title = job?.title || jobTitle;
   const photo = job?.photos?.[0] || null;
