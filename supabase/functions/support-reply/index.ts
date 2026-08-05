@@ -89,9 +89,9 @@ Deno.serve(async (req: Request) => {
         to: [toEmail],
         reply_to: REPLY_TO,
         subject: String(subject || `Re: your GoHustlr support request${ticketId ? ` (#${ticketId})` : ''}`).slice(0, 200),
-        html: `<div style="font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.6;color:#181231;">
+        html: `<div style="font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.6;color:#363636;">
           <p style="white-space:pre-wrap;">${esc(String(body))}</p>
-          <hr style="border:none;border-top:1px solid #E8E2D5;margin:20px 0;">
+          <hr style="border:none;border-top:1px solid #E4DFD3;margin:20px 0;">
           <p style="font-size:12px;color:#9A93AD;">GoHustlr Support · reply to this email and we'll get back to you.</p>
         </div>`,
       }),

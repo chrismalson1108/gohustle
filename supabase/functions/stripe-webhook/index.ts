@@ -245,7 +245,7 @@ Deno.serve(async (req: Request) => {
           if (bk && bk.earner_done && ['confirmed', 'completed'].includes(bk.status)) {
             await emailAdmin(
               `Escrow hold expired on completed work — booking ${payment.booking_id}`,
-              `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+              `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
                  <p><strong>The card hold expired before this booking was paid out.</strong></p>
                  <p>The earner marked this job done, so work was almost certainly performed
                     and there is now nothing left to capture.</p>
@@ -295,12 +295,12 @@ Deno.serve(async (req: Request) => {
         );
         await emailAdmin(
           `⚠️ Chargeback opened: ${dispute.currency ?? 'usd'} ${amount}`,
-          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
             <p style="font-size:16px;"><strong>A card dispute (chargeback) was opened.</strong></p>
             <p><strong>Amount:</strong> ${esc((dispute.currency ?? 'usd').toUpperCase())} ${esc(amount)}</p>
             <p><strong>Reason:</strong> ${esc(String(dispute.reason ?? 'unknown'))}</p>
             <p><strong>Booking:</strong> ${bookingId ? esc(bookingId) : 'not matched — investigate in Stripe'}</p>
-            <p style="color:#5B5570;font-size:12px;">Dispute ${esc(dispute.id)}${piId ? ` · PI ${esc(piId)}` : ''}. The booking is flagged (auto-settlement suppressed); review and respond in Stripe.</p>
+            <p style="color:#6B6482;font-size:12px;">Dispute ${esc(dispute.id)}${piId ? ` · PI ${esc(piId)}` : ''}. The booking is flagged (auto-settlement suppressed); review and respond in Stripe.</p>
           </div>`,
         );
         break;
@@ -321,11 +321,11 @@ Deno.serve(async (req: Request) => {
         );
         await emailAdmin(
           `Refund processed: ${charge.currency ?? 'usd'} ${refunded}`,
-          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+          `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
             <p style="font-size:16px;"><strong>A charge was refunded.</strong></p>
             <p><strong>Refunded:</strong> ${esc((charge.currency ?? 'usd').toUpperCase())} ${esc(refunded)}</p>
             <p><strong>Booking:</strong> ${bookingId ? esc(bookingId) : 'not matched — investigate in Stripe'}</p>
-            <p style="color:#5B5570;font-size:12px;">Charge ${esc(charge.id)}${piId ? ` · PI ${esc(piId)}` : ''}. Reconcile the earner payout/ledger if already credited.</p>
+            <p style="color:#6B6482;font-size:12px;">Charge ${esc(charge.id)}${piId ? ` · PI ${esc(piId)}` : ''}. Reconcile the earner payout/ledger if already credited.</p>
           </div>`,
         );
         break;

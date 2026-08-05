@@ -442,15 +442,15 @@ async function deriveKey(...parts: string[]): Promise<string> {
 function emailHtml(title: string, body: string): string {
   const esc = (s: string) =>
     String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<!doctype html><html><body style="margin:0;background:#F5F3FF;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ECE9F5;">
-    <div style="background:#6D28D9;padding:20px 24px;"><span style="color:#ffffff;font-size:20px;font-weight:800;">GoHustlr</span></div>
+  return `<!doctype html><html><body style="margin:0;background:#F7F4EC;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #E4DFD3;">
+    <div style="background:#5038FF;padding:20px 24px;"><span style="color:#ffffff;font-size:20px;font-weight:800;">GoHustlr</span></div>
     <div style="padding:24px;">
-      <h1 style="margin:0 0 8px;font-size:18px;color:#1A1523;">${esc(title)}</h1>
-      ${body ? `<p style="margin:0;font-size:15px;line-height:1.5;color:#4A4458;">${esc(body)}</p>` : ''}
+      <h1 style="margin:0 0 8px;font-size:18px;color:#363636;">${esc(title)}</h1>
+      ${body ? `<p style="margin:0;font-size:15px;line-height:1.5;color:#6B6482;">${esc(body)}</p>` : ''}
       <p style="margin:20px 0 0;font-size:13px;color:#9A93AD;">Open the GoHustlr app to respond.</p>
     </div>
-    <div style="padding:16px 24px;border-top:1px solid #ECE9F5;">
+    <div style="padding:16px 24px;border-top:1px solid #E4DFD3;">
       <p style="margin:0;font-size:12px;color:#9A93AD;">You're receiving this because of your notification settings. Change them anytime in the app under Profile → Settings → Notifications.</p>
     </div>
   </div>

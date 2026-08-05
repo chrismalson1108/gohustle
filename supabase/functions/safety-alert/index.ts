@@ -81,18 +81,18 @@ Deno.serve(async (req: Request) => {
         from: SAFETY_FROM,
         to: [to],
         subject: `⚠️ Safety report: ${r.reason}`,
-        html: `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+        html: `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
           <p style="font-size:16px;"><strong>New safety report</strong></p>
           <p><strong>Reason:</strong> ${esc(r.reason)}</p>
           <p><strong>Reporter:</strong> ${esc(reporter)}</p>
           <p><strong>Reported:</strong> ${esc(reported)}</p>
-          ${r.details ? `<p style="white-space:pre-wrap;border-left:3px solid #E11D48;padding-left:12px;color:#5B5570;">${esc(r.details)}</p>` : ''}
-          <p style="color:#5B5570;font-size:12px;">Report ${esc(r.id)}${r.job_id ? ` · job ${esc(r.job_id)}` : ''}${r.booking_id ? ` · booking ${esc(r.booking_id)}` : ''} · ${esc(String(r.created_at || ''))}</p>
+          ${r.details ? `<p style="white-space:pre-wrap;border-left:3px solid #EA4637;padding-left:12px;color:#6B6482;">${esc(r.details)}</p>` : ''}
+          <p style="color:#6B6482;font-size:12px;">Report ${esc(r.id)}${r.job_id ? ` · job ${esc(r.job_id)}` : ''}${r.booking_id ? ` · booking ${esc(r.booking_id)}` : ''} · ${esc(String(r.created_at || ''))}</p>
           <!-- /moderation, not /reports: the console has no /reports route, so this
                link 404'd. It is the only link in the only email that pages a human for
                a harassment or assault report, so it failed exactly when someone was
                trying to act on one. -->
-          <p><a href="${ADMIN_URL}/moderation" style="color:#3F25FE;">Open the moderation queue →</a></p>
+          <p><a href="${ADMIN_URL}/moderation" style="color:#5038FF;">Open the moderation queue →</a></p>
         </div>`,
       }),
     });

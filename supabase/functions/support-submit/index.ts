@@ -100,11 +100,11 @@ Deno.serve(async (req: Request) => {
             to: [SUPPORT_NOTIFY],
             reply_to: email.trim(),
             subject: `New support ticket #${ticket.id}: ${subj}`,
-            html: `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#181231;">
+            html: `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
               <p><strong>From:</strong> ${esc(name || '')} &lt;${esc(email)}&gt;${category ? ` · ${esc(category)}` : ''}</p>
               <p><strong>Subject:</strong> ${esc(subj)}</p>
-              <p style="white-space:pre-wrap;border-left:3px solid #3F25FE;padding-left:12px;color:#5B5570;">${esc(body)}</p>
-              <p><a href="${ADMIN_URL}/support/${ticket.id}" style="color:#3F25FE;">Open ticket #${ticket.id} in the console →</a></p>
+              <p style="white-space:pre-wrap;border-left:3px solid #5038FF;padding-left:12px;color:#6B6482;">${esc(body)}</p>
+              <p><a href="${ADMIN_URL}/support/${ticket.id}" style="color:#5038FF;">Open ticket #${ticket.id} in the console →</a></p>
             </div>`,
           }),
         });

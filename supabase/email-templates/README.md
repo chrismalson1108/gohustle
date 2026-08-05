@@ -27,8 +27,8 @@ Two layers, don't conflate them:
 | `invite.html` | **Invite user** | You're invited to GoHustlr | `{{ .ConfirmationURL }}`, `{{ .Email }}` |
 | `reauthentication.html` | **Reauthentication** | Your GoHustlr verification code | `{{ .Token }}` (6-digit code) |
 
-All six share one brand system (Hustlr Brand Guidelines v2.0): Electric Blue `#3F25FE`
-header, orange wordmark, the Action-Red `#F21A06` offset strip, Canvas Cream `#F7F3EC`
+All six share one brand system (Hustlr Brand Guidelines v2.0): Electric Blue `#5038FF`
+header, orange wordmark, the Action-Red `#EA4637` offset strip, Canvas Cream `#F7F4EC`
 backdrop, Sora/Inter type. They're table-based, inline-styled, email-safe HTML.
 
 **Brand naming:** the header shows the **Hustlr** wordmark (the logo), and body copy says
