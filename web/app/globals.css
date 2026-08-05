@@ -1,39 +1,54 @@
 @import "tailwindcss";
 
 /* ── Hustlr brand tokens ─────────────────────────────────────────────────────
-   Hustlr Brand Guidelines v2.0:
-     Electric Blue  #3F25FE  — primary brand moments, backgrounds, buttons, links
-     Hustle Orange  #FFBC45  — highlights, key icons, wordmark, money/energy
-     Action Red     #F21A06  — offset shadows, emphasis, urgent/destructive
-     Canvas Cream   #F7F3EC  — page backgrounds, breathing room
+   Hustlr Brand Guidelines v3.0 — kept in lockstep with shared/theme.js:
+     Electric Blue  #5038ff  — primary brand moments, backgrounds, buttons, links
+     Action Red     #ea4637  — offset shadows, emphasis, urgent/destructive
+     Canvas Cream   #f7f4ec  — page backgrounds, breathing room
+     Ink            #363636  — primary text
    Tailwind v4 reads these to generate utilities like bg-primary, text-ink, etc.
-   NOTE: Hustle Orange is a light amber — never put white text on it. Orange is a
-   fill paired with dark ink, or large display text; filled CTAs stay Electric Blue. */
+   Hustle Orange #ffbc45 is RETIRED as a brand accent in v3.0. The accent and gold
+   variables below are kept as DEPRECATED ALIASES pointing at the new semantic amber
+   so existing class names keep resolving; migrate call sites to the warning and
+   wash tokens, then delete them.
+   (Written without a "star-slash" glob: that sequence closes a CSS comment early
+   and takes the rest of the block down with it.) */
 @theme {
-  --color-primary: #3f25fe;
-  --color-primary-dark: #2b17c2;
-  --color-primary-light: #e9e6ff;
-  --color-secondary: #5538ff;
-  --color-accent: #ffbc45;
-  --color-accent-light: #fff1d6;
-  --color-accent-deep: #9a5b00;
-  --color-gold: #ffbc45;
-  --color-gold-light: #fff1d6;
-  --color-urgent: #f21a06;
+  --color-primary: #5038ff;
+  --color-primary-dark: #2e1bc7;
+  --color-primary-light: #eae6ff;
+  --color-secondary: #6b54ff;
+  --color-accent: #e0a44a;
+  --color-accent-light: #fdf0da;
+  --color-accent-deep: #8a5a12;
+  --color-gold: #e0a44a;
+  --color-gold-light: #fdf0da;
+  --color-urgent: #ea4637;
   --color-urgent-light: #ffe7e3;
-  --color-ink: #181231;
-  --color-ink-soft: #5b5570;
+  --color-ink: #363636;
+  --color-ink-soft: #6b6482;
   --color-ink-muted: #9a93ad;
-  --color-line: #e8e2d5;
+  --color-line: #e4dfd3;
   /* Rules INSIDE a card (the poster row on a job card, list separators), vs
      --color-line for a component's outer border. This token was missing while
      `border-divider` / `divide-divider` were used in 9 places — Tailwind v4
      generates no utility for an undefined token, so each of those hairlines
      silently fell back to currentColor and rendered near-black ink. */
-  --color-divider: #f0ebdf;
-  --color-canvas: #f7f3ec;
+  --color-divider: #efebe1;
+  --color-canvas: #f7f4ec;
   --color-success: #15803d;
   --color-success-light: #e7f8ee;
+
+  /* v3.0 semantic replacements for the retired orange, mirroring shared/theme.js.
+     `warning-*` is lifecycle "pending" and nothing else; `wash-*` is the blue tint
+     that takes over money surfaces (pay pill, badge tiles, stat chips). Added now
+     so web can follow the same migration as mobile rather than being left with only
+     the deprecated aliases to point at. */
+  --color-warning: #e0a44a;
+  --color-warning-light: #fdf0da;
+  --color-warning-deep: #8a5a12;
+  --color-wash: #eae6ff;
+  --color-wash-deep: #5038ff;
 
   /* ── Radius system ────────────────────────────────────────────────────────
      Four sizes only, mirroring `radii` in shared/theme.js. Mixing 6/8/12/16/22
