@@ -266,7 +266,7 @@ export default function JobDetailScreen({ route, navigation }) {
 
         <View style={styles.pillRow}>
           <View style={styles.payPill}>
-            <Ionicons name="cash" size={14} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Ionicons name="cash" size={14} color={colors.washDeep} style={{ marginRight: 5 }} />
             <Text style={styles.payText} numberOfLines={1}>{estPay}</Text>
           </View>
           <View style={styles.locPill}>
@@ -626,11 +626,11 @@ const styles = StyleSheet.create({
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   payPill: {
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
-    backgroundColor: colors.accentLight, borderRadius: radii.pill,
+    backgroundColor: colors.wash, borderRadius: radii.pill,
     paddingHorizontal: 12, paddingVertical: 8, marginRight: 8, marginBottom: 8,
     maxWidth: '100%',
   },
-  payText: { fontSize: 13, fontWeight: '600', color: colors.accentDeep, flexShrink: 1 },
+  payText: { fontSize: 13, fontWeight: '600', color: colors.washDeep, flexShrink: 1 },
   locPill: {
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
     backgroundColor: colors.surface, borderRadius: radii.pill,
@@ -777,11 +777,11 @@ const styles = StyleSheet.create({
   ownJobStatTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 8 },
   ownJobChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   statChip: {
-    alignSelf: 'flex-start', backgroundColor: colors.accentLight,
+    alignSelf: 'flex-start', backgroundColor: colors.wash,
     borderRadius: radii.pill, paddingHorizontal: 12, paddingVertical: 5,
   },
   statChipGreen: { backgroundColor: colors.successLight },
-  statChipText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep },
+  statChipText: { fontSize: 12, fontWeight: '600', color: colors.washDeep },
   manageGigsBtn: {
     backgroundColor: colors.primary, borderRadius: radii.md,
     paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center',

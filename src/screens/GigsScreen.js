@@ -403,13 +403,13 @@ export default function GigsScreen({ navigation }) {
                     <Chip ion="ellipse" color={colors.success} bg={colors.successLight} label="Live" />
                   )}
                   {pendingN > 0 && (
-                    <Chip ion="time" color={colors.accentDeep} bg={colors.accentLight} label={`${pendingN} Pending`} />
+                    <Chip ion="time" color={colors.washDeep} bg={colors.wash} label={`${pendingN} Pending`} />
                   )}
                   {confirmedN > 0 && (
                     <Chip ion="checkmark-circle" color={colors.success} bg={colors.successLight} label={`${confirmedN} In progress`} />
                   )}
                   {completedN > 0 && (
-                    <Chip ion="sync" color={colors.accentDeep} bg={colors.accentLight} label={`${completedN} Needs verify`} />
+                    <Chip ion="sync" color={colors.washDeep} bg={colors.wash} label={`${completedN} Needs verify`} />
                   )}
                 </View>
 

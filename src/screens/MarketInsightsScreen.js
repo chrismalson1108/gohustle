@@ -91,7 +91,7 @@ export default function MarketInsightsScreen() {
             <Text style={styles.sub} numberOfLines={2}>Where the demand is — by area</Text>
           </View>
           <View style={styles.proPill}>
-            <Ionicons name="sparkles" size={12} color={colors.accentDeep} />
+            <Ionicons name="sparkles" size={12} color={colors.washDeep} />
             <Text style={styles.proText} numberOfLines={1}>Pro</Text>
           </View>
         </View>
@@ -146,7 +146,7 @@ export default function MarketInsightsScreen() {
                 <View style={styles.statsRow}>
                   {r.avgPay != null && (
                     <View style={styles.stat}>
-                      <Ionicons name="trending-up" size={15} color={colors.accentDeep} />
+                      <Ionicons name="trending-up" size={15} color={colors.washDeep} />
                       <Text style={[styles.statText, styles.statTextMoney]} numberOfLines={1}>avg {money(r.avgPay)}</Text>
                     </View>
                   )}
@@ -190,9 +190,9 @@ const styles = StyleSheet.create({
   sub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
   proPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', flexShrink: 0,
-    backgroundColor: colors.accentLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.pill,
+    backgroundColor: colors.wash, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.pill,
   },
-  proText: { fontSize: 11, fontWeight: '700', color: colors.accentDeep, lineHeight: 15 },
+  proText: { fontSize: 11, fontWeight: '700', color: colors.washDeep, lineHeight: 15 },
 
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
   mapWrap: { height: 240, borderRadius: radii.lg, overflow: 'hidden', marginBottom: 16, backgroundColor: colors.surface },
