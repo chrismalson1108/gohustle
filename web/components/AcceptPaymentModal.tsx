@@ -85,7 +85,7 @@ export default function AcceptPaymentModal({
           onUseNewCard={() => setUseNewCard(true)}
         />
       ) : (
-        <Elements stripe={getStripe()} options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#3F25FE" } } }}>
+        <Elements stripe={getStripe()} options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#5038FF" } } }}>
           <PayForm amountCents={amountCents} jobTitle={jobTitle} onConfirmed={onConfirmed} />
         </Elements>
       )}

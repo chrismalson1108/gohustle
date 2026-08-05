@@ -56,7 +56,7 @@ export default function AddCardModal({
       ) : (
         <Elements
           stripe={getStripe()}
-          options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#3F25FE" } } }}
+          options={{ clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#5038FF" } } }}
         >
           <SaveCardForm replacing={replacing} onSaved={onSaved} />
         </Elements>

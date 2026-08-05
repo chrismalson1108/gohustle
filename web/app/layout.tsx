@@ -36,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#3F25FE",
+  themeColor: "#5038FF",
   width: "device-width",
   initialScale: 1,
   // Extend under the notch / home indicator so env(safe-area-inset-*) is non-zero

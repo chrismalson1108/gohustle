@@ -12,8 +12,8 @@ const akshar = Akshar({
  * Brand Guidelines v1.0 shell for the logged-out surfaces (sign-in, legal,
  * consent, contact, reset-password).
  *
- * Most of the palette already matches the guidelines — ink-soft #5B5570,
- * ink-muted #9A93AD, primary #3F25FE and primary-light #E9E6FF are all correct
+ * Most of the palette already matches the guidelines — ink-soft #6B6482,
+ * ink-muted #9A93AD, primary #5038FF and primary-light #EAE6FF are all correct
  * in globals.css. Only three tokens and the display face are off, so rather
  * than restyle every element this re-points those CSS variables for its own
  * subtree. Anything inside using `bg-canvas` / `text-ink` / `border-line`
@@ -50,17 +50,13 @@ export default function BrandShell({
   );
 }
 
-/** The horizontal lockup.
+/** The horizontal lockup — the shared <Logo>, so the logged-out pages and the
+ *  in-app chrome can never show different artwork.
  *
- *  This used to compose the inline SVG glyphs (HustlrMark + HustlrWordmark) at the
- *  documented construction ratios. Those glyphs are the v1 vector pack — viewBox
- *  1210×1400 and 2600×588 — and the v3 art has different proportions AND ships the
- *  mark and wordmark drawn together as one lockup. Keeping the SVG path here would
- *  leave every logged-out page (login, consent, contact, legal, reset-password)
- *  showing the previous logo while the in-app chrome showed the new one.
- *
- *  Rendering the shared <Logo> keeps one source of truth: the PNGs distributed by
- *  `npm run brand:sync`. Swap back to vector only when a v3 SVG pack exists. */
+ *  Logo renders INLINE SVG from components/brand/glyphs.tsx (v3 geometry: mark
+ *  2934×1914, wordmark 7751×1792, lockup 11818×2401), coloured by currentColor
+ *  through the theme. It does NOT render the brand PNGs — those reach web only as
+ *  the favicon, apple-touch icon and OG card. */
 export function BrandLockup({ height = 34 }: { height?: number }) {
   return (
     <span className="inline-flex items-center">
