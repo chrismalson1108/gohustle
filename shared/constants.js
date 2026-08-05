@@ -22,27 +22,31 @@ export function validateJobPay(value) {
   return null;
 }
 
-// `ion` is an Ionicons name (renders reliably everywhere); `icon` kept for any legacy use.
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPRECATED — the taxonomy now lives in shared/categories.js and the `categories`
+// table. These two exports remain only so any not-yet-migrated importer keeps
+// compiling; they are DERIVED from the catalog rather than hand-written, so they
+// can no longer drift from it.
+//
+// Do not add to them. Replacements:
+//   CATEGORIES       → searchCategories() / categoriesByGroup() / browseChipsFromJobs()
+//   CATEGORY_COLORS  → categoryColor(value)   (has a fallback; this object does not)
+// ─────────────────────────────────────────────────────────────────────────────
+import { LEGACY_CATEGORY_LABELS, findCategory, categoryColor } from './categories.js';
+
+/** @deprecated Chips are now data-driven — see browseChipsFromJobs(). */
 export const CATEGORIES = [
   { id: 'all', label: 'All', icon: '🌟', ion: 'grid' },
-  { id: 'Tutoring', label: 'Tutoring', icon: '📚', ion: 'book' },
-  { id: 'Delivery', label: 'Delivery', icon: '🚚', ion: 'bicycle' },
-  { id: 'Moving', label: 'Moving', icon: '📦', ion: 'cube' },
-  { id: 'Tech Help', label: 'Tech Help', icon: '💻', ion: 'laptop' },
-  { id: 'Creative', label: 'Creative', icon: '🎨', ion: 'color-palette' },
-  { id: 'Odd Jobs', label: 'Odd Jobs', icon: '🛠️', ion: 'construct' },
-  { id: 'Errands', label: 'Errands', icon: '🛒', ion: 'cart' },
+  ...LEGACY_CATEGORY_LABELS.map((label) => {
+    const c = findCategory(label);
+    return { id: label, label, icon: '🛠️', ion: c ? c.ion : 'construct' };
+  }),
 ];
 
-export const CATEGORY_COLORS = {
-  Tutoring: '#6366F1',
-  Delivery: '#10B981',
-  Moving: '#F59E0B',
-  'Tech Help': '#3B82F6',
-  Creative: '#EC4899',
-  'Odd Jobs': '#8B5CF6',
-  Errands: '#14B8A6',
-};
+/** @deprecated Use categoryColor(value) — it covers user-created categories too. */
+export const CATEGORY_COLORS = Object.fromEntries(
+  LEGACY_CATEGORY_LABELS.map((label) => [label, categoryColor(label)]),
+);
 
 // Badge groups, in display order. Used by the Trophy Case to section the list.
 export const BADGE_GROUPS = [

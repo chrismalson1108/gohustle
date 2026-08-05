@@ -61,8 +61,13 @@ is nothing behind it.
 
 ## 2. Chargeback (`charge.dispute.created`)
 
-**You get an email** titled "Dispute opened". The webhook already inserted a
-`disputes` row and flagged the booking (auto-settlement suppressed).
+**You get an email** titled "Dispute opened". The webhook inserts a `disputes` row and
+flags the booking (auto-settlement suppressed).
+
+> This only became true on 2026-08-04. The endpoint was never subscribed to
+> `charge.dispute.created`, so until then a chargeback fired nothing: no dispute row,
+> no email, no suppression. If you are reading historical data, chargebacks before that
+> date left no trace in this system. See §8.
 
 1. Open the Stripe Dashboard link in the email. Note the **reason code** and the
    **evidence deadline** — Stripe's deadline is hard.
@@ -178,15 +183,62 @@ Scope for the rest is in `ADMIN_AUDIT_2026-08-04.md` §4.
 
 ---
 
-## 8. Stripe Radar rules to add by hand (Dashboard → Radar → Rules)
+## 8. Stripe fraud configuration — APPLIED 2026-08-04 (sandbox)
 
-Zero code, effective immediately, and the cheapest fraud control available:
+All of this is live in the **sandbox** (`acct_1ThvnME0UZFlVCOp`, Test mode). **None of
+it carries to live mode** — Radar rules, Risk controls and webhook endpoints are all
+configured per-mode. Re-apply every item below at live cutover.
 
-```
-Block    if :card_number_attempts_1h: > 3
-Block    if :ip_country: != :card_country:        # US-only marketplace
-Review   if :card_funding: = 'prepaid' and :amount_in_usd: > 100
-```
+### Radar rules (Rules tab)
 
-`outcome.risk_score` needs Radar for Fraud Teams (~$0.07/txn) — worth it against a
-single chargeback, but the three rules above work on the base plan.
+| Action | Condition | Why |
+|---|---|---|
+| **Block** | `:declined_charges_per_ip_address_hourly: > 10` | Card testing. |
+| **Review** | `:ip_country: != :card_country:` | Foreign-issued card or VPN. |
+| **Review** | `:card_funding: = 'prepaid' and :amount_in_usd: > 100` | Prepaid cards at value. |
+
+Two judgment calls worth keeping:
+
+- **The IP/card-country rule is Review, not Block.** International students on US
+  campuses routinely carry foreign-issued cards. Blocking would mean they simply
+  cannot pay, with no signal to you. Review surfaces it in Radar → Reviews instead.
+- **The card-testing threshold is deliberately high (10/hour, not 3).** Stripe has no
+  "distinct cards per IP" attribute, so this counts declines per IP — and campus wifi
+  NATs many students behind one address. A low threshold would aggregate legitimate
+  students into a block. A real card tester clears 10 in seconds.
+
+All three backtested against the prior month: **0 matches**, so none would have blocked
+a real payment.
+
+### Risk controls (Risk controls tab) — Stripe's ML, no code
+
+The legacy `:risk_level:` rules **cannot be enabled** — Stripe deprecated them
+("Improved risk controls … replace this rule"). The replacements, all on Radar
+Standard:
+
+| Control | State |
+|---|---|
+| Fraudulent dispute | Active (was already on) |
+| Fraudulent non-card payments | Active (was already on) |
+| **Fraudulent card payments** | **Active** — blocks stolen cards, incl. fraud the bank never reports |
+| **Early fraud warning** | **Active** — blocks payments likely to get an EFW |
+| Adaptive 3DS | Inactive — adds a checkout step; deliberately left off |
+| Dynamic risk thresholds | Inactive |
+| Bot detection | Inactive |
+
+Early fraud warning matters disproportionately here: these are **destination charges**,
+so a chargeback claws back from the *platform* balance 30–90 days later, after the
+earner has already been paid out. Blocking the payment up front is the only cheap point
+of intervention.
+
+### Webhook events
+
+The endpoint (`…/functions/v1/stripe-webhook`) was listening to **7** events while
+`stripe-webhook/index.ts` handles **9**. The two missing ones were
+**`charge.dispute.created`** and **`charge.refunded`** — i.e. the entire money-reversal
+path this runbook's §2 describes was dead: a chargeback fired no handler, inserted no
+`disputes` row, sent no alert. Both are now registered; the endpoint listens to 9.
+
+Do **not** register events the code does not handle (`payout.failed`,
+`radar.early_fraud_warning.created`, `charge.dispute.closed`) until there are handlers —
+they fall through to a no-op and only add noise.

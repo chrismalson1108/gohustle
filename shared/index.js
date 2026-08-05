@@ -2,6 +2,7 @@
 // The mobile app imports individual files via relative paths instead.
 export * from './theme.js';
 export * from './constants.js';
+export * from './categories.js';
 export * from './geo.js';
 export * from './taxFormat.js';
 export * from './contentFilter.js';
