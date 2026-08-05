@@ -321,7 +321,7 @@ export default function EditJobScreen({ route, navigation }) {
 
         {isLocked && !amendmentAccepted && (
           <View style={styles.lockBanner}>
-            <Ionicons name="lock-closed" size={18} color={colors.accentDeep} style={styles.lockIcon} />
+            <Ionicons name="lock-closed" size={18} color={colors.warningDeep} style={styles.lockIcon} />
             <View style={styles.bannerBody}>
               <Text style={styles.lockTitle} numberOfLines={2}>Core terms locked</Text>
               <Text style={styles.lockDesc}>
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
   lockBanner: {
     flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.warningLight,
     marginHorizontal: 20, marginTop: 4,
     borderRadius: radii.lg, padding: 16,
   },
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
   },
   bannerBody: { flex: 1, minWidth: 0 },
   lockIcon: { marginRight: 12, marginTop: 1 },
-  lockTitle: { fontSize: 14, fontWeight: '700', color: colors.accentDeep, marginBottom: 4, lineHeight: 19 },
+  lockTitle: { fontSize: 14, fontWeight: '700', color: colors.warningDeep, marginBottom: 4, lineHeight: 19 },
   amendTitle: { fontSize: 14, fontWeight: '700', color: colors.success, marginBottom: 4, lineHeight: 19 },
   lockDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
   form: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },

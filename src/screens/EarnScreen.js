@@ -496,7 +496,7 @@ export default function EarnScreen({ navigation }) {
       return (
         <>
           <View style={styles.waitingBanner}>
-            <Ionicons name="hourglass-outline" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Ionicons name="hourglass-outline" size={13} color={colors.warningDeep} style={{ marginRight: 5 }} />
             <Text style={styles.waitingText} numberOfLines={2}>Waiting for poster to confirm done…</Text>
           </View>
           {renderClaimCta(booking)}
@@ -509,7 +509,7 @@ export default function EarnScreen({ navigation }) {
       return (
         <>
           <View style={styles.waitingBanner}>
-            <Ionicons name="sync-outline" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Ionicons name="sync-outline" size={13} color={colors.warningDeep} style={{ marginRight: 5 }} />
             <Text style={styles.waitingText} numberOfLines={2}>Waiting for the poster to verify & pay.</Text>
           </View>
           {renderClaimCta(booking)}
@@ -551,7 +551,7 @@ export default function EarnScreen({ navigation }) {
           {booking.amendmentStatus === 'pending' && (
             <View style={styles.amendCard}>
               <View style={styles.amendCardTitleRow}>
-                <Ionicons name="document-text-outline" size={14} color={colors.accentDeep} style={{ marginRight: 6 }} />
+                <Ionicons name="document-text-outline" size={14} color={colors.warningDeep} style={{ marginRight: 6 }} />
                 <Text style={styles.amendCardTitle} numberOfLines={1}>Change proposed by poster</Text>
               </View>
               <Text style={styles.amendCardNote}>{booking.amendmentNote}</Text>
@@ -762,11 +762,11 @@ export default function EarnScreen({ navigation }) {
           )}
           {unratedCount > 0 && tab !== 'completed' && (
             <TouchableOpacity style={[styles.nudge, styles.nudgeRate]} onPress={() => { haptic.selection(); setTab('completed'); }} activeOpacity={0.85}>
-              <Ionicons name="star" size={18} color={colors.accentDeep} style={{ marginRight: 10 }} />
-              <Text style={[styles.nudgeText, { color: colors.accentDeep }]} numberOfLines={2}>
+              <Ionicons name="star" size={18} color={colors.warningDeep} style={{ marginRight: 10 }} />
+              <Text style={[styles.nudgeText, { color: colors.warningDeep }]} numberOfLines={2}>
                 Rate {unratedCount} completed {unratedCount === 1 ? 'gig' : 'gigs'} to finish up
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.accentDeep} />
+              <Ionicons name="chevron-forward" size={16} color={colors.warningDeep} />
             </TouchableOpacity>
           )}
         </View>
@@ -993,7 +993,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12,
   },
   nudgeAmend: { backgroundColor: colors.primaryLight },
-  nudgeRate: { backgroundColor: colors.accentLight },
+  nudgeRate: { backgroundColor: colors.warningLight },
   nudgeText: { flex: 1, fontSize: 13, fontWeight: '600', lineHeight: 18, marginRight: 8 },
 
   // ── Segmented control ─────────────────────────────────────────────────────
@@ -1064,17 +1064,17 @@ const styles = StyleSheet.create({
   inProgressText: { fontSize: 12, fontWeight: '600', color: colors.success },
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.accentLight, borderRadius: radii.sm,
+    backgroundColor: colors.warningLight, borderRadius: radii.sm,
     paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, alignSelf: 'flex-start',
   },
-  waitingText: { fontSize: 12, fontWeight: '600', color: colors.accentDeep, flexShrink: 1, lineHeight: 16 },
+  waitingText: { fontSize: 12, fontWeight: '600', color: colors.warningDeep, flexShrink: 1, lineHeight: 16 },
 
   // ── Amendment (change request) ────────────────────────────────────────────
   amendCard: {
-    backgroundColor: colors.accentLight, borderRadius: radii.md, padding: 16, marginTop: 12,
+    backgroundColor: colors.warningLight, borderRadius: radii.md, padding: 16, marginTop: 12,
   },
   amendCardTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  amendCardTitle: { fontSize: 13, fontWeight: '700', color: colors.accentDeep, flexShrink: 1 },
+  amendCardTitle: { fontSize: 13, fontWeight: '700', color: colors.warningDeep, flexShrink: 1 },
   amendCardNote: { fontSize: 13, color: colors.textPrimary, lineHeight: 19, marginBottom: 12 },
   amendCardActions: { flexDirection: 'row', gap: 12 },
   amendAcceptBtn: {

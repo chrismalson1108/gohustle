@@ -793,7 +793,7 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
           )}
           {status === 'confirmed' && booking.posterDone && !booking.earnerDone && (
             <View style={styles.waitingBanner}>
-              <Ionicons name="hourglass-outline" size={13} color={colors.accentDeep} style={{ marginRight: 6 }} />
+              <Ionicons name="hourglass-outline" size={13} color={colors.warningDeep} style={{ marginRight: 6 }} />
               <Text style={styles.waitingText} numberOfLines={2}>Waiting for earner to confirm…</Text>
             </View>
           )}
@@ -919,9 +919,9 @@ const styles = StyleSheet.create({
   jobActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   removedNote: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.accentLight, borderRadius: radii.md, padding: 12,
+    backgroundColor: colors.warningLight, borderRadius: radii.md, padding: 12,
   },
-  removedNoteText: { fontSize: 12, fontWeight: '500', color: colors.accentDeep, lineHeight: 17, flex: 1 },
+  removedNoteText: { fontSize: 12, fontWeight: '500', color: colors.warningDeep, lineHeight: 17, flex: 1 },
   editBtn: {
     flexBasis: '45%', flexGrow: 1, flexDirection: 'row', justifyContent: 'center',
     backgroundColor: colors.surface, borderRadius: radii.md,
@@ -1023,10 +1023,10 @@ const styles = StyleSheet.create({
   markDoneText: { fontSize: 13, fontWeight: '700', color: '#fff', flexShrink: 1 },
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.accentLight, borderRadius: radii.md,
+    backgroundColor: colors.warningLight, borderRadius: radii.md,
     paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8,
   },
-  waitingText: { fontSize: 12, fontWeight: '500', color: colors.accentDeep, lineHeight: 17, flex: 1 },
+  waitingText: { fontSize: 12, fontWeight: '500', color: colors.warningDeep, lineHeight: 17, flex: 1 },
   verifyBtn: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     backgroundColor: colors.primary, borderRadius: radii.md,
@@ -1050,8 +1050,8 @@ const styles = StyleSheet.create({
   cancelLockedText: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 8, textAlign: 'center' },
 
   // ---- Amendment status banners ----
-  amendPendingBanner: { backgroundColor: colors.accentLight, borderRadius: radii.md, padding: 12, marginTop: 8 },
-  amendPendingText: { fontSize: 12, fontWeight: '500', color: colors.accentDeep, lineHeight: 17 },
+  amendPendingBanner: { backgroundColor: colors.warningLight, borderRadius: radii.md, padding: 12, marginTop: 8 },
+  amendPendingText: { fontSize: 12, fontWeight: '500', color: colors.warningDeep, lineHeight: 17 },
   amendAcceptedBanner: { backgroundColor: colors.successLight, borderRadius: radii.md, padding: 12, marginTop: 8 },
   amendAcceptedText: { fontSize: 12, fontWeight: '500', color: colors.success, lineHeight: 17 },
   amendDeclinedBanner: { backgroundColor: colors.urgentLight, borderRadius: radii.md, padding: 12, marginTop: 8 },

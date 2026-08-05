@@ -28,7 +28,7 @@ import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar
 const STATUS_CONTENT = {
   pending:   { ion: 'time', title: 'Application pending',
                desc: "The poster hasn't reviewed your booking yet. Hang tight!",
-               bg: colors.accentLight, color: colors.accentDeep },
+               bg: colors.warningLight, color: colors.warningDeep },
   confirmed: { ion: 'checkmark-circle', title: "Confirmed — you're in",
                desc: 'Accepted! Head to the Earn tab to mark done when finished.',
                bg: colors.successLight, color: colors.success },

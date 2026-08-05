@@ -6,7 +6,7 @@ import { colors, radii } from '../theme';
 // Semantic status colors only — green = confirmed/paid, red = declined,
 // amber = awaiting action, neutral ink = in-flight / cancelled.
 const CONFIG = {
-  pending:   { label: 'Awaiting confirmation', ion: 'time',              color: colors.accentDeep,    bg: colors.accentLight },
+  pending:   { label: 'Awaiting confirmation', ion: 'time',              color: colors.warningDeep,    bg: colors.warningLight },
   confirmed: { label: 'Confirmed',             ion: 'checkmark-circle',  color: colors.success,       bg: colors.successLight },
   completed: { label: 'Pending verification',  ion: 'sync',              color: colors.textSecondary, bg: colors.background },
   verified:  { label: 'Completed & paid',      ion: 'shield-checkmark',  color: colors.success,       bg: colors.successLight },
