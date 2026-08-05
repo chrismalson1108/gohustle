@@ -673,7 +673,7 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
           {booking.earnerRating ? (
             <View style={styles.pastStars}>
               {[1,2,3,4,5].map(s => (
-                <Ionicons key={s} name={s <= Math.round(booking.earnerRating) ? 'star' : 'star-outline'} size={13} color={colors.accent} style={{ marginRight: 1 }} />
+                <Ionicons key={s} name={s <= Math.round(booking.earnerRating) ? 'star' : 'star-outline'} size={13} color={colors.rating} style={{ marginRight: 1 }} />
               ))}
               <Text style={styles.pastRatingText} numberOfLines={1}>  You rated {earnerName} {Number(booking.earnerRating).toFixed(1)}</Text>
             </View>
@@ -712,7 +712,7 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
             <Text style={styles.earnerName} numberOfLines={1}>{earnerName}</Text>
             {booking.earner?.reviewCount > 0 ? (
               <View style={styles.ratingRow}>
-                <Ionicons name="star" size={11} color={colors.accent} style={{ marginRight: 3 }} />
+                <Ionicons name="star" size={11} color={colors.rating} style={{ marginRight: 3 }} />
                 <Text style={styles.earnerRating} numberOfLines={1}>{Number(booking.earner.rating).toFixed(1)}</Text>
               </View>
             ) : <Text style={styles.earnerRating} numberOfLines={1}>New</Text>}

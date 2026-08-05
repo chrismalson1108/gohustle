@@ -494,7 +494,7 @@ export default function ProfileScreen({ navigation }) {
             })()}
             {myReviews.length === 0 ? (
               <View style={styles.noReviewsCard}>
-                <Ionicons name="star-outline" size={30} color={colors.accent} style={styles.noReviewsIcon} />
+                <Ionicons name="star-outline" size={30} color={colors.rating} style={styles.noReviewsIcon} />
                 <Text style={styles.noReviewsTitle}>No reviews yet</Text>
                 <Text style={styles.noReviewsText}>Complete gigs as a worker or a client to start earning reviews.</Text>
               </View>

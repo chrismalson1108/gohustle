@@ -204,7 +204,7 @@ export default function BrowsePage() {
         subtitle="Ready to hustle?"
         right={
           <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5">
-            <Flame className="size-3.5 text-accent-deep" />
+            <Flame className="size-3.5 text-primary" />
             {profileStatus === "ready" && streakDays > 0 ? (
               <>
                 <span className="text-sm font-bold text-ink">{streakDays}</span>

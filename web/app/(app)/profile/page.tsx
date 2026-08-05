@@ -422,7 +422,7 @@ export default function ProfilePage() {
                   key={key}
                   className={classNames(
                     "flex min-h-[5.5rem] min-w-0 flex-col items-center gap-1 rounded-xl p-3 text-center",
-                    unlocked ? "bg-gold-light" : "bg-white",
+                    unlocked ? "bg-wash" : "bg-white",
                   )}
                 >
                   <span className={classNames("text-2xl", !unlocked && "opacity-40")}>{def.icon}</span>
@@ -528,7 +528,7 @@ export default function ProfilePage() {
           )}
           {reviews.length === 0 ? (
             <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)]">
-              <Star className="size-7 text-gold" />
+              <Star className="size-7 text-rating" />
               <p className="font-bold text-ink">No reviews yet</p>
               <p className="text-sm text-ink-soft">Complete gigs as a worker or client to start earning reviews.</p>
             </div>

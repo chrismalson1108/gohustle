@@ -26,7 +26,7 @@ export default function RatingStars({ value, size = 18, onChange, display = fals
         className={classNames("inline-flex shrink-0 items-center gap-1 leading-none", className)}
         style={{ fontSize: size }}
       >
-        <span className="text-gold">★</span>
+        <span className="text-rating">★</span>
         <span className="font-semibold text-ink">{value.toFixed(1)}</span>
       </span>
     );
@@ -38,7 +38,7 @@ export default function RatingStars({ value, size = 18, onChange, display = fals
         const filled = n <= Math.round(value);
         const star = (
           <Star
-            className={classNames("shrink-0", filled ? "fill-gold text-gold" : "fill-transparent text-line")}
+            className={classNames("shrink-0", filled ? "fill-rating text-rating" : "fill-transparent text-line")}
             style={{ width: size, height: size }}
           />
         );

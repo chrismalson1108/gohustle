@@ -25,7 +25,7 @@ export default function ReviewCard({ review: r }) {
                 key={s}
                 name={s <= Math.round(r.rating) ? 'star' : 'star-outline'}
                 size={12}
-                color={s <= Math.round(r.rating) ? colors.accent : colors.border}
+                color={s <= Math.round(r.rating) ? colors.rating : colors.border}
                 style={styles.star}
               />
             ))}

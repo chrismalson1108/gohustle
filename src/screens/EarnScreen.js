@@ -830,7 +830,7 @@ export default function EarnScreen({ navigation }) {
             <View style={styles.starRow}>
               {[1,2,3,4,5].map(s => (
                 <TouchableOpacity key={s} onPress={() => { haptic.selection(); setPosterRating(s); }} style={{ marginRight: 4 }}>
-                  <Ionicons name={s <= posterRating ? 'star' : 'star-outline'} size={34} color={s <= posterRating ? colors.accent : colors.border} />
+                  <Ionicons name={s <= posterRating ? 'star' : 'star-outline'} size={34} color={s <= posterRating ? colors.rating : colors.border} />
                 </TouchableOpacity>
               ))}
             </View>

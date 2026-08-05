@@ -31,7 +31,7 @@ function StarPicker({ value, onChange }) {
           <Ionicons
             name={star <= value ? 'star' : 'star-outline'}
             size={34}
-            color={star <= value ? colors.accent : colors.textMuted}
+            color={star <= value ? colors.rating : colors.textMuted}
           />
         </TouchableOpacity>
       ))}

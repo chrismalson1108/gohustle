@@ -233,7 +233,7 @@ export default function HiringPage() {
                       wider than the card on any phone. Mirrors mobile's
                       removedNote (amber fill, accent-deep text). */}
                   {job.removed && (
-                    <div className="mt-3 flex items-start gap-1.5 rounded-xl bg-accent-light px-3 py-2.5 text-xs font-semibold text-accent-deep">
+                    <div className="mt-3 flex items-start gap-1.5 rounded-xl bg-warning-light px-3 py-2.5 text-xs font-semibold text-warning-deep">
                       <AlertCircle className="mt-px size-3.5 shrink-0" />
                       <span className="min-w-0">Gig removed — resolve the bookings below.</span>
                     </div>
@@ -285,7 +285,7 @@ export default function HiringPage() {
                                 {b.earner?.studentVerified && <StudentBadge profile={b.earner} compact />}
                                 {b.earner?.reviewCount ? (
                                   <span className="inline-flex shrink-0 items-center gap-0.5 text-xs text-ink-muted">
-                                    <Star className="size-3 shrink-0 fill-gold text-gold" />
+                                    <Star className="size-3 shrink-0 fill-rating text-rating" />
                                     <span className="font-semibold text-ink">{Number(b.earner.rating).toFixed(1)}</span>
                                   </span>
                                 ) : (

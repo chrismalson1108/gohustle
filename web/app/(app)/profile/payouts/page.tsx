@@ -145,7 +145,7 @@ export default function PayoutsPage() {
         {/* Earner payouts */}
         <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-deep">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-wash text-wash-deep">
               <Wallet className="size-6" />
             </div>
             <div className="min-w-0">

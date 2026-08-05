@@ -25,7 +25,7 @@ import type { Job } from "@/lib/types";
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
 
 const STATUS_CONTENT: Record<string, { Icon: typeof Clock; title: string; desc: string; bg: string; color: string }> = {
-  pending: { Icon: Clock, title: "Application Pending", desc: "The poster hasn't reviewed your booking yet. Hang tight!", bg: "bg-accent-light", color: "text-accent-deep" },
+  pending: { Icon: Clock, title: "Application Pending", desc: "The poster hasn't reviewed your booking yet. Hang tight!", bg: "bg-warning-light", color: "text-warning-deep" },
   confirmed: { Icon: CheckCircle2, title: "Confirmed — You're In!", desc: "Accepted! Head to My Jobs to mark done when finished.", bg: "bg-success-light", color: "text-success" },
   completed: { Icon: RefreshCw, title: "Awaiting Verification", desc: "You marked done. The poster needs to verify your work.", bg: "bg-primary-light", color: "text-primary" },
   verified: { Icon: ShieldCheck, title: "Completed & Verified", desc: "All done! Go to My Jobs to rate the poster.", bg: "bg-success-light", color: "text-success" },
@@ -324,7 +324,7 @@ export default function JobDetailPage() {
           {/* One soft accent (pay) and neutral outlines for the rest — mobile's
               pillRow. Amber never carries white text: accent-light + accent-deep. */}
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent-light px-3 py-2 text-[13px] font-semibold text-accent-deep">
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-wash px-3 py-2 text-[13px] font-semibold text-wash-deep">
               <DollarSign className="size-3.5 shrink-0" /> <span className="truncate">{estPay}</span>
             </span>
             <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-white px-3 py-2 text-[13px] font-medium text-ink-soft">

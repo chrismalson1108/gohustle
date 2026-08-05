@@ -60,7 +60,7 @@ export default function ReviewsScreen({ route }) {
       <View style={styles.list}>
         {shown.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="star-outline" size={30} color={colors.accent} />
+            <Ionicons name="star-outline" size={30} color={colors.rating} />
             <Text style={styles.emptyTitle} numberOfLines={1}>No reviews here yet</Text>
             <Text style={styles.emptyText}>
               {tab === 'poster'

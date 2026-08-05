@@ -245,7 +245,7 @@ export default function GigForm({
   };
 
   const coreNote = lockedCore ? (
-    <p className="flex items-start gap-1.5 rounded-xl bg-accent-light px-3 py-2.5 text-[13px] font-semibold text-accent-deep">
+    <p className="flex items-start gap-1.5 rounded-xl bg-warning-light px-3 py-2.5 text-[13px] font-semibold text-warning-deep">
       <Lock className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0">Core terms are locked while a booking is active. Ask the earner for an amendment to change them.</span>
     </p>

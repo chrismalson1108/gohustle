@@ -117,7 +117,7 @@ export default function InsightsPage() {
         right={
           // Amber never carries white text — the pair is always accent-light
           // fill + accent-deep ink (mirrors mobile's proPill).
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-light px-2.5 py-1 text-[11px] font-bold text-accent-deep">
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-wash px-2.5 py-1 text-[11px] font-bold text-wash-deep">
             <Sparkles className="size-3.5 shrink-0" />
             Pro
           </span>
@@ -169,7 +169,7 @@ export default function InsightsPage() {
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm">
                   {r.avgPay != null && (
                     <span className="flex min-w-0 items-center gap-1.5 font-semibold text-ink">
-                      <TrendingUp className="size-4 shrink-0 text-accent-deep" />
+                      <TrendingUp className="size-4 shrink-0 text-wash-deep" />
                       <span className="truncate">avg {money(r.avgPay)}</span>
                     </span>
                   )}

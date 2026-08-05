@@ -21,7 +21,7 @@ const ICONS: Record<string, typeof Clock> = {
 // shared/lifecycle.js is the eventual single source of truth; until then this
 // map keeps web on-token instead of inlining those hexes as style props.
 const TINTS: Record<string, string> = {
-  pending: "bg-accent-light text-accent-deep",
+  pending: "bg-warning-light text-warning-deep",
   confirmed: "bg-success-light text-success",
   completed: "bg-canvas text-ink-soft",
   verified: "bg-success-light text-success",

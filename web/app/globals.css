@@ -7,22 +7,17 @@
      Canvas Cream   #f7f4ec  — page backgrounds, breathing room
      Ink            #363636  — primary text
    Tailwind v4 reads these to generate utilities like bg-primary, text-ink, etc.
-   Hustle Orange #ffbc45 is RETIRED as a brand accent in v3.0. The accent and gold
-   variables below are kept as DEPRECATED ALIASES pointing at the new semantic amber
-   so existing class names keep resolving; migrate call sites to the warning and
-   wash tokens, then delete them.
-   (Written without a "star-slash" glob: that sequence closes a CSS comment early
-   and takes the rest of the block down with it.) */
+   Hustle Orange #ffbc45 was RETIRED as a brand accent in v3.0. Its accent and gold
+   aliases are gone; the work they did is split across warning-* (lifecycle
+   "awaiting action"), wash-* (money and badge surfaces), rating (stars) and
+   primary (gamification).
+   NOTE avoid a "star-slash" glob in this block — that sequence closes a CSS comment
+   early and takes the rest of the file's tokens down with it. */
 @theme {
   --color-primary: #5038ff;
   --color-primary-dark: #2e1bc7;
   --color-primary-light: #eae6ff;
   --color-secondary: #6b54ff;
-  --color-accent: #e0a44a;
-  --color-accent-light: #fdf0da;
-  --color-accent-deep: #8a5a12;
-  --color-gold: #e0a44a;
-  --color-gold-light: #fdf0da;
   --color-urgent: #ea4637;
   --color-urgent-light: #ffe7e3;
   --color-ink: #363636;
@@ -49,6 +44,10 @@
   --color-warning-deep: #8a5a12;
   --color-wash: #eae6ff;
   --color-wash-deep: #5038ff;
+
+  /* Rating stars only. A score is neither a lifecycle state nor a brand moment, so
+     it does not borrow warning-*; same amber the retired accent resolved to. */
+  --color-rating: #e0a44a;
 
   /* ── Radius system ────────────────────────────────────────────────────────
      Four sizes only, mirroring `radii` in shared/theme.js. Mixing 6/8/12/16/22
@@ -124,8 +123,8 @@ h2 {
 
 /* The `.bg-brand` / `.bg-earn` / `.bg-gold` gradient helpers were REMOVED along
    with the gradient hero headers they backed (mobile deleted GradientHeader;
-   web's PageHeader is now flat). `bg-gold` still resolves — as the flat Hustle
-   Orange from --color-gold, which is what the remaining call sites want.
+   web's PageHeader is now flat). `bg-gold` no longer resolves either — --color-gold
+   went with the v3 orange retirement; its call sites moved to wash / rating.
    Marketing surfaces keep their gradients inline; this is the app shell only. */
 
 /* Signature Hustlr treatment: orange mark with an Action-Red offset shadow,

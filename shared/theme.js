@@ -8,14 +8,19 @@
 //   Canvas Cream   #F7F4EC — page backgrounds, breathing room
 //   Ink            #363636 — primary text
 //
-// v3.0 CHANGES FROM v2.0 (values only — every key is preserved):
+// v3.0 CHANGES FROM v2.0:
 //   primary      #3F25FE -> #5038FF
 //   urgent       #F21A06 -> #EA4637
 //   background   #F7F3EC -> #F7F4EC
 //   textPrimary  #181231 -> #363636   (brand Ink; 10.5:1 on canvas)
-//   Hustle Orange #FFBC45 is RETIRED as a brand accent. The accent*/gold* keys are
-//   kept as DEPRECATED ALIASES pointing at the new semantic amber so nothing breaks;
-//   migrate call sites to warning*/wash* (see REBRAND.md stage 3), then delete them.
+//
+// Hustle Orange #FFBC45 is RETIRED. The accent/accentLight/accentDeep/gold/goldLight
+// keys are GONE, and the four jobs they were doing are now named separately, because
+// one amber standing for all of them is what made the retirement hard to unpick:
+//   warning*  lifecycle "awaiting action" — still amber, and only this
+//   wash*     money + badge surfaces (pay pill, stat chips, badge tiles) — blue tint
+//   rating    review stars — still amber, but a score is not a warning
+//   primary   gamification (badges, streaks, levels, challenges)
 export const colors = {
   primary: '#5038FF',
   primaryDark: '#2E1BC7',
@@ -32,14 +37,11 @@ export const colors = {
   wash: '#EAE6FF',
   washDeep: '#5038FF',
 
-  // DEPRECATED — Hustle Orange aliases. Retained so existing imports compile.
-  // Call sites: JobDetailScreen (payPill, STATUS_CONTENT.pending, statChip),
-  // MoneyGoalCard (PACE), BadgeGrid, EarnScreen (nudgeRate).
-  accent: '#E0A44A',
-  accentLight: '#FDF0DA',
-  accentDeep: '#8A5A12',
-  gold: '#E0A44A',
-  goldLight: '#FDF0DA',
+  // Rating stars, and nothing else. Amber is the convention for a score, and a score
+  // is neither a lifecycle state nor a brand moment — a 5-star review is not a
+  // warning, so it does not borrow warning*. Same value the retired accent resolved
+  // to, so stars are unchanged on screen.
+  rating: '#E0A44A',
 
   urgent: '#EA4637',
   urgentLight: '#FFE7E3',

@@ -17,6 +17,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   // Amber star is the rating convention; the ink-colored number carries the value
   // so the meaning never depends on the low-contrast glyph alone.
-  star: { color: colors.accent, marginRight: 4, flexShrink: 0 },
+  star: { color: colors.rating, marginRight: 4, flexShrink: 0 },
   value: { fontWeight: '600', color: colors.textPrimary, flexShrink: 0 },
 });
