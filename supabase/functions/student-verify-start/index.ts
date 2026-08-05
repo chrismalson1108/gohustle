@@ -149,7 +149,7 @@ Deno.serve(async (req: Request) => {
               <tr><td align="center" style="padding:32px 16px;">
                 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#FFFFFF; border-radius:16px; overflow:hidden; border:1px solid #E4DFD3;">
                   <tr><td align="center" style="background:#5038FF; padding:30px 32px 26px;">
-                    <img src="https://gohustlr.com/brand/wordmark-orange.png" width="150" height="71" alt="Hustlr" style="display:block; width:150px; height:auto; margin:0 auto; color:#E0A44A; font-family:'Sora',Arial,sans-serif; font-size:30px; font-weight:700;">
+                    <img src="https://gohustlr.com/brand/wordmark-cream.png" width="150" height="30" alt="Hustlr" style="display:block; width:150px; height:auto; margin:0 auto; color:#E0A44A; font-family:'Sora',Arial,sans-serif; font-size:30px; font-weight:700;">
                   </td></tr>
                   <tr><td style="height:4px; line-height:4px; font-size:0; background:#EA4637;">&nbsp;</td></tr>
                   <tr><td style="padding:38px 44px 8px;">

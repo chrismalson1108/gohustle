@@ -41,6 +41,22 @@ const VEC = path.join(BRAND, 'vector', 'logo');
 const V2_BLUE = /#3F25FE/gi;
 const V3_BLUE = '#5038FF';
 
+// Art box for the marks that sit on a 1024 canvas, carried over from the v2 files
+// these replace. DECLARED rather than measured: reading it back off the output is how
+// this broke once — sharp's `.trim().metadata()` reports the INPUT dimensions, not the
+// trimmed ones, so the "measured" box came back as the full 1024x1024 and every mark
+// was scaled to fill the canvas edge to edge.
+//
+// The sizes matter. Android masks an adaptive icon to an arbitrary shape and only
+// guarantees the central ~66% (≈676px) survives, so a full-bleed foreground is clipped
+// on every device — and android-monochrome doubles as the push notification small icon.
+// The splash uses the same restraint so it cannot bleed at any device size.
+const ART_BOX = {
+  'android-foreground.png': { w: 543, h: 355 },
+  'android-monochrome.png': { w: 543, h: 355 },
+  'splash-icon.png':        { w: 500, h: 326 },
+};
+
 // ── 1. Recolor the vector source of truth ───────────────────────────────────
 function recolorVectors() {
   const touched = [];
@@ -118,7 +134,7 @@ async function dims(f) {
 
   // Adaptive foreground sits ON that blue, so it uses the CREAM mark. Art height is
   // matched to the current file so the safe-zone padding is unchanged.
-  const fgArt = await artBoxOf(path.join(BRAND, 'android-foreground.png'));
+  const fgArt = ART_BOX['android-foreground.png'];
   jobs.push({
     out: path.join(BRAND, 'android-foreground.png'),
     make: () => markOnCanvas(path.join(VEC, 'hustlr-mark-cream.svg'), 1024, 1024, fgArt),
@@ -126,7 +142,7 @@ async function dims(f) {
 
   // Android 13 themed icon + the expo-notifications small icon read this as a pure
   // alpha mask, so the fill colour is irrelevant — only the silhouette matters.
-  const monoArt = await artBoxOf(path.join(BRAND, 'android-monochrome.png'));
+  const monoArt = ART_BOX['android-monochrome.png'];
   jobs.push({
     out: path.join(BRAND, 'android-monochrome.png'),
     make: () => markOnCanvas(path.join(ROOT, 'design_handoff_brand_v3', 'brand', 'mark-white.svg'), 1024, 1024, monoArt),
@@ -148,7 +164,7 @@ async function dims(f) {
   // Splash mark. Hand-maintained (NOT in scripts/sync-brand-assets.js), so it is
   // written straight to assets/ and would otherwise silently stay on v2 art.
   const splash = path.join(ROOT, 'assets', 'splash-icon.png');
-  const splashArt = await artBoxOf(splash);
+  const splashArt = ART_BOX['splash-icon.png'];
   jobs.push({
     out: splash,
     make: () => markOnCanvas(path.join(VEC, 'hustlr-mark-blue.svg'), 1024, 1024, splashArt),
@@ -159,13 +175,18 @@ async function dims(f) {
     fs.writeFileSync(j.out, await j.make());
     const after = await dims(j.out);
     const rel = path.relative(ROOT, j.out);
-    console.log(`${after === before ? ' ok ' : ' !! '} ${rel.padEnd(46)} ${before} -> ${after}`);
+    // Canvas AND art box. Canvas alone is not enough — it is identical whether the
+    // mark is correctly inset or scaled to fill the whole square.
+    let art = '';
+    try { const b = await artBoxOf(j.out); art = `  art ${b.w}x${b.h}`; } catch { /* opaque */ }
+    console.log(`${after === before ? ' ok ' : ' !! '} ${rel.padEnd(44)} ${after}${art}`);
   }
 })();
 
-// The art's bounding box in the CURRENT file, so the replacement keeps the same
-// safe-zone padding rather than being re-guessed.
+// True bounding box of the non-transparent art. NOTE `.trim().metadata()` does NOT
+// work here — on a Sharp pipeline metadata() describes the INPUT, so it reports the
+// untrimmed canvas. Only toBuffer's `info` carries the post-trim size.
 async function artBoxOf(file) {
-  const t = await sharp(file).trim({ threshold: 1 }).metadata();
-  return { w: t.width, h: t.height };
+  const { info } = await sharp(file).trim({ threshold: 1 }).toBuffer({ resolveWithObject: true });
+  return { w: info.width, h: info.height };
 }

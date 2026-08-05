@@ -53,7 +53,7 @@ no longer falls back to Resend's `onboarding@resend.dev` sandbox.
 The header pulls the wordmark from an absolute URL (email can't use local/relative paths):
 
 ```
-https://gohustlr.com/brand/wordmark-orange.png
+https://gohustlr.com/brand/wordmark-cream.png
 ```
 
 `gohustlr.com` is **connected in Vercel and live (HTTPS)** as of 2026-06-30, so this URL resolves
