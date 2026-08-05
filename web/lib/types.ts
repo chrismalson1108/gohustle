@@ -43,7 +43,10 @@ export interface Job {
   id: string;
   posterId: string;
   title: string;
+  /** Display label, canonical casing — maintained by the DB trigger. */
   category: string;
+  /** The identity. Filter, group and match on this; never on `category`. */
+  categorySlug: string;
   pay: number;
   payType: PayType;
   location: string;
@@ -93,6 +96,7 @@ export interface BookingJobMini {
   // field that is present at runtime. Nullable, matching the transform: older
   // joins may not have selected them.
   category: string | null;
+  categorySlug: string | null;
   posterId: string | null;
   createdAt: string | null;
 }

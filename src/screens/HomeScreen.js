@@ -8,54 +8,27 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import JobCard from '../components/JobCard';
 import JobsMap from '../components/JobsMap';
+import CategoryPicker from '../components/CategoryPicker';
 import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
-import { haversineMiles, milesLabel } from '../lib/geo';
+import { milesLabel } from '../lib/geo';
 import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
 import { colors } from '../theme';
-import { CATEGORIES } from '../data/mockData';
-import { matchesForYou, isJobBookable, isHiddenForViewer } from '../lib/filters';
+import { applyJobFilters, availableStatesFrom } from '../lib/filters';
+import { fetchCategories } from '../lib/categories';
+import { browseChipsFromJobs } from '../../shared/categories.js';
 import { maskLocation } from '../lib/address';
 
-// "For You" is a pseudo-category that matches gigs to the viewer's profile skills.
-const CHIPS = [{ id: 'foryou', label: 'For You', ion: 'sparkles' }, ...CATEGORIES];
-
-// Extract state abbreviation from location string like "Austin, TX"
-function getState(location) {
-  if (!location) return null;
-  if (location.toLowerCase().includes('remote')) return 'remote';
-  const parts = location.split(',');
-  const last = parts[parts.length - 1]?.trim();
-  return last?.length === 2 ? last : null;
-}
-
-// Extract day abbreviation from slot label like "Mon Dec 16, 2:00 PM"
-function getSlotDays(slots) {
-  const days = new Set();
-  (slots || []).forEach(s => {
-    if (!s.taken && s.label) {
-      const prefix = s.label.split(' ')[0];
-      if (['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].includes(prefix)) {
-        days.add(prefix);
-      }
-    }
-  });
-  return days;
-}
-
-function matchesPay(job, payRange) {
-  if (payRange === 'any') return true;
-  const effective = job.payType === 'hourly'
-    ? job.pay * (job.estimatedHours || 1)
-    : job.pay;
-  if (payRange === 'under25')  return effective < 25;
-  if (payRange === '25-50')    return effective >= 25  && effective < 50;
-  if (payRange === '50-100')   return effective >= 50  && effective < 100;
-  if (payRange === '100+')     return effective >= 100;
-  return true;
-}
+// "For You" and "All" are pseudo-categories, not entries in the taxonomy — their ids
+// are in RESERVED_CATEGORY_SLUGS precisely so a real category can never collide with
+// the value this screen holds in `selectedCat`.
+const PSEUDO_CHIPS = [
+  { id: 'foryou', label: 'For You', ion: 'sparkles' },
+  { id: 'all',    label: 'All',     ion: 'grid' },
+];
+const isPseudoCat = (id) => PSEUDO_CHIPS.some(c => c.id === id);
 
 // Geocode a place string → {lat,lng} via the free Photon geocoder (same source as
 // LocationPicker). Used to place the radius-filter center and any gigs that were
@@ -72,11 +45,12 @@ async function geocodeOne(q) {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, school, skills, city } = useUser();
+  const { name, streakDays, school, skills, city, recentCategorySlugs } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
   const onTabBarScroll = useTabBarScrollHandler();
+  // A category SLUG, or one of the pseudo-category ids above.
   const [selectedCat, setSelectedCat] = useState('all');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -95,6 +69,16 @@ export default function HomeScreen({ navigation }) {
   const geoMounted = useRef(true);
   useEffect(() => () => { geoMounted.current = false; }, []);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+  // Community categories, so a chip for one someone created shows the creator's own
+  // label and icon rather than a title-cased slug. fetchCategories never rejects and
+  // falls back to the seed catalog, so the chips render either way.
+  const [catIndex, setCatIndex] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchCategories().then(idx => { if (active) setCatIndex(idx); });
+    return () => { active = false; };
+  }, []);
 
   // Best-effort device location for distance + "Nearest" sort (no prompt spam)
   useEffect(() => {
@@ -160,115 +144,47 @@ export default function HomeScreen({ navigation }) {
   };
 
   // Build state list from available jobs for the location filter
-  const availableStates = useMemo(() => {
-    const states = new Set();
-    jobs.forEach(j => {
-      const st = getState(j.location);
-      if (st && st !== 'remote') states.add(st);
-    });
-    return Array.from(states).sort();
-  }, [jobs]);
+  const availableStates = useMemo(() => availableStatesFrom(jobs), [jobs]);
 
-  const filtered = useMemo(() => {
-    let list = jobs.filter(j => {
-      // Only show gigs that can still be booked. Slot-aware, so a multi-slot gig
-      // with a free slot stays; a fully-booked or finished one goes. Shared with web
-      // via shared/filters.js so the two feeds can't drift apart.
-      if (!isJobBookable(j)) return false;
-      // …and drop gigs this viewer already won or finished. isJobBookable asks
-      // "can anyone book this?"; a 9-slot gig with 2 taken is still open to others,
-      // so the earner who completed it kept seeing their own finished work here.
-      if (isHiddenForViewer(j, bookings)) return false;
+  // Hand the filter the coords we back-filled above: applyJobFilters places a gig
+  // from job.lat/lng alone, so without this merge the radius filter would drop every
+  // gig posted before coords were stored. Same shape as the web browse page.
+  const jobsGeo = useMemo(
+    () => jobs.map(j => ((j.lat != null && j.lng != null) || !geoCache[j.location])
+      ? j
+      : { ...j, lat: geoCache[j.location].lat, lng: geoCache[j.location].lng }),
+    [jobs, geoCache],
+  );
 
-      // Hide gigs from users you've blocked
-      if (blockedIds?.has(j.posterId)) return false;
+  // The browse chips are derived from what the feed actually carries, not from a
+  // module-level constant computed at import time off a fixed seven-label array —
+  // that was why a category a user created was only reachable under "All".
+  const chips = useMemo(
+    () => [
+      ...PSEUDO_CHIPS,
+      ...browseChipsFromJobs(jobs, {
+        recentSlugs: recentCategorySlugs,
+        extra: catIndex ? catIndex.list : [],
+      }),
+    ],
+    [jobs, recentCategorySlugs, catIndex],
+  );
 
-      // Category chip ("For You" matches against the viewer's profile skills)
-      if (selectedCat === 'foryou') {
-        if (!matchesForYou(j, skills)) return false;
-      } else if (selectedCat !== 'all' && j.category !== selectedCat) return false;
-
-      // Search text
-      const q = search.toLowerCase();
-      if (q && !j.title.toLowerCase().includes(q) && !j.description.toLowerCase().includes(q)) return false;
-
-      // Pay range
-      if (!matchesPay(j, filters.payRange)) return false;
-
-      // Pay type
-      if (filters.payType !== 'any' && j.payType !== filters.payType) return false;
-
-      // Urgent only
-      if (filters.urgentOnly && !j.urgent) return false;
-
-      // Verified students only
-      if (filters.verifiedStudentsOnly && !j.poster?.studentVerified) return false;
-
-      // My campus only
-      if (filters.campusOnly && (!school || (j.poster?.school || '').trim().toLowerCase() !== school.trim().toLowerCase())) return false;
-
-      // Location
-      if (filters.location !== 'any') {
-        if (filters.location === 'remote') {
-          if (!j.location?.toLowerCase().includes('remote')) return false;
-        } else {
-          if (getState(j.location) !== filters.location) return false;
-        }
-      }
-
-      // Distance radius — remote gigs always show; in-person gigs need coords
-      // (stored or geocoded) within the radius of the center.
-      if (filters.radius !== 'any' && center && center.lat != null && !(j.location || '').toLowerCase().includes('remote')) {
-        const coords = (j.lat != null && j.lng != null) ? { lat: j.lat, lng: j.lng } : geoCache[j.location];
-        if (!coords) return false;
-        if (haversineMiles(center, coords) > filters.radius) return false;
-      }
-
-      // Days availability
-      if (filters.days.length > 0) {
-        const slotDays = getSlotDays(j.slots);
-        const hasMatch = filters.days.some(d => slotDays.has(d));
-        if (!hasMatch) return false;
-      }
-
-      return true;
-    });
-
-    // Attach distance when we know the user's location
-    if (userCoords) {
-      list = list.map(j => ({ ...j, _distanceMi: haversineMiles(userCoords, { lat: j.lat, lng: j.lng }) }));
-    }
-
-    // Sort
-    if (filters.sortBy === 'pay_high') {
-      list = [...list].sort((a, b) => {
-        const pa = a.payType === 'hourly' ? a.pay * (a.estimatedHours || 1) : a.pay;
-        const pb = b.payType === 'hourly' ? b.pay * (b.estimatedHours || 1) : b.pay;
-        return pb - pa;
-      });
-    } else if (filters.sortBy === 'pay_low') {
-      list = [...list].sort((a, b) => {
-        const pa = a.payType === 'hourly' ? a.pay * (a.estimatedHours || 1) : a.pay;
-        const pb = b.payType === 'hourly' ? b.pay * (b.estimatedHours || 1) : b.pay;
-        return pa - pb;
-      });
-    } else if (filters.sortBy === 'nearest') {
-      list = [...list].sort((a, b) => {
-        const da = a._distanceMi ?? Infinity;
-        const db = b._distanceMi ?? Infinity;
-        return da - db;
-      });
-    } else {
-      // 'newest' — bumped gigs float to the top (a bump refreshes bumped_at), so
-      // sort by recency rather than relying on the DB's created_at fetch order.
-      const freshness = (j) => new Date(j.bumpedAt || j.createdAt || 0).getTime();
-      list = [...list].sort((a, b) => freshness(b) - freshness(a));
-    }
-
-    return list;
+  // Shared with the web feed so the two can't drift — the rule this screen used to
+  // keep inline compared `j.category` to the chip label with `===`, which no custom
+  // category could ever satisfy. The merge aliases go with it so a gig posted under a
+  // spelling that curation has since folded away still answers to its new chip.
+  const catAliases = catIndex ? catIndex.aliases : undefined;
+  const filtered = useMemo(
+    () => applyJobFilters(jobsGeo, {
+      selectedCat, search, filters, blockedIds, userCoords, center,
+      mySchool: school, forYouSkills: skills, myBookings: bookings,
+      extraAliases: catAliases,
+    }),
     // `bookings` is a real dependency: the feed hides gigs this viewer already won,
     // so the list must recompute when a booking's status changes.
-  }, [jobs, bookings, selectedCat, search, filters, blockedIds, userCoords, center, geoCache, school, skills]);
+    [jobsGeo, bookings, selectedCat, search, filters, blockedIds, userCoords, center, school, skills, catAliases],
+  );
 
   const activeFilterCount = countActiveFilters(filters);
   const forYouNoSkills = selectedCat === 'foryou' && (skills?.length || 0) === 0;
@@ -328,7 +244,7 @@ export default function HomeScreen({ navigation }) {
         style={styles.catScroll}
         contentContainerStyle={styles.catRow}
       >
-        {CHIPS.map(cat => {
+        {chips.map(cat => {
           const active = selectedCat === cat.id;
           return (
             <TouchableOpacity
@@ -343,6 +259,18 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           );
         })}
+        {/* The chips only surface categories the feed is carrying right now, so this
+            is how the rest of the catalog — and a category with no live gigs — stays
+            reachable. Browsing must never mint a category, hence allowCreate={false}. */}
+        <View style={styles.moreCat}>
+          <CategoryPicker
+            value={isPseudoCat(selectedCat) ? '' : selectedCat}
+            onChange={(label, slug) => setSelectedCat(slug || 'all')}
+            recentSlugs={recentCategorySlugs}
+            allowCreate={false}
+            placeholder="More"
+          />
+        </View>
       </ScrollView>
 
       <View style={styles.resultsRow}>
@@ -505,6 +433,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   catChipActive: { backgroundColor: colors.textPrimary },
+  // Narrow enough to read as one more item in the chip row rather than a form field.
+  moreCat: { width: 128 },
   catIcon: { fontSize: 15, marginRight: 6 },
   catLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   catLabelActive: { color: '#fff' },

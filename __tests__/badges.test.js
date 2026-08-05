@@ -156,6 +156,32 @@ describe('style badges', () => {
     expect(evaluateBadges({ bookings: varied })).toContain('jackOfAll');
   });
 
+  it('Jack of All counts categories, not spellings of one category', () => {
+    // Categories are user-typed, so counting raw strings let five spellings of a
+    // single word unlock a badge that claims work in five different kinds of gig.
+    const casings = ['Lawn Care', 'lawn care', 'LAWNCARE', 'Lawncare ', 'lawn-care']
+      .map(category => done({ job: { category } }));
+    expect(evaluateBadges({ bookings: casings })).not.toContain('jackOfAll');
+
+    // Merge aliases fold too: these are all the same category.
+    const aliases = ['Lawn Care', 'Mowing', 'lawn mowing', 'LAWNCARE', 'lawncare']
+      .map(category => done({ job: { category } }));
+    expect(evaluateBadges({ bookings: aliases })).not.toContain('jackOfAll');
+  });
+
+  it('Jack of All ignores bookings with no category rather than counting them as one', () => {
+    // fallbackJobFromBooking leaves the category empty when the gig embed is thin;
+    // that absence must not become a category of its own.
+    const blanks = Array.from({ length: 5 }, () => done({ job: { category: '' } }));
+    expect(evaluateBadges({ bookings: blanks })).not.toContain('jackOfAll');
+  });
+
+  it('Jack of All prefers the stored slug over the display label', () => {
+    const varied = ['moving', 'tutoring', 'delivery', 'creative', 'errands']
+      .map(categorySlug => done({ job: { category: 'whatever the poster typed', categorySlug } }));
+    expect(evaluateBadges({ bookings: varied })).toContain('jackOfAll');
+  });
+
   it('The Regular needs 3 gigs for one client', () => {
     const spread = ['a', 'b', 'c'].map(posterId => done({ job: { posterId } }));
     expect(evaluateBadges({ bookings: spread })).not.toContain('regular');

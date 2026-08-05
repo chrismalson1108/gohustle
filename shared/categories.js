@@ -464,11 +464,13 @@ export function resolveCategorySlug(slugish, extraAliases) {
 /**
  * Look up a category by slug OR label, following aliases. `extra` is the list of
  * user-created categories loaded from the DB (see fetchCategories in the app's
- * lib/categories module) — pass it so community categories resolve too.
+ * lib/categories module) — pass it so community categories resolve too, and
+ * `aliases` (the {fromSlug: toSlug} map fetchCategories builds from the merged
+ * rows) so merges curated after this build shipped are followed as well.
  * Returns null when nothing matches.
  */
-export function findCategory(input, extra) {
-  const slug = resolveCategorySlug(input);
+export function findCategory(input, extra, aliases) {
+  const slug = resolveCategorySlug(input, aliases);
   if (!slug) return null;
   const seeded = CATALOG_BY_SLUG.get(slug);
   if (seeded) return seeded;
@@ -548,9 +550,9 @@ export function categoryBaseRate(input, extra) {
 }
 
 /** Do two category values refer to the same category? Slug-level, alias-aware. */
-export function sameCategory(a, b) {
-  const sa = resolveCategorySlug(a);
-  const sb = resolveCategorySlug(b);
+export function sameCategory(a, b, aliases) {
+  const sa = resolveCategorySlug(a, aliases);
+  const sb = resolveCategorySlug(b, aliases);
   return !!sa && sa === sb;
 }
 
@@ -597,12 +599,12 @@ export function validateCategoryLabel(raw, findProhibited) {
  * three categories. The DB trigger applies the same snap, so clients that skip
  * this (or predate it) still land on the canonical value.
  */
-export function normalizeCategoryInput(raw, { findProhibited, extra } = {}) {
+export function normalizeCategoryInput(raw, { findProhibited, extra, aliases } = {}) {
   const error = validateCategoryLabel(raw, findProhibited);
   if (error) return { ok: false, slug: '', label: '', isNew: false, error };
 
-  const slug = resolveCategorySlug(raw);
-  const known = findCategory(slug, extra);
+  const slug = resolveCategorySlug(raw, aliases);
+  const known = findCategory(slug, extra, aliases);
   if (known) return { ok: true, slug: known.slug, label: known.label, isNew: false, error: null };
 
   const label = String(raw).trim().replace(/\s+/g, ' ').slice(0, CATEGORY_LABEL_MAX);
@@ -661,13 +663,23 @@ export function searchCategories(query, { extra = [], limit = 20, includeGroups 
   return scored.slice(0, limit).map((s) => s.c);
 }
 
-/** Catalog grouped for a browse sheet: [{ ...group, items: [...] }]. */
+/**
+ * Catalog grouped for a browse sheet: [{ ...group, items: [...] }].
+ *
+ * Deduped by slug with `extra` winning, because callers pass the merged list from
+ * fetchCategories() — which already contains the seed catalog — and every seeded
+ * category would otherwise appear twice in the grouped view.
+ */
 export function categoriesByGroup(extra = []) {
-  const pool = [...CATEGORY_CATALOG, ...(Array.isArray(extra) ? extra.filter(Boolean) : [])];
+  const bySlug = new Map(CATEGORY_CATALOG.map((c) => [c.slug, c]));
+  for (const c of Array.isArray(extra) ? extra : []) {
+    if (c && c.slug) bySlug.set(c.slug, c);
+  }
+  const pool = Array.from(bySlug.values());
   return CATEGORY_GROUPS.map((g) => ({
     ...g,
     items: pool
-      .filter((c) => c && c.group === g.key)
+      .filter((c) => c.group === g.key)
       .sort((a, b) => a.label.localeCompare(b.label)),
   })).filter((g) => g.items.length > 0);
 }
@@ -681,10 +693,12 @@ export function categoriesByGroup(extra = []) {
  * Order: the viewer's own recent categories first (they post the same kind of work
  * repeatedly), then whatever is most common in the feed right now.
  */
-export function browseChipsFromJobs(jobs, { recentSlugs = [], extra = [], limit = 12 } = {}) {
+export function browseChipsFromJobs(jobs, { recentSlugs = [], extra = [], aliases, limit = 12 } = {}) {
   const counts = new Map();
   for (const j of jobs || []) {
-    const slug = resolveCategorySlug(j && j.category);
+    // categorySlug is the stored identity; fall back to slugging the label for a
+    // job that predates the column or came from a cached payload.
+    const slug = resolveCategorySlug((j && (j.categorySlug || j.category)) || '', aliases);
     if (!slug || RESERVED_CATEGORY_SLUGS.has(slug)) continue;
     counts.set(slug, (counts.get(slug) || 0) + 1);
   }
@@ -694,7 +708,7 @@ export function browseChipsFromJobs(jobs, { recentSlugs = [], extra = [], limit 
   const push = (slug) => {
     if (!slug || pushed.has(slug) || RESERVED_CATEGORY_SLUGS.has(slug)) return;
     pushed.add(slug);
-    const meta = findCategory(slug, extra);
+    const meta = findCategory(slug, extra, aliases);
     out.push({
       id: slug,
       slug,
@@ -705,7 +719,7 @@ export function browseChipsFromJobs(jobs, { recentSlugs = [], extra = [], limit 
   };
 
   for (const s of recentSlugs || []) {
-    const slug = resolveCategorySlug(s);
+    const slug = resolveCategorySlug(s, aliases);
     if (counts.has(slug)) push(slug);
   }
   Array.from(counts.entries())

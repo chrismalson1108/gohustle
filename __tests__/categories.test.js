@@ -31,6 +31,7 @@ const {
   validateCategoryLabel,
   normalizeCategoryInput,
   searchCategories,
+  categoriesByGroup,
   browseChipsFromJobs,
   NEUTRAL_BASE_RATE,
 } = require('../shared/categories.js');
@@ -392,6 +393,61 @@ describe('searchCategories', () => {
   });
 });
 
+describe('DB-curated merges (aliases loaded at runtime, not compiled in)', () => {
+  // fetchCategories() builds this from the status='merged' rows. A merge an admin
+  // curates after a build ships exists ONLY there, so every resolver has to accept
+  // it — otherwise the app keeps minting duplicates of a spelling that was already
+  // folded away, and the two clients disagree with the database.
+  const aliases = { 'garden-work': 'gardening' };
+  const extra = [{ slug: 'alpaca-shearing', label: 'Alpaca Shearing', group: 'general', groupLabel: 'General & Odd Jobs' }];
+
+  test('resolveCategorySlug follows a runtime alias', () => {
+    expect(resolveCategorySlug('Garden Work', aliases)).toBe('gardening');
+  });
+
+  test('findCategory follows a runtime alias', () => {
+    expect(findCategory('Garden Work', extra, aliases).label).toBe('Gardening');
+  });
+
+  test('normalizeCategoryInput folds instead of minting a duplicate', () => {
+    const r = normalizeCategoryInput('garden work', { extra, aliases });
+    expect(r).toMatchObject({ ok: true, slug: 'gardening', label: 'Gardening', isNew: false });
+  });
+
+  test('without the alias map it would have created a duplicate', () => {
+    expect(normalizeCategoryInput('garden work', { extra }).isNew).toBe(true);
+  });
+
+  test('sameCategory honours a runtime alias', () => {
+    expect(sameCategory('Garden Work', 'Gardening', aliases)).toBe(true);
+    expect(sameCategory('Garden Work', 'Gardening')).toBe(false);
+  });
+});
+
+describe('categoriesByGroup', () => {
+  test('does not double-list a category when handed the merged runtime list', () => {
+    // Callers pass fetchCategories().list, which ALREADY contains the seed catalog.
+    // Concatenating blindly listed all 199 seeded categories twice.
+    const runtimeList = [...CATEGORY_CATALOG, { slug: 'alpaca-shearing', label: 'Alpaca Shearing', group: 'general' }];
+    const groups = categoriesByGroup(runtimeList);
+    const slugs = groups.flatMap((g) => g.items.map((i) => i.slug));
+    expect(slugs.length).toBe(new Set(slugs).size);
+    expect(slugs).toContain('alpaca-shearing');
+  });
+
+  test('the runtime row wins over the seeded one, so curation is reflected', () => {
+    const groups = categoriesByGroup([{ ...findCategory('Plumbing'), label: 'Plumbing & Pipes' }]);
+    const labels = groups.flatMap((g) => g.items.map((i) => i.label));
+    expect(labels).toContain('Plumbing & Pipes');
+    expect(labels).not.toContain('Plumbing');
+  });
+
+  test('every seeded category appears exactly once with no argument', () => {
+    const slugs = categoriesByGroup().flatMap((g) => g.items.map((i) => i.slug));
+    expect(slugs.length).toBe(CATEGORY_CATALOG.length);
+  });
+});
+
 describe('browseChipsFromJobs', () => {
   const jobs = [
     { category: 'Lawn Care' }, { category: 'lawn care' }, { category: 'Lawn Care' },
@@ -435,5 +491,16 @@ describe('browseChipsFromJobs', () => {
       expect(c.label).toBeTruthy();
       expect(c.ion).toBeTruthy();
     }
+  });
+
+  test('prefers the stored categorySlug over re-slugging the label', () => {
+    // The label is the display string and can be edited by curation; the slug is
+    // the identity the database maintains. Where both exist, the slug wins.
+    const chips = browseChipsFromJobs([
+      { category: 'Plumbing & Pipes', categorySlug: 'plumbing' },
+      { category: 'Plumbing' },
+    ]);
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toMatchObject({ slug: 'plumbing', count: 2 });
   });
 });

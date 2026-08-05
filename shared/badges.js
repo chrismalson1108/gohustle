@@ -9,6 +9,7 @@
 // reviews have loaded); unlocking is append-only so a later pass fills gaps.
 
 import { BADGE_DEFS } from './constants.js';
+import { resolveCategorySlug } from './categories.js';
 
 const DONE = ['completed', 'verified'];
 
@@ -96,8 +97,16 @@ const RULES = {
     doneBookings(c).filter(b => { const d = startDay(b); return d === 0 || d === 6; }).length,
     5,
   ),
+  // Distinct SLUGS, not distinct raw strings. Categories are user-typed, so
+  // counting labels meant "Lawn Care", "lawn care" and "LAWNCARE" read as three
+  // different categories — five casing variants of one word unlocked a badge that
+  // claims work in five different kinds of gig.
   jackOfAll: (c) => count(
-    new Set(doneBookings(c).map(b => b?.job?.category).filter(Boolean)).size,
+    new Set(
+      doneBookings(c)
+        .map(b => resolveCategorySlug(b?.job?.categorySlug || b?.job?.category))
+        .filter(Boolean),
+    ).size,
     5,
   ),
   regular: (c) => {

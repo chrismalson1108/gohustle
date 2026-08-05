@@ -2,18 +2,19 @@
 
 import { useRef, useState } from "react";
 import { X, ImagePlus, Lock, Zap } from "lucide-react";
-import { CATEGORIES, findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
+import { findProhibited, MIN_JOB_PAY, resolveCategorySlug, validateJobPay } from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { useAuth } from "@/lib/auth";
+import { useUser } from "@/lib/user";
 import { uploadImages } from "@/lib/uploadImage";
 import Button from "@/components/ui/Button";
 import { Input, Textarea, Label } from "@/components/ui/Field";
+import CategoryPicker from "@/components/CategoryPicker";
 import LocationPicker, { type Coords } from "@/components/LocationPicker";
 import SlotBuilder from "@/components/SlotBuilder";
 import { classNames } from "@/lib/format";
 import type { Slot } from "@/lib/types";
 
-const CATS = CATEGORIES.filter((c) => c.id !== "all");
 const RECURRENCE = [
   { id: "none", label: "One-time" },
   { id: "weekly", label: "Weekly" },
@@ -23,7 +24,10 @@ const RECURRENCE = [
 
 export interface GigFormData {
   title: string;
+  /** Canonical display label from the picker. */
   category: string;
+  /** Its slug. The DB trigger derives this too — we send it so the optimistic job carries it. */
+  categorySlug: string;
   pay: number;
   payType: "flat" | "hourly";
   location: string;
@@ -45,6 +49,7 @@ export interface GigFormData {
 export interface GigFormInitial {
   title?: string;
   category?: string;
+  categorySlug?: string;
   pay?: number | string;
   payType?: "flat" | "hourly";
   location?: string;
@@ -63,9 +68,8 @@ export interface GigFormInitial {
 
 // Bordered pill, active = INK fill — the same chip Browse uses for its category
 // rack. Brand purple is reserved for links/CTAs and the active filter state; a
-// selected category (or pay type, or recurrence) is a generic active chip and
-// takes ink. `min-h-11` clears the 44px touch minimum and `max-w-full` + a
-// truncating label keep a long custom category inside the card.
+// selected pay type (or recurrence) is a generic active chip and takes ink.
+// `min-h-11` clears the 44px touch minimum.
 function Chip({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -116,11 +120,13 @@ export default function GigForm({
   // explicitly, fall back to lockedCore.
   const payLocked = lockedPay ?? lockedCore;
   const { user } = useAuth();
-  const knownCat = CATS.some((c) => c.id === initial?.category);
+  const { recentCategorySlugs } = useUser();
 
   const [title, setTitle] = useState(initial?.title || "");
-  const [category, setCategory] = useState(initial?.category && knownCat ? initial.category : initial?.category ? "other" : "");
-  const [customCategory, setCustomCategory] = useState(initial?.category && !knownCat ? initial.category : "");
+  const [category, setCategory] = useState(initial?.category || "");
+  // Derived when the caller has no slug for us — a job cached before the taxonomy
+  // landed carries only the label. The DB trigger is still the authority on write.
+  const [categorySlug, setCategorySlug] = useState(initial?.categorySlug || resolveCategorySlug(initial?.category));
   const [pay, setPay] = useState(initial?.pay != null ? String(initial.pay) : "");
   const [payType, setPayType] = useState<"flat" | "hourly">(initial?.payType || "flat");
   const [location, setLocation] = useState(initial?.location || "");
@@ -161,13 +167,12 @@ export default function GigForm({
   };
   const removeHazard = (h: string) => setHazards(hazards.filter((x) => x !== h));
 
-  const effectiveCategory = category === "other" ? customCategory : category;
   // Shared with mobile so the two clients can never tell users different rules.
   // Also catches "." / "abc", which would serialize to null and fail the NOT NULL
   // insert (previously surfaced as a false "posted").
   const payError = validateJobPay(pay);
   const payValid = !payError;
-  const valid = title && effectiveCategory && payValid && location && description;
+  const valid = title && category && payValid && location && description;
 
   const submit = async () => {
     if (!user || submitting.current) return;
@@ -175,9 +180,13 @@ export default function GigForm({
       onError?.(payError && pay ? payError : "Please fill in all required fields.");
       return;
     }
-    const kwTerm = findProhibited([title, description, ...tags, ...hazards].join(" "));
+    // The category rides with the rest through BOTH layers. It is user-written text
+    // now — the picker can mint a brand-new one — and it publishes to job cards, the
+    // poster's public profile and the Insights page, yet it was the one free-text
+    // field on this form that neither filter ever saw.
+    const kwTerm = findProhibited([title, description, category, ...tags, ...hazards].join(" "));
     if (kwTerm) {
-      logModerationBlock(kwTerm, "gig", `${title} ${description}`);
+      logModerationBlock(kwTerm, "gig", `${title} ${description} ${category}`);
       onError?.("Your gig contains content that isn't allowed. Please edit it.");
       return;
     }
@@ -187,7 +196,7 @@ export default function GigForm({
     setBusy(true);
     try {
       // Context-aware check (catches intent a keyword list misses).
-      const mod = await moderateText([title, description].join("\n"), "gig");
+      const mod = await moderateText([title, category, description].join("\n"), "gig");
       // A 429 here is self-inflicted (own quota), not an outage, so moderateText
       // fails CLOSED on it — otherwise burning the quota would disable this layer.
       if (mod.rateLimited) {
@@ -210,7 +219,8 @@ export default function GigForm({
         : [{ id: "s1", label: "Flexible — Contact to Schedule", taken: false, startsAt: null }];
       await onSubmit({
         title,
-        category: effectiveCategory,
+        category,
+        categorySlug,
         pay: parseFloat(pay),
         payType,
         location,
@@ -263,19 +273,13 @@ export default function GigForm({
 
         <div className="@2xl:col-span-2">
           <Label>Category *</Label>
-          <div className="flex flex-wrap gap-2">
-            {CATS.map((c) => (
-              <Chip key={c.id} active={category === c.id} disabled={lockedCore} onClick={() => setCategory(c.id)}>
-                <span>{c.icon}</span>
-                <span className="min-w-0 truncate">{c.label}</span>
-              </Chip>
-            ))}
-            <Chip active={category === "other"} disabled={lockedCore} onClick={() => setCategory("other")}>
-              <span>✏️</span>
-              <span className="min-w-0 truncate">Other</span>
-            </Chip>
-          </div>
-          {category === "other" && <Input className="mt-2.5" value={customCategory} disabled={lockedCore} onChange={(e) => setCustomCategory(e.target.value)} placeholder="Type your category…" />}
+          <CategoryPicker
+            value={category}
+            onChange={(label, slug) => { setCategory(label); setCategorySlug(slug); }}
+            recentSlugs={recentCategorySlugs}
+            disabled={lockedCore}
+            placeholder="Search categories — e.g. Lawn Care, TV Mounting…"
+          />
         </div>
 
         <div className="@2xl:col-span-2">

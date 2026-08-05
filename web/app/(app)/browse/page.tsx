@@ -3,22 +3,26 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame, BarChart3, School } from "lucide-react";
+import { Search, SlidersHorizontal, Map as MapIcon, List, X, Flame, BarChart3, School, ChevronDown } from "lucide-react";
 import {
-  CATEGORIES,
   DEFAULT_FILTERS,
   countActiveFilters,
   applyJobFilters,
   availableStatesFrom,
+  browseChipsFromJobs,
+  categoryLabel,
   milesLabel,
 } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
+import { fetchCategories, type CategoryIndex } from "@/lib/categories";
 import JobCard from "@/components/JobCard";
+import CategoryPicker from "@/components/CategoryPicker";
 import FilterSheet, { type Filters } from "@/components/FilterSheet";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { MAP_FRAME } from "@/lib/mapFrame";
 import { classNames } from "@/lib/format";
 import type { Job } from "@/lib/types";
@@ -30,10 +34,16 @@ const JobsMap = dynamic(() => import("@/components/JobsMap"), {
   loading: () => <div className={`${MAP_FRAME} animate-pulse bg-white/60`} />,
 });
 
-const CHIPS = [{ id: "foryou", label: "For You", icon: "✨" }, ...CATEGORIES];
+// The two pseudo-categories the chip row leads with. Their ids are in
+// RESERVED_CATEGORY_SLUGS precisely so a real category can never slug to either
+// and hijack the selection.
+const HEAD_CHIPS = [
+  { slug: "foryou", label: "For You" },
+  { slug: "all", label: "All" },
+];
 
 export default function BrowsePage() {
-  const { name, streakDays, school, skills, city, profileStatus } = useUser();
+  const { name, streakDays, school, skills, city, profileStatus, recentCategorySlugs } = useUser();
   const { jobs, bookings, blockedIds, jobsLoading } = useJobs();
 
   // Show the real name only once the profile has actually loaded — never render the
@@ -43,10 +53,13 @@ export default function BrowsePage() {
   // "no gigs" empty state, so a still-loading feed never looks like an empty one.
   const jobsFirstLoad = jobsLoading && jobs.length === 0;
 
+  // A SLUG, never a label — 'lawn care' and 'Lawn Care' are one category, and the
+  // chip row, the picker sheet and applyJobFilters all compare on this.
   const [selectedCat, setSelectedCat] = useState("all");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [showFilter, setShowFilter] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [profileCoords, setProfileCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -117,6 +130,46 @@ export default function BrowsePage() {
 
   const availableStates = useMemo(() => availableStatesFrom(jobs), [jobs]);
 
+  // The catalog (seed + community rows): `list` gives a user-created category its
+  // stored label instead of a title-cased guess at its slug, and `aliases` carries
+  // the merges curated since this build shipped, which only the DB knows about.
+  const [catIndex, setCatIndex] = useState<CategoryIndex | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchCategories()
+      .then((index) => {
+        if (!cancelled) setCatIndex(index);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const categories = catIndex?.list;
+  const catAliases = catIndex?.aliases;
+
+  // Chips come from the feed, not from a fixed array: a category someone created
+  // is reachable the moment a gig carries it. The old module-level constant was
+  // computed once at import from seven hardcoded labels, which is why everything
+  // outside those seven was only findable under "All".
+  const chips = useMemo(() => {
+    const derived = browseChipsFromJobs(jobs, { recentSlugs: recentCategorySlugs, extra: categories }).map((c) => ({
+      slug: c.slug,
+      label: c.label,
+    }));
+    // A category picked from the sheet may have no gigs in the current feed, or
+    // sit past the chip limit. A filter with no visible chip reads as no filter at
+    // all, so the active one always gets a chip.
+    if (
+      selectedCat !== "all" &&
+      selectedCat !== "foryou" &&
+      !derived.some((c) => c.slug === selectedCat)
+    ) {
+      derived.unshift({ slug: selectedCat, label: categoryLabel(selectedCat, categories) });
+    }
+    return [...HEAD_CHIPS, ...derived];
+  }, [jobs, recentCategorySlugs, categories, selectedCat]);
+
   // Radius-filter center: an explicitly chosen location wins, else the geocoded
   // profile city, else the device location.
   const center =
@@ -125,9 +178,9 @@ export default function BrowsePage() {
       : profileCoords ?? userCoords;
 
   const filtered: Job[] = useMemo(
-    () => applyJobFilters(jobsGeo, { selectedCat, search, filters, blockedIds, userCoords, center, mySchool: school, forYouSkills: skills, myBookings: bookings }),
+    () => applyJobFilters(jobsGeo, { selectedCat, search, filters, blockedIds, userCoords, center, mySchool: school, forYouSkills: skills, myBookings: bookings, extraAliases: catAliases }),
     // bookings included: the feed hides gigs this viewer already won.
-    [jobsGeo, bookings, selectedCat, search, filters, blockedIds, userCoords, center, school, skills],
+    [jobsGeo, bookings, selectedCat, search, filters, blockedIds, userCoords, center, school, skills, catAliases],
   );
 
   const forYouNoSkills = selectedCat === "foryou" && skills.length === 0;
@@ -198,23 +251,34 @@ export default function BrowsePage() {
             scrollbar. Container query, not `md:` — the row's real width is the
             viewport minus the sidebar. */}
         <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-4 @3xl:flex-wrap @3xl:overflow-visible">
-          {CHIPS.map((cat) => {
-            const active = selectedCat === cat.id;
+          {chips.map((cat) => {
+            const active = selectedCat === cat.slug;
             return (
               <button
-                key={cat.id}
-                onClick={() => setSelectedCat(cat.id)}
+                key={cat.slug}
+                onClick={() => setSelectedCat(cat.slug)}
                 aria-pressed={active}
                 className={classNames(
-                  "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition",
+                  "max-w-full shrink-0 truncate rounded-full px-3.5 py-2 text-[13px] font-semibold transition",
                   active ? "bg-ink text-white" : "bg-white text-ink hover:bg-white/70",
                 )}
               >
-                <span>{cat.icon}</span>
                 {cat.label}
               </button>
             );
           })}
+          {/* The feed can only ever surface the categories it currently holds —
+              this is the way into the other ~190. Filter mode: picking is the
+              point, minting a category from a browse screen is not. */}
+          <button
+            onClick={() => setShowCategories(true)}
+            aria-haspopup="dialog"
+            aria-expanded={showCategories}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-ink transition hover:bg-white/70"
+          >
+            More
+            <ChevronDown className="size-3.5 shrink-0" />
+          </button>
         </div>
 
         {/* Campus quick-toggle — the same shortcut as before, restyled to read as
@@ -335,6 +399,22 @@ export default function BrowsePage() {
           </div>
         )}
       </PageContainer>
+
+      {/* Every category, searchable — the chip row's overflow. Choosing one (or
+          clearing the token, which reports an empty pair) applies it and closes:
+          the results behind the sheet are the answer. */}
+      <Modal open={showCategories} onClose={() => setShowCategories(false)} title="Browse by category">
+        <CategoryPicker
+          value={selectedCat === "all" || selectedCat === "foryou" ? "" : categoryLabel(selectedCat, categories)}
+          onChange={(label, slug) => {
+            setSelectedCat(slug || "all");
+            setShowCategories(false);
+          }}
+          recentSlugs={recentCategorySlugs}
+          allowCreate={false}
+          placeholder="Search all categories…"
+        />
+      </Modal>
 
       <FilterSheet
         open={showFilter}

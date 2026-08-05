@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from "react";
-import { getLevelInfo, livingProgress } from "@gohustlr/shared";
+import { categoryLabel, getLevelInfo, livingProgress, sameCategory } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
 import { useAuth } from "./auth";
@@ -19,6 +19,8 @@ export interface Challenge {
   progress: number;
   target: number;
   xpReward: number;
+  /** Set on a challenge that only a gig in one category credits. Slug, never a label. */
+  categorySlug?: string;
 }
 
 export interface UserState {
@@ -52,6 +54,8 @@ export interface UserState {
   studentStatus: string;
   studentVerified: boolean;
   skills: string[];
+  /** The viewer's last 8 posted categories, most recent first — feeds CategoryPicker's recents. */
+  recentCategorySlugs: string[];
   badges: Record<string, { unlocked: boolean }>;
   challenges: Challenge[];
   pendingToast: Toast | null;
@@ -87,6 +91,7 @@ const DEFAULT_STATE: UserState = {
   studentStatus: "none",
   studentVerified: false,
   skills: [],
+  recentCategorySlugs: [],
   badges: {
     firstHustle: { unlocked: false },
     onFire: { unlocked: false },
@@ -97,10 +102,23 @@ const DEFAULT_STATE: UserState = {
   challenges: [
     { id: "c1", icon: "🎯", ion: "locate", title: "Apply to 3 Gigs", description: "Apply to 3 gigs today", type: "daily", progress: 0, target: 3, xpReward: 50 },
     { id: "c2", icon: "💵", ion: "cash", title: "Earn $100 This Week", description: "Complete gigs totaling $100", type: "weekly", progress: 0, target: 100, xpReward: 150 },
-    { id: "c3", icon: "💻", ion: "laptop", title: "Tech Whiz", description: "Complete a Tech Help gig", type: "weekly", progress: 0, target: 1, xpReward: 75 },
+    // Copy is derived from the taxonomy so the challenge can never advertise a
+    // label the catalog no longer uses. What credits it is the SLUG below.
+    { id: "c3", icon: "💻", ion: "laptop", title: "Tech Whiz", description: `Complete a ${categoryLabel("tech-help")} gig`, type: "weekly", progress: 0, target: 1, xpReward: 75, categorySlug: "tech-help" },
   ],
   pendingToast: null,
 };
+
+/**
+ * The challenge a gig in `category` credits, or null. Slug-level and alias-aware:
+ * the byte-exact label test this replaces (`job.category === "Tech Help"`) credited
+ * nothing for a gig posted as "tech help", and nothing at all once categories became
+ * user-extensible — "Tech Support" is a merge alias of the same category.
+ */
+export function categoryChallengeId(category: string | null | undefined): string | null {
+  const hit = DEFAULT_STATE.challenges.find((c) => c.categorySlug && sameCategory(c.categorySlug, category));
+  return hit ? hit.id : null;
+}
 
 type DbProfile = Record<string, unknown>;
 
@@ -165,6 +183,11 @@ function dbToState(
     studentVerified: Boolean(p.student_verified),
     skills: Array.isArray((profile as Record<string, unknown>).skills)
       ? ((profile as Record<string, unknown>).skills as string[])
+      : [],
+    // Owner-private (no cross-user column grant), so it only ever arrives through
+    // the my_profile() RPC this bundle already reads — never from a profiles select.
+    recentCategorySlugs: Array.isArray((profile as Record<string, unknown>).recent_category_slugs)
+      ? ((profile as Record<string, unknown>).recent_category_slugs as string[])
       : [],
     badges: badgeMap,
     challenges: mergedChallenges,

@@ -1,6 +1,7 @@
 // Pure finance helpers for the hustler "money goal" coach (no native imports,
 // fully unit-testable). Used by mobile, web, and the AI assistant edge function.
-import { isJobBookable, isHiddenForViewer } from './filters.js';
+import { isJobBookable, isHiddenForViewer, skillFitScore } from './filters.js';
+import { categoryBaseRate, findCategory, resolveCategorySlug, NEUTRAL_BASE_RATE } from './categories.js';
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -33,17 +34,6 @@ export function formatMoney(n) {
 // (miles × rate). Update annually when the IRS publishes the new rate
 // (0.70 = 2025 rate; confirm the current-year figure each January).
 export const IRS_MILEAGE_RATE = 0.70;
-
-// Sensible per-hour starting rates when we have no other signal.
-export const CATEGORY_BASE_RATES = {
-  Tutoring: 25,
-  Delivery: 18,
-  Moving: 25,
-  'Tech Help': 30,
-  Creative: 35,
-  'Odd Jobs': 20,
-  Errands: 18,
-};
 
 // Plan to hit a monthly earning goal given month-to-date progress.
 // `now` is injectable for testing; defaults to the current date at runtime.
@@ -121,8 +111,13 @@ export function suggestRate({ category, skillRate = null, marketAvg = null } = {
     base = ma;
     basis = 'market';
   } else {
-    base = CATEGORY_BASE_RATES[category] || 20;
-    basis = 'category default';
+    // Only a category the catalog actually knows has a rate of its own. The old
+    // 7-key table quoted $20 for everything outside it while still labelling the
+    // number "category default", so a plumber pricing a $55/hr job was told $20
+    // was what plumbing pays. Say which of the two it is.
+    const known = findCategory(category);
+    base = known ? categoryBaseRate(category) : NEUTRAL_BASE_RATE;
+    basis = known ? 'category default' : 'typical starting rate';
   }
   return {
     low: Math.round(base * 0.85),
@@ -132,10 +127,13 @@ export function suggestRate({ category, skillRate = null, marketAvg = null } = {
   };
 }
 
-// Market stats (avg + median pay) for a category from a list of jobs.
+// Market stats (avg + median pay) for a category from a list of jobs. Matching is
+// slug-level: a byte-exact label comparison quietly excluded every gig a poster
+// spelled differently, so the "market" a user was shown was a subset of the market.
 export function marketRate(jobs = [], category = null) {
+  const want = category ? resolveCategorySlug(category) : '';
   const pays = (jobs || [])
-    .filter((j) => !category || j.category === category)
+    .filter((j) => !category || (!!want && resolveCategorySlug(j?.categorySlug || j?.category) === want))
     .map((j) => Number(j.pay))
     .filter((p) => p > 0)
     .sort((a, b) => a - b);
@@ -146,16 +144,18 @@ export function marketRate(jobs = [], category = null) {
   return { avg: round2(avg), median: round2(median), count: pays.length };
 }
 
+const SKILL_FIT_POINTS = 3;
+
 // Score a gig by how well it fits the user's skills and how much it moves them
 // toward their remaining goal. Higher = better.
-export function scoreGig(job, { skills = [], remaining = 0 } = {}) {
+//
+// Skill fit comes from skillFitScore rather than a private substring scan of the
+// job text. This file used to carry a third, differently-behaved copy of the
+// matching rule, so the goal card could recommend a gig For You would not show and
+// the poster's Fit sort would not agree with either.
+export function scoreGig(job, { skills = [], remaining = 0, extraAliases } = {}) {
   if (!job) return 0;
-  const hay = `${job.title || ''} ${job.description || ''} ${job.category || ''}`.toLowerCase();
-  let score = 0;
-  for (const s of skills) {
-    const k = String(s).toLowerCase().trim();
-    if (k && hay.includes(k)) score += 3;
-  }
+  let score = skillFitScore(job, skills, { extraAliases }) * SKILL_FIT_POINTS;
   const pay = Math.max(0, Number(job.pay) || 0);
   if (remaining > 0) score += Math.min(3, (pay / remaining) * 6);
   else score += Math.min(2, pay / 50);

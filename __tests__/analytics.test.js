@@ -82,8 +82,8 @@ describe('analytics.computeAreaInsights', () => {
 
   test('aggregates per area: count, avg pay, top category — sorted by count desc', () => {
     const jobs = [
-      { location: 'Austin, TX', pay: 50, category: 'Cleaning' },
-      { location: 'Austin, TX', pay: 100, category: 'Cleaning' },
+      { location: 'Austin, TX', pay: 50, category: 'House Cleaning' },
+      { location: 'Austin, TX', pay: 100, category: 'House Cleaning' },
       { location: 'Austin, TX', pay: 60, category: 'Moving' },
       { location: 'Dallas, TX', pay: 80, category: 'Tutoring' },
     ];
@@ -91,21 +91,47 @@ describe('analytics.computeAreaInsights', () => {
     expect(rows).toHaveLength(2);
 
     // Austin first (3 gigs vs 1)
-    expect(rows[0]).toEqual({ area: 'Austin, TX', jobCount: 3, avgPay: 70, topCategory: 'Cleaning' });
+    expect(rows[0]).toEqual({ area: 'Austin, TX', jobCount: 3, avgPay: 70, topCategory: 'House Cleaning' });
     expect(rows[1]).toEqual({ area: 'Dallas, TX', jobCount: 1, avgPay: 80, topCategory: 'Tutoring' });
   });
 
   test('skips blank/missing locations and is case-insensitive on area key', () => {
     const jobs = [
-      { location: '   ', pay: 40, category: 'Cleaning' },
-      { location: null, pay: 40, category: 'Cleaning' },
-      { location: 'Reno, NV', pay: 20, category: 'Pets' },
-      { location: 'reno, nv', pay: 40, category: 'Pets' }, // same area, different casing
+      { location: '   ', pay: 40, category: 'House Cleaning' },
+      { location: null, pay: 40, category: 'House Cleaning' },
+      { location: 'Reno, NV', pay: 20, category: 'Pet Sitting' },
+      { location: 'reno, nv', pay: 40, category: 'Pet Sitting' }, // same area, different casing
     ];
     const rows = computeAreaInsights(jobs);
     expect(rows).toHaveLength(1);
     // First-seen display casing is preserved; both rows merged
-    expect(rows[0]).toEqual({ area: 'Reno, NV', jobCount: 2, avgPay: 30, topCategory: 'Pets' });
+    expect(rows[0]).toEqual({ area: 'Reno, NV', jobCount: 2, avgPay: 30, topCategory: 'Pet Sitting' });
+  });
+
+  // Regression: the area key on one line was lowercased while the category tally on
+  // the next was byte-exact, so spellings of one category competed as separate
+  // candidates — and could between them lose to a category neither actually beat.
+  test('spellings of one category are one category', () => {
+    const rows = computeAreaInsights([
+      { location: 'Austin, TX', pay: 40, category: 'Lawn Care' },
+      { location: 'Austin, TX', pay: 40, category: 'lawn care' },
+      { location: 'Austin, TX', pay: 40, category: 'LAWNCARE' },
+      { location: 'Austin, TX', pay: 40, category: 'Moving' },
+      { location: 'Austin, TX', pay: 40, category: 'Moving' },
+    ]);
+    expect(rows[0].topCategory).toBe('Lawn Care');
+  });
+
+  test('the top category is shown under its canonical label', () => {
+    const rows = computeAreaInsights([{ location: 'Reno, NV', pay: 30, category: 'lawncare' }]);
+    expect(rows[0].topCategory).toBe('Lawn Care');
+  });
+
+  test('prefers the job categorySlug over its display label', () => {
+    const rows = computeAreaInsights([
+      { location: 'Reno, NV', pay: 30, category: 'whatever', categorySlug: 'snow-removal' },
+    ]);
+    expect(rows[0].topCategory).toBe('Snow Removal');
   });
 
   test('handles missing pay / category gracefully', () => {

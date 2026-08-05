@@ -26,6 +26,7 @@ function PostGigInner() {
     ? {
         title: fromJob.title,
         category: fromJob.category,
+        categorySlug: fromJob.categorySlug,
         pay: fromJob.pay,
         payType: fromJob.payType,
         location: fromJob.location,

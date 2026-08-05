@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CATEGORY_COLORS } from '../data/mockData';
+import { categoryColor } from '../../shared/categories.js';
 import { maskLocation } from '../lib/address';
 import { colors } from '../theme';
 
@@ -65,7 +65,10 @@ export default function JobsMap({ jobs, userCoords, onPressJob }) {
             coordinate={{ latitude: j.lat, longitude: j.lng }}
             title={j.title}
             description={j.payType === 'hourly' ? `$${j.pay}/hr · ${maskLocation(j.location)}` : `$${j.pay} · ${maskLocation(j.location)}`}
-            pinColor={CATEGORY_COLORS[j.category] || colors.primary}
+            // Group palette, with a slug-derived colour for community categories —
+            // the old lookup table only held the seven legacy labels, so every other
+            // category (and every custom one) fell through to one identical purple.
+            pinColor={categoryColor(j.category)}
             onCalloutPress={() => onPressJob?.(j)}
           />
         ))}

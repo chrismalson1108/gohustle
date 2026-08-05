@@ -39,11 +39,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const photos: string[] = job.photos ?? [];
   await auditRead(ctx, "job.view", "job", id);
 
-  const [posterRes, slotsRes, bookingsRes] = await Promise.all([
+  const [posterRes, slotsRes, bookingsRes, categoryRes] = await Promise.all([
     ctx.service.from("profiles").select("id, name, username").eq("id", job.poster_id).maybeSingle(),
     ctx.service.from("job_slots").select("id, label, taken").eq("job_id", id),
     ctx.service.from("bookings").select("id, earner_id, status, slot_label, created_at").eq("job_id", id).order("created_at", { ascending: false }),
+    // The category is user-authored free text now — a poster can invent one by typing
+    // it — so a moderator looking at a flagged gig needs to know whether its category is
+    // a curated one or something this poster made up, and get to it in one click.
+    job.category_slug
+      ? ctx.service.from("categories").select("slug, status").eq("slug", job.category_slug).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
+  const category = categoryRes.data;
 
   const earnerIds = [...new Set((bookingsRes.data ?? []).map((b) => b.earner_id))];
   const earners = earnerIds.length
@@ -61,7 +68,26 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <Section title="Gig">
         <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm md:grid-cols-4">
-          <div><dt className="text-[var(--muted)]">Category</dt><dd>{job.category}</dd></div>
+          <div>
+            <dt className="text-[var(--muted)]">Category</dt>
+            <dd className="flex flex-wrap items-center gap-2">
+              {job.category_slug ? (
+                <Link href={`/jobs?cat=${encodeURIComponent(job.category_slug)}`} className="text-[var(--brand)] hover:underline">
+                  {job.category || job.category_slug}
+                </Link>
+              ) : (
+                // Null slug means the value normalized away or collided with one of the
+                // app's reserved control words, so the gig is filed nowhere.
+                <span>{job.category || "—"}</span>
+              )}
+              {category?.status === "community" && (
+                <Link href={`/categories?status=community&q=${encodeURIComponent(category.slug)}`}>
+                  <Pill tone="amber">user-created</Pill>
+                </Link>
+              )}
+              {!job.category_slug && <Pill tone="gray">unfiled</Pill>}
+            </dd>
+          </div>
           <div><dt className="text-[var(--muted)]">Pay</dt><dd>${Number(job.pay)}{job.pay_type === "hourly" ? "/hr" : " flat"}</dd></div>
           <div><dt className="text-[var(--muted)]">Location</dt><dd>{job.location}</dd></div>
           <div><dt className="text-[var(--muted)]">Posted</dt><dd>{fmtDate(job.created_at)}</dd></div>

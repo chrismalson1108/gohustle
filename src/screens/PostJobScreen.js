@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Image,
   StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
@@ -11,16 +11,19 @@ import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import TagInput from '../components/TagInput';
+import CategoryPicker from '../components/CategoryPicker';
 import { pickImages, uploadImages } from '../lib/uploadImage';
 import { findProhibited } from '../lib/contentFilter';
 import { moderateText, logModerationBlock } from '../lib/moderation';
 import { notify } from '../lib/push';
 import { colors, radii } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
-import { CATEGORIES, MIN_JOB_PAY, validateJobPay } from '../data/mockData';
+import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
+import {
+  categoryIcon, categoryLabel, resolveCategorySlug, sameCategory, validateCategoryLabel,
+} from '../../shared/categories.js';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
-const CATS = CATEGORIES.filter(c => c.id !== 'all');
 const RECURRENCE_OPTS = [
   { id: 'none', label: 'One-time' },
   { id: 'weekly', label: 'Weekly' },
@@ -28,7 +31,7 @@ const RECURRENCE_OPTS = [
   { id: 'monthly', label: 'Monthly' },
 ];
 const INITIAL = {
-  title: '', category: '', customCategory: '', pay: '', payType: 'flat',
+  title: '', category: '', categorySlug: '', pay: '', payType: 'flat',
   location: '', description: '', requirements: '', urgent: false, slots: [],
   recurrence: 'none', tags: [], hazards: [], estHours: '2',
 };
@@ -36,11 +39,14 @@ const INITIAL = {
 // Build initial form state, optionally prefilled from a job being duplicated.
 function buildInitial(prefill) {
   if (!prefill) return INITIAL;
-  const known = CATS.some(c => c.id === prefill.category);
+  // With a user-extensible catalog there is no "is it one of the seven?" test left:
+  // a category pre-fills whenever its slug resolves, so duplicating a gig posted
+  // under a custom category keeps that category instead of dropping into "Other".
+  const slug = resolveCategorySlug(prefill.categorySlug || prefill.category);
   return {
     title: prefill.title || '',
-    category: known ? prefill.category : 'other',
-    customCategory: known ? '' : (prefill.category || ''),
+    category: slug ? categoryLabel(prefill.category || slug) : '',
+    categorySlug: slug,
     pay: prefill.pay != null ? String(prefill.pay) : '',
     payType: prefill.payType || 'flat',
     location: prefill.location || '',
@@ -57,7 +63,7 @@ function buildInitial(prefill) {
 
 export default function PostJobScreen({ navigation, route }) {
   const { addJob } = useJobs();
-  const { showToast, name: myName } = useUser();
+  const { showToast, name: myName, recentCategorySlugs } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
   const prefill = route?.params?.prefill;
@@ -65,12 +71,34 @@ export default function PostJobScreen({ navigation, route }) {
   // after this gig posts, that earner gets a gig-invitation push.
   const rebookEarner = route?.params?.rebookEarner;
   const [form, setForm] = useState(() => buildInitial(prefill));
-  const [showCustomCat, setShowCustomCat] = useState(!!prefill && !CATS.some(c => c.id === prefill.category));
+  const [catError, setCatError] = useState('');
   const [photos, setPhotos] = useState([]); // local URIs
   const [coords, setCoords] = useState(prefill?.lat != null ? { lat: prefill.lat, lng: prefill.lng } : null); // { lat, lng } from LocationPicker
   const [posting, setPosting] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const pickCategory = (label, slug) => {
+    setCatError('');
+    setForm(p => ({ ...p, category: label, categorySlug: slug }));
+  };
+
+  // People post the same kind of work over and over, so their own last categories
+  // are the fastest path — the full catalog is one tap further, inside the picker.
+  // Labels come from the shared catalog rather than a fetch: the server snaps the
+  // stored label to canonical casing anyway, so a chip only has to be recognisable.
+  const recentChips = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    for (const raw of recentCategorySlugs || []) {
+      const slug = resolveCategorySlug(raw);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      out.push({ slug, label: categoryLabel(slug), ion: categoryIcon(slug) });
+      if (out.length === 4) break;
+    }
+    return out;
+  }, [recentCategorySlugs]);
 
   const addPhotos = async () => {
     const res = await pickImages({ multiple: true });
@@ -80,8 +108,6 @@ export default function PostJobScreen({ navigation, route }) {
     }
     setPhotos(prev => [...prev, ...res.uris].slice(0, 6));
   };
-
-  const effectiveCategory = form.category === 'other' ? form.customCategory : form.category;
 
   // Re-entry guard. The moderation await below takes up to 6s, and the button's
   // only defence was a `posting` flag set AFTER it — so every impatient tap during
@@ -101,8 +127,22 @@ export default function PostJobScreen({ navigation, route }) {
 
   const handlePostInner = async () => {
     Keyboard.dismiss();
-    if (!form.title || !effectiveCategory || !form.pay || !form.location || !form.description) {
+    if (!form.title || !form.category || !form.pay || !form.location || !form.description) {
       haptic.error();
+      return;
+    }
+    // The category is free text the moment posters can create their own, and it was
+    // the one gig field neither client moderation layer looked at — the DB guard
+    // caught it, but as an un-fielded error with no moderation report behind it.
+    // validateCategoryLabel runs findProhibited for us; a hit still has to be logged
+    // the same way every other blocked field is. The message names the field, which
+    // is the whole reason for checking here instead of leaving it to the backstop.
+    const catMsg = validateCategoryLabel(form.category, findProhibited);
+    if (catMsg) {
+      const catTerm = findProhibited(form.category);
+      if (catTerm) logModerationBlock(catTerm, 'gig', form.category);
+      haptic.error();
+      setCatError(catMsg);
       return;
     }
     // Pay must clear the shared floor — '0'/'-5' pass the truthiness check above but
@@ -126,8 +166,10 @@ export default function PostJobScreen({ navigation, route }) {
       showToast({ icon: '⚠️', title: 'Check your wording', message: "Your gig contains content that isn't allowed. Please edit it." });
       return;
     }
-    // Context-aware check (catches intent a keyword list misses).
-    const mod = await moderateText([form.title, form.description].join('\n'), 'gig');
+    // Context-aware check (catches intent a keyword list misses). The category rides
+    // along: a poster-invented one is free text like the title, and the keyword list
+    // above can't read intent.
+    const mod = await moderateText([form.title, form.category, form.description].join('\n'), 'gig');
     // A 429 here is self-inflicted (own quota), not an outage, so moderateText
     // fails CLOSED on it — otherwise burning the quota would disable this layer.
     if (mod.rateLimited) {
@@ -163,7 +205,8 @@ export default function PostJobScreen({ navigation, route }) {
     try {
       await addJob({
         title: form.title,
-        category: effectiveCategory,
+        category: form.category,
+        categorySlug: form.categorySlug,
         pay,
         payType: form.payType,
         location: form.location,
@@ -192,7 +235,7 @@ export default function PostJobScreen({ navigation, route }) {
     setForm(INITIAL);
     setPhotos([]);
     setCoords(null);
-    setShowCustomCat(false);
+    setCatError('');
     setPosting(false);
     if (rebookEarner?.id) {
       // Rebook: invite the previous earner to the fresh gig (same shape as the
@@ -206,7 +249,7 @@ export default function PostJobScreen({ navigation, route }) {
     navigation.navigate('GigsMain');
   };
 
-  const incomplete = !form.title || !effectiveCategory || !form.pay || !form.location || !form.description;
+  const incomplete = !form.title || !form.category || !form.pay || !form.location || !form.description;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -237,45 +280,35 @@ export default function PostJobScreen({ navigation, route }) {
           </Field>
 
           <Field label="Category *">
-            <View style={styles.catGrid}>
-              {CATS.map(cat => {
-                const active = form.category === cat.id;
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.catChip, active && styles.catChipActive]}
-                    onPress={() => {
-                      haptic.selection();
-                      set('category', cat.id);
-                      setShowCustomCat(false);
-                    }}
-                  >
-                    <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
-                    <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{cat.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                style={[styles.catChip, form.category === 'other' && styles.catChipActive]}
-                onPress={() => {
-                  haptic.selection();
-                  set('category', 'other');
-                  setShowCustomCat(true);
-                }}
-              >
-                <Ionicons name="create" size={15} color={form.category === 'other' ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
-                <Text style={[styles.catChipText, form.category === 'other' && styles.catChipTextActive]} numberOfLines={1}>Other</Text>
-              </TouchableOpacity>
-            </View>
-            {showCustomCat && (
-              <TextInput
-                style={[styles.input, { marginTop: 10 }]}
-                placeholder="Type your category name..."
-                placeholderTextColor={colors.textMuted}
-                value={form.customCategory}
-                onChangeText={v => set('customCategory', v)}
-              />
+            {/* The field is also the selection: it renders the chosen category as a
+                chip with a clear button, so there is no second control to hunt for. */}
+            <CategoryPicker
+              value={form.category}
+              onChange={pickCategory}
+              recentSlugs={recentCategorySlugs}
+              placeholder="Search categories, or add your own"
+            />
+            {recentChips.length > 0 && (
+              <View style={styles.recentsWrap}>
+                <Text style={styles.recentsLabel}>Recent</Text>
+                <View style={styles.catGrid}>
+                  {recentChips.map(cat => {
+                    const active = sameCategory(cat.slug, form.categorySlug);
+                    return (
+                      <TouchableOpacity
+                        key={cat.slug}
+                        style={[styles.catChip, active && styles.catChipActive]}
+                        onPress={() => { haptic.selection(); pickCategory(cat.label, cat.slug); }}
+                      >
+                        <Ionicons name={cat.ion} size={15} color={active ? '#fff' : colors.textSecondary} style={styles.catChipIcon} />
+                        <Text style={[styles.catChipText, active && styles.catChipTextActive]} numberOfLines={1}>{cat.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
             )}
+            {!!catError && <Text style={styles.fieldError}>{catError}</Text>}
           </Field>
 
           <Field label="Tags (optional)">
@@ -503,6 +536,9 @@ const styles = StyleSheet.create({
   catChipIcon: { marginRight: 6 },
   catChipText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flexShrink: 1 },
   catChipTextActive: { color: '#fff' },
+  recentsWrap: { marginTop: 12 },
+  recentsLabel: { fontSize: 12, color: colors.textMuted, marginBottom: 8, lineHeight: 16 },
+  fieldError: { fontSize: 12, color: colors.urgent, marginTop: 8, lineHeight: 16 },
   payRow: { flexDirection: 'row', alignItems: 'center' },
   payHint: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 16 },
   payInputWrap: {

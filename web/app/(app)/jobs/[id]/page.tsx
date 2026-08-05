@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { findProhibited, MIN_JOB_PAY, validateJobPay } from "@gohustlr/shared";
+import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
@@ -188,7 +188,10 @@ export default function JobDetailPage() {
     }
     addXP(25);
     updateChallenge("c1", 1);
-    if (job.category === "Tech Help") updateChallenge("c3", 1);
+    // Slug comparison, not the label: the "Tech Whiz" challenge has to credit a gig
+    // posted as "tech support" or "Tech help" too, or whether it counts depends on
+    // how the poster happened to type the category.
+    if (sameCategory(job.categorySlug || job.category, "tech-help")) updateChallenge("c3", 1);
     showToast({
       icon: "🎉",
       title: "Gig Booked! +25 XP",
@@ -302,7 +305,9 @@ export default function JobDetailPage() {
               the runtime CATEGORY_COLORS tint made the page's palette change
               identity per gig. */}
           <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-[13px] font-medium text-ink-muted">{job.category}</span>
+            <span className="min-w-0 truncate text-[13px] font-medium text-ink-muted">
+              {categoryLabel(job.category || job.categorySlug)}
+            </span>
             <button
               onClick={() => toggleSavedJob(job.id)}
               className="flex size-11 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink-muted transition hover:text-primary"

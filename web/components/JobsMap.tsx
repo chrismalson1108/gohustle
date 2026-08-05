@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import Link from "next/link";
 import type { LatLngExpression } from "leaflet";
-import { CATEGORY_COLORS } from "@gohustlr/shared";
+import { categoryColor } from "@gohustlr/shared";
 import { payLabel, classNames } from "@/lib/format";
 import { maskLocation } from "@/lib/address";
 import { MAP_FRAME } from "@/lib/mapFrame";
@@ -20,6 +20,11 @@ interface Props {
 
 // Web map of nearby gigs (OpenStreetMap tiles — no API key). One colored pin per
 // gig with coordinates; click a pin to open the gig. Replaces react-native-maps.
+//
+// Pin color comes from categoryColor(): pins are grouped by category GROUP, so
+// related gigs read as related. The old CATEGORY_COLORS lookup only held the
+// legacy seven labels and fell through to brand purple, which meant every gig
+// outside them — i.e. most of the catalog — was the same indistinguishable dot.
 export default function JobsMap({ jobs, userCoords, className = "" }: Props) {
   const pins = jobs.filter((j) => j.lat != null && j.lng != null);
   const center: LatLngExpression = userCoords
@@ -43,7 +48,7 @@ export default function JobsMap({ jobs, userCoords, className = "" }: Props) {
             key={j.id}
             center={[j.lat as number, j.lng as number]}
             radius={9}
-            pathOptions={{ color: "#fff", weight: 2, fillColor: CATEGORY_COLORS[j.category] || "#3F25FE", fillOpacity: 1 }}
+            pathOptions={{ color: "#fff", weight: 2, fillColor: categoryColor(j.categorySlug), fillOpacity: 1 }}
           >
             <Popup>
               <Link href={`/jobs/${j.id}`} className="font-bold text-primary">

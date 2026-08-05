@@ -10,7 +10,7 @@ import PosterTrustCard from '../components/PosterTrustCard';
 import SlotPicker from '../components/SlotPicker';
 import RatingStars from '../components/RatingStars';
 import { useJobs } from '../context/JobsContext';
-import { useUser } from '../context/UserContext';
+import { useUser, TECH_CHALLENGE_CATEGORY } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { supabase } from '../lib/supabase';
@@ -19,6 +19,7 @@ import { colors, radii, shadows } from '../theme';
 import MessageSheet from '../components/MessageSheet';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
+import { categoryLabel, sameCategory } from '../../shared/categories.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
 import { SERVICE_FEE_PCT } from '../lib/stripeClient';
@@ -218,7 +219,8 @@ export default function JobDetailScreen({ route, navigation }) {
     haptic.success();
     addXP(25);
     updateChallenge('c1', 1);
-    if (job.category === 'Tech Help') updateChallenge('c3', 1);
+    // Slug-level, so casing and merged spellings ("tech support") all count.
+    if (sameCategory(job.category, TECH_CHALLENGE_CATEGORY)) updateChallenge('c3', 1);
 
     const counterMsg = counter
       ? ` · Counter-offer $${counter}${job.payType === 'hourly' ? '/hr' : ''} sent!`
@@ -245,7 +247,7 @@ export default function JobDetailScreen({ route, navigation }) {
         )}
 
         <View style={styles.catRow}>
-          <Text style={styles.catText} numberOfLines={1}>{job.category}</Text>
+          <Text style={styles.catText} numberOfLines={1}>{categoryLabel(job.category)}</Text>
           <TouchableOpacity
             style={styles.saveBtn}
             onPress={() => { haptic.light(); toggleSavedJob(job.id); }}

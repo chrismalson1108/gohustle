@@ -13,12 +13,108 @@ declare module "@gohustlr/shared" {
   export const MAX_JOB_PAY: number;
   /** Returns null when valid, else a ready-to-show error string. */
   export function validateJobPay(value: string | number): string | null;
-  export interface Category { id: string; label: string; icon: string; ion: string }
-  export const CATEGORIES: Category[];
-  export const CATEGORY_COLORS: Record<string, string>;
   export const BADGE_DEFS: Record<string, { icon: string; ion: string; label: string; desc: string }>;
   export interface Level { level: number; label: string; minXP: number; color: string }
   export const LEVELS: Level[];
+
+  // ── categories ──
+  // The gig taxonomy. `slug` is the identity everything filters, groups and
+  // compares on; `label` is display only. Every export of shared/categories.js is
+  // declared here — this file is the only type check the web app gets over it, so
+  // an omission silently un-types a call site rather than failing here.
+
+  /**
+   * One category. Rows loaded from the `categories` table carry `usageCount` and
+   * `status` as well, which is why both are optional — an app-level list stays
+   * structurally assignable wherever an `extra` catalog is accepted.
+   */
+  export interface CategoryEntry {
+    slug: string;
+    label: string;
+    group: string;
+    groupLabel: string;
+    /** Per-hour starting point for the pricing coach. */
+    rate: number;
+    /** Ionicons name. */
+    ion: string;
+    canonical: boolean;
+    usageCount?: number;
+    status?: string;
+  }
+
+  export interface CategoryGroupMeta {
+    key: string;
+    label: string;
+    ion: string;
+    /** Map-pin color for every category in the group. */
+    color: string;
+    rate: number;
+  }
+
+  /** A browse chip: identity + what to draw, plus how many gigs carry it right now. */
+  export interface BrowseChip {
+    /** Same value as `slug` — React key / selection id. */
+    id: string;
+    slug: string;
+    label: string;
+    ion: string;
+    count: number;
+  }
+
+  export interface NormalizedCategory {
+    ok: boolean;
+    slug: string;
+    label: string;
+    /** True when submitting this will mint a community category. */
+    isNew: boolean;
+    error: string | null;
+  }
+
+  /** User-created categories to consider alongside the seed catalog. */
+  type CategoryExtra = ReadonlyArray<CategoryEntry> | null;
+  type ProhibitedCheck = (text: string) => string | null;
+
+  export const CATEGORY_LABEL_MIN: number;
+  export const CATEGORY_LABEL_MAX: number;
+  export const CATEGORY_SLUG_MAX: number;
+  export const NEUTRAL_BASE_RATE: number;
+  export const CATEGORY_CATALOG: CategoryEntry[];
+  export const CATEGORY_GROUPS: CategoryGroupMeta[];
+  /** { typedSlug: canonicalSlug } — spellings that fold into an existing category. */
+  export const CATEGORY_ALIASES: Record<string, string>;
+  /** Slugs the app keeps for its own control values ('all', 'foryou', 'other', …). */
+  export const RESERVED_CATEGORY_SLUGS: ReadonlySet<string>;
+  export const LEGACY_CATEGORY_LABELS: string[];
+
+  /** The canonical identity of a category; '' for anything that normalizes away. */
+  export function categorySlug(input: unknown): string;
+  /** categorySlug + alias chain. Pass the DB alias map for merges curated post-build. */
+  export function resolveCategorySlug(input: unknown, extraAliases?: Record<string, string> | null): string;
+  export function findCategory(input: unknown, extra?: CategoryExtra): CategoryEntry | null;
+  /** Display string: canonical casing when known, the caller's tidied text otherwise. */
+  export function categoryLabel(input: unknown, extra?: CategoryExtra): string;
+  export function categoryGroup(input: unknown, extra?: CategoryExtra): CategoryGroupMeta;
+  /** Map-pin color. Total — community categories get a stable slug-derived hue. */
+  export function categoryColor(input: unknown, extra?: CategoryExtra): string;
+  export function categoryIcon(input: unknown, extra?: CategoryExtra): string;
+  export function categoryBaseRate(input: unknown, extra?: CategoryExtra): number;
+  /** Slug-level, alias-aware equality — the only correct way to compare categories. */
+  export function sameCategory(a: unknown, b: unknown): boolean;
+  /** null when the label is usable, else a ready-to-show message. */
+  export function validateCategoryLabel(raw: unknown, findProhibited?: ProhibitedCheck | null): string | null;
+  export function normalizeCategoryInput(
+    raw: unknown,
+    opts?: { findProhibited?: ProhibitedCheck | null; extra?: CategoryExtra },
+  ): NormalizedCategory;
+  export function searchCategories(
+    query: unknown,
+    opts?: { extra?: CategoryExtra; limit?: number; includeGroups?: boolean },
+  ): CategoryEntry[];
+  export function categoriesByGroup(extra?: CategoryExtra): Array<CategoryGroupMeta & { items: CategoryEntry[] }>;
+  export function browseChipsFromJobs(
+    jobs: ReadonlyArray<{ category?: string | null } | null | undefined> | null | undefined,
+    opts?: { recentSlugs?: readonly string[] | null; extra?: CategoryExtra; limit?: number },
+  ): BrowseChip[];
 
   // ── geo ──
   export function haversineMiles(
@@ -63,12 +159,29 @@ declare module "@gohustlr/shared" {
   export function getState(location: string): string | null;
   export function getSlotDays(slots: Array<{ taken?: boolean; label?: string }>): Set<string>;
   export function matchesPay(job: { pay: number; payType: string; estimatedHours?: number }, payRange: string): boolean;
-  export function matchesForYou(job: { category?: string; title?: string; description?: string; tags?: string[] } | null, skills: string[]): boolean;
-  export function skillFitScore(job: { category?: string; title?: string; description?: string; tags?: string[] } | null, skills: string[] | undefined): number;
+  /** Anything a skill can be matched against. `categorySlug` is the identity and wins over the label. */
+  interface MatchableJob {
+    category?: string | null;
+    categorySlug?: string | null;
+    title?: string | null;
+    description?: string | null;
+    tags?: string[] | null;
+  }
+  interface SkillMatchOpts {
+    /** {fromSlug: toSlug} for categories merged after this build shipped. */
+    extraAliases?: Record<string, string> | null;
+  }
+  /** Points a single skill scores: a shared category counts double a text hit. */
+  export const SKILL_MATCH_WEIGHT: { category: number; text: number };
+  /** Every category identity a gig carries — its category plus its tags — as slugs. */
+  export function jobCategorySlugs(job: MatchableJob | null | undefined, extraAliases?: Record<string, string> | null): Set<string>;
+  export function matchesForYou(job: MatchableJob | null | undefined, skills: string[] | undefined, opts?: SkillMatchOpts): boolean;
+  export function skillFitScore(job: MatchableJob | null | undefined, skills: string[] | undefined, opts?: SkillMatchOpts): number;
   export function availableStatesFrom(jobs: Array<{ location: string }>): string[];
   export function applyJobFilters<T>(
     jobs: T[],
     opts?: {
+      /** 'all', 'foryou', or a category SLUG — never a display label. */
       selectedCat?: string;
       search?: string;
       filters?: JobFilters;
@@ -79,6 +192,8 @@ declare module "@gohustlr/shared" {
       forYouSkills?: string[];
       /** Viewer's own bookings — gigs they already won/finished leave their feed. */
       myBookings?: Array<{ jobId: string; status: string }>;
+      /** fetchCategories().aliases — merges curated after this build shipped. */
+      extraAliases?: Record<string, string> | null;
     },
   ): Array<T & { _distanceMi?: number | null }>;
   /** Can ANYONE still book this gig? Slot-aware, so multi-slot gigs stay while any slot is free. */
@@ -147,7 +262,8 @@ declare module "@gohustlr/shared" {
   } | null): string | null;
 
   // ── finance ──
-  export const CATEGORY_BASE_RATES: Record<string, number>;
+  // (CATEGORY_BASE_RATES is gone: per-category rates live on the catalog now —
+  // use categoryBaseRate(), which covers user-created categories too.)
   export const IRS_MILEAGE_RATE: number;
   export function computeGoalPlan(args: {
     monthlyGoal: number;
@@ -166,10 +282,13 @@ declare module "@gohustlr/shared" {
     low: number; typical: number; high: number; basis: string;
   };
   export function marketRate(
-    jobs: Array<{ category?: string; pay?: number }>,
+    jobs: Array<{ category?: string | null; categorySlug?: string | null; pay?: number }>,
     category?: string | null,
   ): { avg: number | null; median: number | null; count: number };
-  export function scoreGig(job: Record<string, unknown>, opts?: { skills?: string[]; remaining?: number }): number;
+  export function scoreGig(
+    job: Record<string, unknown>,
+    opts?: { skills?: string[]; remaining?: number; extraAliases?: Record<string, string> | null },
+  ): number;
   /** Drops gigs nobody can book and gigs this viewer already won before ranking. */
   export function rankGigsForGoal<T>(
     jobs: T[],
@@ -177,6 +296,7 @@ declare module "@gohustlr/shared" {
       skills?: string[];
       remaining?: number;
       myBookings?: Array<{ jobId?: string; status?: string }>;
+      extraAliases?: Record<string, string> | null;
     },
   ): T[];
   /** The one dollar formatter: whole dollars or exactly 2dp, always separated. */
@@ -222,14 +342,20 @@ declare module "@gohustlr/shared" {
 
   // ── analytics (Market Insights — area heat-map fallback) ──
   export function computeAreaInsights(
-    jobs: Array<{ location?: string | null; pay?: number | null; category?: string | null }> | null | undefined,
+    jobs: Array<{
+      location?: string | null;
+      pay?: number | null;
+      category?: string | null;
+      categorySlug?: string | null;
+    }> | null | undefined,
+    /** `topCategory` is a canonical label, or null when the area has no categorized gig. */
   ): Array<{ area: string; jobCount: number; avgPay: number | null; topCategory: string | null }>;
 
   // ── analytics (Hustlr Certified) ──
   export function computeCertifications(
     workerReviews: Array<{
       rating?: number | null;
-      job?: { category?: string | null; tags?: string[] | null } | null;
+      job?: { category?: string | null; categorySlug?: string | null; tags?: string[] | null } | null;
     }> | null | undefined,
     opts?: { threshold?: number; minRating?: number },
   ): {

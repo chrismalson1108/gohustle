@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../theme';
+import { categoryLabel } from '../../shared/categories.js';
 import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { maskLocation, canSeeExactAddress } from '../lib/address';
@@ -33,9 +34,12 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel, at
   const estPay = job.payType === 'hourly'
     ? `${formatMoney(job.pay * hours)}–${formatMoney(job.pay * hours + job.pay)} est.`
     : `${formatMoney(job.pay)} flat`;
+  // Canonical casing, so a gig posted as "lawn care" reads the same on the card as
+  // one posted as "Lawn Care"; an unrecognised value keeps the poster's own text.
+  const catLabel = categoryLabel(job.category);
   const meta = RECUR_LABEL[job.recurrence]
-    ? `${job.category} · ${RECUR_LABEL[job.recurrence]}`
-    : job.category;
+    ? `${catLabel} · ${RECUR_LABEL[job.recurrence]}`
+    : catLabel;
 
   return (
     <TouchableOpacity

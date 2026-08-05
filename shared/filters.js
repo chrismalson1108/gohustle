@@ -2,6 +2,7 @@
 // page so both apply identical rules. Extracted from src/components/FilterSheet.js
 // and src/screens/HomeScreen.js.
 import { haversineMiles } from './geo.js';
+import { resolveCategorySlug, categoryLabel } from './categories.js';
 
 export const DEFAULT_FILTERS = {
   payRange:   'any',    // 'any' | 'under25' | '25-50' | '50-100' | '100+'
@@ -83,44 +84,111 @@ export function getSlotDays(slots) {
   return days;
 }
 
-// A gig is "For You" if its category, title, or description relates to one of the
-// viewer's profile skills. Free-text skills are matched loosely against the gig's
-// fixed category (either contains the other) and against title/description text.
-export function matchesForYou(job, skills) {
-  const sk = (skills || []).map(s => String(s).toLowerCase().trim()).filter(Boolean);
-  if (sk.length === 0 || !job) return false;
-  const cat = String(job.category || '').toLowerCase().trim();
-  const tags = (job.tags || []).map(t => String(t).toLowerCase().trim()).filter(Boolean);
-  const title = String(job.title || '').toLowerCase();
-  const desc = String(job.description || '').toLowerCase();
-  return sk.some(s =>
-    (cat && (cat === s || cat.includes(s) || s.includes(cat))) ||
-    tags.some(t => t === s || t.includes(s) || s.includes(t)) ||
-    title.includes(s) ||
-    desc.includes(s),
-  );
+// ── Skill ⇄ gig matching ─────────────────────────────────────────────────────
+//
+// A skill and a gig are related when they share a category IDENTITY: the same slug
+// on one of the viewer's skills as on the gig's category or one of its tags. Skills
+// and categories are drawn from the same vocabulary (shared/categories.js), so slug
+// equality is the whole rule — and it is alias-aware, which is what makes "Lawncare",
+// "lawn care" and "Mowing" one thing instead of three.
+//
+// The rule this replaced compared lowercased strings and accepted a match when
+// EITHER contained the other. That is unbounded on the category side, and categories
+// are user-creatable now: a two-letter category like "IT" is a substring of the
+// preset skill "Fitness", so every fitness-skilled earner was shown IT gigs in For
+// You AND every IT applicant's fit score was inflated — which silently mis-ordered
+// the poster-facing "Fit" hiring sort, where the ranking is the whole product.
+//
+// Title/description text stays as a weaker signal, at half the weight, because a
+// word in a description is evidence of relevance rather than identity. It matches
+// whole words only and ignores skills shorter than MIN_TEXT_SKILL_LEN — that length
+// floor is what stops a two-letter skill from firing on every word that happens to
+// contain those letters.
+
+const MIN_TEXT_SKILL_LEN = 3;
+
+export const SKILL_MATCH_WEIGHT = { category: 1, text: 0.5 };
+
+// Split any text into comparable words. Mirrors categorySlug's "&" → "and" folding
+// so the text path and the slug path agree about "Deck & Patio".
+function words(text) {
+  return String(text ?? '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
 }
 
-// How well an applicant's skills fit a gig: the count of their skills that relate
-// to the job. A skill counts if it relates to the gig's category, any of its tags,
-// its title, or its description — using the SAME per-skill matching rule as
-// matchesForYou (equal / contains / contained-by, lowercased + trimmed). Used to
-// sort applicants by "Job fit". Returns 0 for empty skills or no job.
-export function skillFitScore(job, skills) {
-  const sk = (skills || []).map(s => String(s).toLowerCase().trim()).filter(Boolean);
-  if (sk.length === 0 || !job) return 0;
-  const cat = String(job.category || '').toLowerCase().trim();
-  const tags = (job.tags || []).map(t => String(t).toLowerCase().trim()).filter(Boolean);
-  const title = String(job.title || '').toLowerCase();
-  const desc = String(job.description || '').toLowerCase();
-  return sk.reduce((n, s) => {
-    const hit =
-      (cat && (cat === s || cat.includes(s) || s.includes(cat))) ||
-      tags.some(t => t === s || t.includes(s) || s.includes(t)) ||
-      title.includes(s) ||
-      desc.includes(s);
-    return hit ? n + 1 : n;
-  }, 0);
+// Does `needle` appear in `hay` as a contiguous run of whole words? Word arrays
+// rather than a regex so a multi-word skill ("furniture assembly") matches as a
+// phrase without any escaping, and so partial words never match.
+function hasPhrase(hay, needle) {
+  if (needle.length === 0 || needle.length > hay.length) return false;
+  for (let i = 0; i + needle.length <= hay.length; i += 1) {
+    let ok = true;
+    for (let k = 0; k < needle.length; k += 1) {
+      if (hay[i + k] !== needle[k]) { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/**
+ * Every category identity a gig carries — its category plus its tags — as slugs.
+ * `job.categorySlug` is the stored identity and wins over the display label, which
+ * may be a poster's older, un-normalized spelling.
+ */
+export function jobCategorySlugs(job, extraAliases) {
+  const out = new Set();
+  if (!job) return out;
+  const add = (v) => {
+    const slug = resolveCategorySlug(v, extraAliases);
+    if (slug) out.add(slug);
+  };
+  add(job.categorySlug || job.category);
+  (Array.isArray(job.tags) ? job.tags : []).forEach(add);
+  return out;
+}
+
+// Weight for ONE skill against one gig. Identity beats text; a skill that hits both
+// still counts once, so the score stays "how many of your skills fit".
+function skillWeight(skill, jobSlugs, titleWords, descWords, extraAliases) {
+  const raw = String(skill ?? '').trim();
+  if (!raw) return 0;
+  const slug = resolveCategorySlug(raw, extraAliases);
+  if (slug && jobSlugs.has(slug)) return SKILL_MATCH_WEIGHT.category;
+  const w = words(raw);
+  if (w.join('').length < MIN_TEXT_SKILL_LEN) return 0;
+  if (hasPhrase(titleWords, w) || hasPhrase(descWords, w)) return SKILL_MATCH_WEIGHT.text;
+  return 0;
+}
+
+/**
+ * How well an applicant's skills fit a gig — the weighted count of their skills that
+ * relate to it. Drives the poster's "Job fit" applicant sort and, via a >0 test, the
+ * For You feed. Returns 0 for empty skills or no job.
+ */
+export function skillFitScore(job, skills, opts) {
+  const list = Array.isArray(skills) ? skills : [];
+  if (!job || list.length === 0) return 0;
+  const extraAliases = opts ? opts.extraAliases : null;
+  const jobSlugs = jobCategorySlugs(job, extraAliases);
+  const titleWords = words(job.title);
+  const descWords = words(job.description);
+  const total = list.reduce(
+    (n, s) => n + skillWeight(s, jobSlugs, titleWords, descWords, extraAliases),
+    0,
+  );
+  return Math.round(total * 100) / 100;
+}
+
+/** A gig is "For You" when any of the viewer's skills fits it. */
+export function matchesForYou(job, skills, opts) {
+  return skillFitScore(job, skills, opts) > 0;
 }
 
 export function matchesPay(job, payRange) {
@@ -196,7 +264,15 @@ export function isHiddenForViewer(job, myBookings) {
 
 // Apply category chip + search + filters + sort. Returns a new array; attaches
 // `_distanceMi` when `userCoords` is provided. Mirrors HomeScreen's useMemo.
-export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [], myBookings } = {}) {
+//
+// `selectedCat` is 'all', 'foryou', or a category SLUG. It is resolved through
+// resolveCategorySlug on both sides, so a chip carrying a display label or an alias
+// still selects the right gigs — the chip row and the feed can never disagree the
+// way a byte-exact `j.category !== selectedCat` comparison let them.
+//
+// `extraAliases` is the {fromSlug: toSlug} map of merged categories loaded from the
+// DB (fetchCategories().aliases); omit it and only the seeded aliases apply.
+export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [], myBookings, extraAliases } = {}) {
   const schoolKey = (mySchool || '').trim().toLowerCase();
   // Radius filter center: an explicitly chosen location wins, else the default
   // (profile/device location) passed by the caller.
@@ -209,11 +285,22 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
     if (isHiddenForViewer(j, myBookings)) return false;
     if (blockedIds && blockedIds.has?.(j.posterId)) return false;
     if (selectedCat === 'foryou') {
-      if (!matchesForYou(j, forYouSkills)) return false;
-    } else if (selectedCat !== 'all' && j.category !== selectedCat) return false;
+      if (!matchesForYou(j, forYouSkills, { extraAliases })) return false;
+    } else if (selectedCat !== 'all') {
+      const want = resolveCategorySlug(selectedCat, extraAliases);
+      if (!want || resolveCategorySlug(j.categorySlug || j.category, extraAliases) !== want) return false;
+    }
 
-    const q = search.toLowerCase();
-    if (q && !j.title.toLowerCase().includes(q) && !j.description.toLowerCase().includes(q)) return false;
+    // The category label is part of the haystack: people search "plumbing" expecting
+    // plumbing gigs, and a poster who titled theirs "Leak under the sink" was
+    // unfindable when only the title and description were searched.
+    const q = search.toLowerCase().trim();
+    if (q) {
+      const hay = [j.title, j.description, categoryLabel(j.category || j.categorySlug)]
+        .map((s) => String(s ?? '').toLowerCase())
+        .join(' ');
+      if (!hay.includes(q)) return false;
+    }
 
     if (!matchesPay(j, filters.payRange)) return false;
     if (filters.payType !== 'any' && j.payType !== filters.payType) return false;

@@ -1,6 +1,13 @@
 // Map raw Supabase rows → the client-facing shapes used across the UI.
 // Mirrors transformJob / transformBooking in src/context/JobsContext.js so the
 // website and mobile app interpret the same backend identically.
+import { resolveCategorySlug } from './categories.js';
+
+// `category` is the DISPLAY label and `categorySlug` is the IDENTITY everything
+// filters, groups and counts on. The slug is derived here when the row doesn't
+// carry it, so a query that hasn't yet added `category_slug` to its select list
+// still produces a job every consumer can match on.
+const slugOf = (row) => row?.category_slug || resolveCategorySlug(row?.category);
 
 export function transformJob(dbJob) {
   return {
@@ -8,6 +15,7 @@ export function transformJob(dbJob) {
     posterId: dbJob.poster_id,
     title: dbJob.title,
     category: dbJob.category,
+    categorySlug: slugOf(dbJob),
     pay: Number(dbJob.pay),
     payType: dbJob.pay_type,
     location: dbJob.location,
@@ -61,7 +69,12 @@ export function fallbackJobFromBooking(b) {
     id: b.jobId,
     posterId: j.posterId ?? null,
     title: j.title || 'Gig no longer listed',
-    category: j.category || 'Odd Jobs',
+    // No category rather than a guessed one. This used to default to 'Odd Jobs' —
+    // a real, filterable category — so a booking with a thin embed invented work
+    // history in a category the gig was never posted under, and that phantom fed
+    // the Jack of All Trades count and the Hustlr Certified tally.
+    category: j.category || '',
+    categorySlug: j.categorySlug || resolveCategorySlug(j.category),
     pay: Number(j.pay) || 0,
     payType: j.payType || 'flat',
     location: j.location || '',
@@ -146,6 +159,7 @@ export function transformBooking(b) {
       // Needed by the badge engine (category variety, repeat-client and
       // apply-speed rules). Nullable — older joins may not select them.
       category: b.job.category || null,
+      categorySlug: slugOf(b.job) || null,
       posterId: b.job.poster_id || null,
       createdAt: b.job.created_at || null,
     } : null,

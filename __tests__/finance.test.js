@@ -5,6 +5,7 @@ import {
   scoreGig,
   rankGigsForGoal,
 } from '../src/lib/finance';
+import { matchesForYou } from '../src/lib/filters';
 
 describe('finance.computeGoalPlan', () => {
   // June 2026 has 30 days; pin "now" to June 15 (half the month gone).
@@ -49,14 +50,32 @@ describe('finance.suggestRate', () => {
     expect(r.basis).toBe('your rate + market');
   });
 
-  test('falls back to category default with no signal', () => {
+  test('falls back to the category default with no signal', () => {
     const r = suggestRate({ category: 'Tech Help' });
     expect(r.typical).toBe(30);
     expect(r.basis).toBe('category default');
   });
 
-  test('unknown category uses the generic floor', () => {
-    expect(suggestRate({ category: 'Nonsense' }).typical).toBe(20);
+  test('the rate comes from the catalog, not a seven-key copy of it', () => {
+    // The old table knew seven categories and quoted $20 for the other 190+.
+    expect(suggestRate({ category: 'Plumbing' }).typical).toBe(55);
+    expect(suggestRate({ category: 'Snow Removal' }).typical).toBe(28);
+    expect(suggestRate({ category: 'lawncare' }).typical).toBe(25); // alias → Lawn Care
+  });
+
+  test('a category we do not know quotes a neutral rate and SAYS so', () => {
+    // Deliberate change: the old code returned $20 for every user-created category
+    // while labelling it "category default", so a brand-new category was presented
+    // as having a researched rate of its own. The number is the same; the claim is not.
+    const r = suggestRate({ category: 'Drone Piloting' });
+    expect(r.typical).toBe(20);
+    expect(r.basis).toBe('typical starting rate');
+    expect(r.basis).not.toBe('category default');
+  });
+
+  test('a missing category is handled like an unknown one', () => {
+    expect(suggestRate({}).typical).toBe(20);
+    expect(suggestRate().typical).toBe(20);
   });
 });
 
@@ -75,6 +94,23 @@ describe('finance.marketRate', () => {
   });
   test('returns nulls when no gigs match', () => {
     expect(marketRate(jobs, 'Delivery')).toEqual({ avg: null, median: null, count: 0 });
+  });
+  test('no category means the whole market', () => {
+    expect(marketRate(jobs).count).toBe(4);
+  });
+  test('the market is not split by how each poster spelled the category', () => {
+    // Byte-exact label comparison quietly excluded every differently-spelled gig, so
+    // the "market average" a user was quoted came from a subset of the market.
+    const mixed = [
+      { category: 'Lawn Care', pay: 40 },
+      { category: 'lawn care', pay: 60 },
+      { category: 'LAWNCARE', pay: 50 },
+      { category: 'Moving', pay: 500 },
+      { categorySlug: 'lawn-care', category: 'whatever', pay: 50 },
+    ];
+    const m = marketRate(mixed, 'Mowing'); // alias → lawn-care
+    expect(m.count).toBe(4);
+    expect(m.avg).toBe(50);
   });
 });
 
@@ -95,5 +131,19 @@ describe('finance.scoreGig / rankGigsForGoal', () => {
   test('ranks the skill-matched, higher-value gig first', () => {
     const ranked = rankGigsForGoal(jobs, { skills: ['photography'], remaining: 400 });
     expect(ranked[0].title).toBe('Photography for event');
+  });
+
+  // scoreGig used to carry its own substring scan of the job text — a third rule with
+  // different semantics from matchesForYou and skillFitScore, so the goal card could
+  // recommend a gig For You would not show.
+  test('skill fit uses the same rule as For You and the hiring Fit sort', () => {
+    const gig = { title: 'Weekly visit', description: 'two dogs', category: 'Dog Walking', pay: 40, status: 'open' };
+    expect(matchesForYou(gig, ['Dog Walker'])).toBe(true); // alias → dog-walking
+    expect(scoreGig(gig, { skills: ['Dog Walker'] })).toBeGreaterThan(scoreGig(gig, { skills: [] }));
+  });
+
+  test('a category that is only a substring of a skill no longer inflates the score', () => {
+    const gig = { title: 'Fix the office printer', description: 'network is down', category: 'IT', pay: 40, status: 'open' };
+    expect(scoreGig(gig, { skills: ['Fitness'] })).toBe(scoreGig(gig, { skills: [] }));
   });
 });

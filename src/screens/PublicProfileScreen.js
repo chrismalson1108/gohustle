@@ -9,6 +9,8 @@ import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { isFavorite, addFavorite, removeFavorite } from '../lib/favorites';
 import { fetchCertifications, safeCertUrl } from '../lib/certifications';
+import { fetchCategories } from '../lib/categories';
+import { categoryLabel, resolveCategorySlug } from '../../shared/categories.js';
 import { computeCertifications } from '../lib/insights';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { notify } from '../lib/push';
@@ -23,6 +25,24 @@ import { colors, radii, shadows } from '../theme';
 
 const avg = (arr) => arr.length ? (arr.reduce((s, r) => s + Number(r.rating || 0), 0) / arr.length) : null;
 
+// Collapse rows that name the same category. computeCertifications already tallies by
+// slug, but only against the aliases compiled into the binary — two categories that DB
+// curation has since merged still arrive as separate rows — and stored profile skills
+// were never deduped at all. Rendering both would show the identical chip twice, under a
+// duplicate React key. First wins: these lists arrive count-ordered, and the counts were
+// judged against the certification threshold per tally, so summing them would print a
+// progress row above its own target.
+const dedupeByCategory = (rows, index) => {
+  const seen = new Set();
+  return rows.filter((r) => {
+    if (!r.label) return false;
+    const key = resolveCategorySlug(r.label, index?.aliases) || r.label.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
   const { user } = useAuth();
@@ -36,6 +56,7 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [reviews, setReviews] = useState([]);
   const [listings, setListings] = useState([]);
   const [certs, setCerts] = useState([]);
+  const [cats, setCats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -111,22 +132,29 @@ export default function PublicProfileScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     if (user && !isSelf) isFavorite(user.id, userId).then(setFav).catch(() => {});
-    const [{ data: prof }, { data: revs }, { data: jobs }, certRows] = await Promise.all([
+    const [{ data: prof }, { data: revs }, { data: jobs }, certRows, catIndex] = await Promise.all([
       supabase.from('profiles')
         .select('id, name, avatar_initial, avatar_url, city, bio, skills, skill_rates, rating, review_count, member_since, verified, created_at, school, major, grad_year, student_verified, student_status, work_status')
         .eq('id', userId).single(),
       supabase.from('reviews')
-        .select('id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
+        .select('id, rating, text, date, role, job:jobs(title, category, category_slug, tags), reviewer:profiles!reviewer_id(id, name, avatar_initial, avatar_url)')
         .eq('reviewed_user_id', userId).order('created_at', { ascending: false }),
       supabase.from('jobs')
-        .select('id, title, category, pay, pay_type, location, status')
+        .select('id, title, category, category_slug, pay, pay_type, location, status')
         .eq('poster_id', userId).eq('status', 'open').order('created_at', { ascending: false }),
       fetchCertifications(userId).catch(() => []),
+      fetchCategories(),
     ]);
     setProfile(prof || null);
-    setReviews(revs || []);
+    // computeCertifications keys its tallies on the slug and PostgREST hands back the raw
+    // column name, so map it: a certification then counts by category identity instead of
+    // by whatever spelling that job's label happens to carry.
+    setReviews((revs || []).map(r => (
+      r.job ? { ...r, job: { ...r.job, categorySlug: r.job.category_slug } } : r
+    )));
     setListings(jobs || []);
     setCerts(certRows || []);
+    setCats(catIndex);
     setLoading(false);
 
     // Availability is private by default. It's served through the SECURITY DEFINER
@@ -157,6 +185,19 @@ export default function PublicProfileScreen({ route, navigation }) {
   const overall = avg(reviews);
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
+
+  // Everything category-shaped here is somebody else's stored text — skills a profile has
+  // carried since before the taxonomy, and certification tallies built from review job
+  // categories and tags. Resolve each through the loaded index so a community category
+  // shows the label its creator registered, and so nothing ever displays a bare slug.
+  // skill_rates stays keyed by the label the skill was SAVED under, not the one shown.
+  const catLabel = (v) => categoryLabel(v, cats?.list || []);
+  const skillChips = dedupeByCategory(
+    (profile.skills || []).map(s => ({ stored: s, label: catLabel(s), rate: profile.skill_rates?.[s] })),
+    cats,
+  );
+  const certifiedCats = dedupeByCategory(certified.map(c => ({ ...c, label: catLabel(c.label) })), cats);
+  const progressCats = dedupeByCategory(progress.map(p => ({ ...p, label: catLabel(p.label) })), cats);
 
   const availDays = DAYS
     .map((label, day) => ({ label, day, windows: windowsForDay(availability, day) }))
@@ -311,24 +352,24 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       ) : null}
 
-      {profile.skills?.length > 0 && (
+      {skillChips.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Skills</Text>
           <View style={styles.chipWrap}>
-            {profile.skills.map(s => (
-              <View key={s} style={styles.skillChip}>
-                <Text style={styles.skillText} numberOfLines={1}>{s}{profile.skill_rates?.[s] ? ` · $${profile.skill_rates[s]}/hr` : ''}</Text>
+            {skillChips.map(s => (
+              <View key={s.stored} style={styles.skillChip}>
+                <Text style={styles.skillText} numberOfLines={1}>{s.label}{s.rate ? ` · $${s.rate}/hr` : ''}</Text>
               </View>
             ))}
           </View>
         </View>
       )}
 
-      {certified.length > 0 && (
+      {certifiedCats.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Hustlr Certified</Text>
           <View style={styles.certWrap}>
-            {certified.map(c => (
+            {certifiedCats.map(c => (
               <View key={c.label} style={styles.certifiedBadge}>
                 <Ionicons name="shield-checkmark" size={18} color={colors.success} style={{ marginRight: 8 }} />
                 <View style={styles.certifiedTextWrap}>
@@ -341,11 +382,11 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
       )}
 
-      {isSelf && certified.length === 0 && progress.length > 0 && (
+      {isSelf && certifiedCats.length === 0 && progressCats.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Progress to certification</Text>
           <View style={styles.progressCard}>
-            {progress.map(p => (
+            {progressCats.map(p => (
               <View key={p.label} style={styles.progressRow}>
                 <Text style={styles.progressLabel} numberOfLines={1}>{p.label}</Text>
                 <Text style={styles.progressCount} numberOfLines={1}>{p.count}/{p.needed}</Text>
@@ -396,7 +437,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               <View style={styles.rowGrow}>
                 <Text style={styles.jobTitle} numberOfLines={1}>{j.title}</Text>
                 <Text style={styles.jobMeta} numberOfLines={1}>
-                  {j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {j.category} · {maskLocation(j.location)}
+                  {j.pay_type === 'hourly' ? `$${j.pay}/hr` : `$${j.pay} flat`} · {catLabel(j.category || j.category_slug)} · {maskLocation(j.location)}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.rowChevron} />

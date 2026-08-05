@@ -8,44 +8,15 @@ import LocationPicker from './LocationPicker';
 import KeyboardDoneBar from './KeyboardDoneBar';
 import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
+import { DEFAULT_FILTERS, DAY_OPTIONS, RADIUS_OPTIONS, countActiveFilters } from '../lib/filters';
 
-export const DEFAULT_FILTERS = {
-  payRange:   'any',   // 'any' | 'under25' | '25-50' | '50-100' | '100+'
-  days:       [],      // [] = any; ['Mon','Fri'] = those days
-  location:   'any',   // 'any' | 'remote' | state abbreviation like 'TX'
-  payType:    'any',   // 'any' | 'flat' | 'hourly'
-  urgentOnly: false,
-  verifiedStudentsOnly: false, // only gigs from Verified Student posters
-  campusOnly: false,           // only gigs from posters at the viewer's school
-  radius:     'any',   // 'any' | 5 | 10 | 25 | 50 — miles from the center
-  near:       null,    // { label, lat, lng } center; null = profile/device location
-  sortBy:     'newest', // 'newest' | 'pay_high' | 'pay_low'
-};
+// Re-exported, not redefined: shared/filters.js applyJobFilters reads these exact
+// keys now that the browse feed runs through it, and a key this sheet offered but the
+// feed didn't apply would be a filter that silently does nothing.
+export { DEFAULT_FILTERS, countActiveFilters } from '../lib/filters';
 
-const RADIUS_OPTIONS = [
-  { id: 'any', label: 'Any distance' },
-  { id: 5,     label: 'Within 5 mi' },
-  { id: 10,    label: 'Within 10 mi' },
-  { id: 25,    label: 'Within 25 mi' },
-  { id: 50,    label: 'Within 50 mi' },
-];
-
-export function countActiveFilters(f) {
-  let n = 0;
-  if (f.payRange   !== 'any')   n++;
-  if (f.days.length > 0)        n++;
-  if (f.location   !== 'any')   n++;
-  if (f.payType    !== 'any')   n++;
-  if (f.urgentOnly)             n++;
-  if (f.verifiedStudentsOnly)   n++;
-  if (f.campusOnly)             n++;
-  if (f.radius     !== 'any')   n++;
-  if (f.sortBy     !== 'newest') n++;
-  return n;
-}
-
-const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
+// Copy stays local: mobile labels are sentence case and carry an Ionicon, which the
+// cross-platform option lists have no reason to know about.
 const PAY_OPTIONS = [
   { id: 'any',      label: 'Any pay' },
   { id: 'under25',  label: 'Under $25' },

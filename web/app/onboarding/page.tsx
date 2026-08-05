@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Tag, Target, MapPin, Dumbbell, Rocket, ArrowRight, Check, GraduationCap, Briefcase, Zap } from "lucide-react";
-import { parseDob, isAdult, MIN_AGE } from "@gohustlr/shared";
+import { parseDob, isAdult, MIN_AGE, sameCategory } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { fetchCurrentDocs, recordAcceptances } from "@/lib/legal";
@@ -12,6 +12,7 @@ import { getReferralCode, recordReferral } from "@/lib/referrals";
 import Button from "@/components/ui/Button";
 import { Input, Textarea, Select } from "@/components/ui/Field";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+import CategoryPicker from "@/components/CategoryPicker";
 import LocationPicker from "@/components/LocationPicker";
 import { classNames } from "@/lib/format";
 
@@ -20,7 +21,6 @@ const ROLES = [
   { id: "poster", label: "Poster", desc: "I want to post jobs and hire people", Icon: Briefcase },
   { id: "both", label: "Both", desc: "I want to earn AND post jobs", Icon: Zap },
 ];
-const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -66,8 +66,11 @@ export default function OnboardingPage() {
   }, [authLoading, session, onboardingResolved, onboardingDone, router]);
 
   const next = () => setStep((s) => s + 1);
-  const toggleSkill = (s: string) =>
-    setSkills((p) => (p.includes(s) ? p.filter((x) => x !== s) : [...p, s]));
+  // CategoryPicker reports a TOGGLE; membership is decided on the slug so two
+  // spellings of one category can't both land in the list. Stored as LABELS —
+  // profiles.skill_rates is keyed by them later in Settings.
+  const toggleSkill = (label: string, slug: string) =>
+    setSkills((p) => (p.some((s) => sameCategory(s, slug)) ? p.filter((s) => !sameCategory(s, slug)) : [...p, label]));
 
   const checkUsername = async () => {
     const u = username.trim().toLowerCase();
@@ -296,24 +299,20 @@ export default function OnboardingPage() {
         {step === 4 &&
           (role === "earner" || role === "both" ? (
             <Step icon={<Dumbbell className="size-14 text-primary" />} title="Your skills" sub="Earners with skills get hired faster.">
-              <div className="flex flex-wrap justify-center gap-2">
-                {SKILL_OPTIONS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => toggleSkill(s)}
-                    className={classNames(
-                      "cursor-pointer rounded-full border px-3.5 py-2 text-[13px] font-semibold transition",
-                      skills.includes(s) ? "border-primary bg-primary text-white" : "border-line bg-white text-ink-soft hover:bg-primary-light/40",
-                    )}
-                  >
-                    {s}
-                  </button>
-                ))}
+              {/* Left-aligned like the location step: the picker is a form control
+                  with a search field and a dropdown, not a centered chip rack. */}
+              <div className="text-left">
+                <CategoryPicker
+                  value={skills}
+                  onChange={toggleSkill}
+                  multiple
+                  placeholder="Search skills — e.g. House Cleaning, Tutoring…"
+                />
               </div>
               <p className="mt-5 text-sm text-ink-soft">How far will you travel?</p>
-              {/* Pills, same as the skill chips directly above — these used to be
-                  16px rounded rectangles three lines away from a row of 999px
-                  pills, two chip languages in one step. */}
+              {/* Pills, matching the selection tokens the picker draws above — these
+                  used to be 16px rounded rectangles three lines away from a row of
+                  999px pills, two chip languages in one step. */}
               <div className="mt-2 flex flex-wrap justify-center gap-2">
                 {RADIUS_OPTIONS.map((r) => (
                   <button

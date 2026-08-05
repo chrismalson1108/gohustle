@@ -6,7 +6,10 @@ import {
   ChevronDown, Trash2, Plus, X, Camera, Loader2, LogOut, Lock, Award,
   GraduationCap, ClipboardList, Zap, Star, Banknote, MessageCircle, Briefcase,
 } from "lucide-react";
-import { CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited } from "@gohustlr/shared";
+import {
+  CLASS_STANDINGS, DEGREE_TYPES, parseDob, isAdult, MIN_AGE, findProhibited,
+  categoryLabel, sameCategory,
+} from "@gohustlr/shared";
 import { moderateText, logModerationBlock } from "@/lib/moderation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
@@ -23,11 +26,11 @@ import Avatar from "@/components/ui/Avatar";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { Input, Textarea, Label, Select } from "@/components/ui/Field";
+import CategoryPicker from "@/components/CategoryPicker";
 import LocationPicker from "@/components/LocationPicker";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
 
-const SKILL_OPTIONS = ["Lawn Care","Moving Help","Cleaning","Tutoring","Tech Help","Delivery","Pet Care","Handyman","Photography","Writing","Design","Cooking","Driving","Assembly","Painting","Music","Fitness","Childcare","Errands","Other"];
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 // Icon + label, matching mobile's role chips (school / clipboard / flash).
@@ -258,7 +261,17 @@ export default function SettingsPage() {
     }
   };
 
-  const toggleSkill = (s: string) => set("skills", f.skills.includes(s) ? f.skills.filter((x) => x !== s) : [...f.skills, s]);
+  // CategoryPicker reports a TOGGLE, and membership is decided on the slug: a profile
+  // saved before the taxonomy landed can hold "Cleaning" where the catalog now says
+  // "House Cleaning", and a string compare would store both for the one skill.
+  // What we STORE stays the label — skill_rates below is a map keyed by these strings.
+  const toggleSkill = (label: string, slug: string) =>
+    set(
+      "skills",
+      f.skills.some((s) => sameCategory(s, slug))
+        ? f.skills.filter((s) => !sameCategory(s, slug))
+        : [...f.skills, label],
+    );
 
   const toggleShowAvailability = async (value: boolean) => {
     if (!user) return;
@@ -673,11 +686,12 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <Label>My skills</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {SKILL_OPTIONS.map((s) => (
-                      <Chip key={s} active={f.skills.includes(s)} onClick={() => toggleSkill(s)}>{s}</Chip>
-                    ))}
-                  </div>
+                  <CategoryPicker
+                    value={f.skills}
+                    onChange={toggleSkill}
+                    multiple
+                    placeholder="Search skills — e.g. House Cleaning, Tutoring…"
+                  />
                 </div>
                 {f.skills.length > 0 && (
                   <div>
@@ -685,7 +699,9 @@ export default function SettingsPage() {
                     <div className="grid gap-2 @2xl:grid-cols-2 @2xl:gap-x-6">
                       {f.skills.map((s) => (
                         <div key={s} className="flex items-center justify-between gap-3">
-                          <span className="min-w-0 truncate text-sm font-semibold text-ink">{s}</span>
+                          {/* Shown through categoryLabel so the rate row reads the same as
+                              the token above it; the RATE stays keyed by the stored string. */}
+                          <span className="min-w-0 truncate text-sm font-semibold text-ink">{categoryLabel(s)}</span>
                           <div className="flex w-28 shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 py-2.5 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
                             <span className="shrink-0 text-ink-soft">$</span>
                             <input
@@ -693,7 +709,7 @@ export default function SettingsPage() {
                               onChange={(e) => setF((p) => ({ ...p, skillRates: { ...p.skillRates, [s]: e.target.value.replace(/[^0-9]/g, "") } }))}
                               inputMode="numeric"
                               placeholder="—"
-                              aria-label={`Hourly rate for ${s}`}
+                              aria-label={`Hourly rate for ${categoryLabel(s)}`}
                               className="w-full min-w-0 bg-transparent text-base font-bold outline-none sm:text-sm"
                             />
                             <span className="shrink-0 text-xs text-ink-muted">/hr</span>

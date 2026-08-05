@@ -22,31 +22,10 @@ export function validateJobPay(value) {
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEPRECATED — the taxonomy now lives in shared/categories.js and the `categories`
-// table. These two exports remain only so any not-yet-migrated importer keeps
-// compiling; they are DERIVED from the catalog rather than hand-written, so they
-// can no longer drift from it.
-//
-// Do not add to them. Replacements:
-//   CATEGORIES       → searchCategories() / categoriesByGroup() / browseChipsFromJobs()
-//   CATEGORY_COLORS  → categoryColor(value)   (has a fallback; this object does not)
-// ─────────────────────────────────────────────────────────────────────────────
-import { LEGACY_CATEGORY_LABELS, findCategory, categoryColor } from './categories.js';
-
-/** @deprecated Chips are now data-driven — see browseChipsFromJobs(). */
-export const CATEGORIES = [
-  { id: 'all', label: 'All', icon: '🌟', ion: 'grid' },
-  ...LEGACY_CATEGORY_LABELS.map((label) => {
-    const c = findCategory(label);
-    return { id: label, label, icon: '🛠️', ion: c ? c.ion : 'construct' };
-  }),
-];
-
-/** @deprecated Use categoryColor(value) — it covers user-created categories too. */
-export const CATEGORY_COLORS = Object.fromEntries(
-  LEGACY_CATEGORY_LABELS.map((label) => [label, categoryColor(label)]),
-);
+// The gig taxonomy used to live here as a seven-entry CATEGORIES array plus a
+// CATEGORY_COLORS lookup. It is now shared/categories.js backed by the `categories`
+// table — see that file. Nothing imports the old exports any more, so they are gone
+// rather than left as shims for something to quietly reattach to.
 
 // Badge groups, in display order. Used by the Trophy Case to section the list.
 export const BADGE_GROUPS = [

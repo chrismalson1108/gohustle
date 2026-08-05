@@ -61,6 +61,15 @@ const POSTER_BASE = "name, avatar_initial, avatar_url, rating, review_count, ver
 const EARNER_RICH = "id, name, avatar_initial, avatar_url, rating, review_count, skills, school, student_verified, student_status";
 const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count, skills";
 
+// The thin job embed on a booking. `category`/`category_slug` were missing entirely,
+// so BookingJobMini.category was always null on web and every category-derived rule
+// over bookings silently counted nothing (the shared jackOfAll badge tallies distinct
+// job categories). "base" drops category_slug for a database that predates the
+// dynamic-categories migration — PostgREST rejects the WHOLE query on an unknown
+// column (42703), which would leave the user with no bookings at all.
+const JOB_MINI = "id, title, pay, pay_type, location, category, category_slug";
+const JOB_MINI_BASE = "id, title, pay, pay_type, location, category";
+
 // Cancellation-fee policy (record/display only — NO money moves). 15% of the
 // booking's effective pay (counterOffer ?? job pay; hourly is multiplied by
 // estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
@@ -391,14 +400,22 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       const cached = await cacheGet<Booking[]>(BOOKINGS_CACHE);
       if (cached?.length) dispatch({ type: "SET_BOOKINGS", bookings: cached });
 
-      const { data, error } = await supabase
+      const bookingsSelect = (job: string) => `*, job:jobs!bookings_job_id_fkey(${job})`;
+      let { data, error } = await supabase
         .from("bookings")
-        .select(`*, job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location)`)
+        .select(bookingsSelect(JOB_MINI))
         .eq("earner_id", user.id)
         .order("created_at", { ascending: false });
+      if (error?.code === "42703") {
+        ({ data, error } = await supabase
+          .from("bookings")
+          .select(bookingsSelect(JOB_MINI_BASE))
+          .eq("earner_id", user.id)
+          .order("created_at", { ascending: false }));
+      }
 
       if (error || !data) return;
-      const bookings = data.map(transformBooking) as Booking[];
+      const bookings = (data as unknown as Record<string, unknown>[]).map(transformBooking) as Booking[];
       dispatch({ type: "SET_BOOKINGS", bookings });
       cacheSet(BOOKINGS_CACHE, bookings);
     } finally {
@@ -422,17 +439,19 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }
     const jobIds = myJobs.map((j) => j.id);
 
-    const bookingsSelect = (earner: string) =>
-      `*, earner:profiles!bookings_earner_id_fkey(${earner}), job:jobs!bookings_job_id_fkey(id, title, pay, pay_type)`;
+    const bookingsSelect = (earner: string, job: string) =>
+      `*, earner:profiles!bookings_earner_id_fkey(${earner}), job:jobs!bookings_job_id_fkey(${job})`;
     let { data, error } = await supabase
       .from("bookings")
-      .select(bookingsSelect(EARNER_RICH))
+      .select(bookingsSelect(EARNER_RICH, JOB_MINI))
       .in("job_id", jobIds)
       .order("created_at", { ascending: false });
+    // 42703 names no column, so the retry drops both optional sets at once: the
+    // student-verification columns and jobs.category_slug.
     if (error?.code === "42703") {
       ({ data, error } = await supabase
         .from("bookings")
-        .select(bookingsSelect(EARNER_BASE))
+        .select(bookingsSelect(EARNER_BASE, JOB_MINI_BASE))
         .in("job_id", jobIds)
         .order("created_at", { ascending: false }));
     }
@@ -1132,7 +1151,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       captureError(error || new Error("Job insert failed"), { op: "addJob" });
       throw new Error(error?.message || "Couldn't post your gig. Please try again.");
     }
-    track("gig_posted", { category: d.category, payType: d.payType });
+    // Report what was STORED: the before-insert trigger snaps the category to its
+    // canonical label and slug, and an analytics rollup grouped by the raw label is
+    // exactly the fragmentation ("lawn care" vs "Lawn Care") the slug exists to end.
+    track("gig_posted", { category: newJob.category, categorySlug: newJob.category_slug, payType: d.payType });
 
     const slots = d.slots as Array<{ label: string; startsAt?: string | null }> | undefined;
     if (slots?.length)
@@ -1146,6 +1168,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       job: {
         ...(jobData as object),
         id: newJob.id,
+        // Same reason: show the normalized pair until fetchJobs() lands, so a gig
+        // posted as "lawn care" doesn't read that way for a beat on the way back.
+        category: newJob.category ?? d.category,
+        categorySlug: newJob.category_slug ?? d.categorySlug,
         posterId: user.id,
         postedAt: "Just now",
         status: "open",

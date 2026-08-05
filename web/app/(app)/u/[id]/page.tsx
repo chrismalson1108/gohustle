@@ -20,7 +20,7 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, workStatusMeta } from "@gohustlr/shared";
+import { categoryLabel, collegeLine, computeCertifications, DAYS, windowsForDay, fmtTime, workStatusMeta } from "@gohustlr/shared";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -69,7 +69,12 @@ interface PubReview {
   text: string | null;
   date: string | null;
   role: string;
-  job: { title: string | null; category?: string | null; tags?: string[] | null } | null;
+  job: {
+    title: string | null;
+    category?: string | null;
+    category_slug?: string | null;
+    tags?: string[] | null;
+  } | null;
   reviewer: { name: string | null; avatar_initial: string | null; avatar_url: string | null } | null;
 }
 
@@ -77,6 +82,7 @@ interface PubListing {
   id: string;
   title: string;
   category: string;
+  category_slug: string | null;
   pay: number;
   pay_type: "flat" | "hourly";
   location: string;
@@ -223,12 +229,12 @@ export default function PublicProfilePage() {
           .single(),
         supabase
           .from("reviews")
-          .select("id, rating, text, date, role, job:jobs(title, category, tags), reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
+          .select("id, rating, text, date, role, job:jobs(title, category, category_slug, tags), reviewer:profiles!reviewer_id(name, avatar_initial, avatar_url)")
           .eq("reviewed_user_id", id)
           .order("created_at", { ascending: false }),
         supabase
           .from("jobs")
-          .select("id, title, category, pay, pay_type, location")
+          .select("id, title, category, category_slug, pay, pay_type, location")
           .eq("poster_id", id)
           .eq("status", "open"),
         fetchCertifications(id).catch(() => [] as Certification[]),
@@ -270,7 +276,13 @@ export default function PublicProfilePage() {
   const workerAvg = avg(workerReviews);
   const clientAvg = avg(clientReviews);
   const recentWork = workerReviews.slice(0, 10);
-  const { certified, progress } = computeCertifications(workerReviews);
+  // These rows are raw Supabase, not transformJob output, so the stored identity
+  // arrives as snake_case. Hand it over under the name the shared tally reads —
+  // otherwise it falls back to the display label, and a certification is exactly
+  // the claim that must not fragment across spellings of one category.
+  const { certified, progress } = computeCertifications(
+    workerReviews.map((r) => ({ ...r, job: r.job && { ...r.job, categorySlug: r.job.category_slug } })),
+  );
 
   // "4.8 · 12 reviews · Since 2025" — either half can be absent, and with neither
   // the line is empty and must not be rendered at all (an empty <p> still claims a
@@ -463,10 +475,13 @@ export default function PublicProfilePage() {
         {profile.skills && profile.skills.length > 0 && (
           <Section title="Skills">
             <div className="flex flex-wrap gap-2">
+              {/* Skills are drawn from the same catalog as categories, so they show
+                  canonical casing — but skill_rates is a jsonb map keyed by the
+                  stored string, so the rate lookup stays on the raw value. */}
               {profile.skills.map((s) => (
                 <span key={s} className="inline-flex max-w-full items-center rounded-full border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-soft">
                   <span className="truncate">
-                    {s}
+                    {categoryLabel(s)}
                     {profile.skill_rates?.[s] ? ` · ${money(profile.skill_rates[s])}/hr` : ""}
                   </span>
                 </span>
@@ -560,7 +575,13 @@ export default function PublicProfilePage() {
                     {/* maskLocation, never the raw address: a public listing row must
                         not leak the street/unit a poster typed in. */}
                     <p className="mt-1 truncate text-xs text-ink-muted">
-                      {payLabel({ pay: j.pay, payType: j.pay_type })} · {j.category} · {maskLocation(j.location)}
+                      {[
+                        payLabel({ pay: j.pay, payType: j.pay_type }),
+                        categoryLabel(j.category || j.category_slug),
+                        maskLocation(j.location),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-ink-muted" />

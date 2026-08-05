@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { BarChart3, MapPin, TrendingUp, Sparkles, Users, Coins, Tag } from "lucide-react";
-import { computeAreaInsights } from "@gohustlr/shared";
+import { categoryLabel, computeAreaInsights } from "@gohustlr/shared";
 import { useJobs } from "@/lib/jobs";
 import { supabase } from "@/lib/supabaseClient";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
@@ -83,7 +83,12 @@ export default function InsightsPage() {
               area: d.area,
               jobCount: Number(d.job_count) || 0,
               avgPay: num(d.avg_pay),
-              topCategory: d.top_category,
+              // The RPC picks the modal category_slug and LEFT JOINs `categories`
+              // for its label, so this is null whenever that join misses (an area
+              // whose gigs carry no category, or a slug with no catalog row yet).
+              // categoryLabel folds the absent case to "", which the row drops —
+              // the rest of the area's stats still render.
+              topCategory: categoryLabel(d.top_category) || null,
               avgTip: num(d.avg_tip),
               workerCount: d.worker_count == null ? null : Number(d.worker_count),
             })),

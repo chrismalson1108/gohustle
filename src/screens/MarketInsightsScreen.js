@@ -9,6 +9,7 @@ import JobsMap from '../components/JobsMap';
 import { useJobs } from '../context/JobsContext';
 import { supabase } from '../lib/supabase';
 import { computeAreaInsights } from '../lib/insights';
+import { categoryLabel } from '../../shared/categories.js';
 import { colors, radii, shadows } from '../theme';
 
 // Coerce a value (number or numeric string from Postgres) to a finite number or null.
@@ -120,6 +121,11 @@ export default function MarketInsightsScreen() {
           </View>
         ) : (
           display.map((r, i) => {
+            // area_market_stats takes mode() over category_slug and LEFT JOINs the
+            // label, so top_category is null for an area whose top slug has no
+            // categories row — and categoryLabel() renders a bare slug properly if
+            // the join is ever dropped. Empty string means "don't show the line".
+            const topCategory = categoryLabel(r.topCategory);
             return (
               <View key={r.area} style={styles.card}>
                 <View style={styles.cardTop}>
@@ -144,10 +150,10 @@ export default function MarketInsightsScreen() {
                       <Text style={[styles.statText, styles.statTextMoney]} numberOfLines={1}>avg {money(r.avgPay)}</Text>
                     </View>
                   )}
-                  {r.topCategory && (
+                  {!!topCategory && (
                     <View style={styles.stat}>
                       <Ionicons name="pricetag-outline" size={15} color={colors.textMuted} />
-                      <Text style={styles.statText} numberOfLines={1}>mostly {r.topCategory}</Text>
+                      <Text style={styles.statText} numberOfLines={1}>mostly {topCategory}</Text>
                     </View>
                   )}
                   {r.avgTip != null && (

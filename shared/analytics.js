@@ -2,6 +2,7 @@
 // earner's OWN completed (verified/paid) bookings. Pure, defensive, no DB calls:
 // it only reads the booking shapes produced by transformBooking, so the same
 // function powers the mobile "My Jobs" dashboard and the web my-jobs page.
+import { resolveCategorySlug, categoryLabel } from './categories.js';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -92,7 +93,8 @@ export function computeEarnerInsights(bookings) {
 //
 // Returns: [{ area, jobCount, avgPay, topCategory }, ...] for areas with
 // jobCount >= 1, sorted by jobCount desc (ties → first-seen area). Defensive:
-// non-array / empty input → []. `area` preserves the original-cased location.
+// non-array / empty input → []. `area` preserves the original-cased location;
+// `topCategory` is the canonical category label.
 export function computeAreaInsights(jobs) {
   const list = Array.isArray(jobs) ? jobs : [];
 
@@ -122,8 +124,12 @@ export function computeAreaInsights(jobs) {
       t.payN += 1;
     }
 
-    const cat = typeof job.category === 'string' ? job.category.trim() : '';
-    if (cat) t.categories.set(cat, (t.categories.get(cat) || 0) + 1);
+    // Tally by SLUG. The area key on the line above was already case-folded, but
+    // categories were counted byte-exact, so "Lawn Care" and "lawn care" competed
+    // as two separate candidates for the same area's top category — and could
+    // between them lose to a third category neither of them beat.
+    const slug = resolveCategorySlug(job.categorySlug || job.category);
+    if (slug) t.categories.set(slug, (t.categories.get(slug) || 0) + 1);
   }
 
   const rows = order.map((key) => {
@@ -134,7 +140,7 @@ export function computeAreaInsights(jobs) {
       area: t.display,
       jobCount: t.count,
       avgPay,
-      topCategory: top ? top.key : null,
+      topCategory: top ? categoryLabel(top.key) : null,
     };
   });
 
@@ -149,11 +155,6 @@ export function computeAreaInsights(jobs) {
 // worker's `reviews` (role === 'earner') joined to the job's `category`/`tags`.
 // No DB migration — same data the public profile already fetches.
 
-// Title-case a label as a friendly fallback when we have no original casing.
-function titleCase(s) {
-  return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-}
-
 // computeCertifications(workerReviews, opts) → { certified, progress }.
 //   workerReviews: earner-role review rows, each with { rating, job: { category, tags } }.
 //   opts: { threshold = 50, minRating = 4.0 }.
@@ -162,7 +163,10 @@ function titleCase(s) {
 //     certified: [{ label, count, avg }],            // count >= threshold AND avg >= minRating, sorted by count desc
 //     progress:  [{ label, count, needed }],         // top (<=3) not-yet-certified labels, sorted by count desc
 //   }
-// `label` preserves the first-seen original-cased label (or a Title-Cased fallback).
+// Tallies are keyed by category SLUG and displayed through categoryLabel(), so a
+// worker's 50 gigs cannot fragment across spellings. That matters more here than
+// anywhere else: a certification is a public trust claim, and a threshold nobody
+// can reach because their history splits three ways is a feature that never fires.
 // Defensive: non-array / missing input → empty result.
 export function computeCertifications(workerReviews, opts) {
   const threshold = opts && Number.isFinite(opts.threshold) ? opts.threshold : 50;
@@ -170,18 +174,14 @@ export function computeCertifications(workerReviews, opts) {
 
   const list = Array.isArray(workerReviews) ? workerReviews : [];
 
-  // key (lowercased/trimmed) → { count, ratingSum, display }
+  // slug → { count, ratingSum, display (first-seen raw label) }
   const tallies = new Map();
 
-  const bump = (raw, rating) => {
-    if (typeof raw !== 'string') return;
-    const display = raw.trim();
-    if (!display) return;
-    const key = display.toLowerCase();
-    let t = tallies.get(key);
+  const bump = (slug, display, rating) => {
+    let t = tallies.get(slug);
     if (!t) {
       t = { count: 0, ratingSum: 0, display };
-      tallies.set(key, t);
+      tallies.set(slug, t);
     }
     t.count += 1;
     t.ratingSum += Number.isFinite(Number(rating)) ? Number(rating) : 0;
@@ -189,17 +189,27 @@ export function computeCertifications(workerReviews, opts) {
 
   for (const r of list) {
     if (!r || !r.job) continue;
-    const rating = r.rating;
-    bump(r.job.category, rating);
     const tags = Array.isArray(r.job.tags) ? r.job.tags : [];
-    for (const tag of tags) bump(tag, rating);
+    // Identity from the slug where the row has one, display from the label. One gig
+    // counts ONCE per category however many of its fields name that category — a gig
+    // tagged with its own category used to be counted twice, inflating the public
+    // "50 jobs" claim with work that was never done.
+    const seen = new Map();
+    const note = (identity, display) => {
+      if (typeof identity !== 'string' || !identity.trim()) return;
+      const slug = resolveCategorySlug(identity);
+      if (slug && !seen.has(slug)) seen.set(slug, String(display || identity).trim());
+    };
+    note(r.job.categorySlug || r.job.category, r.job.category || r.job.categorySlug);
+    for (const tag of tags) note(tag, tag);
+    for (const [slug, display] of seen) bump(slug, display, r.rating);
   }
 
   const certified = [];
   const remaining = [];
-  for (const t of tallies.values()) {
+  for (const [slug, t] of tallies) {
     const avg = t.count ? t.ratingSum / t.count : 0;
-    const label = t.display || titleCase(t.display);
+    const label = categoryLabel(t.display || slug);
     if (t.count >= threshold && avg >= minRating) {
       certified.push({ label, count: t.count, avg: Math.round(avg * 100) / 100 });
     } else {

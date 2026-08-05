@@ -5,11 +5,21 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { useAuth } from './AuthContext';
 import { BADGE_DEFS, LEVELS } from '../data/mockData';
 import { emptyBadgeMap } from '../../shared/badges.js';
+import { categoryLabel } from '../../shared/categories.js';
 
 const UserContext = createContext(null);
 
 const PROFILE_CACHE_KEY = 'profile_v1';
 const SYNC_DEBOUNCE_MS  = 2000;
+
+/**
+ * The category that completes the "Tech Whiz" challenge, as a SLUG.
+ * JobDetailScreen gates the c3 increment on this same constant, so the rule and the
+ * card's copy can't drift. Both sides used to hardcode the literal 'Tech Help' and
+ * compare it with `===`, which meant a gig posted as "tech help" — or under the
+ * "tech-support" alias, or any community spelling — never counted.
+ */
+export const TECH_CHALLENGE_CATEGORY = 'tech-help';
 
 function getLevelInfo(xp) {
   let current = LEVELS[0];
@@ -48,6 +58,11 @@ const DEFAULT_STATE = {
   workStatusNote: null,
   availability: [],
   skills: [],
+  // profiles.recent_category_slugs — the viewer's last 8 posted categories, most
+  // recent first, maintained by a trigger on job insert. Owner-private, so it only
+  // ever arrives on the my_profile() payload; the category pickers and the browse
+  // chip row lead with it.
+  recentCategorySlugs: [],
   city: null,
   bio: null,
   verified: false,
@@ -66,7 +81,7 @@ const DEFAULT_STATE = {
   challenges: [
     { id: 'c1', icon: '🎯', ion: 'locate', title: 'Apply to 3 Gigs',     description: 'Apply to 3 gigs today',        type: 'daily',  progress: 0, target: 3,   xpReward: 50  },
     { id: 'c2', icon: '💵', ion: 'cash',   title: 'Earn $100 This Week', description: 'Complete gigs totaling $100', type: 'weekly', progress: 0, target: 100, xpReward: 150 },
-    { id: 'c3', icon: '💻', ion: 'laptop', title: 'Tech Whiz',           description: 'Complete a Tech Help gig',    type: 'weekly', progress: 0, target: 1,   xpReward: 75  },
+    { id: 'c3', icon: '💻', ion: 'laptop', title: 'Tech Whiz',           description: `Complete a ${categoryLabel(TECH_CHALLENGE_CATEGORY)} gig`, type: 'weekly', progress: 0, target: 1, xpReward: 75 },
   ],
   pendingToast: null,
 };
@@ -119,6 +134,7 @@ function dbToState(profile, badges = [], challenges = []) {
     workStatusNote: profile.work_status_note || null,
     availability: Array.isArray(profile.availability) ? profile.availability : [],
     skills: Array.isArray(profile.skills) ? profile.skills : [],
+    recentCategorySlugs: Array.isArray(profile.recent_category_slugs) ? profile.recent_category_slugs : [],
     city: profile.city || null,
     // Consumed by the badge rules (allStar needs bio, idVerified needs verified).
     bio: profile.bio || null,

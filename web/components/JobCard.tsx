@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { MapPin, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark, AlertTriangle, Zap } from "lucide-react";
+import { categoryLabel } from "@gohustlr/shared";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
 import StudentBadge from "./ui/StudentBadge";
@@ -44,7 +45,12 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
 
   // Category and recurrence are plain muted text, not colored chips — the
   // per-category rainbow was one of the AI-template tells mobile dropped.
-  const meta = RECUR_LABEL[job.recurrence] ? `${job.category} · ${RECUR_LABEL[job.recurrence]}` : job.category;
+  // Joined by filtering rather than a ternary: a gig can legitimately carry no
+  // category now (transforms stopped defaulting a thin embed to "Odd Jobs"), and
+  // the old shape rendered that as a leading " · Weekly".
+  const meta = [categoryLabel(job.category || job.categorySlug), RECUR_LABEL[job.recurrence]]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     // The bookmark button is a SIBLING of the Link (not nested inside the anchor —

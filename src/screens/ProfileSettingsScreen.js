@@ -20,15 +20,13 @@ import { pickImage, uploadImage } from '../lib/uploadImage';
 import Avatar from '../components/Avatar';
 import { fetchCertifications, addCertification, deleteCertification, safeCertUrl } from '../lib/certifications';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
-
-const SKILL_OPTIONS = [
-  'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
-  'Delivery', 'Pet Care', 'Handyman', 'Photography', 'Writing',
-  'Design', 'Cooking', 'Driving', 'Assembly', 'Painting',
-  'Music', 'Fitness', 'Childcare', 'Errands', 'Other',
-];
+import CategoryPicker from '../components/CategoryPicker';
+import { fetchCategories } from '../lib/categories';
+import { categoryLabel, resolveCategorySlug, sameCategory } from '../../shared/categories.js';
 
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
+
+const MAX_SKILLS = 12;
 
 export default function ProfileSettingsScreen({ navigation }) {
   const { user, signOut } = useAuth();
@@ -53,6 +51,9 @@ export default function ProfileSettingsScreen({ navigation }) {
   // collect it at onboarding, so this only serves that pre-cutoff cohort.
   const [existingDob, setExistingDob] = useState(null); // ISO 'YYYY-MM-DD' or null
   const [dobError, setDobError] = useState('');
+  // The categories this user has posted lately (owner-private, so it rides in on
+  // my_profile()); the picker floats them to the top as quick chips.
+  const [recentSlugs, setRecentSlugs] = useState([]);
   // If the profile never loaded we must NOT let Save run: handleSave writes every
   // field unconditionally, so saving from a blank form overwrites the stored profile.
   const [loadError, setLoadError] = useState('');
@@ -79,11 +80,14 @@ export default function ProfileSettingsScreen({ navigation }) {
     // the WHOLE query with 42501, which rendered a blank form that Save then wrote
     // back over the stored profile. The owner's own DOB comes from my_profile()
     // instead: SECURITY DEFINER, scoped to auth.uid() (same source UserContext uses).
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
-      .eq('id', user.id)
-      .single();
+    const [{ data, error }, catIndex] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('name, username, bio, city, role, skills, radius_miles, skill_rates, school, major, degree_type, class_standing, grad_year, show_availability')
+        .eq('id', user.id)
+        .single(),
+      fetchCategories(),
+    ]);
     if (error || !data) {
       // Never fall through to a blank form — handleSave writes every field
       // unconditionally, so that would silently wipe the profile.
@@ -94,15 +98,17 @@ export default function ProfileSettingsScreen({ navigation }) {
     if (data) {
       const { data: mine } = await supabase.rpc('my_profile');
       setExistingDob(mine?.date_of_birth || null);
+      setRecentSlugs(mine?.recent_category_slugs || []);
+      const { skills, skillRates } = canonicalizeSkills(data.skills, data.skill_rates, catIndex);
       setForm({
         name: data.name || '',
         username: data.username || '',
         bio: data.bio || '',
         city: data.city || '',
         role: data.role || 'earner',
-        skills: data.skills || [],
+        skills,
         radiusMiles: data.radius_miles || 25,
-        skillRates: data.skill_rates || {},
+        skillRates,
         school: data.school || '',
         major: data.major || '',
         degreeType: data.degree_type || '',
@@ -194,10 +200,13 @@ export default function ProfileSettingsScreen({ navigation }) {
     ]);
   };
 
-  const toggleSkill = (s) => {
-    set('skills', form.skills.includes(s)
-      ? form.skills.filter(x => x !== s)
-      : [...form.skills, s]);
+  // CategoryPicker reports a TOGGLE, and the label it hands back is the canonical one.
+  // Compared by slug, never by string: a skill stored under an older spelling has to
+  // switch off when its canonical twin is tapped, or it becomes unremovable.
+  const toggleSkill = (label) => {
+    set('skills', form.skills.some(s => sameCategory(s, label))
+      ? form.skills.filter(s => !sameCategory(s, label))
+      : [...form.skills, label]);
   };
 
   const toggleShowAvailability = async (value) => {
@@ -573,18 +582,20 @@ export default function ProfileSettingsScreen({ navigation }) {
                 </View>
               </Field>
 
+              {/* Rendered from what's actually stored, not from a fixed option list:
+                  the old 20-chip grid drew nothing for a skill outside it, while Save
+                  still wrote that skill back — invisible but permanent. */}
               <Field label="My skills">
-                <View style={styles.skillGrid}>
-                  {SKILL_OPTIONS.map(s => (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.skillChip, form.skills.includes(s) && styles.skillChipActive]}
-                      onPress={() => { haptic.selection(); toggleSkill(s); }}
-                    >
-                      <Text style={[styles.skillChipText, form.skills.includes(s) && styles.skillChipTextActive]}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <CategoryPicker
+                  multiple
+                  max={MAX_SKILLS}
+                  value={form.skills}
+                  onChange={toggleSkill}
+                  recentSlugs={recentSlugs}
+                />
+                <Text style={styles.hintText}>
+                  Up to {MAX_SKILLS}. These are what clients search and sort by, so pick the work you actually want.
+                </Text>
               </Field>
 
               {form.skills.length > 0 && (
@@ -783,6 +794,36 @@ export default function ProfileSettingsScreen({ navigation }) {
       </Modal>
     </KeyboardAvoidingView>
   );
+}
+
+// Snap stored skills onto the taxonomy's canonical labels, carrying their rates.
+//
+// profiles.skills holds LABELS and profiles.skill_rates is a jsonb map keyed by those
+// exact labels, so relabelling "moving help" to "Moving" would orphan that skill's
+// rate unless the rate moves with it. Two stored spellings of one category collapse
+// to a single chip here too — the picker toggles by slug, so leaving both would give
+// the user two chips that vanish together. A label the taxonomy can't place is kept
+// exactly as it was stored: an unrecognized skill still has to be visible to be
+// removable.
+function canonicalizeSkills(rawSkills, rawRates, index) {
+  const skills = [];
+  const skillRates = {};
+  const seen = new Set();
+  for (const raw of Array.isArray(rawSkills) ? rawSkills : []) {
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const slug = resolveCategorySlug(raw, index?.aliases);
+    const known = slug ? index?.bySlug?.[slug] : null;
+    const label = known ? known.label : categoryLabel(raw, index?.list || []);
+    if (!label) continue;
+    const key = slug || label.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      skills.push(label);
+    }
+    const rate = rawRates?.[raw];
+    if (rate != null && rate !== '' && skillRates[label] == null) skillRates[label] = rate;
+  }
+  return { skills, skillRates };
 }
 
 // Format a stored 'YYYY-MM-DD' DOB for the read-only display (parsed at noon UTC to

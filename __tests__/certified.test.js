@@ -18,23 +18,23 @@ describe('analytics.computeCertifications', () => {
   });
 
   test('>= 50 jobs at avg >= 4.0 certifies the label', () => {
-    const { certified, progress } = computeCertifications(reviews(50, { category: 'Lawncare', rating: 4.5 }));
+    const { certified, progress } = computeCertifications(reviews(50, { category: 'Lawn Care', rating: 4.5 }));
     expect(certified).toHaveLength(1);
-    expect(certified[0]).toEqual({ label: 'Lawncare', count: 50, avg: 4.5 });
+    expect(certified[0]).toEqual({ label: 'Lawn Care', count: 50, avg: 4.5 });
     expect(progress).toEqual([]);
   });
 
   test('< 50 jobs does NOT certify (shows up as progress instead)', () => {
-    const { certified, progress } = computeCertifications(reviews(49, { category: 'Lawncare', rating: 5 }));
+    const { certified, progress } = computeCertifications(reviews(49, { category: 'Lawn Care', rating: 5 }));
     expect(certified).toEqual([]);
-    expect(progress).toEqual([{ label: 'Lawncare', count: 49, needed: 50 }]);
+    expect(progress).toEqual([{ label: 'Lawn Care', count: 49, needed: 50 }]);
   });
 
   test('avg < 4.0 does NOT certify even with >= 50 jobs', () => {
     // 50 jobs all rated 3 → avg 3.0 < 4.0
-    const { certified, progress } = computeCertifications(reviews(50, { category: 'Cleaning', rating: 3 }));
+    const { certified, progress } = computeCertifications(reviews(50, { category: 'House Cleaning', rating: 3 }));
     expect(certified).toEqual([]);
-    expect(progress).toEqual([{ label: 'Cleaning', count: 50, needed: 50 }]);
+    expect(progress).toEqual([{ label: 'House Cleaning', count: 50, needed: 50 }]);
   });
 
   test('a label is counted via both job.category and job.tags', () => {
@@ -44,20 +44,28 @@ describe('analytics.computeCertifications', () => {
       ...reviews(25, { category: 'Errands', tags: ['Moving'], rating: 4.8 }),
     ];
     const { certified } = computeCertifications(data);
-    const moving = certified.find((c) => c.label.toLowerCase() === 'moving');
+    const moving = certified.find((c) => c.label === 'Moving');
     expect(moving).toBeTruthy();
     expect(moving.count).toBe(55);
     // Errands only has 25 → not certified
-    expect(certified.find((c) => c.label.toLowerCase() === 'errands')).toBeUndefined();
+    expect(certified.find((c) => c.label === 'Errands')).toBeUndefined();
+  });
+
+  test('one gig counts once per category however many of its fields name it', () => {
+    // A poster who tags a gig with its own category was inflating the worker's
+    // public "50 jobs" claim by double-counting the same gig.
+    const data = reviews(50, { category: 'Moving', tags: ['moving', 'Moving'], rating: 5 });
+    const { certified } = computeCertifications(data);
+    expect(certified).toEqual([{ label: 'Moving', count: 50, avg: 5 }]);
   });
 
   test('multiple certified labels are sorted by count desc', () => {
     const data = [
       ...reviews(60, { category: 'Tutoring', rating: 5 }),
-      ...reviews(52, { category: 'Lawncare', rating: 4.1 }),
+      ...reviews(52, { category: 'Lawn Care', rating: 4.1 }),
     ];
     const { certified } = computeCertifications(data);
-    expect(certified.map((c) => c.label)).toEqual(['Tutoring', 'Lawncare']);
+    expect(certified.map((c) => c.label)).toEqual(['Tutoring', 'Lawn Care']);
     expect(certified.map((c) => c.count)).toEqual([60, 52]);
   });
 
@@ -77,24 +85,47 @@ describe('analytics.computeCertifications', () => {
     ]);
   });
 
-  test('blank / missing labels are skipped; casing of first-seen label is preserved', () => {
+  test('blank / missing labels are skipped', () => {
     const data = [
-      ...reviews(50, { category: '  Lawncare  ', rating: 4.5 }), // trimmed
-      ...reviews(5, { category: 'lawncare', rating: 4.5 }), // same label, lowercased → merges
+      ...reviews(50, { category: '  Lawn Care  ', rating: 4.5 }),
       ...reviews(3, { category: '   ', rating: 5 }), // blank → skipped
       ...reviews(2, { category: null, rating: 5 }), // null → skipped
     ];
+    const { certified, progress } = computeCertifications(data);
+    expect(certified).toEqual([{ label: 'Lawn Care', count: 50, avg: 4.5 }]);
+    expect(progress).toEqual([]);
+  });
+
+  // Regression: tallies were keyed on the raw label, so a worker's history split
+  // across spellings and nobody ever reached the threshold. A certification is a
+  // public trust claim, so the fragmentation was the difference between the badge
+  // existing and never firing.
+  test('spellings and aliases of one category are one certification', () => {
+    const data = [
+      ...reviews(20, { category: 'Lawn Care', rating: 5 }),
+      ...reviews(15, { category: 'lawn care', rating: 5 }),
+      ...reviews(10, { category: 'LAWNCARE', rating: 5 }),
+      ...reviews(5, { category: 'Mowing', rating: 5 }), // merge alias → lawn-care
+    ];
     const { certified } = computeCertifications(data);
-    expect(certified).toHaveLength(1);
-    expect(certified[0].label).toBe('Lawncare'); // first-seen (trimmed) original casing
-    expect(certified[0].count).toBe(55);
+    expect(certified).toEqual([{ label: 'Lawn Care', count: 50, avg: 5 }]);
+  });
+
+  test('the certification is shown under its canonical label, not the first spelling seen', () => {
+    const { certified } = computeCertifications(reviews(50, { category: 'lawncare', rating: 5 }));
+    expect(certified[0].label).toBe('Lawn Care');
+  });
+
+  test("a category the catalog does not know keeps the creator's own label", () => {
+    const { certified } = computeCertifications(reviews(50, { category: 'Drone Piloting', rating: 5 }));
+    expect(certified[0].label).toBe('Drone Piloting');
   });
 
   test('respects custom threshold/minRating opts', () => {
-    const { certified } = computeCertifications(reviews(5, { category: 'Pets', rating: 4.5 }), {
+    const { certified } = computeCertifications(reviews(5, { category: 'Pet Sitting', rating: 4.5 }), {
       threshold: 5,
       minRating: 4.0,
     });
-    expect(certified).toEqual([{ label: 'Pets', count: 5, avg: 4.5 }]);
+    expect(certified).toEqual([{ label: 'Pet Sitting', count: 5, avg: 4.5 }]);
   });
 });

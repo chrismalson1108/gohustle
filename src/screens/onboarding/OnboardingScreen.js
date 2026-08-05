@@ -16,6 +16,8 @@ import { moderateText, logModerationBlock } from '../../lib/moderation';
 import LocationPicker from '../../components/LocationPicker';
 import DobPicker, { composeDob } from '../../components/DobPicker';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../../components/KeyboardDoneBar';
+import CategoryPicker from '../../components/CategoryPicker';
+import { sameCategory } from '../../../shared/categories.js';
 
 const { width } = Dimensions.get('window');
 
@@ -25,14 +27,9 @@ const ROLES = [
   { id: 'both',   label: 'Both',  ion: 'flash',      desc: 'I want to earn AND post jobs' },
 ];
 
-const SKILL_OPTIONS = [
-  'Lawn Care', 'Moving Help', 'Cleaning', 'Tutoring', 'Tech Help',
-  'Delivery', 'Pet Care', 'Handyman', 'Photography', 'Writing',
-  'Design', 'Cooking', 'Driving', 'Assembly', 'Painting',
-  'Music', 'Fitness', 'Childcare', 'Errands', 'Other',
-];
-
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
+
+const MAX_SKILLS = 12;
 
 
 export default function OnboardingScreen({ onComplete }) {
@@ -70,10 +67,12 @@ export default function OnboardingScreen({ onComplete }) {
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  const toggleSkill = (skill) => {
-    set('skills', form.skills.includes(skill)
-      ? form.skills.filter(s => s !== skill)
-      : [...form.skills, skill]);
+  // CategoryPicker reports a TOGGLE with the canonical label. Compared by slug rather
+  // than by string so the same category can't be added twice under two spellings.
+  const toggleSkill = (label) => {
+    set('skills', form.skills.some(s => sameCategory(s, label))
+      ? form.skills.filter(s => !sameCategory(s, label))
+      : [...form.skills, label]);
   };
 
   const goNext = () => {
@@ -319,17 +318,16 @@ export default function OnboardingScreen({ onComplete }) {
         <>
           <Ionicons name="barbell" size={56} color={colors.primary} style={styles.emoji} />
           <Text style={styles.stepTitle}>Your skills</Text>
-          <Text style={styles.stepSub}>Pick what you're great at — earners with skills get hired faster.</Text>
-          <View style={styles.skillGrid}>
-            {SKILL_OPTIONS.map(s => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.skillChip, form.skills.includes(s) && styles.skillChipActive]}
-                onPress={() => toggleSkill(s)}
-              >
-                <Text style={[styles.skillChipText, form.skills.includes(s) && styles.skillChipTextActive]} numberOfLines={1}>{s}</Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.stepSub}>
+            Search what you're great at — earners with skills get hired faster. Up to {MAX_SKILLS}.
+          </Text>
+          <View style={styles.pickerWrap}>
+            <CategoryPicker
+              multiple
+              max={MAX_SKILLS}
+              value={form.skills}
+              onChange={toggleSkill}
+            />
           </View>
           <Text style={[styles.stepSub, { marginTop: 20 }]}>How far are you willing to travel?</Text>
           <View style={styles.radiusRow}>
@@ -540,15 +538,8 @@ const styles = StyleSheet.create({
   roleLabelActive: { color: colors.primary },
   roleDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   roleCheck: { flexShrink: 0 },
-  skillGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: '100%' },
-  skillChip: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: radii.pill, margin: 4,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-  },
-  skillChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  skillChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, lineHeight: 17 },
-  skillChipTextActive: { color: '#fff' },
+  // Every step centers its content, so a field has to claim the full width itself.
+  pickerWrap: { width: '100%' },
   radiusRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', width: '100%' },
   radiusBtn: {
     alignSelf: 'flex-start',

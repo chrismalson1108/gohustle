@@ -83,6 +83,7 @@ export default function EditGigPage() {
           initial={{
             title: job.title,
             category: job.category,
+            categorySlug: job.categorySlug,
             pay: job.pay,
             payType: job.payType,
             location: exactLoc ?? job.location,

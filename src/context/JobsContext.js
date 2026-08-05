@@ -10,6 +10,7 @@ import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/mess
 import { track, captureError } from '../lib/analytics';
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
+import { findCategory } from '../../shared/categories.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
 
@@ -283,7 +284,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location, category, poster_id, created_at)
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location, category, category_slug, poster_id, created_at)
       `)
       .eq('earner_id', user.id)
       .order('created_at', { ascending: false });
@@ -331,7 +332,7 @@ export function JobsProvider({ children }) {
       .select(`
         *,
         earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, skills, school, student_verified, student_status),
-        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, category, poster_id, created_at)
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, category, category_slug, poster_id, created_at)
       `)
       .in('job_id', jobIds)
       .order('created_at', { ascending: false });
@@ -947,7 +948,7 @@ export function JobsProvider({ children }) {
     const prevJob = state.jobs.find(j => j.id === jobId);
     dispatch({ type: 'UPDATE_JOB', jobId, patch: jobData });
     const dbPatch = {
-      title: jobData.title, category: jobData.category,
+      title: jobData.title, category: jobData.category, category_slug: jobData.categorySlug,
       pay: jobData.pay, pay_type: jobData.payType,
       location: jobData.location, description: jobData.description,
       urgent: jobData.urgent,
@@ -1068,7 +1069,7 @@ export function JobsProvider({ children }) {
     const { data: newJob, error } = await supabase
       .from('jobs')
       .insert({
-        title: jobData.title, category: jobData.category,
+        title: jobData.title, category: jobData.category, category_slug: jobData.categorySlug,
         pay: jobData.pay, pay_type: jobData.payType,
         location: jobData.location, description: jobData.description,
         urgent: jobData.urgent, estimated_hours: jobData.estimatedHours,
@@ -1089,7 +1090,17 @@ export function JobsProvider({ children }) {
       // false "Gig Posted!" that silently loses the composed gig.
       throw new Error(error?.message || "Couldn't post your gig. Please try again.");
     }
-    track('gig_posted', { category: jobData.category, payType: jobData.payType });
+    // The slug, never the label: the label was a bounded 7-value dimension when the
+    // taxonomy was hardcoded, and becomes unbounded cardinality (plus a row per casing
+    // variant) now that posters can create categories. The canonical flag is what
+    // answers the question the label used to — is the seeded catalog covering the work
+    // people post, or are they minting their own? Both read off the inserted row, since
+    // the BEFORE trigger is what decides the final slug.
+    track('gig_posted', {
+      categorySlug: newJob.category_slug,
+      canonicalCategory: !!findCategory(newJob.category_slug),
+      payType: jobData.payType,
+    });
 
     if (jobData.slots?.length) {
       await supabase.from('job_slots').insert(
@@ -1107,6 +1118,11 @@ export function JobsProvider({ children }) {
       job: {
         ...jobData,
         id: newJob.id,
+        // Adopt the server's category, not the one we sent: trg_y_normalize_job_category
+        // snaps it to the canonical label + slug, so a gig posted as "lawn care" would
+        // otherwise read "lawn care" in the feed until the next refetch.
+        category: newJob.category,
+        categorySlug: newJob.category_slug || null,
         posterId: user.id,
         postedAt: 'Just now',
         status: 'open',
