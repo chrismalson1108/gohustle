@@ -255,3 +255,32 @@ describe('isBrowsable / browsableJobs', () => {
     expect(browsableJobs(null)).toEqual([]);
   });
 });
+
+// normalize_job_category writes category_slug = NULL when the poster's text slugs to
+// a control value, so that gig is filed under nothing on purpose. The client used to
+// re-derive 'other' from the label, which handed the sentinel a first-class identity:
+// "Other" shipped in SKILL_OPTIONS until the taxonomy landed, so any earner still
+// carrying it scored a fit against every uncategorised gig and got them in For You.
+describe('reserved sentinels never become a category identity', () => {
+  const uncategorised = { id: 'u', title: 'Help needed', description: 'a thing', category: 'Other', categorySlug: null };
+
+  test('an uncategorised gig contributes no slug', () => {
+    expect(Array.from(jobCategorySlugs(uncategorised))).toEqual([]);
+  });
+
+  test('a legacy "Other" skill scores nothing against it', () => {
+    expect(skillFitScore(uncategorised, ['Other'])).toBe(0);
+    expect(matchesForYou(uncategorised, ['Other'])).toBe(false);
+  });
+
+  test('every reserved value is inert, not just "other"', () => {
+    for (const v of ['all', 'For You', 'none', 'uncategorized', 'N/A']) {
+      expect(Array.from(jobCategorySlugs({ category: v }))).toEqual([]);
+    }
+  });
+
+  test('a real category still matches', () => {
+    const real = { category: 'Lawn Care', categorySlug: 'lawn-care', title: 'x', description: 'y' };
+    expect(skillFitScore(real, ['Lawn Care'])).toBeGreaterThan(0);
+  });
+});

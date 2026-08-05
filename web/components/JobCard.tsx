@@ -14,11 +14,11 @@ import type { Job, BookingStatus } from "@/lib/types";
 // Muted, single-accent status pills — mirrors BOOKING_PILL in
 // src/components/JobCard.js so a booked gig reads the same in both apps.
 const BOOKING_PILL: Record<string, { label: string; Icon: typeof Clock; className: string }> = {
-  pending: { label: "Applied — Pending", Icon: Clock, className: "bg-[#FFF7ED] text-[#D97706]" },
-  confirmed: { label: "Confirmed — In Progress", Icon: CheckCircle2, className: "bg-[#ECFDF5] text-[#059669]" },
-  completed: { label: "Awaiting Verification", Icon: RefreshCw, className: "bg-[#EFF6FF] text-[#2563EB]" },
-  verified: { label: "Completed", Icon: Heart, className: "bg-[#F0FDF4] text-[#16A34A]" },
-  declined: { label: "Declined", Icon: XCircle, className: "bg-[#FEF2F2] text-[#DC2626]" },
+  pending: { label: "Applied — Pending", Icon: Clock, className: "bg-warning-light text-warning-deep" },
+  confirmed: { label: "Confirmed — In Progress", Icon: CheckCircle2, className: "bg-success-light text-success" },
+  completed: { label: "Awaiting Verification", Icon: RefreshCw, className: "bg-canvas text-ink-soft" },
+  verified: { label: "Completed", Icon: Heart, className: "bg-success-light text-success" },
+  declined: { label: "Declined", Icon: XCircle, className: "bg-urgent-light text-urgent" },
 };
 
 const RECUR_LABEL: Record<string, string> = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };

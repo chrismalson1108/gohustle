@@ -1,13 +1,24 @@
 // Map raw Supabase rows → the client-facing shapes used across the UI.
 // Mirrors transformJob / transformBooking in src/context/JobsContext.js so the
 // website and mobile app interpret the same backend identically.
-import { resolveCategorySlug } from './categories.js';
+import { RESERVED_CATEGORY_SLUGS, resolveCategorySlug } from './categories.js';
 
 // `category` is the DISPLAY label and `categorySlug` is the IDENTITY everything
 // filters, groups and counts on. The slug is derived here when the row doesn't
 // carry it, so a query that hasn't yet added `category_slug` to its select list
 // still produces a job every consumer can match on.
-const slugOf = (row) => row?.category_slug || resolveCategorySlug(row?.category);
+//
+// …but NEVER derive a RESERVED slug. normalize_job_category deliberately writes
+// category_slug = NULL when the poster's text slugs to a control value ('other',
+// 'none', 'all', 'foryou', …) — that gig is filed under nothing on purpose.
+// Re-deriving 'other' from the label handed the sentinel a first-class identity:
+// "Other" shipped in SKILL_OPTIONS until this session, so an earner still carrying
+// it scored a fit against every uncategorised gig and got them in For You.
+const slugOf = (row) => {
+  if (row?.category_slug) return row.category_slug;
+  const derived = resolveCategorySlug(row?.category);
+  return RESERVED_CATEGORY_SLUGS.has(derived) ? '' : derived;
+};
 
 export function transformJob(dbJob) {
   return {

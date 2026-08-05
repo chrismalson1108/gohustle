@@ -2,7 +2,7 @@
 // page so both apply identical rules. Extracted from src/components/FilterSheet.js
 // and src/screens/HomeScreen.js.
 import { haversineMiles } from './geo.js';
-import { resolveCategorySlug, categoryLabel } from './categories.js';
+import { RESERVED_CATEGORY_SLUGS, resolveCategorySlug, categoryLabel } from './categories.js';
 
 export const DEFAULT_FILTERS = {
   payRange:   'any',    // 'any' | 'under25' | '25-50' | '50-100' | '100+'
@@ -147,7 +147,10 @@ export function jobCategorySlugs(job, extraAliases) {
   if (!job) return out;
   const add = (v) => {
     const slug = resolveCategorySlug(v, extraAliases);
-    if (slug) out.add(slug);
+    // A reserved control value is not a category. It reaches here from a profile
+    // skill list that still holds the legacy "Other", or from a gig whose label
+    // slugs to a sentinel — either way it must not match anything.
+    if (slug && !RESERVED_CATEGORY_SLUGS.has(slug)) out.add(slug);
   };
   add(job.categorySlug || job.category);
   (Array.isArray(job.tags) ? job.tags : []).forEach(add);

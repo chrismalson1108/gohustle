@@ -11,12 +11,19 @@ import RatingStars from './RatingStars';
 import Avatar from './Avatar';
 import StudentBadge from './StudentBadge';
 
+// Lifecycle tints, on the same tokens BookingStatusBadge uses so one booking cannot
+// read as two different states. These were Tailwind defaults (#D97706 / #059669 /
+// #2563EB / #16A34A / #DC2626) — hues that exist nowhere in the palette, and invisible
+// to the orange retirement because they carry no accent*/gold* identifier.
+// The pending pair also failed WCAG AA: #D97706 on #FFF7ED is 3.00:1 at 12px/700,
+// where warningDeep on warningLight is 5.25:1. The labels stay — they are the right
+// voice on a browse card, where no status badge accompanies them.
 const BOOKING_PILL = {
-  pending:   { label: 'Applied — Pending',        ion: 'time',              bg: '#FFF7ED', text: '#D97706' },
-  confirmed: { label: 'Confirmed — In Progress',  ion: 'checkmark-circle',  bg: '#ECFDF5', text: '#059669' },
-  completed: { label: 'Awaiting Verification',    ion: 'sync',              bg: '#EFF6FF', text: '#2563EB' },
-  verified:  { label: 'Completed',                ion: 'heart',             bg: '#F0FDF4', text: '#16A34A' },
-  declined:  { label: 'Declined',                 ion: 'close-circle',      bg: '#FEF2F2', text: '#DC2626' },
+  pending:   { label: 'Applied — Pending',        ion: 'time',              bg: colors.warningLight, text: colors.warningDeep },
+  confirmed: { label: 'Confirmed — In Progress',  ion: 'checkmark-circle',  bg: colors.successLight, text: colors.success },
+  completed: { label: 'Awaiting Verification',    ion: 'sync',              bg: colors.background,   text: colors.textSecondary },
+  verified:  { label: 'Completed',                ion: 'heart',             bg: colors.successLight, text: colors.success },
+  declined:  { label: 'Declined',                 ion: 'close-circle',      bg: colors.urgentLight,  text: colors.urgent },
 };
 
 const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly' };
