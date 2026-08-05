@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdminPage } from "@/lib/guard";
 import { auditRead } from "@/lib/audit";
-import { fmtCents, fmtDate } from "@/lib/format";
+import { fmtCents, fmtDate, fmtDollars } from "@/lib/format";
 import { STRIPE_DASHBOARD_BASE } from "@/lib/config";
 import ActionsPanel from "./ActionsPanel";
 import NoteForm from "./NoteForm";
@@ -115,7 +115,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     ? (
         await ctx.service
           .from("payments")
-          .select("booking_id, status, amount_cents")
+          .select("booking_id, status, amount_cents, fee_cents, earner_amount_cents")
           .in("booking_id", bookingIds)
       ).data ?? []
     : [];
@@ -306,9 +306,15 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                     </td>
                     <td className="py-2 pr-4">{b.status}</td>
                     <td className="py-2 pr-4">
-                      {pay ? `${pay.status} · ${fmtCents(pay.amount_cents)}` : "—"}
+                      {pay
+                        ? `${pay.status} · ${
+                            pay.status === "captured"
+                              ? fmtCents((pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0))
+                              : fmtCents(pay.amount_cents)
+                          }`
+                        : "—"}
                     </td>
-                    <td className="py-2 pr-4">{b.tip_amount ? `$${b.tip_amount}` : "—"}</td>
+                    <td className="py-2 pr-4">{fmtDollars(b.tip_amount)}</td>
                     <td className="py-2">{fmtDate(b.created_at)}</td>
                   </tr>
                 );

@@ -13,6 +13,7 @@
 // on a timer.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +34,12 @@ const HOLD_EXPIRY_MARGIN_MS = 24 * 60 * 60 * 1000;
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  // Hoisted so the terminal catch can identify the failure. The service client,
+  // `user` and `bookingId` are all declared inside the try below and are therefore
+  // out of scope there; without these the error row names only the function.
+  let errBookingId: string | null = null;
+  let errUserId: string | null = null;
+
   try {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
     const supabase = createClient(
@@ -42,9 +49,11 @@ Deno.serve(async (req: Request) => {
 
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    errUserId = user?.id ?? null;
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
     const { bookingId } = await req.json();
+    errBookingId = typeof bookingId === 'string' ? bookingId : null;
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
     const { data: booking, error: bErr } = await supabase
@@ -132,8 +141,14 @@ Deno.serve(async (req: Request) => {
     // multi-row error and slip past a genuine open report), and that error was
     // previously swallowed so the gate failed OPEN. Block when the count is > 0 OR the
     // query errored at all.
+    // `resolved_at is null` is load-bearing. Without it ANY dispute row — including
+    // one an admin has already investigated and closed — blocked settlement forever,
+    // so the disputes table had no lifecycle and this gate could never reopen. That
+    // withheld a worker's pay permanently, by construction. Still fail-CLOSED: a
+    // count query, blocking on >0 OR on any error.
     const { count: disputeCount, error: disputeErr } = await supabase
-      .from('disputes').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId);
+      .from('disputes').select('id', { count: 'exact', head: true })
+      .eq('booking_id', bookingId).is('resolved_at', null);
     if (disputeErr || (disputeCount ?? 1) > 0) {
       return json({ error: 'DISPUTE_OPEN', message: 'This booking has an open dispute and can\'t be auto-settled.' }, 409);
     }
@@ -230,6 +245,11 @@ Deno.serve(async (req: Request) => {
     return json({ success: true });
   } catch (err) {
     console.error('earner-claim-payment:', err);
+    // Land it where an operator will actually see it (/errors in the admin
+    // console). This used to stop at console.error, so a money-path failure
+    // was invisible unless someone was tailing Supabase function logs.
+    await logServerError('earner-claim-payment', `Earner self-settlement failed — worker is unpaid on completed work: ${errMessage(err)}`,
+      { booking_id: errBookingId }, { fatal: true, userId: errUserId });
     return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });

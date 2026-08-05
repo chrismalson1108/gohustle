@@ -35,7 +35,7 @@ Deno.serve(async (req: Request) => {
 
     const body = (await req.json().catch(() => ({}))) as {
       message?: unknown; context?: unknown; platform?: unknown;
-      appVersion?: unknown; fatal?: unknown;
+      appVersion?: unknown; fatal?: unknown; dev?: unknown;
     };
 
     const message = String(body.message ?? '').trim().slice(0, MAX_MESSAGE_CHARS);
@@ -66,6 +66,10 @@ Deno.serve(async (req: Request) => {
       message,
       context,
       fatal: body.fatal === true,
+      // Only an explicit true marks a row as dev. An older client that doesn't send
+      // the field reports as production — the safe direction, since hiding a real
+      // crash is far worse than showing a stray dev one.
+      dev: body.dev === true,
     }).select('id').single();
 
     const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();

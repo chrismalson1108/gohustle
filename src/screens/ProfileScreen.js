@@ -4,7 +4,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SUPPORT_EMAIL } from '../lib/legal';
 import { getReferralCode, fetchReferralCount } from '../lib/referrals';
 import { fetchVerificationStatus, requestVerification } from '../lib/verification';
 import { getUnreadCount } from '../lib/notifications';
@@ -16,6 +15,7 @@ import XPBar from '../components/XPBar';
 import RatingStars from '../components/RatingStars';
 import Avatar from '../components/Avatar';
 import StudentVerifyModal from '../components/StudentVerifyModal';
+import SupportSheet from '../components/SupportSheet';
 import MoneyGoalCard from '../components/MoneyGoalCard';
 import { EarningsTiles, InsightsCard } from '../components/MonthSummaryCard';
 import GoalsChallengesCard, { XpCard, ChallengesList } from '../components/GoalsChallengesCard';
@@ -55,6 +55,7 @@ export default function ProfileScreen({ navigation }) {
   const [idv, setIdv] = useState({ verified: false, status: 'none' });
   const [alertCount, setAlertCount] = useState(0);
   const [showStudentVerify, setShowStudentVerify] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const college = collegeLine({ school, major, gradYear });
 
   // Strava-style paged hub. Width comes from useWindowDimensions, NOT a module-scope
@@ -562,9 +563,12 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.legalRowText} numberOfLines={1}>Independent Contractor Agreement</Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.legalRow, styles.legalRowLast]} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`)}>
+              {/* Opens the in-app form, not a mailto:. A mailto landed in a personal
+                  inbox and never created a support_tickets row, so nothing a beta
+                  tester reported was visible in the admin console. */}
+              <TouchableOpacity style={[styles.legalRow, styles.legalRowLast]} onPress={() => setSupportOpen(true)}>
                 <Text style={styles.legalRowText} numberOfLines={1}>Contact support</Text>
-                <Ionicons name="mail-outline" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.textMuted} style={styles.legalRowIcon} />
               </TouchableOpacity>
             </View>
           </View>
@@ -579,6 +583,7 @@ export default function ProfileScreen({ navigation }) {
         visible={showStudentVerify}
         onClose={() => setShowStudentVerify(false)}
       />
+      <SupportSheet visible={supportOpen} onClose={() => setSupportOpen(false)} />
     </View>
   );
 }

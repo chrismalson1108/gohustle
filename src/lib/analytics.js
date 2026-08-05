@@ -63,7 +63,15 @@ function reportError(message, context, fatal) {
     const appVersion = Constants?.expoConfig?.version ?? null;
     supabase.functions
       .invoke('log-client-error', {
-        body: { message, context, platform: Platform.OS, appVersion, fatal },
+        // `dev` separates a crash on the founder's local Metro bundle from a real
+        // TestFlight user's. Without it every dev-session crash lands in the same
+        // /errors list at the same weight, and in an open beta those bury the ones
+        // that matter. __DEV__ is a React Native global: true under Metro, false in
+        // any release build.
+        body: {
+          message, context, platform: Platform.OS, appVersion, fatal,
+          dev: typeof __DEV__ !== 'undefined' && __DEV__ === true,
+        },
       })
       .catch(() => {});
   } catch (_) {

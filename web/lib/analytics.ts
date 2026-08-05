@@ -41,7 +41,12 @@ function reportError(message: string, context: Record<string, unknown>, fatal: b
     void import("./supabaseClient")
       .then(({ supabase }) =>
         supabase.functions.invoke("log-client-error", {
-          body: { message, context, platform: "web", appVersion: null, fatal },
+          // See src/lib/analytics.js — keeps `next dev` crashes out of the
+          // production error queue the admin console triages.
+          body: {
+            message, context, platform: "web", appVersion: null, fatal,
+            dev: process.env.NODE_ENV !== "production",
+          },
         }),
       )
       .catch(() => {});

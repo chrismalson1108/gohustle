@@ -76,6 +76,12 @@ export default function MfaPage() {
     if (!factorId) return;
     setBusy(true);
     setError(null);
+    // Record which factor this account enrolled, so an existing admin can see on
+    // /team what appeared and when before activating the membership. Best-effort and
+    // fire-and-forget: it must never block the person from signing in, and it grants
+    // nothing on its own — activation is a separate human decision.
+    void supabase.rpc("admin_record_mfa_enrollment", { p_factor_id: factorId });
+
     const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
     if (chErr || !challenge) {
       setBusy(false);

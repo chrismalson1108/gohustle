@@ -20,12 +20,19 @@ export default async function ConsoleLayout({
             <Link href="/" className="hover:text-[var(--brand)]">Dashboard</Link>
             <Link href="/users" className="hover:text-[var(--brand)]">Users</Link>
             <Link href="/moderation" className="hover:text-[var(--brand)]">Moderation</Link>
+            <Link href="/bookings" className="hover:text-[var(--brand)]">Bookings</Link>
             <Link href="/payments" className="hover:text-[var(--brand)]">Payments</Link>
+            <Link href="/disputes" className="hover:text-[var(--brand)]">Disputes</Link>
             <Link href="/jobs" className="hover:text-[var(--brand)]">Jobs</Link>
             <Link href="/support" className="hover:text-[var(--brand)]">Support</Link>
             <Link href="/errors" className="hover:text-[var(--brand)]">Errors</Link>
+            <Link href="/access" className="hover:text-[var(--brand)]">Access</Link>
+            <Link href="/flags" className="hover:text-[var(--brand)]">Flags</Link>
             {ctx.role === "admin" && (
-              <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
+              <>
+                <Link href="/team" className="hover:text-[var(--brand)]">Team</Link>
+                <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
+              </>
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">

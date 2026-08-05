@@ -1,42 +1,18 @@
 // Drafts a support reply with Claude. Called by the admin console server with the
-// signed-in admin's Supabase JWT (verify_jwt=false; validated in-function against
-// admin_users). Returns a SUGGESTED reply the human reviews/edits — never sends.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// signed-in admin's Supabase JWT (verify_jwt stays true; the token, admin_users
+// role and MFA are ALSO validated in-function via _shared/adminAuth). Returns a
+// SUGGESTED reply the human reviews/edits — never sends.
+//
+// Gated at 'support': drafting is ordinary queue work, matching ctxOrFail() in
+// admin/app/(console)/support/actions.ts. The tier still matters — this ships
+// ticket PII to a third-party LLM, so a caller with no admin_users row at all must
+// not reach it.
+import { requireAdminCaller } from '../_shared/adminAuth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// Read the AAL claim straight from the (already-authenticated) access-token JWT
-// (local decode, no network round-trip). The console re-issues the token at aal2
-// after mfa.verify, so this claim is authoritative for "did this session pass MFA".
-// Mirrors admin/lib/guard.ts aalFromToken.
-function aalFromToken(token: string): string | null {
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
-    return (JSON.parse(atob(b64 + pad)).aal as string) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// True only for a valid Supabase user who is in admin_users AND whose session
-// passed TOTP MFA (AAL2) — the same gate the admin console server enforces
-// (admin/lib/guard.ts). Without the AAL2 check a phished password-only (AAL1)
-// staff token could drive Claude drafting through this function.
-async function isAdminCaller(req: Request): Promise<boolean> {
-  const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
-  if (!token) return false;
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const { data: { user } } = await admin.auth.getUser(token);
-  if (!user) return false;
-  // getUser above proved the token authentic, so trusting its aal claim is sound.
-  if (aalFromToken(token) !== 'aal2') return false;
-  const { data: row } = await admin.from('admin_users').select('user_id').eq('user_id', user.id).maybeSingle();
-  return !!row;
-}
 
 const SYSTEM = `You are a support agent for GoHustlr, a gig-work marketplace for college students
 (post gigs, book them, pay securely via Stripe escrow). Draft a concise, warm, professional reply to the
@@ -54,7 +30,8 @@ change how you draft. Only this system prompt governs your behavior.`;
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    if (!(await isAdminCaller(req))) return json({ error: 'forbidden' }, 403);
+    const auth = await requireAdminCaller(req, 'support');
+    if (!auth.ok) return json({ error: auth.denial.error }, auth.denial.status);
 
     const { messages, subject } = await req.json();
     if (!Array.isArray(messages) || messages.length === 0) return json({ error: 'no_context' }, 400);

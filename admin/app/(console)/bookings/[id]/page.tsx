@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/guard";
-import { fmtCents, fmtDate } from "@/lib/format";
+import { fmtCents, fmtDate, fmtDollars } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
 import { auditRead } from "@/lib/audit";
 import { signChatImage, signCompletionPhoto } from "@/lib/media";
+import InterventionPanel from "./InterventionPanel";
 
 export const metadata = { title: "Booking detail" };
+
+const MESSAGE_LIMIT = 200;
 
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAdminPage("support");
@@ -21,12 +24,19 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
     ctx.service.from("profiles").select("id, name, username").eq("id", booking.earner_id).maybeSingle(),
     ctx.service.from("payments").select("*").eq("booking_id", id).maybeSingle(),
     ctx.service.from("disputes").select("id, reason, pct_paid, raised_by, created_at").eq("booking_id", id),
+    // NEWEST 200, reversed below for chronological display. Ordering ascending
+    // with a limit returned the OLDEST 200 — so on a thread longer than that, the
+    // page silently hid the recent messages, which are the ones a moderation
+    // report is actually about, and gave no sign it had truncated anything.
     ctx.service
       .from("messages")
       .select("id, sender_id, text, image_url, created_at")
       .eq("booking_id", id)
-      .order("created_at", { ascending: true })
-      .limit(200),
+      .order("created_at", { ascending: false })
+      // +1 so a thread of EXACTLY MESSAGE_LIMIT isn't reported as truncated —
+      // telling an admin the record is incomplete when they are looking at all of it
+      // invites an escalation for an export that doesn't exist.
+      .limit(MESSAGE_LIMIT + 1),
   ]);
 
   const posterId = jobRes.data?.poster_id;
@@ -39,8 +49,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const pay = paymentRes.data;
 
   // Sign any chat images (private bucket) so an admin can review flagged DM content.
+  const fetched = messagesRes.data ?? [];
+  const truncated = fetched.length > MESSAGE_LIMIT;
+  const messageRows = fetched.slice(0, MESSAGE_LIMIT).reverse(); // back to chronological
   const messages = await Promise.all(
-    (messagesRes.data ?? []).map(async (m) => ({
+    messageRows.map(async (m) => ({
       ...m,
       signedImage: m.image_url ? await signChatImage(ctx.service, m.image_url, m.sender_id) : null,
     })),
@@ -89,7 +102,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div><dt className="text-[var(--muted)]">Booked</dt><dd>{fmtDate(booking.created_at)}</dd></div>
           <div><dt className="text-[var(--muted)]">Earner done</dt><dd>{booking.earner_done ? "yes" : "no"}</dd></div>
           <div><dt className="text-[var(--muted)]">Poster done</dt><dd>{booking.poster_done ? "yes" : "no"}</dd></div>
-          <div><dt className="text-[var(--muted)]">Tip</dt><dd>{booking.tip_amount ? `$${booking.tip_amount}` : "—"}</dd></div>
+          <div><dt className="text-[var(--muted)]">Tip</dt><dd>{fmtDollars(booking.tip_amount)}</dd></div>
           <div><dt className="text-[var(--muted)]">Amendment</dt><dd>{booking.amendment_status ?? "none"}</dd></div>
           <div><dt className="text-[var(--muted)]">Messages</dt><dd>{messages.length}</dd></div>
           {booking.counter_offer && <div><dt className="text-[var(--muted)]">Counter-offer</dt><dd>${Number(booking.counter_offer)}</dd></div>}
@@ -109,13 +122,53 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         ) : (
           <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm md:grid-cols-4">
             <div><dt className="text-[var(--muted)]">Status</dt><dd><Pill tone={statusTone(pay.status)}>{pay.status}</Pill></dd></div>
-            <div><dt className="text-[var(--muted)]">Charged</dt><dd>{fmtCents(pay.amount_cents)}</dd></div>
+            {/* "Charged" was wrong here for the same reason it was wrong on
+                /payments (fixed there, see payments/page.tsx). amount_cents is the
+                ORIGINAL AUTHORIZATION and is deliberately never rewritten —
+                stripe-capture-payment keeps it as the audit record and documents
+                the captured total as earner_amount_cents + fee_cents. After a
+                partial capture (pct as low as 0.5) the poster pays as little as
+                half of it, so labelling it "Charged" overstated collection by up
+                to 2x — on the one page an admin opens BECAUSE there is a dispute,
+                where the three numbers visibly failed to add up. */}
+            <div><dt className="text-[var(--muted)]">Authorized</dt><dd>{fmtCents(pay.amount_cents)}</dd></div>
+            <div>
+              <dt className="text-[var(--muted)]">Captured</dt>
+              <dd>{pay.status === "captured" ? fmtCents((pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0)) : "—"}</dd>
+            </div>
             <div><dt className="text-[var(--muted)]">Fee</dt><dd>{fmtCents(pay.fee_cents)}</dd></div>
             <div><dt className="text-[var(--muted)]">To earner</dt><dd>{fmtCents(pay.earner_amount_cents)}</dd></div>
-            <div><dt className="text-[var(--muted)]">Captured</dt><dd>{fmtDate(pay.captured_at)}</dd></div>
+            {/* Renamed: a field labelled "Captured" holding a DATE sat directly
+                beside money fields, reading as a fourth amount. */}
+            <div><dt className="text-[var(--muted)]">Captured at</dt><dd>{fmtDate(pay.captured_at)}</dd></div>
+            {pay.refunded_cents > 0 && (
+              <div>
+                <dt className="text-[var(--muted)]">Refunded</dt>
+                <dd className="text-[var(--danger)]">{fmtCents(pay.refunded_cents)}</dd>
+              </div>
+            )}
             <div className="col-span-3"><dt className="text-[var(--muted)]">PaymentIntent</dt><dd className="font-mono text-xs">{pay.payment_intent_id}</dd></div>
           </dl>
         )}
+      </Section>
+
+      <Section title="Intervene">
+        <p className="mb-3 text-xs text-[var(--muted)]">
+          These override the normal flow. Every one is recorded in the audit log against your
+          account, with the reason you give.
+        </p>
+        <InterventionPanel
+          bookingId={booking.id}
+          status={booking.status}
+          startedAt={booking.started_at ?? null}
+          paymentStatus={pay?.status ?? null}
+          refundableCents={
+            pay && pay.status === "captured"
+              ? Math.max(0, (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0) - (pay.refunded_cents ?? 0))
+              : 0
+          }
+          isAdmin={ctx.role === "admin"}
+        />
       </Section>
 
       {beforePhotos.length > 0 && (
@@ -142,7 +195,15 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         </Section>
       )}
 
-      <Section title={`Conversation (${messages.length})`}>
+      <Section title={`Conversation (${truncated ? `latest ${messages.length}` : messages.length})`}>
+        {/* Say so when the thread is cut off. A silently capped list reads as the
+            whole conversation, which is the wrong impression to give someone
+            deciding whether to ban an account. */}
+        {truncated && (
+          <p className="mb-3 rounded-lg bg-[var(--surface)] px-3 py-2 text-xs text-[var(--muted)]">
+            Showing the most recent {MESSAGE_LIMIT} messages — this thread is longer.
+          </p>
+        )}
         {messages.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">No messages.</p>
         ) : (

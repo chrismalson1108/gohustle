@@ -55,9 +55,20 @@ async function recordReversal(
 ): Promise<string | null> {
   if (!paymentIntentId) return null;
   const { data: payment } = await supabase
-    .from('payments').select('id, booking_id').eq('payment_intent_id', paymentIntentId).maybeSingle();
+    .from('payments').select('id, booking_id, refund_source')
+    .eq('payment_intent_id', paymentIntentId).maybeSingle();
   const bookingId = (payment as { booking_id?: string } | null)?.booking_id;
   if (!bookingId) return null;
+
+  // An ADMIN-initiated refund is a remediation, not a new complaint. Filing a
+  // disputes row for it created a loop: the console refunds a booking, Stripe fires
+  // charge.refunded, this records a fresh OPEN dispute, and earner-claim-payment
+  // then refuses to settle that booking — so fixing a problem re-blocked it. Still
+  // return the booking id so the caller's admin email is sent; only skip the row.
+  if ((payment as { refund_source?: string | null } | null)?.refund_source === 'admin') {
+    console.log(`recordReversal: skipping dispute row for admin-initiated refund on ${bookingId}`);
+    return bookingId;
+  }
 
   // raised_by is NOT NULL → attribute to the poster (the cardholder who charged back);
   // fall back to the earner if the join is somehow unavailable.

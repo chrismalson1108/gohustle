@@ -14,23 +14,38 @@ const PAGE_SIZE = 50;
 export default async function ClientErrorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; fatal?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; fatal?: string; dev?: string; page?: string }>;
 }) {
   const ctx = await requireAdminPage("support");
   const sp = await searchParams;
   const q = sp.q?.trim() ?? "";
   const fatalOnly = sp.fatal === "1";
+  // PRODUCTION-ONLY BY DEFAULT. Every row this page first showed came from a local
+  // Metro session (127.0.0.1:8081, dev=true) — the founder's own machine. Once real
+  // testers arrive, dev noise at equal weight is how a genuine crash goes unnoticed.
+  // Opt in to see dev rows; never the other way round.
+  const showDev = sp.dev === "1";
   const page = Math.max(0, parseInt(sp.page ?? "0", 10) || 0);
 
   let query = ctx.service
     .from("client_errors")
-    .select("id, user_id, platform, app_version, message, context, fatal, created_at")
+    .select("id, user_id, platform, app_version, message, context, fatal, dev, created_at", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
   if (q) query = query.ilike("message", `%${q}%`);
   if (fatalOnly) query = query.eq("fatal", true);
+  if (!showDev) query = query.eq("dev", false);
 
-  const { data: rows, error } = await query;
+  const { data: rows, error, count } = await query;
+
+  // How much is being hidden, so "queue is clear" is never a lie of omission — using
+  // the SAME q/fatal filters as the list. A global count printed beside a filtered
+  // one reads as commensurate and sends the operator hunting suppressed rows that
+  // this view was never going to show anyway.
+  let devQuery = ctx.service.from("client_errors").select("id", { count: "exact", head: true }).eq("dev", true);
+  if (q) devQuery = devQuery.ilike("message", `%${q}%`);
+  if (fatalOnly) devQuery = devQuery.eq("fatal", true);
+  const { count: devCount } = await devQuery;
 
   const userIds = [...new Set((rows ?? []).map((r) => r.user_id).filter(Boolean))] as string[];
   const users = userIds.length
@@ -41,6 +56,7 @@ export default async function ClientErrorsPage({
   const baseParams = new URLSearchParams();
   if (q) baseParams.set("q", q);
   if (fatalOnly) baseParams.set("fatal", "1");
+  if (showDev) baseParams.set("dev", "1");
   const pageHref = (p: number) => {
     const s = new URLSearchParams(baseParams);
     s.set("page", String(p));
@@ -51,7 +67,11 @@ export default async function ClientErrorsPage({
     <div>
       <h1 className="text-xl font-semibold text-[var(--ink)]">Client errors</h1>
       <p className="mt-1 text-sm text-[var(--muted)]">
-        Errors reported by the mobile and web clients. Newest first.
+        Errors reported by the mobile and web clients. Newest first.{" "}
+        {showDev
+          ? "Showing development builds too."
+          : `Production builds only${devCount ? ` — ${devCount} dev-build error${devCount === 1 ? "" : "s"} hidden` : ""}.`}
+        {typeof count === "number" ? ` ${count} total.` : ""}
       </p>
 
       <form className="mt-4 flex flex-wrap items-center gap-2" action="/errors">
@@ -64,6 +84,10 @@ export default async function ClientErrorsPage({
         <label className="flex items-center gap-1.5 text-sm text-[var(--muted)]">
           <input type="checkbox" name="fatal" value="1" defaultChecked={fatalOnly} />
           Fatal only
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-[var(--muted)]">
+          <input type="checkbox" name="dev" value="1" defaultChecked={showDev} />
+          Include dev builds
         </label>
         <button type="submit" className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-sm font-medium text-white">
           Filter

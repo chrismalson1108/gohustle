@@ -8,6 +8,7 @@
 // confirmed without actually funding the escrow (which would mean free work).
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,12 @@ const corsHeaders = {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  // Hoisted so the terminal catch can identify the failure. The service client,
+  // `user` and `bookingId` are all declared inside the try below and are therefore
+  // out of scope there; without these the error row names only the function.
+  let errBookingId: string | null = null;
+  let errUserId: string | null = null;
 
   try {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
@@ -26,9 +33,11 @@ Deno.serve(async (req: Request) => {
 
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    errUserId = user?.id ?? null;
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
     const { bookingId } = await req.json();
+    errBookingId = typeof bookingId === 'string' ? bookingId : null;
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
     // Authorization: only the poster who owns this booking's job may accept it.
@@ -79,6 +88,11 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true });
   } catch (err) {
     console.error('accept-booking:', err);
+    // Land it where an operator will actually see it (/errors in the admin
+    // console). This used to stop at console.error, so a money-path failure
+    // was invisible unless someone was tailing Supabase function logs.
+    await logServerError('accept-booking', `Booking acceptance failed after the hold was placed: ${errMessage(err)}`,
+      { booking_id: errBookingId }, { fatal: true, userId: errUserId });
     return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });
