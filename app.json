@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F7F3EC"
+      "backgroundColor": "#F7F4EC"
     },
     "ios": {
       "supportsTablet": true,
@@ -62,7 +62,7 @@
       "package": "com.gohustlr.app",
       "versionCode": 9,
       "adaptiveIcon": {
-        "backgroundColor": "#3F25FE",
+        "backgroundColor": "#5038FF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -97,7 +97,7 @@
         "expo-notifications",
         {
           "icon": "./assets/android-icon-monochrome.png",
-          "color": "#3F25FE"
+          "color": "#5038FF"
         }
       ],
       [
