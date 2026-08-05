@@ -420,6 +420,7 @@ export default function BrowsePage() {
           }}
           recentSlugs={recentCategorySlugs}
           allowCreate={false}
+          inline
           placeholder="Search all categories…"
         />
       </Modal>

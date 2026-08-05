@@ -17,7 +17,7 @@ export default function XPBar({ levelInfo, xp, dark = true }) {
           Lv.{current.level} · {current.label}
         </Text>
         <Text style={[styles.xp, { color: muted }]} numberOfLines={1}>
-          {xp} / {next.minXP} XP
+          {next ? `${xp} / ${next.minXP} XP` : `${xp} XP · MAX`}
         </Text>
       </View>
       <View style={[styles.track, { backgroundColor: track }]}>

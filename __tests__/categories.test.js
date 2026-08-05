@@ -231,13 +231,35 @@ describe('SQL/JS parity — regenerate with scripts/gen-categories-migration.js'
   });
 
   test('the normalizer fires after the write guard that pins a booked gig', () => {
-    // Postgres runs same-timing triggers alphabetically. trg_y_* must sort after
-    // trg_guard_jobs_write (which pins new.category := old.category) and after
-    // trg_guard_content_jobs (which can reject the value).
-    expect(sql).toContain('create trigger trg_y_normalize_job_category');
-    expect('trg_y_normalize_job_category' > 'trg_guard_jobs_write').toBe(true);
-    expect('trg_y_normalize_job_category' > 'trg_guard_content_jobs').toBe(true);
-    expect('trg_y_normalize_job_category' < 'trg_z_guard_jobs_bump_not_future').toBe(true);
+    // Postgres runs same-timing triggers alphabetically, so trg_y_* must sort after
+    // the guards. Comparing two string LITERALS here could never fail — it asserted
+    // facts about the test file, not about the schema. Read the guard names that
+    // actually exist on public.jobs off disk instead, so renaming one fails here.
+    const dir = path.dirname(MIGRATION);
+    const onJobs = new Set(
+      fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().flatMap((f) => [
+        ...fs.readFileSync(path.join(dir, f), 'utf8')
+          .matchAll(/create trigger (\w+)\s+before[^;]*?on public\.jobs/g),
+      ].map((m) => m[1])),
+    );
+
+    expect(onJobs.has('trg_y_normalize_job_category')).toBe(true);
+    for (const guard of ['trg_guard_jobs_write', 'trg_guard_content_jobs']) {
+      expect(onJobs.has(guard)).toBe(true);
+      expect(guard < 'trg_y_normalize_job_category').toBe(true);
+    }
+  });
+
+  test('the normalizer is bound to category_slug too, not just category', () => {
+    // Bound to `update of category` alone, an UPDATE touching only category_slug
+    // bypassed it entirely — and guard_jobs_write never pins the slug, so a poster
+    // could repoint a booked gig's discovery identity. Demonstrated on production
+    // before 20260805030000 fixed it.
+    const fix = fs.readFileSync(
+      path.join(path.dirname(MIGRATION), '20260805030000_category_slug_is_derived_not_trusted.sql'),
+      'utf8',
+    );
+    expect(fix).toMatch(/before insert or update of category, category_slug on public\.jobs/);
   });
 
   test('the profiles content guard now covers every field its function checks', () => {

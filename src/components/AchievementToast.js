@@ -7,8 +7,9 @@ import { colors, radii, shadows } from '../theme';
 
 // Map the emoji callers pass to showToast({ icon }) onto vector icons, so toasts
 // render reliably (emoji can fail to render on some simulators/devices).
-// Colors are semantic only: success = done/paid, urgent = failed/removed,
-// accentDeep = money/energy highlight, primary = neutral app action.
+// Colors are semantic only: success = done/paid, urgent = failed/removed/blocked,
+// warningDeep = caution, textMuted = passive/waiting, primary = everything else
+// (app actions, and the gamification icons — badges, streaks, levels).
 const ICONS = {
   '✅': { name: 'checkmark-circle', color: colors.success },
   '🎉': { name: 'trophy',           color: colors.primary },

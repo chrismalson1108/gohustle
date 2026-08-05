@@ -1330,7 +1330,17 @@ async function watchForGigs(sb: SupabaseClient, userId: string, input: Json, act
   // chip when the user opens the same filter in the app.
   const asked = cleanCategoryLabel(input.category);
   const categoryLabel = asked.toLowerCase() === 'all' ? '' : asked;
-  const category = categoryLabel ? (await resolveSlug(sb, categoryLabel)) || 'all' : 'all';
+  // Fail CLOSED. `|| 'all'` here meant an unresolvable label silently became a watch
+  // on EVERY category — the user asked for one thing, got alerts for everything, and
+  // the model confirmed the narrow watch it thought it had made.
+  const slug = categoryLabel ? await resolveSlug(sb, categoryLabel) : '';
+  if (categoryLabel && !slug) {
+    return JSON.stringify({
+      error: 'category_unresolved',
+      message: `Couldn't pin down the category "${categoryLabel}". Try a plain service name, or watch by keyword and location instead.`,
+    });
+  }
+  const category = slug || 'all';
   const keyword = typeof input.keyword === 'string' ? input.keyword.trim() : '';
   const location = typeof input.location === 'string' ? input.location.trim() : '';
   const minPay = typeof input.min_pay === 'number' && input.min_pay > 0 ? input.min_pay : null;

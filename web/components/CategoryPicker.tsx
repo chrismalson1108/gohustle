@@ -37,6 +37,12 @@ interface Props {
   multiple?: boolean;
   max?: number;
   allowCreate?: boolean;
+  /**
+   * Render the list in normal flow instead of as a floating dropdown. Required
+   * inside a sheet: Modal's body is `flex-1 overflow-y-auto`, which clips an
+   * absolutely-positioned child — measured at 16px of a 288px list visible.
+   */
+  inline?: boolean;
   disabled?: boolean;
   placeholder?: string;
 }
@@ -56,6 +62,7 @@ export default function CategoryPicker({
   multiple = false,
   max,
   allowCreate = true,
+  inline = false,
   disabled = false,
   placeholder,
 }: Props) {
@@ -150,7 +157,7 @@ export default function CategoryPicker({
   const matchedExactly = !!typedSlug && !!index?.bySlug[typedSlug];
   const canCreate = allowCreate && !!index && typed.length > 0 && !matchedExactly && !atMax;
   const rowCount = flat.length + (canCreate ? 1 : 0);
-  const showDropdown = open && !disabled;
+  const showDropdown = (inline || open) && !disabled;
 
   useEffect(() => {
     setHighlight(0);
@@ -339,7 +346,14 @@ export default function CategoryPicker({
           id={listId}
           role="listbox"
           aria-label="Categories"
-          className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-50 max-h-72 overflow-y-auto rounded-2xl bg-white py-1 shadow-[var(--shadow-pop)]"
+          className={classNames(
+            "overflow-y-auto rounded-2xl bg-white py-1",
+            inline
+              // In flow: the sheet scrolls it, so no float, no shadow, and a border
+              // to keep it readable against the sheet's own white.
+              ? "mt-2 max-h-[60dvh] border border-line"
+              : "absolute inset-x-0 top-[calc(100%+0.375rem)] z-50 max-h-72 shadow-[var(--shadow-pop)]",
+          )}
         >
           {!index && (
             <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-ink-muted">
