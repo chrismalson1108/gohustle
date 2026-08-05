@@ -492,9 +492,12 @@ export function categoryLabel(input, extra) {
   const hit = findCategory(input, extra);
   if (hit) return hit.label;
   const raw = String(input ?? '').trim().replace(/\s+/g, ' ');
-  // A bare slug ("snow-removal") reaching here means we only have the identity,
-  // not the creator's casing — title-case it rather than showing hyphens.
-  const text = (raw && !/\s/.test(raw) && raw.includes('-'))
+  // A bare slug reaching here means we only have the identity, not the creator's
+  // casing. Title-case it: "snow-removal" → "Snow Removal", "golf" → "Golf". The
+  // single-word case matters as much as the hyphenated one — a recents chip for a
+  // community category rendered a lowercase "golf" next to a canonical "Delivery".
+  // Anything containing a space is a real label someone typed, so it is left alone.
+  const text = (raw && !/\s/.test(raw))
     ? raw.split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     : raw;
   return text.slice(0, CATEGORY_LABEL_MAX);

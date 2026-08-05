@@ -345,6 +345,17 @@ describe('accessors never return undefined', () => {
   test('a bare slug renders as words, not hyphens', () => {
     expect(categoryLabel('alpaca-shearing')).toBe('Alpaca Shearing');
   });
+
+  test('a single-word slug is title-cased too', () => {
+    // A recents chip for a community category rendered a lowercase "golf" next to a
+    // canonical "Delivery" — the hyphen check skipped every one-word slug.
+    expect(categoryLabel('golf')).toBe('Golf');
+    expect(categoryLabel('fishing')).toBe('Fishing');
+  });
+
+  test('a label someone actually typed keeps its own casing', () => {
+    expect(categoryLabel('lawn care for bob')).toBe('lawn care for bob');
+  });
 });
 
 describe('sameCategory', () => {
