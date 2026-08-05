@@ -1,4 +1,5 @@
-import { matchesForYou, applyJobFilters, skillFitScore, jobCategorySlugs } from '../shared/filters.js';
+import { matchesForYou, applyJobFilters, skillFitScore, jobCategorySlugs, isBrowsable, browsableJobs } from '../shared/filters.js';
+import { browseChipsFromJobs } from '../shared/categories.js';
 
 const job = (over = {}) => ({
   status: 'open',
@@ -200,5 +201,57 @@ describe('applyJobFilters — search', () => {
   test('a gig with no description or title does not crash the feed', () => {
     const thin = [{ id: 't', status: 'open', category: 'Moving', pay: 20, payType: 'flat' }];
     expect(applyJobFilters(thin, { search: 'moving' }).map(j => j.id)).toEqual(['t']);
+  });
+});
+
+// A browse chip that filters to "No gigs match your filters" reads as a broken
+// control. It happened because the chip row was derived from the RAW job list while
+// the feed drops gigs that are already booked, already this viewer's, or from a
+// blocked poster — so a category whose only gig was spoken for still got a chip.
+// isBrowsable is the single definition both sides now use.
+describe('isBrowsable / browsableJobs', () => {
+  const open = { id: 'a', posterId: 'p1', status: 'open', slots: [{ taken: false }] };
+  const allTaken = { id: 'b', posterId: 'p2', status: 'open', slots: [{ taken: true }] };
+  const cancelled = { id: 'c', posterId: 'p3', status: 'cancelled', slots: [{ taken: false }] };
+  const mine = { id: 'd', posterId: 'p4', status: 'open', slots: [{ taken: false }] };
+  const blocked = { id: 'e', posterId: 'blockme', status: 'open', slots: [{ taken: false }] };
+
+  const opts = {
+    blockedIds: new Set(['blockme']),
+    myBookings: [{ jobId: 'd', status: 'confirmed' }],
+  };
+
+  test('keeps a gig anyone can still book', () => {
+    expect(isBrowsable(open, opts)).toBe(true);
+  });
+
+  test('drops the three cases the feed also drops', () => {
+    expect(isBrowsable(allTaken, opts)).toBe(false);
+    expect(isBrowsable(cancelled, opts)).toBe(false);
+    expect(isBrowsable(mine, opts)).toBe(false);
+    expect(isBrowsable(blocked, opts)).toBe(false);
+  });
+
+  test('browsableJobs agrees exactly with what applyJobFilters keeps', () => {
+    const all = [open, allTaken, cancelled, mine, blocked];
+    const chipSource = browsableJobs(all, opts).map((j) => j.id);
+    const feed = applyJobFilters(all, { selectedCat: 'all', ...opts }).map((j) => j.id);
+    expect(chipSource).toEqual(feed);
+  });
+
+  test('a category whose only gig is unbookable produces no chip', () => {
+    const jobs = [
+      { ...open, category: 'Lawn Care' },
+      { ...allTaken, category: 'Nails' },
+    ];
+    const chips = browseChipsFromJobs(browsableJobs(jobs, opts)).map((c) => c.slug);
+    expect(chips).toEqual(['lawn-care']);
+    // …and deriving from the raw list is what produced the dead chip.
+    expect(browseChipsFromJobs(jobs).map((c) => c.slug)).toContain('nails');
+  });
+
+  test('tolerates missing options', () => {
+    expect(isBrowsable(open)).toBe(true);
+    expect(browsableJobs(null)).toEqual([]);
   });
 });

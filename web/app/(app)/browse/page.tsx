@@ -9,6 +9,7 @@ import {
   countActiveFilters,
   applyJobFilters,
   availableStatesFrom,
+  browsableJobs,
   browseChipsFromJobs,
   categoryLabel,
   milesLabel,
@@ -148,12 +149,19 @@ export default function BrowsePage() {
   const categories = catIndex?.list;
   const catAliases = catIndex?.aliases;
 
-  // Chips come from the feed, not from a fixed array: a category someone created
-  // is reachable the moment a gig carries it. The old module-level constant was
-  // computed once at import from seven hardcoded labels, which is why everything
-  // outside those seven was only findable under "All".
+  // Chips come from the feed, not from a fixed array: a category someone created is
+  // reachable the moment a gig carries it. The old module-level constant was computed
+  // once at import from seven hardcoded labels, which is why everything outside those
+  // seven was only findable under "All".
+  //
+  // The source is the BROWSABLE subset, not the raw list — a category whose only gigs
+  // are already booked (or hidden from this viewer) would otherwise get a chip that
+  // filters to "No gigs match your filters", which reads as a broken control.
   const chips = useMemo(() => {
-    const derived = browseChipsFromJobs(jobs, { recentSlugs: recentCategorySlugs, extra: categories }).map((c) => ({
+    const derived = browseChipsFromJobs(
+      browsableJobs(jobs, { blockedIds, myBookings: bookings }),
+      { recentSlugs: recentCategorySlugs, extra: categories, aliases: catAliases },
+    ).map((c: { slug: string; label: string }) => ({
       slug: c.slug,
       label: c.label,
     }));
@@ -168,7 +176,7 @@ export default function BrowsePage() {
       derived.unshift({ slug: selectedCat, label: categoryLabel(selectedCat, categories) });
     }
     return [...HEAD_CHIPS, ...derived];
-  }, [jobs, recentCategorySlugs, categories, selectedCat]);
+  }, [jobs, bookings, blockedIds, recentCategorySlugs, categories, catAliases, selectedCat]);
 
   // Radius-filter center: an explicitly chosen location wins, else the geocoded
   // profile city, else the device location.

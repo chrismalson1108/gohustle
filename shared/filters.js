@@ -272,6 +272,28 @@ export function isHiddenForViewer(job, myBookings) {
 //
 // `extraAliases` is the {fromSlug: toSlug} map of merged categories loaded from the
 // DB (fetchCategories().aliases); omit it and only the seeded aliases apply.
+/**
+ * The always-on eligibility rules: could this gig EVER appear in this viewer's feed,
+ * regardless of which chip or filters are active? Bookable, not already theirs, not
+ * from someone they blocked.
+ *
+ * Exported because the browse chip row has to agree with the feed about this. Chips
+ * are derived from the jobs the viewer holds, and deriving them from the RAW list
+ * produced chips that filtered to "No gigs match your filters" — a category whose
+ * only gigs were already booked still got a chip, and tapping it looked broken.
+ * Anything category-scoped that summarises the feed must filter through here first.
+ */
+export function isBrowsable(job, { blockedIds, myBookings } = {}) {
+  if (!isJobBookable(job)) return false;
+  if (isHiddenForViewer(job, myBookings)) return false;
+  if (blockedIds && blockedIds.has?.(job.posterId)) return false;
+  return true;
+}
+
+export function browsableJobs(jobs, opts) {
+  return (jobs || []).filter((j) => isBrowsable(j, opts));
+}
+
 export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filters = DEFAULT_FILTERS, blockedIds, userCoords, center, mySchool, forYouSkills = [], myBookings, extraAliases } = {}) {
   const schoolKey = (mySchool || '').trim().toLowerCase();
   // Radius filter center: an explicitly chosen location wins, else the default
@@ -279,11 +301,7 @@ export function applyJobFilters(jobs, { selectedCat = 'all', search = '', filter
   const radiusCenter = (filters.near && filters.near.lat != null) ? filters.near : center;
   const radiusOn = filters.radius && filters.radius !== 'any' && radiusCenter && radiusCenter.lat != null;
   let list = (jobs || []).filter(j => {
-    // Bookability, not just status — see isJobBookable.
-    if (!isJobBookable(j)) return false;
-    // …and gigs this viewer has already won/finished — see isHiddenForViewer.
-    if (isHiddenForViewer(j, myBookings)) return false;
-    if (blockedIds && blockedIds.has?.(j.posterId)) return false;
+    if (!isBrowsable(j, { blockedIds, myBookings })) return false;
     if (selectedCat === 'foryou') {
       if (!matchesForYou(j, forYouSkills, { extraAliases })) return false;
     } else if (selectedCat !== 'all') {

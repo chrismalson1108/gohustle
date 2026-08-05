@@ -108,12 +108,24 @@ declare module "@gohustlr/shared" {
   ): NormalizedCategory;
   export function searchCategories(
     query: unknown,
-    opts?: { extra?: CategoryExtra; limit?: number; includeGroups?: boolean },
+    opts?: {
+      extra?: CategoryExtra;
+      /** Runtime merge map, so a query that IS an alias finds what it folds into. */
+      aliases?: Record<string, string> | null;
+      limit?: number;
+      includeGroups?: boolean;
+    },
   ): CategoryEntry[];
   export function categoriesByGroup(extra?: CategoryExtra): Array<CategoryGroupMeta & { items: CategoryEntry[] }>;
   export function browseChipsFromJobs(
-    jobs: ReadonlyArray<{ category?: string | null } | null | undefined> | null | undefined,
-    opts?: { recentSlugs?: readonly string[] | null; extra?: CategoryExtra; limit?: number },
+    jobs: ReadonlyArray<{ category?: string | null; categorySlug?: string | null } | null | undefined> | null | undefined,
+    opts?: {
+      recentSlugs?: readonly string[] | null;
+      extra?: CategoryExtra;
+      /** Runtime merge map from fetchCategories().aliases — merges curated after this build shipped. */
+      aliases?: Record<string, string> | null;
+      limit?: number;
+    },
   ): BrowseChip[];
 
   // ── geo ──
@@ -203,6 +215,19 @@ declare module "@gohustlr/shared" {
     job: { id: string } | null | undefined,
     myBookings: Array<{ jobId: string; status: string }> | null | undefined,
   ): boolean;
+  /**
+   * The always-on eligibility rules — bookable, not already this viewer's, not from a
+   * blocked poster. Anything that summarises the feed (notably the browse chip row)
+   * must filter through this first, or it advertises categories the feed will not show.
+   */
+  export function isBrowsable(
+    job: unknown,
+    opts?: { blockedIds?: Set<string> | null; myBookings?: Array<{ jobId: string; status: string }> | null },
+  ): boolean;
+  export function browsableJobs<T>(
+    jobs: T[] | null | undefined,
+    opts?: { blockedIds?: Set<string> | null; myBookings?: Array<{ jobId: string; status: string }> | null },
+  ): T[];
 
   // ── lifecycle ──
   export const BOOKING_STATUS: Record<string, { label: string; ion: string; color: string; bg: string }>;

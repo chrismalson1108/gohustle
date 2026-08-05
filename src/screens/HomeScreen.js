@@ -16,7 +16,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import { milesLabel } from '../lib/geo';
 import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
 import { colors } from '../theme';
-import { applyJobFilters, availableStatesFrom } from '../lib/filters';
+import { applyJobFilters, availableStatesFrom, browsableJobs } from '../lib/filters';
 import { fetchCategories } from '../lib/categories';
 import { browseChipsFromJobs } from '../../shared/categories.js';
 import { maskLocation } from '../lib/address';
@@ -159,15 +159,19 @@ export default function HomeScreen({ navigation }) {
   // The browse chips are derived from what the feed actually carries, not from a
   // module-level constant computed at import time off a fixed seven-label array —
   // that was why a category a user created was only reachable under "All".
+  // Derived from the BROWSABLE subset, not the raw list: a category whose only gigs
+  // are already booked (or hidden from this viewer) would otherwise get a chip that
+  // filters to "No gigs match your filters".
   const chips = useMemo(
     () => [
       ...PSEUDO_CHIPS,
-      ...browseChipsFromJobs(jobs, {
+      ...browseChipsFromJobs(browsableJobs(jobs, { blockedIds, myBookings: bookings }), {
         recentSlugs: recentCategorySlugs,
         extra: catIndex ? catIndex.list : [],
+        aliases: catIndex ? catIndex.aliases : undefined,
       }),
     ],
-    [jobs, recentCategorySlugs, catIndex],
+    [jobs, bookings, blockedIds, recentCategorySlugs, catIndex],
   );
 
   // Shared with the web feed so the two can't drift — the rule this screen used to

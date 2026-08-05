@@ -90,7 +90,7 @@ export default function CategoryPicker({
   const sections = useMemo(() => {
     if (!index) return [];
     const raw = typed
-      ? [{ key: 'results', title: null, ion: null, items: searchCategories(typed, { extra: index.list, limit: 24 }) }]
+      ? [{ key: 'results', title: null, ion: null, items: searchCategories(typed, { extra: index.list, aliases, limit: 24 }) }]
       : categoriesByGroup(index.list).map((g) => ({ key: g.key, title: g.label, ion: g.ion, items: g.items }));
 
     // Both shared helpers pool CATEGORY_CATALOG with whatever is passed as `extra`,

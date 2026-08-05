@@ -504,3 +504,32 @@ describe('browseChipsFromJobs', () => {
     expect(chips[0]).toMatchObject({ slug: 'plumbing', count: 2 });
   });
 });
+
+// Resolving an alias is not the same as FINDING it. "lawncare" is the most natural
+// spelling of the commonest gig on the platform; the merge table knew it meant Lawn
+// Care, but searchCategories never consulted it, so the picker showed "No categories
+// match that search" and — because the value did resolve to something real — offered
+// no create option either. A dead end on exactly the words people type.
+describe('searchCategories follows aliases', () => {
+  test('a compiled-in alias finds its target', () => {
+    expect(searchCategories('lawncare')[0].label).toBe('Lawn Care');
+    expect(searchCategories('moving help')[0].label).toBe('Moving');
+    expect(searchCategories('plumber')[0].label).toBe('Plumbing');
+    expect(searchCategories('snow plowing')[0].label).toBe('Snow Removal');
+  });
+
+  test('a merge curated at runtime is searchable too', () => {
+    const aliases = { 'garden-work': 'gardening' };
+    expect(searchCategories('garden work', { aliases })[0].label).toBe('Gardening');
+  });
+
+  test('the alias target outranks a mere substring hit', () => {
+    // "mowing" -> lawn-care by alias; "Lawn Mowing" is not a category, so without
+    // the alias arm this returned nothing useful.
+    expect(searchCategories('mowing')[0].label).toBe('Lawn Care');
+  });
+
+  test('a genuinely unknown query still finds nothing, so Create is offered', () => {
+    expect(searchCategories('alpaca shearing')).toEqual([]);
+  });
+});

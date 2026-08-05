@@ -103,7 +103,7 @@ export default function CategoryPicker({
     if (!index) return { sections: [] as Section[], flat: [] as Category[] };
     const q = query.trim();
     const raw: Array<{ key: string; label: string | null; items: Array<{ slug: string }> }> = q
-      ? [{ key: "results", label: null, items: searchCategories(q, { extra: index.list, limit: 24 }) }]
+      ? [{ key: "results", label: null, items: searchCategories(q, { extra: index.list, aliases: index.aliases, limit: 24 }) }]
       : categoriesByGroup(index.list).map((g: { key: string; label: string; items: Array<{ slug: string }> }) => ({
           key: g.key,
           label: g.label,

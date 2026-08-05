@@ -622,7 +622,7 @@ export function normalizeCategoryInput(raw, { findProhibited, extra, aliases } =
  * Ranking: exact slug > label starts-with > word starts-with > substring >
  * group-name match. Ties break toward canonical categories, then by usage.
  */
-export function searchCategories(query, { extra = [], limit = 20, includeGroups = true } = {}) {
+export function searchCategories(query, { extra = [], aliases, limit = 20, includeGroups = true } = {}) {
   const pool = [...CATEGORY_CATALOG, ...(Array.isArray(extra) ? extra.filter(Boolean) : [])];
   const seen = new Set();
   const unique = pool.filter((c) => {
@@ -640,12 +640,18 @@ export function searchCategories(query, { extra = [], limit = 20, includeGroups 
   }
 
   const qSlug = categorySlug(q);
+  // Aliases have to be searchable, not just resolvable. Someone typing "lawncare"
+  // — the most natural spelling of the commonest gig there is — was getting "No
+  // categories match that search" AND no create option, because the merge table
+  // knew it meant Lawn Care while the search never consulted it. That dead-ended
+  // the picker on exactly the words people actually type.
+  const aliasSlug = resolveCategorySlug(q, aliases);
   const scored = [];
   for (const c of unique) {
     const label = c.label.toLowerCase();
     const words = label.split(/[^a-z0-9]+/).filter(Boolean);
     let score = 0;
-    if (c.slug === qSlug) score = 100;
+    if (c.slug === qSlug || (aliasSlug && c.slug === aliasSlug)) score = 100;
     else if (label.startsWith(q)) score = 80;
     else if (words.some((w) => w.startsWith(q))) score = 60;
     else if (label.includes(q)) score = 40;
