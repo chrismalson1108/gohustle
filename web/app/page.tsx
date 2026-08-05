@@ -53,7 +53,7 @@ const mono = JetBrains_Mono({
 });
 
 /* Brand Guidelines v1.0 — Cream #FEF4E5 · Ink #363636 · Signal Red #EA4637.
-   Blue stays #3F25FE, the value the rest of the site already ships. */
+   Blue stays #5038FF, the value the rest of the site already ships. */
 /* globals.css sets `h1, h2 { font-family: Sora; letter-spacing: -.02em }` as an
    unlayered rule, which outranks Tailwind's layered utilities — hence the `!` on
    both. Without it every heading here silently falls back to Sora. */
@@ -138,7 +138,7 @@ const REVIEWS = [
     initials: "MR",
     name: "Maya R.",
     meta: "Ohio State '27 · 27 jobs",
-    bg: "bg-[#3F25FE]",
+    bg: "bg-[#5038FF]",
   },
   {
     quote: "Posted at 8 PM, had three applicants by 9, and my garage was cleared out Saturday.",
@@ -200,14 +200,14 @@ export default function LandingPage() {
             {/* Mark only below sm. The full lockup is 4.9:1 — 162px at h-33 — which
                 is 58% of the content width on a 320px screen and pushed the bar
                 (logo + Log in + CTA + menu) past the viewport edge. */}
-            <HustlrMark className="h-[30px] w-auto text-[#3F25FE] sm:hidden" />
-            <HustlrLockup className="hidden h-[33px] w-auto text-[#3F25FE] sm:block sm:h-[38px]" />
+            <HustlrMark className="h-[30px] w-auto text-[#5038FF] sm:hidden" />
+            <HustlrLockup className="hidden h-[33px] w-auto text-[#5038FF] sm:block sm:h-[38px]" />
             <span className="sr-only">Hustlr — home</span>
           </Link>
 
-          <nav className="hidden min-w-0 items-center gap-7 whitespace-nowrap text-[14.5px] font-medium text-[#5B5570] lg:flex">
+          <nav className="hidden min-w-0 items-center gap-7 whitespace-nowrap text-[14.5px] font-medium text-[#6B6482] lg:flex">
             {NAV_LINKS.map((l) => (
-              <a key={l.href} href={l.href} className="transition hover:text-[#3F25FE]">
+              <a key={l.href} href={l.href} className="transition hover:text-[#5038FF]">
                 {l.label}
               </a>
             ))}
@@ -216,13 +216,13 @@ export default function LandingPage() {
           <div className="flex shrink-0 items-center gap-1 sm:gap-3">
             <Link
               href="/login"
-              className="px-1.5 py-[11px] text-[14.5px] font-semibold text-[#363636] transition hover:text-[#3F25FE] sm:px-[18px]"
+              className="px-1.5 py-[11px] text-[14.5px] font-semibold text-[#363636] transition hover:text-[#5038FF] sm:px-[18px]"
             >
               Log in
             </Link>
             <Link
               href="/login?mode=signup"
-              className="inline-flex items-center gap-[9px] rounded-[14px] bg-[#3F25FE] px-3.5 py-3 text-[14.5px] font-semibold whitespace-nowrap text-[#FEF4E5] transition hover:bg-[#2b17c2] sm:px-[22px]"
+              className="inline-flex items-center gap-[9px] rounded-[14px] bg-[#5038FF] px-3.5 py-3 text-[14.5px] font-semibold whitespace-nowrap text-[#FEF4E5] transition hover:bg-[#2E1BC7] sm:px-[22px]"
             >
               Get started <IconArrow className="hidden h-[11px] w-auto sm:block" />
             </Link>
@@ -234,7 +234,7 @@ export default function LandingPage() {
                 landing page to the browser. The header is not sticky, so a panel
                 left open after a jump link scrolls away with it. */}
             <details className="group lg:hidden">
-              <summary className="flex size-11 cursor-pointer list-none items-center justify-center text-[#363636] transition hover:text-[#3F25FE] [&::-webkit-details-marker]:hidden">
+              <summary className="flex size-11 cursor-pointer list-none items-center justify-center text-[#363636] transition hover:text-[#5038FF] [&::-webkit-details-marker]:hidden">
                 <IconMenu className="h-[15px] w-auto group-open:hidden" />
                 <IconClose className="hidden h-[15px] w-auto group-open:block" />
                 <span className="sr-only">Menu</span>
@@ -246,7 +246,7 @@ export default function LandingPage() {
                   <a
                     key={l.href}
                     href={l.href}
-                    className="flex min-h-11 items-center text-[15.5px] font-medium text-[#363636] transition hover:text-[#3F25FE]"
+                    className="flex min-h-11 items-center text-[15.5px] font-medium text-[#363636] transition hover:text-[#5038FF]"
                   >
                     {l.label}
                   </a>
@@ -266,33 +266,33 @@ export default function LandingPage() {
         className={`grid items-center gap-14 overflow-x-clip pt-16 pb-[72px] lg:grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] lg:pt-[88px] ${gutter}`}
       >
         <div className="min-w-0">
-          <span className="mb-7 inline-flex items-center gap-2 rounded-full bg-[#E9E6FF] px-[15px] py-2 text-[13px] font-bold text-[#3F25FE]">
+          <span className="mb-7 inline-flex items-center gap-2 rounded-full bg-[#EAE6FF] px-[15px] py-2 text-[13px] font-bold text-[#5038FF]">
             <IconCampus className="h-[14px] w-auto" /> Now live on 12 campuses
           </span>
           <h1
-            className={`${display} m-0 mb-[26px] text-[clamp(38px,9vw,104px)] leading-[0.94] font-bold tracking-[-0.025em]! text-balance text-[#3F25FE]`}
+            className={`${display} m-0 mb-[26px] text-[clamp(38px,9vw,104px)] leading-[0.94] font-bold tracking-[-0.025em]! text-balance text-[#5038FF]`}
           >
             Find jobs between classes.
           </h1>
-          <p className="m-0 mb-[34px] max-w-[46ch] text-[19px] leading-[1.6] text-pretty text-[#5B5570]">
+          <p className="m-0 mb-[34px] max-w-[46ch] text-[19px] leading-[1.6] text-pretty text-[#6B6482]">
             Real work, posted by real neighbors, paid through the app. Pick up a gig on Thursday,
             get paid by Monday. No résumé, no interview, no shift you can&apos;t get out of.
           </p>
           <div className="mb-[22px] flex flex-wrap gap-[14px]">
             <Link
               href="/login?mode=signup"
-              className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#3F25FE] px-[30px] py-[17px] text-[17px] font-semibold text-[#FEF4E5] transition hover:bg-[#2b17c2]"
+              className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#5038FF] px-[30px] py-[17px] text-[17px] font-semibold text-[#FEF4E5] transition hover:bg-[#2E1BC7]"
             >
               Find jobs <IconArrow className="h-[13px] w-auto" />
             </Link>
             <Link
               href="/login?mode=signup"
-              className="inline-flex items-center gap-[10px] rounded-[14px] border-2 border-[#3F25FE] px-[30px] py-[15px] text-[17px] font-semibold text-[#3F25FE] transition hover:bg-[#3F25FE]/6"
+              className="inline-flex items-center gap-[10px] rounded-[14px] border-2 border-[#5038FF] px-[30px] py-[15px] text-[17px] font-semibold text-[#5038FF] transition hover:bg-[#5038FF]/6"
             >
               Post a job
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-2 text-[13.5px] text-[#5B5570]">
+          <div className="flex flex-wrap items-center gap-x-[22px] gap-y-2 text-[13.5px] text-[#6B6482]">
             <span className="flex items-center gap-[7px]">
               <Check /> Free to join
             </span>
@@ -340,7 +340,7 @@ export default function LandingPage() {
       <section id="work" className={`scroll-mt-8 py-16 lg:py-24 ${gutter}`}>
         <div className="mb-11 flex flex-wrap items-end justify-between gap-10">
           <div>
-            <div className={`${overline} mb-4 text-[12.5px] text-[#3F25FE]`}>
+            <div className={`${overline} mb-4 text-[12.5px] text-[#5038FF]`}>
               What&apos;s on Hustlr
             </div>
             <h2
@@ -351,7 +351,7 @@ export default function LandingPage() {
           </div>
           <Link
             href="/login"
-            className="inline-flex items-center gap-[9px] text-[15px] font-semibold text-[#3F25FE] transition hover:opacity-70"
+            className="inline-flex items-center gap-[9px] text-[15px] font-semibold text-[#5038FF] transition hover:opacity-70"
           >
             Browse all 240 open gigs <IconArrow className="h-3 w-auto" />
           </Link>
@@ -371,14 +371,14 @@ export default function LandingPage() {
                 href="/login"
                 className={`flex min-h-[170px] flex-col rounded-[20px] px-6 py-[26px] transition ${
                   blue
-                    ? "bg-[#3F25FE]"
+                    ? "bg-[#5038FF]"
                     : red
                       ? "bg-[#EA4637]"
-                      : "border border-[#363636]/12 bg-white hover:border-[#3F25FE]"
+                      : "border border-[#363636]/12 bg-white hover:border-[#5038FF]"
                 }`}
               >
                 <Icon
-                  className={`mb-auto h-7 w-auto ${onColor ? "text-[#FEF4E5]" : "text-[#3F25FE]"}`}
+                  className={`mb-auto h-7 w-auto ${onColor ? "text-[#FEF4E5]" : "text-[#5038FF]"}`}
                 />
                 <div
                   className={`${display} mt-[22px] text-[23px] font-semibold ${
@@ -409,25 +409,25 @@ export default function LandingPage() {
         id="how"
         className={`scroll-mt-8 border-y border-[#363636]/8 bg-white py-16 lg:py-24 ${gutter}`}
       >
-        <div className={`${overline} mb-4 text-[12.5px] text-[#3F25FE]`}>How it works</div>
+        <div className={`${overline} mb-4 text-[12.5px] text-[#5038FF]`}>How it works</div>
         <h2
           className={`${display} m-0 mb-5 text-[clamp(32px,4.4vw,64px)] leading-none font-bold tracking-[-0.02em]! text-[#363636]`}
         >
           Three steps. No résumé.
         </h2>
-        <p className="m-0 mb-13 max-w-[56ch] text-[17.5px] leading-[1.6] text-[#5B5570]">
+        <p className="m-0 mb-13 max-w-[56ch] text-[17.5px] leading-[1.6] text-[#6B6482]">
           The whole thing is designed to fit in the gap between a 9 AM and a 2 PM.
         </p>
         <div className="grid gap-px border border-[#363636]/14 bg-[#363636]/14 md:grid-cols-3">
           {STEPS.map((s) => (
             <div key={s.n} className="bg-white px-9 py-10">
-              <div className={`${display} mb-[18px] text-[56px] leading-none font-bold text-[#E9E6FF]`}>
+              <div className={`${display} mb-[18px] text-[56px] leading-none font-bold text-[#EAE6FF]`}>
                 {s.n}
               </div>
               <div className={`${display} mb-2.5 text-[27px] font-semibold text-[#363636]`}>
                 {s.title}
               </div>
-              <p className="m-0 text-[15.5px] leading-[1.6] text-[#5B5570]">{s.body}</p>
+              <p className="m-0 text-[15.5px] leading-[1.6] text-[#6B6482]">{s.body}</p>
             </div>
           ))}
         </div>
@@ -436,7 +436,7 @@ export default function LandingPage() {
       {/* ── Trust & safety ──────────────────────────────────────────────── */}
       <section
         id="trust"
-        className={`relative scroll-mt-8 overflow-hidden bg-[#3F25FE] py-16 lg:py-24 ${gutter}`}
+        className={`relative scroll-mt-8 overflow-hidden bg-[#5038FF] py-16 lg:py-24 ${gutter}`}
       >
         {/* The Hustle pattern — texture only, dialled to 4.5% so the copy stays readable. */}
         <div
@@ -481,7 +481,7 @@ export default function LandingPage() {
         className="grid scroll-mt-8 gap-px bg-[#363636]/14 lg:grid-cols-[repeat(auto-fit,minmax(min(100%,400px),1fr))]"
       >
         <div className={`bg-[#FEF4E5] py-16 lg:py-[88px] ${gutter}`}>
-          <span className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#E9E6FF] px-[14px] py-[7px] text-[12.5px] font-bold text-[#3F25FE]">
+          <span className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#EAE6FF] px-[14px] py-[7px] text-[12.5px] font-bold text-[#5038FF]">
             <IconParttime className="h-[13px] w-auto" /> For students
           </span>
           <h3
@@ -491,7 +491,7 @@ export default function LandingPage() {
             <br />
             lectures.
           </h3>
-          <p className="m-0 mb-[26px] max-w-[42ch] text-[16.5px] leading-[1.6] text-[#5B5570]">
+          <p className="m-0 mb-[26px] max-w-[42ch] text-[16.5px] leading-[1.6] text-[#6B6482]">
             Pick up two gigs a week and cover groceries and gas. Pick up five and cover rent.
             Nothing recurring, nothing you can&apos;t cancel.
           </p>
@@ -508,7 +508,7 @@ export default function LandingPage() {
           </ul>
           <Link
             href="/login?mode=signup"
-            className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#3F25FE] px-7 py-[15px] text-[16px] font-semibold text-[#FEF4E5] transition hover:bg-[#2b17c2]"
+            className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#5038FF] px-7 py-[15px] text-[16px] font-semibold text-[#FEF4E5] transition hover:bg-[#2E1BC7]"
           >
             Start earning <IconArrow className="h-3 w-auto" />
           </Link>
@@ -559,7 +559,7 @@ export default function LandingPage() {
             >
               <div className="mb-5 flex gap-[3px]" aria-label="5 out of 5 stars">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <IconStar key={i} className="h-[15px] w-auto text-[#3F25FE]" />
+                  <IconStar key={i} className="h-[15px] w-auto text-[#5038FF]" />
                 ))}
               </div>
               <blockquote
@@ -585,7 +585,7 @@ export default function LandingPage() {
 
       {/* ── Closing CTA ─────────────────────────────────────────────────── */}
       <section className={`pt-20 pb-24 ${gutter}`}>
-        <div className="overflow-hidden rounded-[28px] bg-[linear-gradient(140deg,#3F25FE_0%,#7A5CF0_55%,#C94FA8_100%)] px-8 py-16 text-center lg:px-14 lg:py-20">
+        <div className="overflow-hidden rounded-[28px] bg-[linear-gradient(140deg,#5038FF_0%,#7A5CF0_55%,#C94FA8_100%)] px-8 py-16 text-center lg:px-14 lg:py-20">
           <HustlrMark className="mx-auto mb-7 h-11 w-auto text-[#FEF4E5]" />
           <h2
             className={`${display} m-0 mb-[18px] text-[clamp(32px,4.8vw,72px)] leading-none font-bold tracking-[-0.02em]! text-[#FEF4E5]`}
@@ -598,7 +598,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap justify-center gap-[14px]">
             <Link
               href="/login?mode=signup"
-              className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#FEF4E5] px-8 py-[17px] text-[17px] font-semibold text-[#3F25FE] transition hover:opacity-90"
+              className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#FEF4E5] px-8 py-[17px] text-[17px] font-semibold text-[#5038FF] transition hover:opacity-90"
             >
               Get started <IconArrow className="h-[13px] w-auto" />
             </Link>
@@ -706,19 +706,19 @@ function PhoneMock() {
     // "Post a job" CTA ran off the right edge. Capping the minimum lets max-w-full
     // do its job and the frame shrinks with the screen instead.
     <div className="relative flex min-w-0 justify-center" aria-hidden>
-      <div className="absolute inset-y-[-10%] inset-x-[-6%] rounded-[48px] bg-[linear-gradient(150deg,#5038FF,#3F25FE)] opacity-10 blur-[50px]" />
+      <div className="absolute inset-y-[-10%] inset-x-[-6%] rounded-[48px] bg-[linear-gradient(150deg,#5038FF,#5038FF)] opacity-10 blur-[50px]" />
       <div className="relative w-[326px] max-w-full rounded-[50px] bg-[#1B1B1B] p-[9px] shadow-[0_30px_70px_rgba(0,0,0,.28)]">
-        <div className="relative h-[640px] w-full overflow-hidden rounded-[42px] bg-[#F7F2EA]">
+        <div className="relative h-[640px] w-full overflow-hidden rounded-[42px] bg-[#F7F4EC]">
           {/* Dynamic Island */}
           <div className="absolute top-2.5 left-1/2 z-30 h-[27px] w-[98px] -translate-x-1/2 rounded-2xl bg-black" />
 
           <div className="px-4">
             {/* Status bar */}
             <div className="flex h-11 items-end justify-between pb-1">
-              <span className="text-xs font-semibold text-[#1A1338]">20:01</span>
+              <span className="text-xs font-semibold text-[#363636]">20:01</span>
               <span className="flex items-center gap-[5px]">
-                <IonWifi className="h-2.5 w-auto text-[#1A1338]" />
-                <span className="h-[9px] w-[19px] rounded-[2.5px] bg-[#1A1338]" />
+                <IonWifi className="h-2.5 w-auto text-[#363636]" />
+                <span className="h-[9px] w-[19px] rounded-[2.5px] bg-[#363636]" />
               </span>
             </div>
 
@@ -728,14 +728,14 @@ function PhoneMock() {
                 {/* 700, matching HomeScreen's `greeting` style. The app caps at
                     700 everywhere, so an 800 here advertised a weight it no
                     longer ships. */}
-                <div className="text-[27px] leading-[1.05] font-bold tracking-[-0.6px] text-[#1A1338]">
+                <div className="text-[27px] leading-[1.05] font-bold tracking-[-0.6px] text-[#363636]">
                   Hey Chris
                 </div>
                 <div className="mt-[3px] text-[13.5px] text-[#6B6482]">Ready to hustle?</div>
               </div>
               <span className="mt-[3px] inline-flex items-center gap-1.5 rounded-full bg-white px-[13px] py-2 whitespace-nowrap shadow-[0_1px_4px_rgba(0,0,0,.06)]">
                 <IonFlame className="h-3 w-auto text-[#EA4637]" />
-                <span className="text-xs font-semibold text-[#1A1338]">Start a streak</span>
+                <span className="text-xs font-semibold text-[#363636]">Start a streak</span>
               </span>
             </div>
 
@@ -746,23 +746,23 @@ function PhoneMock() {
                 <span className="text-[13px] text-[#9A93AD]">Search gigs...</span>
               </div>
               {/* 14px — the control radius, same as HomeScreen's filterBtn. */}
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-[#1A1338]">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-[#363636]">
                 <IonOptions className="h-[18px] w-auto text-[#FEF4E5]" />
               </div>
             </div>
 
             {/* Chips */}
             <div className="mt-[13px] flex gap-[7px] overflow-hidden">
-              <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
+              <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#363636]">
                 <IonSparkles className="h-2.5 w-auto" /> For You
               </span>
-              <span className="inline-flex items-center gap-[5px] rounded-full bg-[#1A1338] px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#FEF4E5]">
+              <span className="inline-flex items-center gap-[5px] rounded-full bg-[#363636] px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#FEF4E5]">
                 <IonGrid className="h-2.5 w-auto" /> All
               </span>
-              <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
+              <span className="inline-flex items-center gap-[5px] rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#363636]">
                 <IonPerson className="h-2.5 w-auto" /> Tutoring
               </span>
-              <span className="inline-flex items-center rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#1A1338]">
+              <span className="inline-flex items-center rounded-full bg-white px-[13px] py-2 text-[11.5px] font-semibold whitespace-nowrap text-[#363636]">
                 Delivery
               </span>
             </div>
@@ -770,7 +770,7 @@ function PhoneMock() {
             {/* List header */}
             <div className="mt-3.5 mb-[9px] flex items-center justify-between">
               <span className="text-[12.5px] font-semibold text-[#6B6482]">6 gigs available</span>
-              <span className="flex items-center gap-3 text-xs font-semibold text-[#1A1338]">
+              <span className="flex items-center gap-3 text-xs font-semibold text-[#363636]">
                 <span className="inline-flex items-center gap-1">
                   <IonBarChart className="h-3 w-auto" />
                   Insights
@@ -784,7 +784,7 @@ function PhoneMock() {
 
             {/* Card 1 — urgent */}
             <div className="relative mb-2.5 rounded-[20px] bg-white p-3.5">
-              <IonBookmark className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#3F25FE]" />
+              <IonBookmark className="absolute top-3.5 right-3.5 h-3.5 w-auto text-[#5038FF]" />
               <div className="mb-2 flex items-center gap-[7px]">
                 <span className="inline-flex items-center gap-[3px] rounded-full bg-[#FFE7E3] px-2 py-[3px] text-[9.5px] font-bold text-[#EA4637]">
                   <IonFlash className="h-2.5 w-auto" /> Urgent
@@ -793,22 +793,22 @@ function PhoneMock() {
                 <span className="flex-1" />
                 <span className="mr-[22px] text-[10.5px] text-[#9A93AD]">Jul 30</span>
               </div>
-              <div className="mb-[3px] text-[14.5px] font-bold text-[#1A1338]">
+              <div className="mb-[3px] text-[14.5px] font-bold text-[#363636]">
                 Help unload a U-Haul
               </div>
               <div className="mb-[9px] text-[11.5px] text-[#6B6482]">Two-bedroom, second floor.</div>
               <div className="mb-[9px] flex items-center justify-between">
-                <span className="text-[13.5px] font-bold text-[#1A1338]">$60 flat</span>
+                <span className="text-[13.5px] font-bold text-[#363636]">$60 flat</span>
                 <span className="text-[10.5px] text-[#9A93AD]">Plano, TX</span>
               </div>
-              <div className="flex items-center gap-[7px] border-t border-[#F0EBDF] pt-[9px]">
-                <span className="flex size-[19px] items-center justify-center rounded-full bg-[#3F25FE] text-[8.5px] font-bold text-[#FEF4E5]">
+              <div className="flex items-center gap-[7px] border-t border-[#EFEBE1] pt-[9px]">
+                <span className="flex size-[19px] items-center justify-center rounded-full bg-[#5038FF] text-[8.5px] font-bold text-[#FEF4E5]">
                   DK
                 </span>
                 <span className="text-[11px] font-semibold text-[#6B6482]">Dana Kim</span>
                 <span className="flex-1" />
                 <span className="flex items-center gap-[3px]">
-                  <IonStar className="h-2.5 w-auto text-[#3F25FE]" />
+                  <IonStar className="h-2.5 w-auto text-[#5038FF]" />
                   <span className="text-[11px] font-semibold text-[#6B6482]">4.9</span>
                 </span>
               </div>
@@ -822,9 +822,9 @@ function PhoneMock() {
                 <span className="flex-1" />
                 <span className="mr-[22px] text-[10.5px] text-[#9A93AD]">Aug 3</span>
               </div>
-              <div className="mb-2 text-[14.5px] font-bold text-[#1A1338]">Calc II exam prep</div>
+              <div className="mb-2 text-[14.5px] font-bold text-[#363636]">Calc II exam prep</div>
               <div className="flex items-center justify-between">
-                <span className="text-[13.5px] font-bold text-[#1A1338]">$28 / hr</span>
+                <span className="text-[13.5px] font-bold text-[#363636]">$28 / hr</span>
                 <span className="mr-[52px] text-[10.5px] text-[#9A93AD]">Farmers Branch, TX</span>
               </div>
             </div>
@@ -832,7 +832,7 @@ function PhoneMock() {
             {/* Card 3 — crops under the tab bar */}
             <div className="rounded-[20px] bg-white px-3.5 pt-3.5 pb-8">
               <div className="mb-[7px] text-[10.5px] font-medium text-[#9A93AD]">Moving</div>
-              <div className="mb-[3px] text-[14.5px] font-bold text-[#1A1338]">
+              <div className="mb-[3px] text-[14.5px] font-bold text-[#363636]">
                 Furniture moving help
               </div>
               <div className="text-[11.5px] text-[#6B6482]">Two couches, one flight of stairs.</div>
@@ -842,7 +842,7 @@ function PhoneMock() {
           {/* AI FAB */}
           {/* Neutral drop, not a purple glow: brand-tinted shadows were removed
               from the app, and this mock is supposed to be a screenshot of it. */}
-          <div className="absolute right-4 bottom-[100px] z-20 flex size-11 items-center justify-center rounded-full bg-[#3F25FE] shadow-[0_6px_18px_rgba(0,0,0,0.18)]">
+          <div className="absolute right-4 bottom-[100px] z-20 flex size-11 items-center justify-center rounded-full bg-[#5038FF] shadow-[0_6px_18px_rgba(0,0,0,0.18)]">
             <IonSparkles className="h-[19px] w-auto text-[#FEF4E5]" />
           </div>
 
@@ -873,7 +873,7 @@ function TabItem({
 }) {
   return (
     <span className="relative flex flex-col items-center gap-0.5">
-      <Icon className={`h-4 w-auto text-[#3F25FE] ${active ? "" : "opacity-[0.42]"}`} />
+      <Icon className={`h-4 w-auto text-[#5038FF] ${active ? "" : "opacity-[0.42]"}`} />
       {badge && (
         /* Count badges are true pills in the app, not a 7px near-square. */
         <span className="absolute -top-1 right-0.5 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[#EA4637] text-[8px] font-bold text-white">
@@ -881,7 +881,7 @@ function TabItem({
         </span>
       )}
       <span
-        className={`text-[8.5px] font-semibold ${active ? "text-[#3F25FE]" : "text-[#9A93AD]"}`}
+        className={`text-[8.5px] font-semibold ${active ? "text-[#5038FF]" : "text-[#9A93AD]"}`}
       >
         {label}
       </span>
