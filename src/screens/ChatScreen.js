@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MessageSheet from '../components/MessageSheet';
@@ -32,11 +32,39 @@ export default function ChatScreen({ route, navigation }) {
     return () => { active = false; };
   }, [jobId, job, fetchJobById]);
 
-  // No native title on purpose. DETAIL_OPTS keeps `title: ''` app-wide precisely so
-  // a screen that draws its own header doesn't show the same name twice (App.js), and
-  // this screen already names the person in the pinned context bar below — which is
-  // also the tap target for their profile. Setting a title here put "Roman Hinton" in
-  // the nav bar and again two lines under it.
+  // Who you're talking to goes IN the native bar, next to the back chevron — the
+  // pattern every messaging app uses, and the row exists anyway. Previously the bar
+  // held a plain text title while the same name was repeated in a context row below,
+  // so the screen spent two rows saying it once. Dropping the text title left the bar
+  // visibly empty; this fills it and lets the context row below shrink to just the gig.
+  //
+  // It stays a headerTitle rather than a custom header so the NATIVE back button is
+  // untouched — App.js documents that a hand-rolled back control in that strip loses
+  // taps to the screen-edge pop gesture.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <TouchableOpacity
+          style={styles.headerPerson}
+          onPress={openProfile}
+          activeOpacity={0.7}
+          disabled={!otherPerson?.id}
+          accessibilityRole="button"
+          accessibilityLabel={otherPerson?.name ? `${otherPerson.name}, view profile` : 'Chat'}
+        >
+          <Avatar
+            url={otherPerson?.avatarUrl}
+            initial={otherPerson?.avatarInitial || otherPerson?.name?.[0]}
+            size={26}
+            fontSize={12}
+          />
+          <Text style={styles.headerPersonName} numberOfLines={1}>
+            {otherPerson?.name || 'Chat'}
+          </Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, otherPerson?.id, otherPerson?.name, otherPerson?.avatarUrl, otherPerson?.avatarInitial]);
 
   const title = job?.title || jobTitle;
   const photo = job?.photos?.[0] || null;
@@ -53,24 +81,9 @@ export default function ChatScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Context bar: who, and about what. Both halves are tappable, so the
-          conversation is never a dead end — you can always get to the gig or to
-          the person from here. */}
+      {/* Context row: WHICH gig this is about, so the conversation is never a dead
+          end. The person half moved into the native bar — see the headerTitle above. */}
       <View style={styles.contextBar}>
-        <TouchableOpacity style={styles.personRow} onPress={openProfile} activeOpacity={0.7} disabled={!otherPerson?.id}>
-          <Avatar
-            url={otherPerson?.avatarUrl}
-            initial={otherPerson?.avatarInitial || otherPerson?.name?.[0]}
-            size={32}
-            fontSize={14}
-          />
-          <View style={styles.personText}>
-            <Text style={styles.personName} numberOfLines={1}>{otherPerson?.name || 'Chat'}</Text>
-            <Text style={styles.personHint} numberOfLines={1}>View profile</Text>
-          </View>
-          {otherPerson?.id ? <Ionicons name="chevron-forward" size={16} color={colors.textMuted} /> : null}
-        </TouchableOpacity>
-
         {title ? (
           <TouchableOpacity style={styles.jobCard} onPress={openJob} activeOpacity={0.8} disabled={!jobId}>
             {photo
@@ -108,20 +121,22 @@ export default function ChatScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
+  headerPerson: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 220 },
+  headerPersonName: {
+    fontSize: 16, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: -0.2, flexShrink: 1,
+  },
+
   contextBar: {
-    paddingHorizontal: 16, paddingBottom: 12,
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider,
   },
-  personRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  personText: { flex: 1, marginLeft: 10, marginRight: 8 },
-  personName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.2 },
-  personHint: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
 
   jobCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.background, borderRadius: radii.md,
-    padding: 8, marginTop: 4,
+    padding: 8,
   },
   jobPhoto: { width: 40, height: 40, borderRadius: radii.sm, backgroundColor: colors.divider },
   jobPhotoFallback: { alignItems: 'center', justifyContent: 'center' },
