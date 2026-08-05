@@ -19,7 +19,7 @@ export default function BadgeGrid({ badges, onPressAll }) {
     return (
       <TouchableOpacity style={styles.empty} onPress={onPressAll} activeOpacity={0.8}>
         <View style={styles.emptyIcon}>
-          <Ionicons name="trophy-outline" size={22} color={colors.accentDeep} />
+          <Ionicons name="trophy-outline" size={22} color={colors.primary} />
         </View>
         <View style={styles.emptyText}>
           <Text style={styles.emptyTitle} numberOfLines={1}>No badges yet</Text>
@@ -39,7 +39,7 @@ export default function BadgeGrid({ badges, onPressAll }) {
           const def = BADGE_DEFS[key];
           return (
             <View key={key} style={styles.badge}>
-              <Ionicons name={def.ion} size={22} color={colors.accentDeep} style={styles.icon} />
+              <Ionicons name={def.ion} size={22} color={colors.primary} style={styles.icon} />
               <Text style={styles.label} numberOfLines={2}>{def.label}</Text>
             </View>
           );
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   },
   emptyIcon: {
     width: 40, height: 40, borderRadius: radii.pill,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.wash,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   emptyText: { flex: 1, minWidth: 0 },

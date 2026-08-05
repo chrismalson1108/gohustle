@@ -81,7 +81,7 @@ export default function GoalsChallengesCard() {
 
   return (
     <View style={styles.goalsCard}>
-      <GoalBar label="Earnings" value={`$${earningsWeek}`} max={`$${weeklyEarningGoal}`} pct={earningPct} color={colors.accent} />
+      <GoalBar label="Earnings" value={`$${earningsWeek}`} max={`$${weeklyEarningGoal}`} pct={earningPct} color={colors.primary} />
       <View style={{ height: 16 }} />
       <GoalBar label="Jobs done" value={`${weeklyJobsDone}`} max={`${weeklyJobsGoal} gigs`} pct={jobsPct} color={colors.primary} />
     </View>

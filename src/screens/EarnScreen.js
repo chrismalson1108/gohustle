@@ -701,11 +701,11 @@ export default function EarnScreen({ navigation }) {
             <Text style={styles.weekChipLabel} numberOfLines={1}>this week</Text>
           </View>
           <View style={styles.streakPill}>
-            <Ionicons name="flame" size={15} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Ionicons name="flame" size={15} color={colors.primary} style={{ marginRight: 5 }} />
             <Text style={styles.streakText} numberOfLines={1}>{streakDays}-week streak</Text>
           </View>
           <View style={styles.lvChip}>
-            <Ionicons name="star" size={13} color={colors.accentDeep} style={{ marginRight: 5 }} />
+            <Ionicons name="star" size={13} color={colors.primary} style={{ marginRight: 5 }} />
             <Text style={styles.lvChipText} numberOfLines={1}>Lv {levelInfo?.current?.level ?? 1}</Text>
           </View>
         </View>

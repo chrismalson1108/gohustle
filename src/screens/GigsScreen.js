@@ -416,7 +416,7 @@ export default function GigsScreen({ navigation }) {
                 {/* Job actions — hidden for removed gigs */}
                 {job.removed ? (
                   <View style={styles.removedNote}>
-                    <Ionicons name="alert-circle-outline" size={14} color={colors.accentDeep} style={{ marginRight: 6 }} />
+                    <Ionicons name="alert-circle-outline" size={14} color={colors.warningDeep} style={{ marginRight: 6 }} />
                     <Text style={styles.removedNoteText} numberOfLines={2}>This gig was removed — resolve the bookings below.</Text>
                   </View>
                 ) : (

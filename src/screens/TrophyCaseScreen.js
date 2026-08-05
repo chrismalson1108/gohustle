@@ -56,7 +56,7 @@ export default function TrophyCaseScreen({ route }) {
                     <Ionicons
                       name={unlocked ? def.ion : 'lock-closed'}
                       size={20}
-                      color={unlocked ? colors.accentDeep : colors.textMuted}
+                      color={unlocked ? colors.primary : colors.textMuted}
                     />
                   </View>
                   <View style={styles.rowText}>
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12, flexShrink: 0,
   },
-  iconWrapOn: { backgroundColor: colors.accentLight },
+  iconWrapOn: { backgroundColor: colors.wash },
   iconWrapOff: { backgroundColor: colors.background },
   rowText: { flex: 1, minWidth: 0 },
   name: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },

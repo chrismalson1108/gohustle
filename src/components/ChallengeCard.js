@@ -32,7 +32,7 @@ export default function ChallengeCard({ challenge }) {
       </View>
       <View style={styles.bottom}>
         <View style={styles.rewardRow}>
-          <Ionicons name="trophy" size={12} color={colors.accentDeep} style={{ marginRight: 4 }} />
+          <Ionicons name="trophy" size={12} color={colors.primary} style={{ marginRight: 4 }} />
           <Text style={styles.reward} numberOfLines={1}>+{challenge.xpReward} XP</Text>
         </View>
         <Text style={[styles.count, done && { color: colors.success }]} numberOfLines={1}>
@@ -79,6 +79,6 @@ const styles = StyleSheet.create({
   pct: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, minWidth: 36, textAlign: 'right', flexShrink: 0 },
   bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rewardRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, marginRight: 8 },
-  reward: { fontSize: 12, color: colors.accentDeep, fontWeight: '600' },
+  reward: { fontSize: 12, color: colors.primary, fontWeight: '600' },
   count: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
 });

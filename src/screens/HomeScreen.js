@@ -202,7 +202,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.sub} numberOfLines={1}>Ready to hustle?</Text>
           </View>
           <View style={styles.streakPill}>
-            <Ionicons name="flame" size={14} color={colors.accentDeep} />
+            <Ionicons name="flame" size={14} color={colors.primary} />
             {streakDays > 0 ? (
               <>
                 <Text style={styles.streakNum} numberOfLines={1}>{streakDays}</Text>
