@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, SectionList,
-  ActivityIndicator, StyleSheet,
+  ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, shadows } from '../theme';
@@ -233,7 +233,13 @@ export default function CategoryPicker({
       </TouchableOpacity>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={close}>
-        <View style={styles.overlay}>
+        {/* The sheet sits at the bottom, so the keyboard has to push it up — without
+            this it stays put and the search field types into a surface the keyboard
+            is covering. */}
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
           <View style={styles.sheet}>
             <View style={styles.handle} />
@@ -275,6 +281,7 @@ export default function CategoryPicker({
             </View>
 
             <SectionList
+              style={styles.list}
               sections={sections}
               keyExtractor={(item) => item.slug}
               keyboardShouldPersistTaps="handled"
@@ -349,7 +356,7 @@ export default function CategoryPicker({
               )}
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -378,10 +385,16 @@ const styles = StyleSheet.create({
 
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // FIXED height, not maxHeight. With maxHeight the sheet was sized by its content,
+  // so every keystroke that narrowed the results shrank it — and because it is
+  // anchored to the bottom, one or two matches collapsed it to ~250px, entirely
+  // behind the keyboard. It read as the whole sheet vanishing: typing "Tr" (24
+  // matches) filled the screen, "Tre" (1 match) disappeared, deleting back to "Tr"
+  // brought it back. The list scrolls inside a stable surface now.
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
-    maxHeight: '90%', ...shadows.md,
+    height: '85%', ...shadows.md,
   },
   handle: {
     width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.border,
@@ -405,7 +418,8 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, minWidth: 0, fontSize: 15, color: colors.textPrimary, paddingVertical: 12 },
   errorText: { fontSize: 12, color: colors.urgent, marginTop: 6, marginLeft: 4, lineHeight: 16 },
 
-  listBody: { paddingHorizontal: 20, paddingBottom: 32 },
+  list: { flex: 1, minHeight: 0 },
+  listBody: { paddingHorizontal: 20, paddingBottom: 32, flexGrow: 1 },
   createRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 14, marginTop: 8,
