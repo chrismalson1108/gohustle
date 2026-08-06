@@ -7,12 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm start                       # Start Expo dev server (LAN mode, requires same WiFi as phone)
 npx expo start --tunnel         # Start with ngrok tunnel (cross-network); kill all node/ngrok processes first
-npm run web                     # Launch in browser at localhost:8081
-npm run android                 # Launch on Android emulator
+npm run ios                     # expo run:ios — build & launch the dev client on a simulator/device
+npm run android                 # expo run:android — build & launch the dev client
+npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
-npm test                        # Jest unit tests (pure logic: contentFilter, geo, taxFormat) in __tests__/
+npm test                        # Jest — 33 suites / 421 tests of pure logic in __tests__/
+npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
+supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
 ```
+
+The app runs in the **custom GoHustlr dev client, not Expo Go** — `expo-dev-client` is
+installed and the app's native modules (Stripe, maps, notifications, Google sign-in)
+do not exist in the Expo Go runtime.
 
 ## Legal docs (DB-driven, `src/lib/legal.js`)
 Documents live in the **`legal_documents`** table (latest row per `slug` = current; slugs `terms`/`privacy`/`contractor`, public read). Acceptances are appended to **`legal_acceptances`** (one row per `slug`+`version`, owner RLS) — an audit trail. `AuthContext` gates the app (`ConsentScreen`) when `checkNeedsAcceptance()` finds a required doc whose current version the user hasn't accepted; onboarding records acceptance for new users. **To publish new terms + force re-acceptance: insert a new `(slug, version)` row** — no app release needed. Helpers: `fetchCurrentDocs`, `recordAcceptances`, `checkNeedsAcceptance`. `SUPPORT_EMAIL` lives here too.
@@ -39,27 +46,30 @@ On launch `App.js` renders:
 1. **Loading spinner** while session is checked.
 2. **`AuthScreen`** if no session (sign-in / sign-up / forgot password).
 3. **`OnboardingScreen`** if session exists but `onboarding_done = false` on the profile — only triggered for fresh sign-ups, not returning logins.
-4. **`MainApp`** otherwise — wraps `UserProvider → JobsProvider → AppNavigator + AchievementToast`.
+4. **`ConsentScreen`** if `needsTermsAcceptance` — a required legal doc has a newer version than the user has accepted (see **Legal docs**).
+5. **`MainApp`** otherwise — `UserProvider → JobsProvider → (AppNavigator + AssistantButton + AchievementToast + PushManager)`.
 
 ## Navigation
 
 ```
-SafeAreaProvider → AuthProvider → RootNavigator
+StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootNavigator
   └── MainApp
         ├── UserProvider
         └── JobsProvider
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
                     └── Tab.Navigator (5 tabs — display labels in parens, route names unchanged)
-                          ├── HomeTab   ("Browse")  → HomeStack:    HomeScreen → JobDetail → UserProfile
-                          ├── EarnTab   ("My Jobs") → EarnStack:    EarnScreen → JobDetail → UserProfile
-                          ├── GigsTab   ("Hiring")  → GigsStack:    GigsScreen → PostJob → JobDetail → EditJob → UserProfile
-                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen (chat via MessageSheet) → UserProfile/JobDetail/FindPeople
-                          └── ProfileTab ("Profile") → ProfileStack: ProfileScreen → Settings/Expenses/Legal/Favorites/UserProfile/FindPeople/…
+                          ├── HomeTab   ("Browse")   → HomeStack:  HomeScreen → JobDetail → MarketInsights → UserProfile → Reviews → Chat
+                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnScreen → JobDetail → UserProfile → Reviews → Chat
+                          ├── GigsTab   ("Hire")     → GigsStack:  GigsScreen → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat
+                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews
+                          └── ProfileTab ("You")     → ProfileStack: ProfileScreen → Settings/ProfileSettings/Availability/Notifications/
+                                                                    NotificationSettings/PayoutSetup/Expenses/TrophyCase/Reviews/Legal/
+                                                                    UserProfile/Favorites/SavedGigs/JobDetail/EditJob/ManageBookings/FindPeople/Chat
 ```
 
-**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat (`MessageSheet`, reused) marks it read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
+**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat pushes the full-screen `ChatScreen` (route `Chat`, registered in every stack); `MessageSheet` is the shared chat body, also hosted as a modal from JobDetail/Earn/Gigs. Opening marks the conversation read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
 
-- **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`ProfileTab`) are intentionally kept even though display labels are Browse/My Jobs/Hiring/Profile** — many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them.
+- **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`MessagesTab`/`ProfileTab`) are intentionally kept even though display labels are Browse / My Jobs / Hire / Messages / You** — the route names are a wire protocol, not just internal: `send-push`'s `KNOWN_TABS` and the `data.tab` field of every push notification depend on them, so renaming a route silently breaks notification deep-links. Many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them too.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.
 - `AppNavigator` is a component rendered *inside* providers so it can call `useJobs()` for tab badge counts — this is why `NavigationContainer` is not at the root.
 - `AchievementToast` renders outside `NavigationContainer` but inside `SafeAreaProvider`.
@@ -68,7 +78,7 @@ SafeAreaProvider → AuthProvider → RootNavigator
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `authError`, `onboardingDone`, `pendingEmail`. Functions: `signIn`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `signOut`, `markOnboardingDone`.
+`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`. Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
 
 **Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
@@ -79,7 +89,7 @@ XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load f
 
 ### JobsContext (`src/context/JobsContext.js`)
 Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-first job loading. Key exports:
-- `bookJob(jobId, slotId, slotLabel, counterOffer)` — earner books a slot
+- `bookJob(jobId, slotId, slotLabel, counterOffer, applicationNote)` — earner books a slot
 - `addJob(jobData)` — poster creates a listing
 - `updateJob(jobId, patch)` — poster edits a listing; re-inserts slots/requirements
 - `deleteJob(jobId)` — soft-delete (sets `status: 'cancelled'`)
@@ -91,10 +101,10 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 
 `transformJob(dbJob)` includes `posterId: dbJob.poster_id` — used in `JobDetailScreen` to block self-booking (`job.posterId === user.id`).
 
-Realtime: two Supabase channels per session — `bookings-user-${user.id}` (earner channel) and `poster-bookings-${user.id}` (poster channel, broad subscription that calls `loadPosterBookings()` on any change).
+Realtime: three Supabase channels per session — `bookings-user-${user.id}` (earner), `poster-bookings-${user.id}` (poster; broad subscription that calls `loadPosterBookings()` on any change), and `messages-unread-${user.id}` (feeds `unreadMessages` and the Messages tab badge).
 
 ### Push notifications (`src/lib/push.js`)
-Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab. **Requires a dev-client rebuild** — `expo-notifications` is native and isn't in the current binary; plain Expo Go on SDK 54 can't receive Android remote push.
+Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab (the values must match `send-push`'s `KNOWN_TABS` — see the tab-route-name note above). `expo-notifications` is a dependency **and** a registered config plugin in `app.json`, so the native module **is** compiled into the current dev-client / TestFlight binary — no rebuild is outstanding. Remote push still needs a real device: `push.js` returns `null` on simulators via `Device.isDevice`, and plain Expo Go on SDK 54 cannot receive Android remote push.
 
 ## Key Screens
 
@@ -102,16 +112,17 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 |---|---|
 | `HomeScreen` | Browse jobs with category chips, search, and full filter sheet (pay, days, location/state, pay type, urgency, sort). Pull-to-refresh. |
 | `JobDetailScreen` | Job info, slot picker, counter-offer input, book button. Shows "This is your gig" banner if `job.posterId === user.id`. |
-| `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
-| `GigsScreen` (tab "Hiring") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only completed/declined booking history. Pull-to-refresh. |
+| `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined+cancelled). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
+| `GigsScreen` (tab "Hire") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only verified/declined/cancelled booking history. Pull-to-refresh. |
 | `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + `CategoryPicker` (search the catalog, or create your own; your recent categories appear as quick chips). Times are optional: **no slots picked → a bookable "Flexible — Contact to Schedule" slot is attached** (a hint under the picker says so; EditJob applies the same fallback on save), so a gig can never end up slot-less/un-bookable. Nested in GigsStack. |
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
-| `ManageBookingsScreen` | Poster view accessible from ProfileTab — grouped booking management (legacy, some functionality overlaps GigsScreen). |
-| `ProfileScreen` | Stats, badges, reviews received, "Manage My Gigs" link (→ Gigs tab), Payments, Settings, sign out. No role toggle — every user can both earn and post. Pull-to-refresh. |
+| `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
+| `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), Payments, Tax Center, Saved gigs/people, identity + student verification, Settings link. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
 | `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
-| `SettingsScreen` | Edit name, username, bio, role, location, radius, skills — saves to Supabase and calls `refreshProfile()`. |
+| `SettingsScreen` | Settings **hub** — a searchable list of rows grouped Account / Money / Notifications / Saved / Legal & support / Account actions. It only navigates; it edits nothing. **Sign out lives here**, deliberately not on ProfileScreen. |
+| `ProfileSettingsScreen` (route `ProfileSettings`) | The actual profile editor — avatar, name, username, bio, role, location, radius, skills. Saves to Supabase and calls `refreshProfile()`. |
 | `OnboardingScreen` | Multi-step: Welcome → Username+DOB → Role → Location → Skills/Radius → Done. DOB uses `DobPicker` (Month/Day/Year dropdowns, `composeDob` → `parseDob`). Saves all fields + `onboarding_done: true`. |
 | `FindPeopleScreen` | Search people by name/@username → tap through to `UserProfile`. Registered as `FindPeople` in Messages + Profile stacks. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
@@ -121,23 +132,28 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 - **`FilterSheet`** — bottom-sheet modal with sort, pay range, pay type, available days (parsed from slot labels), location/state chips, urgency toggle. Import `DEFAULT_FILTERS` and `countActiveFilters` from it.
 - **`MessageSheet`** — realtime chat modal between earner and poster. Props: `bookingId`, `jobTitle`, `otherPerson: { name, avatarInitial }`, `onClose`. Reads/writes `messages` table, Supabase realtime channel per `bookingId`.
 - **`CompletionModal`** — poster "Verify & Rate" bottom sheet. Props: `booking`, `onConfirm({ rating, reviewText, paymentMethod })`.
-- **`LocationPicker`** — autocomplete over 60+ US cities + Remote. Controlled: `value` + `onChange`.
+- **`LocationPicker`** — live city autocomplete backed by the photon.komoot.io geocoder (worldwide, not a fixed list), plus a "use my location" reverse-geocode via `expo-location` and the remote presets `Remote` / `Zoom / Remote` / `Work from Home`. Controlled: `value` + **`onChange(label, coords)`** — the second argument carries `{ lat, lng }` and is what populates `jobs.lat`/`lng` for distance sort and the map.
 - **`DateTimePicker`** — day chips + time grid producing `slots[]`. Use for posting and editing.
 - **`SlotPicker`** — single-select chip row from existing `slots[]` (used in JobDetail).
-- **`GradientHeader`** — screen header with `LinearGradient` + safe-area inset.
+- **`ScreenHeader`** — flat screen header, the replacement for the deleted gradient hero. Props: `children`, `style`, `topInset` (default `true`; pass `false` on pushed screens where the opaque native bar already cleared the status bar), `surface` (white instead of canvas). **There is no `GradientHeader` and no LinearGradient anywhere in the app.**
 - **`AchievementToast`** — driven by `pendingToast` in UserContext.
-- **`BookingStatusBadge`** — status pill: pending/confirmed/completed/verified/declined.
+- **`BookingStatusBadge`** — status pill: pending/confirmed/completed/verified/declined/cancelled. Props: `status`, `compact` (icon-only).
 - **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.
 - **`RatingStars`** — reusable star rating display/input component.
 - **`JobCard`** — job listing card used in HomeScreen and search results.
 - **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
 
-### Images (Supabase Storage buckets — all public read, owner-scoped writes)
-- `avatars` → `profiles.avatar_url` (profile photos)
-- `completion-photos` → `bookings.completion_photos text[]` (earner proof-of-work, shown in CompletionModal + history)
-- `job-photos` → `jobs.photos text[]` (gallery on JobDetail, cover on JobCard; set in PostJob/EditJob)
-- `chat-photos` → `messages.image_url` (image messages in MessageSheet)
-All four use `src/lib/uploadImage.js`. Migrations: `supabase/migration_profile_photos.sql`, `migration_completion_photos.sql`, `migration_job_chat_photos.sql` (applied to the remote DB via the Management API).
+### Images (Supabase Storage buckets)
+**Two are public, three are private — do not assume `getPublicUrl` works.**
+- `avatars` → `profiles.avatar_url` — **public**, rendered with `getPublicUrl`. SELECT is owner-scoped so anon cannot LIST the bucket (`20260725000000_storage_enumeration_lockdown.sql`).
+- `job-photos` → `jobs.photos text[]` — **public**, same enumeration lockdown.
+- `completion-photos` → `bookings.completion_photos text[]` — **PRIVATE** (`20260707010000`). Render with `<SignedImage bucket="completion-photos" …>`; `getPublicUrl` returns a URL that 400s.
+- `chat-photos` → `messages.image_url` — **PRIVATE** (`20260701000000`). Same signed-URL rule.
+- `receipts` → expense receipts (Tax Center) — **PRIVATE**.
+
+All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadImage.js`.
+
+⚠️ **`web/public/brand/wordmark-cream.png` looks unused and is not.** 15 Supabase auth email templates and `student-verify-start` hotlink it as `https://gohustlr.com/brand/wordmark-cream.png`. An import grep cannot see it; deleting it 404s the logo in every transactional email.
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
@@ -156,7 +172,13 @@ Invalidate a cache entry with `cacheSet(key, null)` after a write. All major scr
 
 ## Theming
 
-`src/theme.js` — primary `#6D28D9`, secondary `#4F46E5`, accent `#10B981`. `gradients.primary/earn/gold/profile` for `LinearGradient`. `shadows.sm/md/card`.
+**`shared/theme.js` is the single source of design tokens** — `src/theme.js` is a bare `export * from '../shared/theme.js'`, so edit tokens THERE. The web app mirrors the same values by hand as Tailwind v4 `@theme` custom properties in `web/app/globals.css`; keep the two in lockstep.
+
+Brand v3.0: primary `#5038FF`, primaryDark `#2E1BC7`, primaryLight `#EAE6FF`, secondary `#6B54FF`, urgent `#EA4637`, background `#F7F4EC`, textPrimary `#363636`, success `#15803D`. `radii.sm/md/lg/xl/pill` and `shadows.sm/md/card` unchanged.
+
+**Hustle Orange is retired and the `colors.accent*` / `colors.gold*` keys no longer exist.** The four jobs that one amber used to do are now named separately: `warning`/`warningLight`/`warningDeep` (lifecycle "awaiting action"), `wash`/`washDeep` (money + badge surfaces), `rating` (review stars — a score is not a warning), and `primary` (gamification). Tailwind v4 emits **no utility at all** for an undefined token, so a stale `accent-*`/`gold-*` class fails silently as `currentColor` rather than erroring — grep CSS and TSX, don't trust the build.
+
+`gradients`/`cssGradients` are still exported but nothing imports them on either platform; `expo-linear-gradient` was removed and there are zero LinearGradient usages left. Never reintroduce one in `src/`.
 
 Category colors come from `categoryColor(value)` in `shared/categories.js` (see **Categories & skills** below), not a lookup table. `src/data/mockData.js` re-exports `shared/constants.js`, which holds `BADGE_DEFS`, `BADGE_GROUPS` and `LEVELS`.
 
@@ -182,7 +204,9 @@ Always use `src/hooks/useHaptic.js` — guards against web (`Platform.OS === 'we
 
 ```
 pending → confirmed → completed → verified
-        ↘ declined
+        ↘ declined    (poster refuses a pending booking)
+        ↘ cancelled   (either party, from pending or confirmed, only before the earner
+                       marks started — releases the escrow hold)
 ```
 - Earner books → `pending`
 - Poster accepts → `confirmed`; poster declines → `declined`
