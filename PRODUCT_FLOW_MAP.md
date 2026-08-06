@@ -2,6 +2,16 @@
 
 > Verified 2026-07-07 at commit a70c9b5 (master).
 
+> [!WARNING]
+> **Stale: trust the architecture, not the line numbers.** Verified 2026-07-07 at
+> `a70c9b5`; as of 2026-08-06 that is **212 commits and 381 files** ago (+33.6k/−7.7k).
+> Kept because the shapes it records — the booking lifecycle, the RLS + guard-trigger
+> authorization model, the payment states — are still accurate and are written down
+> nowhere else. Assume every `path:line` anchor is wrong until re-checked, and note it
+> predates two landed changes: the DB-backed category taxonomy (`shared/categories.js`,
+> 2026-08-05) and the Brand v3 retheme. `CLAUDE.md` is the current index; the code is
+> the source of truth.
+
 **Purpose.** A standalone flow map for an external auditor (Fable). Each subsection traces one product flow from its entry point (screen/route) → user action → client function → backend (edge function / RLS write / trigger / RPC) → outcome / state change → notification fired, with `path:line` anchors. Both **mobile** (Expo/React Native — `App.js`, `src/`) and **web** (Next.js 16 — `web/app/`, `web/lib/`) entry points are noted where they differ. Backend = Supabase (Postgres + RLS, Auth, Realtime, Storage) + Deno edge functions in `supabase/functions/`. Admin console = `admin/` (Next.js). Repo root: `/Users/chrismalson/Documents/gohustle`.
 
 ### Ground-truth notes that shape these flows

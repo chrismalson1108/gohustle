@@ -18,8 +18,8 @@ one-command operation.
 | `android-background.png` | Solid Electric Blue #5038FF 1024² | Android adaptive icon background |
 | `android-monochrome.png` | White monogram silhouette, transparent | Android 13 themed icon **and** the expo-notifications small icon (two consumers) |
 | `og-image.png` | 1200×630 blue + cream lockup | Social / Open Graph **and** Twitter card. Must stay exactly 1200×630 |
-| `lockup-on-blue.png` / `lockup-on-orange.png` | Legacy solid-bg lockups | No consumer. `-orange` predates the v3 retirement of Hustle Orange |
-| `vector/` | SVG source of truth, all colorways | Where the art actually lives — see `vector/README.txt` |
+| `lockup-on-blue.png` | Legacy solid-bg lockup | No consumer. Its `-orange` sibling was deleted in the pre-beta cleanup — Hustle Orange is retired |
+| `vector/` | SVG source of truth, all colorways | Where the art actually lives — see `vector/README.txt`. Includes `hustlr-appicon.svg` and `hustlr-mark-white.svg`, which the v3 generator reads directly |
 
 ## How to update a logo (both platforms at once)
 
@@ -29,13 +29,17 @@ one-command operation.
    npm run brand:sync
    ```
    This copies every asset into the places each platform expects:
-   - **Web** → `web/public/brand/`, plus `web/app/icon.png`, `web/app/apple-icon.png`, `web/app/opengraph-image.png` (Next.js App Router conventions).
+   - **Web** → `web/app/icon.png`, `web/app/apple-icon.png`, `web/app/opengraph-image.png` (Next.js App Router conventions).
    - **Mobile** → `assets/icon.png`, `assets/favicon.png`, `assets/android-icon-*.png` (the paths in `app.json`).
-     It also writes `assets/brand/*`, but nothing reads those: `src/components/Logo.js`
-     requires from `shared/assets/brand/` directly.
 3. Commit. Web picks it up on the next deploy; mobile on the next EAS build.
 
-**Never edit the copies** under `web/public/brand`, `web/app/*icon*`, or `assets/` directly — they are
+The manifest only carries files something actually **loads**. It used to also write
+`web/public/brand/*` and `assets/brand/*`; both sets were read by nothing — web renders
+inline SVG and `src/components/Logo.js` requires out of this folder directly — so they
+were dropped in the pre-beta cleanup. Only add a destination back if a real import
+points at it.
+
+**Never edit the copies** under `web/app/*icon*` or `assets/` directly — they are
 overwritten by `brand:sync`. Edit here.
 
 ## Two things that are easy to get wrong
@@ -50,4 +54,5 @@ overwritten by `brand:sync`. Edit here.
 
 > Provenance: regenerate with `node scripts/gen-brand-assets-v3.js` (Brand v3.0 — recolors
 > `vector/logo/` to Electric Blue #5038FF and re-renders every raster at its existing
-> dimensions). `scripts/gen-brand-assets.py` is the older v1 generator, kept for reference.
+> dimensions). The v1 Python generator was deleted in the pre-beta cleanup; `git log`
+> has it if the v1 art is ever needed.

@@ -10,9 +10,13 @@
  * shared/assets/brand/vector/logo/ already holds v3 GEOMETRY — the pack was rebuilt
  * from the designer's vector in commit 4c1aaec ("rebuild the v3 pack from vector, in
  * the existing brand blue"). Only the blue was left on v2. Comparing the vector pack
- * with design_handoff_brand_v3/brand/ confirms it: the cream (#FEF4E5) and ink
+ * with the designer's handoff confirmed it: the cream (#FEF4E5) and ink
  * (#363636) colorways are already byte-correct, the mark renders pixel-identically,
  * and the only stale value is #3F25FE -> #5038FF.
+ *
+ * The handoff bundle itself was removed in the pre-beta cleanup; the two SVGs it
+ * uniquely supplied (appicon, mark-white) now live alongside the rest of the pack as
+ * hustlr-appicon.svg / hustlr-mark-white.svg, so VEC is the single vector source.
  *
  * So the handoff's Stage 2 table ("wordmark-{...}.svg -> shared/assets/brand/") must
  * NOT be followed literally here. In this repo `wordmark-*.png` is the horizontal
@@ -122,7 +126,7 @@ async function dims(f) {
   // already composed by the designer. Opaque; Apple does not mask transparency well.
   jobs.push({
     out: path.join(BRAND, 'app-icon.png'),
-    make: () => sharp(path.join(ROOT, 'design_handoff_brand_v3', 'brand', 'appicon.svg'))
+    make: () => sharp(path.join(VEC, 'hustlr-appicon.svg'))
       .resize(1024, 1024, { fit: 'fill' }).flatten({ background: V3_BLUE }).png().toBuffer(),
   });
 
@@ -145,7 +149,7 @@ async function dims(f) {
   const monoArt = ART_BOX['android-monochrome.png'];
   jobs.push({
     out: path.join(BRAND, 'android-monochrome.png'),
-    make: () => markOnCanvas(path.join(ROOT, 'design_handoff_brand_v3', 'brand', 'mark-white.svg'), 1024, 1024, monoArt),
+    make: () => markOnCanvas(path.join(VEC, 'hustlr-mark-white.svg'), 1024, 1024, monoArt),
   });
 
   // OG / Twitter card. MUST stay exactly 1200x630 — web/app/layout.tsx declares no

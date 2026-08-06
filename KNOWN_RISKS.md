@@ -2,7 +2,22 @@
 
 _Verified 2026-07-07 at commit a70c9b5 (master)._
 
-> **2026-07-30 update — read `AUDIT_2026-07-30.md` alongside this file.**
+> **2026-08-06 — the audit docs this file cites were retired.** The pre-beta cleanup
+> removed `AUDIT_REPORT.md`, `AUDIT_2026-07-30.md`, `BASELINE_STATUS.md`,
+> `CURRENT_COMMANDS.md` and the seven `FABLE_*.md` reports. The `AUDIT_REPORT.md:130`
+> style anchors below are kept as provenance and still resolve in git history:
+>
+> ```
+> git show 47ab687:AUDIT_REPORT.md
+> ```
+>
+> One correction that matters more than the links: this file's central open question —
+> *"have the hardening migrations actually been applied to LIVE?"* (§2, §9) — is
+> **answered, yes**. `supabase db push --linked` is the canonical path and the tracked
+> set matches production; that was re-verified against the live DB on 2026-08-05.
+> Read §2's "needs push/deploy" caveats as historical.
+
+> **2026-07-30 update.** (Source doc retired — see above.)
 > That round ran the apps rather than only reading them, and fixed 19 defects,
 > most of them money or safety. Two entries below are now **resolved by
 > measurement**, not by argument:
@@ -297,4 +312,4 @@ These cannot be verified from source; they are live/dashboard state and must be 
 
 ---
 
-**Sibling handoff docs** (do not duplicate): `BASELINE_STATUS.md` (lint/typecheck/test/build/audit/secret-scan results), `CURRENT_COMMANDS.md` (verified command list), `FABLE_HANDOFF.md`, `ROLE_PERMISSION_MATRIX.md`, `PRODUCT_FLOW_MAP.md`, `LIFECYCLE_STATE_MACHINES.md`, `BETA_QA_PLAN.md`, `PRE_LAUNCH_DATA_RESET.md`.
+**Sibling docs** (do not duplicate): `ROLE_PERMISSION_MATRIX.md`, `PRODUCT_FLOW_MAP.md`, `LIFECYCLE_STATE_MACHINES.md` (all three stale-flagged — architecture good, line numbers not), `BETA_QA_PLAN.md`, `PRE_LAUNCH_DATA_RESET.md`, `ADMIN_AUDIT_2026-08-04.md` (open pre-beta ops work). `CLAUDE.md` holds the verified command list. The `BASELINE_STATUS.md` / `CURRENT_COMMANDS.md` / `FABLE_HANDOFF.md` handoff set was retired on 2026-08-06.

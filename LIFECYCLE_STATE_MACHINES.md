@@ -2,6 +2,16 @@
 
 *Verified 2026-07-07 at commit a70c9b5 (master). All claims cited to `path:line` against real source under `/Users/chrismalson/Documents/gohustle/`. Read-only pass; nothing modified.*
 
+> [!WARNING]
+> **Stale: trust the architecture, not the line numbers.** Verified 2026-07-07 at
+> `a70c9b5`; as of 2026-08-06 that is **212 commits and 381 files** ago (+33.6k/−7.7k).
+> Kept because the shapes it records — the booking lifecycle, the RLS + guard-trigger
+> authorization model, the payment states — are still accurate and are written down
+> nowhere else. Assume every `path:line` anchor is wrong until re-checked, and note it
+> predates two landed changes: the DB-backed category taxonomy (`shared/categories.js`,
+> 2026-08-05) and the Brand v3 retheme. `CLAUDE.md` is the current index; the code is
+> the source of truth.
+
 This document maps every stateful lifecycle in the GoHustlr platform (mobile Expo app `src/`, Next.js web `web/`, admin console `admin/`, Supabase Postgres + **23** Deno edge functions (AUDIT_REPORT.md/CLAUDE.md say 24 — off by one vs. disk; verified 23 dirs under `supabase/functions/`, no `_shared`)). For each lifecycle it records: the exact state strings and where the CHECK/enum lives; the allowed transitions; who can trigger each; the server-side validation that is required and whether it exists; the client and server enforcement locations; what a malicious client could attempt; race-condition risks; and the tests that should exist.
 
 ---

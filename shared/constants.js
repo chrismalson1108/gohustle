@@ -81,10 +81,14 @@ export const BADGE_DEFS = {
   connector:    { icon: '🔗', ion: 'link',            label: 'Connector',      desc: 'Refer a friend who joins',                group: 'trust' },
 };
 
+// No `color` here on purpose. Each level used to carry one, but nothing ever read it
+// and the values silently rotted through two rebrands (they still held the pre-v2
+// purple). Level chrome comes from the theme — if a level ever needs its own accent,
+// add a token in shared/theme.js and map to it, so it moves with the brand.
 export const LEVELS = [
-  { level: 1, label: 'New Hustler',   minXP: 0,    color: '#94A3B8' },
-  { level: 2, label: 'Side Hustler',  minXP: 100,  color: '#4F46E5' },
-  { level: 3, label: 'Hustle Pro',    minXP: 300,  color: '#6D28D9' },
-  { level: 4, label: 'Hustle Boss',   minXP: 600,  color: '#F59E0B' },
-  { level: 5, label: 'Hustle Legend', minXP: 1000, color: '#EF4444' },
+  { level: 1, label: 'New Hustler',   minXP: 0 },
+  { level: 2, label: 'Side Hustler',  minXP: 100 },
+  { level: 3, label: 'Hustle Pro',    minXP: 300 },
+  { level: 4, label: 'Hustle Boss',   minXP: 600 },
+  { level: 5, label: 'Hustle Legend', minXP: 1000 },
 ];

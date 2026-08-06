@@ -2,6 +2,16 @@
 
 *Handoff for the Fable beta-readiness audit. Verified 2026-07-07 at commit a70c9b5 (master).*
 
+> [!WARNING]
+> **Stale: trust the architecture, not the line numbers.** Verified 2026-07-07 at
+> `a70c9b5`; as of 2026-08-06 that is **212 commits and 381 files** ago (+33.6k/−7.7k).
+> Kept because the shapes it records — the booking lifecycle, the RLS + guard-trigger
+> authorization model, the payment states — are still accurate and are written down
+> nowhere else. Assume every `path:line` anchor is wrong until re-checked, and note it
+> predates two landed changes: the DB-backed category taxonomy (`shared/categories.js`,
+> 2026-08-05) and the Brand v3 retheme. `CLAUDE.md` is the current index; the code is
+> the source of truth.
+
 This document maps **who can do what to each object**, backed by the enforcing RLS policy, guard trigger, column grant, or edge function with `path:line` citations. It is self-contained — every fact needed to reason about authorization is inlined here.
 
 **Method note.** RLS is the primary control. `SECURITY DEFINER` guard-trigger functions (`guard_*`) further constrain *which columns/transitions* a party may write even when an RLS `UPDATE` policy passes. The `service_role` key (edge functions + the admin console's `getServiceClient()`) bypasses all RLS and column grants; the guard triggers explicitly early-return for `auth.role() = 'service_role'`. Where the base `supabase/schema.sql` and the tracked `supabase/migrations/*.sql` disagree, **the tracked migration wins** (per CLAUDE.md and the file banners); each cell cites the currently-authoritative definition.

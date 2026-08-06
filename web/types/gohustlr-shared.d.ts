@@ -14,7 +14,7 @@ declare module "@gohustlr/shared" {
   /** Returns null when valid, else a ready-to-show error string. */
   export function validateJobPay(value: string | number): string | null;
   export const BADGE_DEFS: Record<string, { icon: string; ion: string; label: string; desc: string }>;
-  export interface Level { level: number; label: string; minXP: number; color: string }
+  export interface Level { level: number; label: string; minXP: number }
   export const LEVELS: Level[];
 
   // ── categories ──

@@ -14,12 +14,13 @@ const ROOT = path.resolve(__dirname, "..");
 const SRC = path.join(ROOT, "shared", "assets", "brand");
 
 // [sourceFileName, destinationPathRelativeToRepoRoot]
+//
+// Only files something actually LOADS belong here. The web UI renders its logos as
+// inline SVG and src/components/Logo.js requires straight out of shared/assets/brand,
+// so the old web/public/brand/* and assets/brand/* raster copies were written on every
+// sync and read by nothing — they were dropped in the pre-beta cleanup. Adding a copy
+// back is only correct if a real import points at the destination path.
 const COPIES = [
-  // ── Web: UI logos served from /brand/* ───────────────────────────────
-  ["wordmark-blue.png", "web/public/brand/wordmark-blue.png"],
-  ["wordmark-cream.png", "web/public/brand/wordmark-cream.png"],
-  ["monogram-cream.png", "web/public/brand/monogram-cream.png"],
-  ["monogram-blue.png", "web/public/brand/monogram-blue.png"],
   // ── Web: Next.js App Router file conventions ─────────────────────────
   ["app-icon.png", "web/app/icon.png"],
   ["app-icon.png", "web/app/apple-icon.png"],
@@ -30,11 +31,6 @@ const COPIES = [
   ["android-foreground.png", "assets/android-icon-foreground.png"],
   ["android-background.png", "assets/android-icon-background.png"],
   ["android-monochrome.png", "assets/android-icon-monochrome.png"],
-  // ── Mobile: in-app <Image> logos ─────────────────────────────────────
-  ["wordmark-blue.png", "assets/brand/wordmark-blue.png"],
-  ["wordmark-cream.png", "assets/brand/wordmark-cream.png"],
-  ["monogram-cream.png", "assets/brand/monogram-cream.png"],
-  ["monogram-blue.png", "assets/brand/monogram-blue.png"],
 ];
 
 let count = 0;
