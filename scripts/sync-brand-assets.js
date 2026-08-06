@@ -15,12 +15,18 @@ const SRC = path.join(ROOT, "shared", "assets", "brand");
 
 // [sourceFileName, destinationPathRelativeToRepoRoot]
 //
-// Only files something actually LOADS belong here. The web UI renders its logos as
-// inline SVG and src/components/Logo.js requires straight out of shared/assets/brand,
-// so the old web/public/brand/* and assets/brand/* raster copies were written on every
-// sync and read by nothing — they were dropped in the pre-beta cleanup. Adding a copy
-// back is only correct if a real import points at the destination path.
+// Only files something actually LOADS belong here — but "loads" includes HTTP fetches
+// from OUTSIDE this repo, not just import/require. That distinction cost us once: the
+// pre-beta cleanup dropped web/public/brand/* after grepping for imports, and it took
+// down the logo in 15 Supabase auth email templates plus student-verify-start, all of
+// which hotlink https://gohustlr.com/brand/wordmark-cream.png. An import grep cannot
+// see an <img src> in an email that Supabase renders.
+//
+// So before removing a destination here, grep for its URL as well as its path:
+//   rg "gohustlr\.com/brand/|/brand/[a-z-]+\.png" --glob '!node_modules'
 const COPIES = [
+  // ── Web: publicly hotlinked by email templates. NOT dead — see above. ─
+  ["wordmark-cream.png", "web/public/brand/wordmark-cream.png"],
   // ── Web: Next.js App Router file conventions ─────────────────────────
   ["app-icon.png", "web/app/icon.png"],
   ["app-icon.png", "web/app/apple-icon.png"],

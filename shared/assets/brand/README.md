@@ -29,15 +29,23 @@ one-command operation.
    npm run brand:sync
    ```
    This copies every asset into the places each platform expects:
-   - **Web** → `web/app/icon.png`, `web/app/apple-icon.png`, `web/app/opengraph-image.png` (Next.js App Router conventions).
+   - **Web** → `web/app/icon.png`, `web/app/apple-icon.png`, `web/app/opengraph-image.png` (Next.js App Router conventions), plus `web/public/brand/wordmark-cream.png`.
    - **Mobile** → `assets/icon.png`, `assets/favicon.png`, `assets/android-icon-*.png` (the paths in `app.json`).
 3. Commit. Web picks it up on the next deploy; mobile on the next EAS build.
 
-The manifest only carries files something actually **loads**. It used to also write
-`web/public/brand/*` and `assets/brand/*`; both sets were read by nothing — web renders
-inline SVG and `src/components/Logo.js` requires out of this folder directly — so they
-were dropped in the pre-beta cleanup. Only add a destination back if a real import
-points at it.
+⚠️ **`web/public/brand/wordmark-cream.png` is load-bearing and looks dead.** Nothing in
+this repo imports it. It is hotlinked as `https://gohustlr.com/brand/wordmark-cream.png`
+by **15 Supabase auth email templates** (`supabase/email-templates/`, including
+`confirm-signup.html`) and by `supabase/functions/student-verify-start/index.ts`. Deleting
+it 404s the logo in every transactional email the product sends — which is exactly what
+happened during the pre-beta cleanup, because an import grep cannot see an `<img src>`
+in an email Supabase renders. Before dropping anything from the sync manifest, grep the
+URL too:
+```bash
+rg "gohustlr\.com/brand/|/brand/[a-z-]+\.png" --glob '!node_modules'
+```
+The `assets/brand/*` copies were genuinely dead and are gone — `src/components/Logo.js`
+requires out of this folder directly.
 
 **Never edit the copies** under `web/app/*icon*` or `assets/` directly — they are
 overwritten by `brand:sync`. Edit here.
