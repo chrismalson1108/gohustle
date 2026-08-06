@@ -37,8 +37,10 @@ _Verified 2026-07-07 at commit a70c9b5 (master)._
 > poster's escrow, and a ~2.4 MB band of images stored but never scanned — were
 > absent from it and had survived every prior round.
 >
-> §5.6 (CLAUDE.md has the amendment direction backwards) is **still uncorrected**
-> in CLAUDE.md. The code remains authoritative: poster proposes, earner responds.
+> §5.6 (CLAUDE.md has the amendment direction backwards) was **finally corrected in
+> CLAUDE.md on 2026-08-06**, with a warning note so it cannot silently flip back. The
+> code was and remains authoritative: poster proposes (`GigsScreen`), earner responds
+> (`EarnScreen`).
 
 **Purpose.** This document enumerates the known risks, incomplete/stubbed areas, deploy-gated protections, deliberate fail-open designs, lifecycle/authorization gaps, data/privacy exposures, migration-hygiene issues, and live-config unknowns for the GoHustlr platform. It is a **documentation-only** register for an external auditor (Fable). **No fixes are proposed or applied here.** Every claim is grounded in source with `path:line` citations.
 
@@ -175,7 +177,11 @@ Ranked by severity. The bookings state machine is strongly guarded (`guard_booki
 - **Evidence:** `guard_jobs_write` (`20260702030000…:122-173`) pins core terms but **never references `new.status`**. RLS `jobs_update_own` only checks ownership (`schema.sql:135`). The DB CHECK constrains the value set (`'open'|'booked'|'completed'|'cancelled'`, `schema.sql:40`) but not the transition graph. `'booked'` is a **dead enum value** — never written by any code path.
 - **Impact:** A poster can set their own job to any status at will regardless of bookings (e.g. flip a live gig to `completed`). No money is tied to `jobs.status`, so blast radius is feed/UI integrity, not funds. Confirm whether a transition guard is intended.
 
-### 5.2 No dispute adjudication or refund path — disputes are a terminal audit row
+### 5.2 ~~No dispute adjudication or refund path~~ — **RESOLVED 2026-08-04**
+
+> Built in 2026-08-04's `20260804010000_phase1_admin_ops.sql` (applied to production) and `supabase/functions/admin-payment-action/index.ts`: `disputes` now carries `status`/`assigned_to`/`resolved_at`/`resolved_by`/`resolution_note` with a `/disputes` queue, and `refundPayment`/`releaseHold` move real money from `/bookings/[id]`. The original analysis is kept below for the reasoning; the gap itself is closed.
+
+#### Original finding (historical) — disputes are a terminal audit row
 - **Severity/likelihood:** Medium (marketplace-handling-money gap) / Certain.
 - **Evidence:** `disputes` is an append-only record (`booking_id, raised_by, reason, pct_paid`, `migration_location_tips_disputes.sql:10-17`), created server-side inside `stripe-capture-payment` only when `pct < 1` (`:154-165`), partial capture floored at 50% (`:44`). The admin `payments` page **reads** disputes but has **no write/resolve/refund action** (`admin/app/(console)/payments/page.tsx:26-52`; grep for update/resolve/refund/form → empty).
 - **Impact:** Once recorded, a dispute is terminal from the system's perspective; any remedy is manual/out-of-band. No user-facing appeal path exists in the schema.

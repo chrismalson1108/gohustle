@@ -1,5 +1,24 @@
 # GoHustlr — Codebase, Admin Console Audit, Risk Engine Design, and Launch Readiness
 
+> [!IMPORTANT]
+> **Much of the "Phase 1" gap list below was BUILT the same day this was written.**
+> `supabase/migrations/20260804010000_phase1_admin_ops.sql` is applied to production and
+> ships: `app_flags` + `public.app_flag()` kill switches (console page `/flags`), the
+> dispute lifecycle (`disputes.status` CHECK `open|investigating|resolved|rejected`,
+> `assigned_to`, `resolved_at`, `resolved_by`, `resolution_note`, queue at `/disputes`),
+> `payments.refunded_cents`, and cumulative tip caps (`tip_headroom_cents` +
+> `trg_guard_tip_caps`). `supabase/functions/admin-payment-action/index.ts` implements
+> `release_hold` / `refund` / `record_reversal` behind `requireAdminCaller(req,'admin')`,
+> surfaced from `/bookings/[id]`. The console now has access, audit, bookings, categories,
+> disputes, errors, flags, jobs, moderation, payments, support, team and users.
+>
+> So read every "there is no X" claim below as **as-of-audit-time**, not current. The
+> analysis of WHY each gap mattered is still the best written record of that reasoning —
+> that is why this file was kept — but do not use it as a build list without checking.
+> Still genuinely open as far as this repo shows: the analytics rollup
+> (`admin_metrics_daily` / `/analytics`), and the Stripe telemetry that still falls
+> through the `default:` no-op in `stripe-webhook`.
+
 **2026-08-04.** Prepared from a full read of `/Users/chrismalson/Documents/gohustle` (mobile app, web, admin, 30 edge functions, ~105 migrations). Every claim below is anchored to a file, table, or column in this repo.
 
 Method: 4 agents mapped the subsystems; 5 audited the console (authz / money / queries / mutations / coverage), each paired with an adversarial verifier told to refute rather than confirm; 4 designed the gaps. 44 raw findings → **39 confirmed**, 5 refuted and dropped. The claims below marked ✅ were then re-verified by hand against the source.

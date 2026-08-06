@@ -11,13 +11,14 @@
   space). Apple requires a privacy manifest for App Store submissions.
 - **Web security headers** — `web/next.config.ts` now sends HSTS, `X-Frame-Options:
   DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
-  and a **report-only** CSP (so it can't break the live app — promote it to enforcing
+  and an **ENFORCING** CSP (`Content-Security-Policy`, not Report-Only — verify against production before adding any third-party script; the old note said report-only and was wrong
   after the browser console shows no violations).
 
 ## 📱 iOS → TestFlight (you — needs your Apple Developer account)
 
 ```bash
-# 1. Bump the build (version stays 1.0.0; build number auto-increments)
+# 1. Bump the build (marketing version is 1.4.2; build number auto-increments
+#    via eas.json's production profile: autoIncrement + appVersionSource local)
 eas build --platform ios --profile production
 
 # 2. Submit to App Store Connect → TestFlight

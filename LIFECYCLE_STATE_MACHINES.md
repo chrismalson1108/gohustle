@@ -343,7 +343,11 @@ Effectively **{exists, deleted}** — a plain CRUD record with no lifecycle mach
 
 ## 8. DISPUTE / SUPPORT LIFECYCLE
 
-### 8a. Dispute — a terminal audit row with NO adjudication/refund path
+### 8a. Dispute — **now a real state machine** (this section's thesis is inverted)
+
+> **Corrected 2026-08-06.** 2026-08-04's `20260804010000_phase1_admin_ops.sql` (applied to production) and `supabase/functions/admin-payment-action/index.ts` gave `disputes` a `status` column with CHECK `open|investigating|resolved|rejected` plus `assigned_to`/`resolved_at`/`resolved_by`/`resolution_note`. This is an architecture change, not a moved line number, so it is called out despite this file's staleness banner. Everything below describes the PRE-2026-08-04 shape.
+
+#### Historical: dispute as a terminal audit row with no adjudication/refund path
 - **`disputes` is NOT a status machine.** It is an append-only audit record (`id, booking_id, raised_by, reason, pct_paid, created_at`) — `migration_location_tips_disputes.sql:10-17`; `pct_paid` bounded 0..100 (`20260624240000_review7_db_fixes.sql:162-164`). There is no `status`/`resolved` column.
 - **Creation is server-side** inside `stripe-capture-payment` when `pct < 1` — inserts one dispute row idempotently per booking (`:154-165`), requiring a non-empty `disputeReason` (`:37-42`). The client no longer inserts disputes (`src/context/JobsContext.js:838-839`).
 - **Effect:** a partial escrow capture, floored at 50% (`:44`); the remainder is released to the poster; the earner is credited the reduced net (persisted BEFORE capture to avoid a webhook over-credit race, `:104-113`).

@@ -28,10 +28,13 @@ One Stripe webhook keeps the database in sync. **If it's not registered, or its 
 
 **Confirm (Stripe Dashboard → Developers → Webhooks):**
 1. Endpoint exists: `https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook`
-2. It listens for **exactly these events**:
+2. It listens for **exactly these events** (all NINE that `stripe-webhook/index.ts` actually handles — the list below was missing `payment_intent.canceled`, `charge.dispute.created` and `charge.refunded`, so registering only the first six silently drops lapsed authorizations, incoming disputes and refund reconciliation):
    ```
    payment_intent.succeeded
    payment_intent.payment_failed
+   payment_intent.canceled
+   charge.dispute.created
+   charge.refunded
    account.updated
    identity.verification_session.verified
    identity.verification_session.requires_input
@@ -89,7 +92,7 @@ Do these together, then re-verify (§3.6):
 |---|---|---|
 | **Connect `gohustlr.com` to Vercel** | Clean public domain; **unblocks mobile payout/ID return + the 302 backstops** (they default to `gohustlr.com`). | See `DEPLOY.md` §2 (Domain.com DNS). Until then mobile Stripe-return flows land on a not-yet-live domain. |
 | **Verify a domain in Resend + set `STUDENT_VERIFY_FROM`** | Student `.edu` verification emails (`student-verify-start`) can't reach real inboxes on the test sender (`onboarding@resend.dev` only delivers to the account owner). | Supabase secret already has `RESEND_API_KEY` ✅. Add a verified domain in Resend, then set `STUDENT_VERIFY_FROM=verify@yourdomain`. |
-| **Brand the Stripe Connect onboarding** | The hosted "Set up payouts" pages show a generic icon + Stripe's default purple instead of Hustlr branding. | It's under the **gear ⚙️ Settings**, NOT the Connect product menu: `dashboard.stripe.com/settings/connect/branding` (test: add `/test/`). Do in **test + live**. Upload icon `shared/assets/brand/app-icon.png`, brand color **#3F25FE** (Electric Blue), accent **#FFBC45** (Hustle Orange). Applies to onboarding + the earner Express dashboard. |
+| **Brand the Stripe Connect onboarding** | The hosted "Set up payouts" pages show a generic icon + Stripe's default purple instead of Hustlr branding. | It's under the **gear ⚙️ Settings**, NOT the Connect product menu: `dashboard.stripe.com/settings/connect/branding` (test: add `/test/`). Do in **test + live**. Upload icon `shared/assets/brand/app-icon.png`, brand color **#5038FF** (Electric Blue, Brand v3.0 — #3F25FE is the retired v2 blue), accent **#6B54FF** (secondary; Hustle Orange #FFBC45 is retired and has no token). Applies to onboarding + the earner Express dashboard. |
 | **Supabase Auth hardening** | Production security. | Auth → enable leaked-password protection (HIBP), OTP expiry 1h, consider MFA/TOTP, enforce SSL. Set **Site URL** = `https://gohustlr.com`; **Redirect URLs**: `https://gohustlr.com/**`, `gohustlr://**` (done — leaked-password protection enabled, and the legacy `*.vercel.app` redirect URL was removed). Run **Security Advisor**, clear warnings. |
 | **Mobile build + submit** | Push, native Stripe, and maps need a real build (not Expo Go). | iOS: `eas build -p ios --profile production` → `eas submit`. Android: same with `-p android`. Needs Apple Developer + Google Play accounts. Smoke-test the **accept** flow on the build. |
 | **App Store / Play metadata** | Store approval. | Screenshots, descriptions, **privacy labels / Data safety** (location, financial info, identifiers), age rating (likely 17+), privacy policy URL = `https://gohustlr.com/legal/privacy`. |

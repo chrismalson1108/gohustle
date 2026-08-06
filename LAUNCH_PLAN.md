@@ -25,7 +25,7 @@ These are code/config tasks I can complete now. None require new accounts.
 2. **Wire real monitoring.** `src/lib/analytics.js` has null `SENTRY_DSN` / `ANALYTICS_KEY`
    placeholders. Install `@sentry/react-native` + PostHog, paste keys, forward in the
    marked spots. Needs a dev-client rebuild. 🤖 (keys from you)
-3. **Harden storage privacy.** `chat-photos` and `completion-photos` are public-read
+3. ~~**Harden storage privacy.**~~ **DONE** (2026-07-01 / 2026-07-07). `chat-photos` and `completion-photos` are private buckets with signed URLs. Historical note: they were public-read
    (unguessable paths). Move to private buckets + signed URLs before launch (we already
    did this for `receipts`). 🤖
 4. **Server-side abuse controls.** Rate-limit sign-ups and gig posts; add a lightweight

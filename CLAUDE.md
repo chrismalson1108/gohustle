@@ -223,8 +223,15 @@ pending → confirmed → completed → verified
 
 When a booking is `confirmed` or `completed` and the poster needs to change core job terms:
 
-1. **Earner proposes** an amendment via `proposeAmendment(bookingId, note)` — sets `amendment_status: 'pending'` and `amendment_note` on the booking.
-2. **Poster responds** via `respondToAmendment(bookingId, accept)` — accept sets `amendment_status: 'accepted'`; decline sets `amendment_status: 'declined'`.
+> ⚠️ **The direction is POSTER → EARNER.** This was documented backwards here for months
+> and survived several audit rounds (KNOWN_RISKS §5.6). The code is authoritative and
+> unambiguous: `proposeAmendment` is called from `GigsScreen` (the poster hub) and
+> `respondToAmendment` from `EarnScreen` (the earner hub). It has to work this way — the
+> poster is the one who wants to change their own listing, and the earner is the one whose
+> agreed terms would change, so the earner is the one who must consent.
+
+1. **Poster proposes** an amendment via `proposeAmendment(bookingId, note)` (`GigsScreen`) — sets `amendment_status: 'pending'` and `amendment_note` on the booking. Returns `false` if the note trips the prohibited-content filter.
+2. **Earner responds** via `respondToAmendment(bookingId, accept)` (`EarnScreen`) — accept sets `amendment_status: 'accepted'`; decline sets `amendment_status: 'declined'`.
 3. **If accepted**: `EditJobScreen` unlocks core fields (`canEditCore = true`) so the poster can update the job terms.
 4. **If declined** or after editing: `clearAmendment(bookingId)` resets `amendment_status` back to `'none'`.
 

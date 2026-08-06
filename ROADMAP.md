@@ -42,8 +42,11 @@ validate the core loop.
 
 ## P0 — Required before any external trial
 
-1. ✅ **Legal & policy screens** — Terms, Privacy, Independent Contractor Agreement (`src/data/legal.js`,
-   `LegalScreen`), accept-on-signup checkbox (versioned via `TERMS_VERSION`, recorded as
+1. ✅ **Legal & policy screens** — Terms, Privacy, Independent Contractor Agreement (DB-driven:
+   the `legal_documents` table via `src/lib/legal.js` — there is no `src/data/legal.js`;
+   `LegalScreen`), accept-on-signup checkbox (one `legal_acceptances` row per `(slug, version)`;
+   there is no `TERMS_VERSION` constant — the re-consent gate is `checkNeedsAcceptance()`
+   comparing the newest `legal_documents` version per slug against what the user accepted), recorded as
    `profiles.terms_accepted_at`), **returning-user re-consent gate** (`ConsentScreen` when
    `terms_version` is stale), Legal & Support section + support mailto in Profile.
 2. ✅ **Cancellation handling** — `cancelBooking` releases the escrow hold, frees the slot, notifies the
@@ -96,11 +99,11 @@ tax CSV/summary builders (`__tests__/`). End-to-end UI tests (Detox/Maestro) are
 ## Engineering hygiene to address alongside features
 - **Storage privacy**: ✅ `receipts` is now a **private** bucket (owner-read RLS, signed URLs in the Tax
   Center). `avatars`/`job-photos` are intentionally public (profile/listing). `chat-photos` and
-  `completion-photos` remain public-read (unguessable paths, shared between the two booking parties) —
+  `completion-photos` are **private** as of 2026-07-01 / 2026-07-07, read through signed URLs with party-scoped policies; the avatars/job-photos enumeration hole was closed 2026-07-25 — this item is DONE, not outstanding —
   move them to private + signed URLs before a real launch if stricter privacy is required.
 - **Secrets**: the Supabase anon/publishable keys and Stripe publishable key are in the client (fine), but
   confirm no secret keys ever ship in the bundle.
 - **Realtime/notif consistency**: notifications are client-driven (the actor calls `send-push`). For events
   that can happen while the actor is offline, consider DB triggers + `pg_net` later.
-- **Tests**: there are none. Add a smoke test/E2E (Detox/Maestro) for the core book→accept→complete→verify
+- **Tests**: 33 Jest suites / 421 tests cover the pure logic (`npm test`). What is still missing is end-to-end: add a smoke test (Detox/Maestro) for the core book→accept→complete→verify
   loop before the trial.
