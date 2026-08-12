@@ -67,8 +67,11 @@ const EARNER_BASE = "id, name, avatar_initial, avatar_url, rating, review_count,
 // job categories). "base" drops category_slug for a database that predates the
 // dynamic-categories migration — PostgREST rejects the WHOLE query on an unknown
 // column (42703), which would leave the user with no bookings at all.
-const JOB_MINI = "id, title, pay, pay_type, location, category, category_slug";
-const JOB_MINI_BASE = "id, title, pay, pay_type, location, category";
+// estimated_hours is here so an hourly booking is valued at its real duration rather
+// than at ONE hour. It is the fallback when amount_cents_quoted is absent (bookings
+// predating the pin); the pinned amount is preferred wherever it exists.
+const JOB_MINI = "id, title, pay, pay_type, estimated_hours, location, category, category_slug";
+const JOB_MINI_BASE = "id, title, pay, pay_type, estimated_hours, location, category";
 
 // Cancellation-fee policy (record/display only — NO money moves). 15% of the
 // booking's effective pay (counterOffer ?? job pay; hourly is multiplied by

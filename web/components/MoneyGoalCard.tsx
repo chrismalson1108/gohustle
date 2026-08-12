@@ -5,11 +5,12 @@ import Link from "next/link";
 import { Target, Pencil, TrendingUp, Check } from "lucide-react";
 import { computeGoalPlan, rankGigsForGoal } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
-import { useJobs } from "@/lib/jobs";
+import { useJobs, computeEffectivePay } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { money, classNames } from "@/lib/format";
 import { bookingNetDollars } from "@gohustlr/shared";
 import Button from "@/components/ui/Button";
+import type { Booking } from "@/lib/types";
 import { Input } from "@/components/ui/Field";
 
 // Pace reads as plain coloured text, not a fourth filled pill — mirrors mobile's
@@ -42,11 +43,22 @@ export default function MoneyGoalCard() {
       (b) => (b.status === "verified" || b.status === "completed") && isThisMonth(b.completedAt),
     );
     // Net of the platform fee — this card tracks progress toward what the earner
-    // actually RECEIVES, and the gross list price overstates that by 10%. Mobile
+    // actually RECEIVES, and the gross list price overstates that by the fee. Mobile
     // has done this since the fee-net goal fix; web was left on gross, so the same
     // account read $45 here and $41 in the app at the same moment.
+    //
+    // Gross comes from amount_cents_quoted, the amount PINNED to the booking at insert
+    // (20260806000000) and the figure the charge itself derives from, so the goal card
+    // and the payout cannot disagree.
+    //
+    // This previously used the raw list pay, which for an hourly gig is the RATE — a
+    // 4-hour $50/hr job counted as $50. The mobile card had the identical bug and was
+    // fixed first; this is the same fix, kept in step deliberately, because the whole
+    // point of the card is that both platforms show one number.
+    const grossDollars = (b: Booking) =>
+      b.amountCentsQuoted != null ? b.amountCentsQuoted / 100 : computeEffectivePay(b);
     const vals = paid
-      .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
+      .map((b) => bookingNetDollars(grossDollars(b), b.feeBpsQuoted))
       .filter((v) => v > 0);
     const earnedThisMonth = vals.reduce((s, v) => s + v, 0);
 
@@ -55,7 +67,7 @@ export default function MoneyGoalCard() {
     if (!avg) {
       const anyPaid = bookings
         .filter((b) => b.status === "verified" || b.status === "completed")
-        .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
+        .map((b) => bookingNetDollars(grossDollars(b), b.feeBpsQuoted))
         .filter((v) => v > 0);
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }
