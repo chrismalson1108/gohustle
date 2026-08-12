@@ -21,6 +21,7 @@ interface Share {
   poster_first: string;
   job_title: string;
   location: string | null;
+  location_is_exact: boolean;
   lat: number | null;
   lng: number | null;
   status: string;
@@ -123,17 +124,35 @@ export default function SharePage() {
         <Row label="With" value={share.poster_first} />
         {share.location && (
           <Row
-            label="Where"
+            // Honest labelling. When all we have is a city-level pin, saying "Where"
+            // over it implies a precision we do not have — and a confident wrong
+            // location is worse than an admitted approximate one at 11pm.
+            label={share.location_is_exact ? "Where" : "Approximate area"}
             value={
-              share.lat != null && share.lng != null ? (
+              share.location_is_exact ? (
+                // Link the ADDRESS STRING, not lat/lng: Google resolves it to the
+                // building, while the stored coordinates are a city centroid rounded
+                // to 2dp and would drop a pin in the wrong place.
                 <a
                   className="text-primary underline"
-                  href={`https://maps.google.com/?q=${share.lat},${share.lng}`}
-                  target="_blank"
-                  rel="noreferrer"
+                  href={`https://maps.google.com/?q=${encodeURIComponent(share.location)}`}
+                  target="_blank" rel="noreferrer"
                 >
                   {share.location}
                 </a>
+              ) : share.lat != null && share.lng != null ? (
+                <span>
+                  <a
+                    className="text-primary underline"
+                    href={`https://maps.google.com/?q=${share.lat},${share.lng}`}
+                    target="_blank" rel="noreferrer"
+                  >
+                    {share.location}
+                  </a>
+                  <span className="block text-xs text-ink-muted">
+                    The exact address becomes visible once the gig is accepted.
+                  </span>
+                </span>
               ) : (
                 share.location
               )
