@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
-      "buildNumber": "27",
+      "buildNumber": "28",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": [

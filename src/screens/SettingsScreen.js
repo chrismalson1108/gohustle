@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
-import SupportSheet from '../components/SupportSheet';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
@@ -25,7 +24,6 @@ export default function SettingsScreen({ navigation }) {
   const { showToast } = useUser();
   const haptic = useHaptic();
   const [q, setQ] = useState('');
-  const [supportOpen, setSupportOpen] = useState(false);
   const [payReady, setPayReady] = useState(null);
 
   useFocusEffect(
@@ -125,11 +123,12 @@ export default function SettingsScreen({ navigation }) {
         { icon: 'briefcase-outline', title: 'Independent Contractor Agreement',
           keywords: 'legal contractor 1099 employment classification',
           onPress: () => go('Legal', { doc: 'contractor' }) },
-        // In-app form -> support_tickets -> the admin console queue. The old
-        // mailto: bypassed all three.
-        { icon: 'chatbubble-ellipses-outline', title: 'Contact support', sub: 'We reply by email',
-          keywords: 'help email problem report bug ticket',
-          onPress: () => setSupportOpen(true) },
+        // Opens the SAME thread as the Messages pin. "We reply by email" was true of
+        // the old one-way sheet and is now actively misleading: the reply arrives in
+        // the app, and someone told to watch their inbox will not see it.
+        { icon: 'chatbubble-ellipses-outline', title: 'Contact support', sub: 'Chat with a real person',
+          keywords: 'help email problem report bug ticket chat message',
+          onPress: () => go('Support') },
       ],
     },
     {
@@ -214,7 +213,6 @@ export default function SettingsScreen({ navigation }) {
           </View>
         ))}
       </ScrollView>
-      <SupportSheet visible={supportOpen} onClose={() => setSupportOpen(false)} />
       <KeyboardDoneBar />
     </View>
   );

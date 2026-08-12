@@ -167,6 +167,9 @@ function ProfileStack() {
       <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Legal"          component={LegalScreen} options={{ ...DETAIL_OPTS, headerShown: true }} />
+      {/* Same screen as the Messages pin. Support must be ONE implementation: two
+          diverged the moment the gig/payment picker was added to only one of them. */}
+      <Stack.Screen name="Support"        component={SupportScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'GoHustlr Support' }} />
       <Stack.Screen name="UserProfile"    component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Favorites"      component={FavoritesScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved people' }} />
       <Stack.Screen name="SavedGigs"      component={SavedGigsScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Saved gigs' }} />

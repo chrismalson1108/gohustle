@@ -32,6 +32,8 @@ import { colors, radii, shadows } from '../theme';
 //   account  nothing — there is no object, and an empty picker is noise
 //   bug      nothing — the screen they were on is better captured in their own words
 //   other    optional gig, since "something else" often turns out to be about one
+const CATEGORY_LABEL = SUPPORT_CATEGORIES.reduce((m, c) => ({ ...m, [c.key]: c.label }), {});
+
 const CONTEXT_FOR = {
   payment: { mode: 'money', label: 'Which payment is this about? (optional)' },
   booking: { mode: 'gig',   label: 'Which gig is this about? (optional)' },
@@ -65,6 +67,12 @@ export default function SupportScreen({ navigation, route }) {
   const scrollRef = useRef(null);
 
   const [ticket, setTicket] = useState(null);
+  // Every ticket, so a closed one is history rather than something that vanished. A
+  // person who opened a second ticket for a different problem correctly sees the NEW
+  // conversation — but the old one is still reachable, because "what did support tell
+  // me last month" is a real question and losing it feels like being forgotten.
+  const [allTickets, setAllTickets] = useState([]);
+  const [showPast, setShowPast] = useState(false);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -82,6 +90,9 @@ export default function SupportScreen({ navigation, route }) {
     if (!user) return;
     try {
       const tickets = await fetchMyTickets();
+      setAllTickets(tickets);
+      // The ACTIVE conversation wins. Opening a new ticket for a different problem
+      // therefore shows that new one, not the resolved one above it.
       const open = tickets.find(t => t.status !== 'closed') ?? tickets[0] ?? null;
       setTicket(open);
       if (open) {
@@ -107,6 +118,21 @@ export default function SupportScreen({ navigation, route }) {
   // Both sides of the marketplace: gigs you worked and gigs you posted. Newest first,
   // capped — this is a shortcut, not a browser, and a long list would bury the composer.
   const ctx = CONTEXT_FOR[category] ?? null;
+
+  // Resolve the ticket's attached gig from bookings already in memory — no extra query
+  // just to render a title.
+  const ticketContext = React.useMemo(() => {
+    if (!ticket?.booking_id) return null;
+    const b = [...(bookings ?? []), ...(posterBookings ?? [])].find(x => x.id === ticket.booking_id);
+    if (!b?.job?.title) return null;
+    const amt = b.amountCentsQuoted != null ? `$${(b.amountCentsQuoted / 100).toFixed(2)}` : null;
+    return { title: b.job.title, sub: [amt, b.slotLabel].filter(Boolean).join(' · ') };
+  }, [ticket?.booking_id, bookings, posterBookings]);
+
+  const pastTickets = React.useMemo(
+    () => allTickets.filter(t => t.id !== ticket?.id),
+    [allTickets, ticket?.id],
+  );
 
   const recentGigs = React.useMemo(() => {
     const seen = new Set();
@@ -139,6 +165,14 @@ export default function SupportScreen({ navigation, route }) {
         sub: ctx?.mode === 'money' ? money(b) : when(b),
       }));
   }, [bookings, posterBookings, ctx?.mode]);
+
+  const openTicket = async (t) => {
+    haptic.selection();
+    setTicket(t);
+    setShowPast(false);
+    setMessages(await fetchTicketMessages(t.id).catch(() => []));
+    markTicketRead(t.id).catch(() => {});
+  };
 
   const addPhotos = async () => {
     haptic.selection();
@@ -282,9 +316,40 @@ export default function SupportScreen({ navigation, route }) {
             <View style={styles.ticketHead}>
               <Text style={styles.ticketSubject} numberOfLines={2}>{ticket.subject || 'Support request'}</Text>
               <Text style={styles.ticketMeta}>
+                {CATEGORY_LABEL[ticket.category] ?? 'Support'}
+                {' · '}
                 {ticket.status === 'closed' ? 'Closed' : ticket.status === 'pending' ? 'We replied' : 'We’re on it'}
                 {ticket.priority === 'urgent' ? ' · urgent' : ''}
               </Text>
+              {/* What it is ABOUT, restated at the top. A thread that has scrolled for a
+                  week should still answer "which gig is this?" without reading upward. */}
+              {!!ticketContext && (
+                <View style={styles.contextCard}>
+                  <Ionicons name="briefcase-outline" size={14} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contextTitle} numberOfLines={1}>{ticketContext.title}</Text>
+                    {!!ticketContext.sub && (
+                      <Text style={styles.contextSub} numberOfLines={1}>{ticketContext.sub}</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {pastTickets.length > 0 && (
+                <TouchableOpacity onPress={() => { haptic.selection(); setShowPast(v => !v); }}>
+                  <Text style={styles.pastToggle}>
+                    {showPast ? 'Hide' : `Past conversations (${pastTickets.length})`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {showPast && pastTickets.map(t => (
+                <TouchableOpacity key={t.id} style={styles.pastRow} onPress={() => openTicket(t)}>
+                  <Text style={styles.pastRowTitle} numberOfLines={1}>{t.subject || 'Support request'}</Text>
+                  <Text style={styles.pastRowMeta} numberOfLines={1}>
+                    {CATEGORY_LABEL[t.category] ?? 'Support'} · {t.status === 'closed' ? 'closed' : 'open'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 
@@ -402,6 +467,21 @@ const styles = StyleSheet.create({
   gigChipSubActive: { color: 'rgba(255,255,255,0.85)' },
   gigChipTextActive: { color: '#fff' },
   ticketHead: { marginBottom: 14 },
+  contextCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10,
+    backgroundColor: colors.primaryLight, borderRadius: radii.md,
+    paddingVertical: 9, paddingHorizontal: 11,
+  },
+  contextTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  contextSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  pastToggle: { fontSize: 12, fontWeight: '600', color: colors.primary, marginTop: 10 },
+  pastRow: {
+    marginTop: 8, paddingVertical: 9, paddingHorizontal: 11,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.divider,
+  },
+  pastRowTitle: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  pastRowMeta: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   ticketSubject: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
   ticketMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   bubbleWrap: { marginBottom: 14, maxWidth: '85%' },
