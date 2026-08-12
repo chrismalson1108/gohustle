@@ -113,7 +113,7 @@ export async function submitSupportRequest({ subject, message, category, email, 
 export async function fetchMyTickets() {
   const { data, error } = await supabase
     .from('support_tickets')
-    .select('id, subject, category, status, priority, booking_id, job_id, created_at, last_message_at, user_read_at')
+    .select('id, subject, category, status, priority, booking_id, job_id, created_at, last_message_at, user_read_at, archived_at')
     .order('last_message_at', { ascending: false });
   if (error) throw new SupportError('Could not load your support messages.', 'load_failed');
   return data ?? [];
@@ -152,6 +152,30 @@ export async function replyToTicket(ticketId, { body, images = [] } = {}) {
       'send_failed',
     );
   }
+}
+
+/**
+ * Hide a resolved thread from the inbox. ARCHIVING IS NOT CLOSING: closing is the
+ * team saying it is handled and drives the queue and the SLA control; archiving is a
+ * display preference that belongs to the user. Replying un-archives automatically,
+ * because a thread someone is actively writing in must not be hidden from them.
+ */
+export async function setTicketArchived(ticketId, archived) {
+  const { error } = await supabase
+    .from('support_tickets')
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq('id', ticketId);
+  if (error) throw new SupportError('Could not update this conversation.', 'archive_failed');
+}
+
+/**
+ * Mark your own ticket resolved. Safe to offer precisely BECAUSE a reply reopens it:
+ * the worst case of closing something prematurely is one more message.
+ */
+export async function resolveTicket(ticketId) {
+  const { error } = await supabase
+    .from('support_tickets').update({ status: 'closed' }).eq('id', ticketId);
+  if (error) throw new SupportError('Could not close this conversation.', 'close_failed');
 }
 
 /** Mark the thread read so the Messages badge clears. */

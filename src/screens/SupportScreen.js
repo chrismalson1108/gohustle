@@ -12,7 +12,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
 import {
   fetchMyTickets, fetchTicketMessages, replyToTicket, markTicketRead,
-  submitSupportRequest, SUPPORT_CATEGORIES,
+  submitSupportRequest, setTicketArchived, resolveTicket, SUPPORT_CATEGORIES,
 } from '../lib/support';
 import { colors, radii, shadows } from '../theme';
 
@@ -206,7 +206,10 @@ export default function SupportScreen({ navigation, route }) {
       // tap send and get "this conversation was closed" forever, with no way to start
       // another: the screen would keep selecting that same closed ticket. Opening a new
       // one is the correct behaviour and needs no action from them.
-      if (ticket && ticket.status !== 'closed' && !composingNew) {
+      // A reply to a CLOSED ticket reopens it server-side (20260806380000) — that is
+      // the sanctioned way back into a conversation that was resolved too early, and it
+      // keeps the history rather than starting from nothing.
+      if (ticket && !composingNew) {
         await replyToTicket(ticket.id, { body, images: paths });
       } else {
         // No open thread — this first message opens one. submitSupportRequest goes
@@ -352,11 +355,42 @@ export default function SupportScreen({ navigation, route }) {
                 </View>
               )}
 
-              <TouchableOpacity
-                onPress={() => { haptic.selection(); setComposingNew(true); setLinkedBooking(null); }}
-              >
-                <Text style={styles.newRequestLink}>＋ Start a new request</Text>
-              </TouchableOpacity>
+              <View style={styles.ticketActions}>
+                <TouchableOpacity
+                  onPress={() => { haptic.selection(); setComposingNew(true); setLinkedBooking(null); }}
+                >
+                  <Text style={styles.newRequestLink}>＋ Start a new request</Text>
+                </TouchableOpacity>
+                {ticket.status !== 'closed' && (
+                  <TouchableOpacity
+                    onPress={async () => {
+                      haptic.selection();
+                      try { await resolveTicket(ticket.id); await load(); } catch (e) {
+                        Alert.alert('Could not close', e?.message ?? 'Please try again.');
+                      }
+                    }}
+                  >
+                    <Text style={styles.secondaryLink}>Mark resolved</Text>
+                  </TouchableOpacity>
+                )}
+                {ticket.status === 'closed' && (
+                  <TouchableOpacity
+                    onPress={async () => {
+                      haptic.selection();
+                      try {
+                        await setTicketArchived(ticket.id, !ticket.archived_at);
+                        await load();
+                      } catch (e) {
+                        Alert.alert('Could not update', e?.message ?? 'Please try again.');
+                      }
+                    }}
+                  >
+                    <Text style={styles.secondaryLink}>
+                      {ticket.archived_at ? 'Unarchive' : 'Archive'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
               {pastTickets.length > 0 && (
                 <TouchableOpacity onPress={() => { haptic.selection(); setShowPast(v => !v); }}>
@@ -408,7 +442,7 @@ export default function SupportScreen({ navigation, route }) {
       {ticket?.status === 'closed' ? (
         <View style={styles.closedBar}>
           <Text style={styles.closedText} numberOfLines={2}>
-            This conversation is closed. Send a message to open a new one.
+            Marked resolved. Reply here if it isn’t — that reopens this conversation.
           </Text>
         </View>
       ) : null}
@@ -501,6 +535,8 @@ const styles = StyleSheet.create({
   },
   contextTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   contextSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  ticketActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  secondaryLink: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginTop: 12 },
   newRequestLink: {
     fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 12,
   },
