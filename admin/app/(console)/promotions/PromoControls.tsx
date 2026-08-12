@@ -108,7 +108,11 @@ export function CreatePromotion() {
 
         <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
           Budget $
-          <input key={`bd${chosen?.key ?? ""}`} name="budget_dollars" type="number" step="10" min="1" defaultValue={pre?.budget_dollars ?? 250} className={`${input} w-24`} required />
+          {/* step is a VALIDITY constraint, not just the spinner increment: the browser
+              only accepts min + (n x step). step="10" with min="1" made the valid
+              budgets 1, 11, 21 ... 491, 501 — so a round 500 was rejected with
+              "the two nearest valid values are 491 and 501". Whole dollars, any amount. */}
+          <input key={`bd${chosen?.key ?? ""}`} name="budget_dollars" type="number" step="1" min="1" defaultValue={pre?.budget_dollars ?? 250} className={`${input} w-24`} required />
         </label>
         <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
           Max uses
@@ -291,7 +295,12 @@ export function EditPromotion({
         </label>
         <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">
           Budget $
-          <input name="budget_dollars" type="number" step="10" min={promo.spent_cents / 100}
+          {/* Same step-as-constraint bug as the create form, but worse here: the min was
+              a raw float (spent_cents/100), so the valid budgets were 3.47, 13.47,
+              23.47 … and almost no round number could be typed at all. Whole dollars,
+              floored at what the campaign has already spent — rounded UP so the min
+              lands on a whole dollar and stays reachable with step=1. */}
+          <input name="budget_dollars" type="number" step="1" min={Math.ceil(promo.spent_cents / 100)}
                  defaultValue={promo.budget_cents / 100} className={`${input} w-20`} />
         </label>
         <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">

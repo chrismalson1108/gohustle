@@ -67,7 +67,13 @@ async function run(
   try {
     ctx = await requireFreshAdmin("admin");
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    // Surface stale_mfa as its own sentinel so the caller can offer a code prompt and
+    // retry. Collapsing it into "Not authorized." — as this did — made every step-up
+    // action here a dead end no matter what the UI offered, because the reason the UI
+    // keys on never reached it. Genuine denials still read as denials.
+    if (e instanceof AdminAuthError) {
+      return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
+    }
     throw e;
   }
   try {
@@ -443,7 +449,13 @@ export async function deleteAccount(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await requireFreshAdmin("admin");
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    // Surface stale_mfa as its own sentinel so the caller can offer a code prompt and
+    // retry. Collapsing it into "Not authorized." — as this did — made every step-up
+    // action here a dead end no matter what the UI offered, because the reason the UI
+    // keys on never reached it. Genuine denials still read as denials.
+    if (e instanceof AdminAuthError) {
+      return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
+    }
     throw e;
   }
   try {
