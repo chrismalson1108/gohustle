@@ -15,6 +15,8 @@ import {
   revokeStudent,
   type ActionResult,
 } from "./actions";
+import ReauthPrompt from "../../ReauthPrompt";
+import { useStepUp } from "../../useStepUp";
 
 // Buttons are hidden for the support role, but that's cosmetic — every server
 // action re-checks requireAdmin('admin') on its own.
@@ -36,7 +38,10 @@ export default function ActionsPanel({
   isAdmin: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // Suspending, deleting or changing an email are all step-up actions; without
+  // this the operator saw a raw "stale_mfa" with no way to satisfy it.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [suspendReason, setSuspendReason] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -55,7 +60,7 @@ export default function ActionsPanel({
     fd.set("userId", userId);
     for (const [k, v] of Object.entries(fields)) fd.set(k, v);
     startTransition(async () => {
-      setResult(await action(fd));
+      await stepUp.run(() => action(fd));
     });
   }
 
@@ -66,6 +71,7 @@ export default function ActionsPanel({
 
   return (
     <div className="space-y-4">
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <p className={`text-sm ${result.ok ? "text-emerald-700" : "text-[var(--danger)]"}`}>
           {result.message}

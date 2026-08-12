@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { addTeamMember, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 function Msg({ result }: { result: ActionResult | null }) {
   if (!result) return null;
@@ -14,7 +16,9 @@ function Msg({ result }: { result: ActionResult | null }) {
 
 export function AddMemberForm({ isAdmin }: { isAdmin: boolean }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // Adding a team member grants console access, so it is a step-up action.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("support");
   const [note, setNote] = useState("");
@@ -53,8 +57,7 @@ export function AddMemberForm({ isAdmin }: { isAdmin: boolean }) {
             fd.set("role", role);
             fd.set("note", note);
             start(async () => {
-              const r = await addTeamMember(fd);
-              setResult(r);
+              const r = await stepUp.run(() => addTeamMember(fd));
               if (r.ok) { setEmail(""); setNote(""); }
             });
           }}
@@ -64,6 +67,7 @@ export function AddMemberForm({ isAdmin }: { isAdmin: boolean }) {
           {pending ? "Adding…" : "Add"}
         </button>
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       <Msg result={result} />
     </div>
   );
@@ -87,7 +91,9 @@ export function MemberControls({
   isAdmin: boolean;
 }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // Changing someone's role or suspending them is a step-up action.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
 
   if (!isAdmin) return <span className="text-xs text-[var(--muted)]">admin only</span>;
 
@@ -96,7 +102,7 @@ export function MemberControls({
     const fd = new FormData();
     fd.set("userId", userId);
     for (const [k, v] of Object.entries(fields)) fd.set(k, v);
-    start(async () => setResult(await action(fd)));
+    start(async () => { await stepUp.run(() => action(fd)); });
   };
 
   const btn = "rounded-lg border border-[var(--line)] px-2.5 py-1 text-xs font-medium hover:bg-[var(--surface)] disabled:opacity-40";
@@ -146,6 +152,7 @@ export function MemberControls({
         )}
         {isSelf && <span className="text-xs text-[var(--muted)]">you</span>}
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <span className={`max-w-sm text-right text-xs ${result.ok ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}>
           {result.message}
