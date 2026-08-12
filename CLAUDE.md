@@ -12,7 +12,7 @@ npm run android                 # expo run:android — build & launch the dev cl
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
-npm test                        # Jest — 33 suites / 421 tests of pure logic in __tests__/
+npm test                        # Jest — 34 suites / 433 tests of pure logic in __tests__/
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
 cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
@@ -211,6 +211,113 @@ Job categories, profile skills and job tags all draw from **one** vocabulary. It
 ## Haptics
 
 Always use `src/hooks/useHaptic.js` — guards against web (`Platform.OS === 'web'` returns no-ops). Never call `expo-haptics` directly.
+
+## Platform fee, promotions & incentives (2026-08-06)
+
+**The take rate is data, not a constant, and it is PINNED per booking.** It used to be
+a `0.10` literal in seven places across three deploy targets.
+
+- **`platform_rates`** — effective-dated rate card in **basis points** (1000 = 10%).
+  Append-only: change the rate by inserting a future-dated row. `fee_bps_at(at)` reads
+  it, clamped to `[500, 3000]`, defaulting to 1000.
+- **`public.platform_fee_cents(amount_cents, fee_bps)` is the ONE definition of the
+  fee.** All four money paths call it by RPC rather than reimplementing it. It rounds
+  **half up** (`(amount*bps + 5000)/10000`) to match `Math.round` in the JS it replaced —
+  plain integer division truncates and disagrees by a cent on odd amounts — and floors
+  at Stripe cost (`ceil(amount*0.029) + 30 + 25`), capped at the amount.
+- **Three immutable inputs, pinned at booking INSERT** by `trg_z_pin_booking_amount`:
+  `bookings.amount_cents_quoted`, `fee_bps_quoted`, `fee_credit_cents`. `payments`
+  inherits all three via `trg_z_pin_payment_fee_bps`. **This is why capture is
+  idempotent** — the fee derives only from values that cannot change, which is the
+  property `stripe-capture-payment` depends on (a retry after a partial capture would
+  otherwise scale an already-reduced fee again, `fee * pct²`).
+- **A rate change never re-prices an existing booking.** Verified: rate moved to 5%
+  mid-test, the existing pin stayed at 1000.
+
+**Display**: `shared/pricing.js` (`platformFeeCents`, `earnerNetCents`, `feeLabel`,
+`bookingNetDollars`) with `__tests__/pricing.test.js` **parsing the migration off disk**
+so JS/SQL cannot drift — the same guard `categories.test.js` applies to `category_slug`.
+Quote screens use `getFeeBps()` (the current rate); anything showing an existing booking
+uses **that booking's `feeBpsQuoted`**. Using the wrong one is a disclosure bug.
+`SERVICE_FEE_PCT` still exists in both clients but has **no consumers** and resolves to
+the founding rate.
+
+⚠️ **The fee comes out of the EARNER's payout**, not added to the poster's charge
+(`earnerAmountCents = amountCents - feeCents`). So a fee discount is a *supply-side*
+incentive; it does nothing for posters.
+
+### Promotions
+`promotions` (campaign) → `promo_codes` (redeemable strings) → `promo_grants` (a user's
+claim, with the benefit **snapshotted**) → `promo_redemptions` (which grant paid for
+which booking). `kind` is `fee_override` or `bonus`.
+
+- **Three ways one ends**: `ends_at` passes (**no action required** — the default and
+  the one that matters), `status='paused'`, or `app_flags.promotions_enabled=false`.
+  Ending one **never re-prices agreed work** — the benefit is on the grant and the pin.
+- **Loss is bounded by construction**: `budget_cents` + `max_redemptions`, enforced by
+  `consume_promo_grant` where **the increment IS the check** (one `UPDATE … WHERE
+  spent + hit <= budget`), never read-then-decide.
+- **Stacking dies at two unique indexes**: one grant per user per promotion, one
+  redemption per booking.
+- `redeem_promo_code(code)` takes **only a string**, returns only true/false (distinct
+  errors would be an existence oracle), and is rate-limited off
+  `promo_redeem_attempts` — **attempts, not successes**, or a brute-force sweep that
+  only ever fails would never register.
+- An exhausted budget **still lets the booking succeed** at the standing rate.
+
+### Referral bonuses
+`bonus_ledger`, **vest-on-outcome**: created when the *referred* person's gig reaches
+`verified`, `payable` only after a 7-day window with no refund and no open dispute
+(`vest_bonuses()`, run at the top of every control sweep). Farming requires doing real
+work and paying real fees on both sides.
+
+Delivered as a **fee credit** — `consume_fee_credit` spends only the headroom between
+the fee and the floor, splitting the remainder back onto the ledger. We never pay
+Stripe's processing to honour a credit. **`bonus_cash_payout_enabled` is OFF**; cash is
+the classic farming target.
+
+Console: **`/promotions`** (admin only) creates drafts, mints codes, shows budget
+burn-down.
+
+## Controls (scheduled invariant checks)
+
+**The engine is in Postgres, not the console.** A check that runs in a Next.js route
+only runs when a human opens a page.
+
+- `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
+  `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
+- **`pg_cron`**: `controls_sweep_and_page` hourly at `:05` (vesting, then all controls,
+  then pages **only if something newly needs a human**), `controls_digest` daily 13:05
+  UTC (always emails, with Claude triage via `controls-alert`).
+- Controls are **functions, never SQL text in a table** — a stored executable body would
+  hand anyone with console write access arbitrary `SECURITY DEFINER` execution.
+  `run_control` validates `fn_name` against `^ctl_[a-z0-9_]+$` **and** `pg_proc`.
+- Findings are unique on `(control_key, entity_id) where resolved_at is null`, so a
+  persisting violation stays ONE row; anything a control stops returning **auto-resolves**.
+- **A control that errors or goes stale is reported as loudly as a violation** — both
+  mean you are no longer being told the truth.
+- Alert dispatch config lives in **`app_flags`**, not a GUC. A GUC is invisible, needs
+  superuser (so `db push` cannot set it), and cannot be read back — which is exactly how
+  `trg_notify_safety_report` sat dead from 2026-07-10 until 2026-08-06 without one alert
+  ever firing. Config in a table can be **asserted on**.
+- Console: **`/controls`**.
+
+## Admin console roles
+
+Four **ranked** tiers (`admin/lib/guard.ts`, `roleSatisfies`): `support` (tickets, a
+user's own context) · `trust` (moderation + disputes **with resolve authority**) ·
+`finance` (payments, refunds, escrow) · `admin` (everything + team, flags, pricing,
+promotions). **`trust` and `finance` are peers**, neither outranks the other.
+
+`trust` exists because `resolveReport` used to need full `admin` while
+`earner-claim-payment` refuses to settle a booking with an open report — one person's
+availability was a money-harm control.
+
+MFA (AAL2) is re-verified **on every request** from the JWT claim. Login throttle:
+5 failures per account / 15 min, or 20 per IP. Nav hides what a role cannot open, but
+**the guard is the enforcement** — if they disagree the guard wins.
+
+⚠️ **`gohustlr-admin` does NOT auto-deploy.** See the Commands block.
 
 ## Booking Lifecycle
 
