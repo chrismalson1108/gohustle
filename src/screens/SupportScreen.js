@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Image, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SignedImage from '../components/SignedImage';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
@@ -66,6 +67,7 @@ export default function SupportScreen({ navigation, route }) {
   const { user } = useAuth();
   const haptic = useHaptic();
   const scrollRef = useRef(null);
+  const insets = useSafeAreaInsets();
 
   const [ticket, setTicket] = useState(null);
   // Every ticket, so a closed one is history rather than something that vanished. A
@@ -528,7 +530,7 @@ export default function SupportScreen({ navigation, route }) {
           message you are trying to read. */}
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setMenuOpen(false)}>
-          <View style={styles.menuSheet}>
+          <View style={[styles.menuSheet, { top: insets.top + 46 }]}>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setMenuOpen(false); haptic.selection(); setComposingNew(true); setLinkedBooking(null); }}
@@ -644,7 +646,9 @@ const styles = StyleSheet.create({
   contextSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   menuSheet: {
-    position: 'absolute', top: 8, right: 12, minWidth: 230,
+    // `top` is supplied at render from the safe-area inset + nav-bar height: a fixed
+    // offset put the first item under the Dynamic Island on this device.
+    position: 'absolute', right: 12, minWidth: 230,
     backgroundColor: colors.surface, borderRadius: radii.lg, paddingVertical: 6, ...shadows.card,
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, paddingHorizontal: 15 },
