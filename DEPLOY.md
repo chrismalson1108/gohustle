@@ -4,6 +4,20 @@ The website lives in `web/` (Next.js). It talks to the **same Supabase + Stripe
 backend** as the mobile app, so there's no separate backend to deploy — just the
 frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic SSL).
 
+> ⚠️ **Two Vercel projects, two different deploy models.** `gohustle` (this site) is
+> wired to git and ships on every push to `master`. `gohustlr-admin` (the console at
+> admin.gohustlr.com) is **not** — pushing does nothing to it, and it will keep serving
+> the last hand-made deploy indefinitely. Verified 2026-08-06: four consecutive pushes
+> each produced a web deploy within the minute, none produced an admin deploy, and the
+> console was 7 days behind master. After any change under `admin/`:
+>
+> ```bash
+> cd admin && npx vercel --prod
+> ```
+>
+> This asymmetry is the reason to check `npx vercel ls` before concluding a console fix
+> "didn't work".
+
 ---
 
 ## 1. Deploy to Vercel

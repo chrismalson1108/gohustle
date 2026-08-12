@@ -15,6 +15,18 @@ npx expo install <package>      # Use instead of npm install for Expo packages (
 npm test                        # Jest — 33 suites / 421 tests of pure logic in __tests__/
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
+cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
+```
+
+⚠️ **The two Vercel projects behave differently, and it will bite you.**
+`gohustle` (the **web** app) has git integration — every push to `master` ships it
+within a minute. `gohustlr-admin` has **no** git integration: pushing does nothing, and
+the console keeps serving whatever was last deployed by hand. Verified 2026-08-06 —
+four consecutive pushes each triggered a web deploy and none touched admin, which was
+7 days stale at the time. After any `admin/` change:
+
+```bash
+cd admin && npx vercel --prod
 ```
 
 The app runs in the **custom GoHustlr dev client, not Expo Go** — `expo-dev-client` is
