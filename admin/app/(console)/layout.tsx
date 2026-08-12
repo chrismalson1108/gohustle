@@ -26,6 +26,7 @@ export default async function ConsoleLayout({
             <Link href="/jobs" className="hover:text-[var(--brand)]">Jobs</Link>
             <Link href="/categories" className="hover:text-[var(--brand)]">Categories</Link>
             <Link href="/support" className="hover:text-[var(--brand)]">Support</Link>
+            <Link href="/controls" className="hover:text-[var(--brand)]">Controls</Link>
             <Link href="/errors" className="hover:text-[var(--brand)]">Errors</Link>
             <Link href="/access" className="hover:text-[var(--brand)]">Access</Link>
             <Link href="/flags" className="hover:text-[var(--brand)]">Flags</Link>
