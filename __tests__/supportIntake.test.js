@@ -33,10 +33,34 @@ describe('mobile support intake reaches the ticket queue', () => {
     expect(src).not.toMatch(/mailto:/);
   });
 
-  test.each(SCREENS)('%s opens the in-app support sheet', (screen) => {
+  // The mechanism moved: SupportSheet was a SECOND support UI, and it diverged the
+  // moment the gig/payment picker was added to the screen and not the sheet — so
+  // choosing "Payments & payouts" from Settings offered nothing to attach. There is now
+  // one implementation, and these screens navigate to it.
+  test.each(SCREENS)('%s opens the shared Support screen', (screen) => {
     const src = read(`src/screens/${screen}.js`);
-    expect(src).toContain('SupportSheet');
-    expect(src).toMatch(/setSupportOpen\(true\)/);
+    // SettingsScreen routes through its local `go(route, params)` helper, which is
+    // `navigation.navigate` plus a haptic — so accept either spelling rather than
+    // forcing one screen to write navigation differently to satisfy a test.
+    expect(src).toMatch(/(?:navigate|go)\(\s*'Support'/);
+    // The deleted sheet must not come back as a parallel path.
+    expect(src).not.toContain('SupportSheet');
+  });
+
+  test('the Support route is registered everywhere those screens live', () => {
+    // A navigate() to an unregistered route is a dead button that looks correct in
+    // review and in a bundle. Settings, Profile and Payout Setup are all in
+    // ProfileStack; the pinned row in Messages is in MessagesStack. Both need it, and
+    // for a while only MessagesStack had it.
+    const app = read('App.js');
+    const stacks = app.split(/function \w+Stack\(\)/).slice(1);
+    const withSupport = stacks.filter((s) => /name="Support"/.test(s)).length;
+    expect(withSupport).toBeGreaterThanOrEqual(2);
+  });
+
+  test('there is exactly one support UI', () => {
+    // Two implementations is what caused the picker to be missing from Settings.
+    expect(fs.existsSync(path.join(ROOT, 'src/components/SupportSheet.js'))).toBe(false);
   });
 
   test('the support lib posts to the support-submit edge function', () => {
