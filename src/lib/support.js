@@ -134,6 +134,10 @@ export async function fetchTicketMessages(ticketId) {
  * Reply on an existing ticket. `author` is pinned to 'user' server-side by
  * guard_support_message_write — a client can never post as staff, which is the whole
  * trust boundary: a message rendered with a GoHustlr badge must have come from GoHustlr.
+ *
+ * A reply to a CLOSED ticket is accepted and REOPENS it (20260806380000). The insert
+ * policy carries no status condition — an earlier comment here claimed it refused
+ * closed tickets, which was true only before that migration.
  */
 export async function replyToTicket(ticketId, { body, images = [] } = {}) {
   const text = String(body ?? '').trim();
@@ -143,14 +147,10 @@ export async function replyToTicket(ticketId, { body, images = [] } = {}) {
     .from('support_ticket_messages')
     .insert({ ticket_id: ticketId, body: text || null, images });
   if (error) {
-    // The RLS insert policy refuses a closed ticket, which is a real state the user
-    // can hit by replying to something an agent just resolved — say so plainly.
-    throw new SupportError(
-      /closed|policy/i.test(error.message)
-        ? 'This conversation was closed. Start a new one and we’ll pick it up.'
-        : 'Could not send your message. Please try again.',
-      'send_failed',
-    );
+    // No longer special-cases "closed": that branch told the user to start a new
+    // conversation, which stopped being true — and became actively wrong advice —
+    // when a reply started reopening the thread with its history intact.
+    throw new SupportError('Could not send your message. Please try again.', 'send_failed');
   }
 }
 
@@ -194,4 +194,39 @@ export function ticketHasUnread(t) {
   if (!t?.last_message_at) return false;
   if (!t.user_read_at) return true;
   return Date.parse(t.last_message_at) > Date.parse(t.user_read_at);
+}
+
+/**
+ * Which conversation to show.
+ *
+ * Threads are per topic — forced by the schema, not chosen for taste: `priority` and
+ * `booking_id` both live on the ticket, and safety is urgent by definition, so one
+ * lifelong thread could not carry a routine question and a safety report without
+ * mis-routing one of them.
+ *
+ * UNREAD WINS over status. Once support can write first, a status-only rule breaks:
+ * an agent adding a note to a resolved thread deliberately leaves it 'closed' (so it
+ * does not bounce back into their queue), and we would then push "support replied"
+ * and open a different thread.
+ */
+export function pickActiveTicket(tickets = []) {
+  return (
+    tickets.find(ticketHasUnread)
+    ?? tickets.find(t => t.status !== 'closed')
+    ?? tickets[0]
+    ?? null
+  );
+}
+
+/**
+ * Split the other threads into what still wants the user's attention and what is
+ * reference. Anything unread is LIVE whatever its status — burying a message we just
+ * sent a push about behind an archive toggle is how it goes unanswered.
+ */
+export function groupTickets(tickets = [], activeId = null) {
+  const others = tickets.filter(t => t.id !== activeId);
+  return {
+    live: others.filter(t => ticketHasUnread(t) || (t.status !== 'closed' && !t.archived_at)),
+    archived: others.filter(t => !ticketHasUnread(t) && (t.status === 'closed' || t.archived_at)),
+  };
 }

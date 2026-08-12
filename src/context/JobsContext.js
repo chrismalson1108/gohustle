@@ -7,6 +7,7 @@ import { fetchBlockedIds, blockUserDb, logModerationBlock } from '../lib/moderat
 import { findProhibited } from '../lib/contentFilter';
 import { fetchSavedJobIds, addSavedJob, removeSavedJob } from '../lib/savedJobs';
 import { fetchLastMessages, fetchConversationState, isUnread } from '../lib/messages';
+import { fetchMyTickets, ticketHasUnread } from '../lib/support';
 import { track, captureError } from '../lib/analytics';
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
@@ -198,9 +199,20 @@ export function JobsProvider({ children }) {
       const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])]
         .filter(id => !blockedIds.has(otherOf[id]));
       if (!ids.length) { setUnreadMessages(0); return; }
-      const [last, st] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
+      const [last, st, tickets] = await Promise.all([
+        fetchLastMessages(ids),
+        fetchConversationState(user.id, ids),
+        // Support is a conversation in this inbox, so it belongs in this badge.
+        // Without it, a thread SUPPORT started — a flag, a dispute, a payout problem —
+        // pushed once and then showed no count anywhere, which is the one case where
+        // the user never went looking for the conversation in the first place.
+        fetchMyTickets().catch(() => []),
+      ]);
       let n = 0;
       ids.forEach(id => { const s = st[id]; if (!s?.archived && isUnread(last[id], s, user.id)) n++; });
+      // Counted as ONE row, matching how the Messages hub pins it — a per-thread count
+      // here would disagree with the single row the user actually sees.
+      if ((tickets ?? []).some(ticketHasUnread)) n++;
       setUnreadMessages(n);
     } catch (_) {}
   }, [user?.id, bookingIdsKey, posterBookingIdsKey, blockedIds]);

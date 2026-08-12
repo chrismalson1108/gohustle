@@ -7,6 +7,7 @@ import { STRIPE_DASHBOARD_BASE } from "@/lib/config";
 import ActionsPanel from "./ActionsPanel";
 import NoteForm from "./NoteForm";
 import NotifyForm from "./NotifyForm";
+import OpenThreadForm from "../../support/OpenThreadForm";
 
 export const metadata = { title: "User detail" };
 
@@ -271,8 +272,17 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         />
       </Section>
 
+      {/* A CONVERSATION, not another alert — and above the one-way notice on purpose,
+          because for "we got a report about you" the reply is the point. Support tier
+          and up: this reaches an existing user in-app, which is strictly narrower than
+          the one-way notice below (any user, any wording, straight to a lock screen)
+          and than the file-a-ticket-then-reply workaround it replaces. */}
+      <Section title="Message this user">
+        <OpenThreadForm userId={profile.id} />
+      </Section>
+
       {ctx.role === "admin" && (
-        <Section title="Notify user" right={
+        <Section title="Notify user (one-way alert)" right={
           <Link href={`/users/${profile.id}/export`} prefetch={false} className="text-xs text-[var(--brand)] hover:underline">
             Export data (GDPR) ↓
           </Link>

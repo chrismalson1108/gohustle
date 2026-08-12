@@ -164,6 +164,215 @@ export async function setTicketStatus(formData: FormData): Promise<ActionResult>
   }
 }
 
+// ── Reaching out first ───────────────────────────────────────────────────────
+// Until now the console could only REPLY to a thread the user started, plus fire a
+// one-way push via users/[id] notifyUser. That push is a dead end by construction:
+// it warns someone about a flag and gives them no way to answer it. For "we received
+// a report about this gig" that is the wrong shape — the user usually has the context
+// that resolves it, and refusing to hear it is how a wrong ban happens.
+//
+// ── WHY SUPPORT TIER, NOT trust/admin ───────────────────────────────────────
+//
+// My first instinct was trust (moderation's tier) or admin (where notifyUser sits,
+// because it writes caller-authored text to a lock screen). Both are wrong here.
+//
+// notifyUser is gated at admin because it reaches ANY user with ANY wording. But
+// support-reply's own header documents that a support-tier insider can ALREADY reach
+// an arbitrary recipient in two steps: file a ticket naming the victim, then reply to
+// it. So this capability is not new to support — and what lands here is strictly
+// NARROWER than that workaround, because it targets an existing user_id rather than
+// an arbitrary email address, and it cannot put GoHustlr branding in front of a
+// stranger's inbox.
+//
+// It is also strictly better for traceability. The two-step workaround produces a row
+// that LOOKS like the victim wrote in; this produces opened_by='agent' plus a
+// support.open_thread audit entry naming the agent. Gating it above support would not
+// close the hole, it would just keep the abuse in its less visible form — while
+// blocking finance from answering a payout question, since trust and finance are peers
+// and requireAdmin("trust") excludes finance.
+//
+// What actually bounds abuse is the rate limit below and the audit trail, not the tier.
+const AGENT_THREAD_CAP_PER_HOUR = 20;
+const CATEGORIES = ["payment", "booking", "safety", "account", "other"];
+
+export async function openThreadWithUser(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  const category = String(formData.get("category") ?? "other");
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const bookingId = String(formData.get("bookingId") ?? "").trim() || null;
+  const priority = String(formData.get("priority") ?? "normal");
+
+  if (!userId || !subject || !body) return { ok: false, message: "Subject and message are required." };
+  if (!CATEGORIES.includes(category)) return { ok: false, message: "Unknown category." };
+  if (!["low", "normal", "high", "urgent"].includes(priority)) return { ok: false, message: "Bad priority." };
+
+  let ctx;
+  try {
+    ctx = await ctxOrFail();
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    throw e;
+  }
+
+  try {
+    // The recipient must be a real account. Opening a thread against a stray uuid
+    // would create a ticket nobody can ever read or answer.
+    const { data: target } = await ctx.service
+      .from("profiles").select("id, name").eq("id", userId).maybeSingle();
+    if (!target) return { ok: false, message: "No such user." };
+
+    // Cold contact is the console's strongest impersonation primitive: a message that
+    // renders to the recipient with the GoHustlr badge. Pointing it at yourself
+    // manufactures evidence; pointing it at a colleague plants a fabricated "support
+    // said X" on their file. Same rule the destructive user actions already apply.
+    if (userId === ctx.user.id) {
+      return { ok: false, message: "You can't open a support thread with yourself." };
+    }
+    const { data: peer, error: peerErr } = await ctx.service
+      .from("admin_users").select("role").eq("user_id", userId).maybeSingle();
+    // FAIL CLOSED: not knowing whether the target is staff is not a reason to proceed.
+    if (peerErr) return { ok: false, message: `Couldn't verify the recipient (${peerErr.message}). Refusing to send.` };
+    if (peer) return { ok: false, message: "That account is a team member — use internal channels." };
+
+    // RATE LIMIT — and it has to be countable from something the counted party
+    // cannot edit. Counting agent-opened TICKETS keyed on assigned_to was worthless:
+    // assigned_to is cleared by this same tier with the Release button, so twenty
+    // threads then twenty releases resets the counter. The whole tier argument above
+    // rests on this cap, so it reads from admin_audit_log, which is append-only —
+    // service_role holds INSERT/SELECT and no UPDATE or DELETE.
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    const { count } = await ctx.service
+      .from("admin_audit_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "support.open_thread")
+      .eq("admin_id", ctx.user.id)
+      .gte("created_at", hourAgo);
+    if ((count ?? 0) >= AGENT_THREAD_CAP_PER_HOUR) {
+      return { ok: false, message: `Rate limit: ${AGENT_THREAD_CAP_PER_HOUR} new threads per hour.` };
+    }
+
+    // A gig attached to the thread must be one THIS user is party to. Otherwise an
+    // agent could staple a stranger's booking to the conversation, and every downstream
+    // surface that renders "about this gig" would be quietly asserting something false.
+    if (bookingId) {
+      const { data: b } = await ctx.service
+        .from("bookings")
+        .select("id, earner_id, job:jobs!bookings_job_id_fkey(poster_id)")
+        .eq("id", bookingId)
+        .maybeSingle();
+      const poster = (b as { job?: { poster_id?: string } } | null)?.job?.poster_id;
+      if (!b || (b.earner_id !== userId && poster !== userId)) {
+        return { ok: false, message: "That gig doesn't belong to this user." };
+      }
+    }
+
+    // DON'T FRAGMENT. If there is already a live thread on the same topic and the same
+    // gig, this belongs in it — a second thread about one problem splits the history
+    // and leaves the user guessing which one to answer.
+    // Reuse avoids fragmenting a topic across two threads — but ONLY into a thread we
+    // opened ourselves, and never for safety.
+    //
+    // Categories are coarse, and merging a cold "we received a report about your
+    // conduct" into the user's OWN open safety report would file our accusation under
+    // their subject line, in the thread where they reported being harmed. Provenance
+    // is the entire message there. Same gig as well as same topic: a thread about gig
+    // A must not absorb a message about gig B just because both are 'booking'.
+    let reuse: { id: number } | null = null;
+    if (category !== "safety") {
+      let reuseQ = ctx.service
+        .from("support_tickets")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("category", category)
+        .eq("opened_by", "agent")
+        .neq("status", "closed")
+        .limit(1);
+      reuseQ = bookingId ? reuseQ.eq("booking_id", bookingId) : reuseQ.is("booking_id", null);
+      reuse = (await reuseQ).data?.[0] ?? null;
+    }
+    let ticketId: number | null = reuse?.id ?? null;
+
+    const { data: authUser } = await ctx.service.auth.admin.getUserById(userId);
+    const email = authUser?.user?.email ?? "";
+
+    if (!ticketId) {
+      const { data: created, error: tErr } = await ctx.service
+        .from("support_tickets")
+        .insert({
+          user_id: userId,
+          email,
+          name: target.name ?? null,
+          subject,
+          category,
+          priority,
+          status: "open",
+          // The provenance that makes this honest on every surface: the user did not
+          // write in, WE started this. The guard pins this to 'user' for anyone who is
+          // not service_role, so a client can never forge it.
+          opened_by: "agent",
+          assigned_to: ctx.user.id,
+          last_message_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (tErr || !created) throw new Error(tErr?.message ?? "Could not open the thread.");
+      ticketId = created.id;
+    }
+
+    const { error: mErr } = await ctx.service
+      .from("support_ticket_messages")
+      .insert({ ticket_id: ticketId, author: "admin", admin_id: ctx.user.id, body });
+    if (mErr) throw new Error(mErr.message);
+
+    // COLD CONTACT DOES NOT EMAIL. Branded mail carrying agent-chosen text to someone
+    // who never wrote in is the exact capability notifyUser reserves for full admin,
+    // and it is the leg that reaches outside the app where we control nothing about
+    // how it is read. In-app plus the fixed-wording push is enough to reach a real
+    // user; once they have replied, the thread is a normal conversation and
+    // replyTicket emails as usual.
+    const coldContact = !reuse;
+    const [emailRes, pushRes] = await Promise.all([
+      email && !coldContact
+        ? callEdge("support-reply", { ticketId, subject: `${subject} (#${ticketId})`, body }).catch(() => null)
+        : Promise.resolve(null),
+      callEdge("send-push", {
+        supportTicketId: ticketId,
+        data: { type: "system", tab: "MessagesTab" },
+      }).catch(() => null),
+    ]);
+
+    // HTTP 200 is not delivery. send-push returns { sent: 0 } when the user has no
+    // registered device, and for a thread WE started the push is the only channel —
+    // telling an agent a safety notice landed when nothing left the building is worse
+    // than telling them it failed.
+    let pushedCount: number | null = null;
+    if (pushRes?.ok) {
+      const d = await pushRes.json().catch(() => null);
+      pushedCount = typeof d?.sent === "number" ? d.sent : null;
+    }
+    const reallyPushed = (pushedCount ?? 0) > 0;
+
+    await audit(ctx, "support.open_thread", "ticket", String(ticketId), {
+      user_id: userId, category, priority, booking_id: bookingId,
+      reused_existing: Boolean(reuse), cold_contact: coldContact,
+      emailed: emailRes?.ok ?? false, push_devices: pushedCount, body_chars: body.length,
+    });
+    revalidatePath("/support");
+    revalidatePath(`/support/${ticketId}`);
+
+    const where = reuse
+      ? `Added to their existing ${category} conversation (#${ticketId}).`
+      : `Thread opened (#${ticketId}).`;
+    const reach = reallyPushed
+      ? " They were notified and can reply from the app."
+      : " NOTE: no push reached them — no registered device. It's waiting in their app, but assume they haven't seen it.";
+    return { ok: true, message: where + reach };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // ── Who is on it ─────────────────────────────────────────────────────────────
 // Two agents answering the same person, or a ticket everyone assumed someone else
 // had, are the two failure modes of a shared queue. `assigned_to` has existed since

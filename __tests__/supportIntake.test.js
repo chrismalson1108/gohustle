@@ -90,3 +90,95 @@ describe('mobile support intake reaches the ticket queue', () => {
     expect(lib).not.toMatch(/supabase\.auth\.getUser\(\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Which support conversation the user is shown.
+//
+// This became load-bearing the moment support could START a thread (a flag, a
+// dispute, a payout). Before that, "the newest non-closed one" was always right
+// because the user had opened every thread themselves.
+// ─────────────────────────────────────────────────────────────────────────────
+jest.mock('../src/lib/supabase', () => ({ supabase: {} }));
+const { pickActiveTicket, groupTickets, ticketHasUnread } = require('../src/lib/support');
+
+const T = (o = {}) => ({
+  id: o.id ?? 1,
+  status: o.status ?? 'open',
+  archived_at: o.archived_at ?? null,
+  last_message_at: o.last_message_at ?? '2026-08-12T10:00:00Z',
+  user_read_at: o.user_read_at ?? '2026-08-12T10:00:00Z',
+  ...o,
+});
+const unread = (o = {}) => T({ ...o, user_read_at: null });
+
+describe('pickActiveTicket', () => {
+  it('opens the thread with something new in it, even when another is newer', () => {
+    // The agent-opened case: we push "support replied", so the thread we push about
+    // must be the one that opens. Anything else is a dead-end notification.
+    const chosen = pickActiveTicket([T({ id: 1 }), unread({ id: 2 })]);
+    expect(chosen.id).toBe(2);
+  });
+
+  it('opens an unread CLOSED thread over a read open one', () => {
+    // An agent adding a note to a resolved ticket deliberately leaves it closed so it
+    // does not re-enter their queue. Status alone would then open the wrong thread.
+    const chosen = pickActiveTicket([T({ id: 1, status: 'open' }), unread({ id: 2, status: 'closed' })]);
+    expect(chosen.id).toBe(2);
+  });
+
+  it('falls back to the live conversation when nothing is unread', () => {
+    expect(pickActiveTicket([T({ id: 1, status: 'closed' }), T({ id: 2, status: 'open' })]).id).toBe(2);
+  });
+
+  it('still shows history rather than nothing when everything is closed', () => {
+    expect(pickActiveTicket([T({ id: 9, status: 'closed' })]).id).toBe(9);
+  });
+
+  it('returns null for a user who has never contacted support', () => {
+    expect(pickActiveTicket([])).toBeNull();
+  });
+});
+
+describe('groupTickets', () => {
+  it('never lists the thread already on screen', () => {
+    const g = groupTickets([T({ id: 1 }), T({ id: 2 })], 1);
+    expect(g.live.concat(g.archived).map(t => t.id)).toEqual([2]);
+  });
+
+  it('keeps an unread thread out of the collapsed archive', () => {
+    // The whole point: a message we just sent a push about must not be hidden behind
+    // a toggle because its status happens to be closed or the user archived it.
+    const g = groupTickets([unread({ id: 2, status: 'closed', archived_at: '2026-08-01T00:00:00Z' })], 1);
+    expect(g.live.map(t => t.id)).toEqual([2]);
+    expect(g.archived).toHaveLength(0);
+  });
+
+  it('files a read, resolved thread as archive', () => {
+    const g = groupTickets([T({ id: 2, status: 'closed' })], 1);
+    expect(g.archived.map(t => t.id)).toEqual([2]);
+    expect(g.live).toHaveLength(0);
+  });
+
+  it('treats a user-archived but still-open thread as archive', () => {
+    // Archiving is the user's "put this away"; it is theirs to make until we say
+    // something new.
+    const g = groupTickets([T({ id: 2, status: 'open', archived_at: '2026-08-01T00:00:00Z' })], 1);
+    expect(g.archived.map(t => t.id)).toEqual([2]);
+  });
+
+  it('puts every thread in exactly one group', () => {
+    const all = [T({ id: 2 }), unread({ id: 3, status: 'closed' }), T({ id: 4, status: 'closed' })];
+    const g = groupTickets(all, 1);
+    expect(g.live.length + g.archived.length).toBe(3);
+    expect(g.live.filter(t => g.archived.includes(t))).toHaveLength(0);
+  });
+});
+
+describe('ticketHasUnread', () => {
+  it('ignores your own reply arriving', () => {
+    expect(ticketHasUnread(T({ last_message_at: '2026-08-12T10:00:00Z', user_read_at: '2026-08-12T10:00:00Z' }))).toBe(false);
+  });
+  it('flags a thread the user has never opened', () => {
+    expect(ticketHasUnread(unread())).toBe(true);
+  });
+});

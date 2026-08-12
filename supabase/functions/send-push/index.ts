@@ -167,6 +167,16 @@ Deno.serve(async (req: Request) => {
     // and never names the block — surfacing a distinct error would turn this into an
     // oracle that lets a blocked user confirm they were blocked, which is exactly what
     // the silent-block design in 20260710030000 avoids.
+    //
+    // NOT APPLIED TO SUPPORT OR ADMIN NOTICES. A block is a user-to-user control and
+    // the ticket (or the moderation action) IS the relationship — the recipient wrote
+    // in, or is being told about their own account. Running it here would let a stale
+    // block against whoever happens to be behind a staff account silently switch off
+    // every support push to that person, safety notices included, while the console
+    // reported success. Users who want less support contact get that by not writing in.
+    if (isSupportReply || isAdminNotice) {
+      // fall through to delivery
+    } else {
     const { data: blockRows, error: blockErr } = await supabase
       .from('blocks')
       .select('blocker_id')
@@ -180,6 +190,7 @@ Deno.serve(async (req: Request) => {
       return json({ sent: 0 });
     }
     if (blockRows && blockRows.length > 0) return json({ sent: 0 });
+    }
 
     // Anti-spoof: only allow notifying someone you share a booking with, so this
     // endpoint can't be used to plant arbitrary alerts in a stranger's inbox. We
