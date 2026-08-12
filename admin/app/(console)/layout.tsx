@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { requireAdminPage } from "@/lib/guard";
 import { signOutAction } from "../auth-actions";
+import Nav from "./Nav";
 
 // Shell guard — every page inside re-checks with requireAdminPage itself
 // (defense in depth); this layout gate is for the nav chrome.
+//
+// Layout is a thin top bar (identity + sign out) over a grouped sidebar. The nav used
+// to be 15 links in a single row, which had visibly run out of room — it was crowding
+// the sign-out control, and every destination carried equal weight, so a routine list
+// page looked exactly as important as the audit log. See Nav.tsx for the grouping.
 export default async function ConsoleLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -11,46 +17,34 @@ export default async function ConsoleLayout({
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-[var(--line)] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-5 px-6 py-3">
+      <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-white">
+        <div className="flex items-center gap-4 px-4 py-2.5 md:px-6">
           <Link href="/" className="text-sm font-bold text-[var(--brand)]">
             GoHustlr Admin
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link href="/" className="hover:text-[var(--brand)]">Dashboard</Link>
-            <Link href="/users" className="hover:text-[var(--brand)]">Users</Link>
-            <Link href="/moderation" className="hover:text-[var(--brand)]">Moderation</Link>
-            <Link href="/bookings" className="hover:text-[var(--brand)]">Bookings</Link>
-            <Link href="/payments" className="hover:text-[var(--brand)]">Payments</Link>
-            <Link href="/disputes" className="hover:text-[var(--brand)]">Disputes</Link>
-            <Link href="/jobs" className="hover:text-[var(--brand)]">Jobs</Link>
-            <Link href="/categories" className="hover:text-[var(--brand)]">Categories</Link>
-            <Link href="/support" className="hover:text-[var(--brand)]">Support</Link>
-            <Link href="/controls" className="hover:text-[var(--brand)]">Controls</Link>
-            <Link href="/errors" className="hover:text-[var(--brand)]">Errors</Link>
-            <Link href="/access" className="hover:text-[var(--brand)]">Access</Link>
-            <Link href="/flags" className="hover:text-[var(--brand)]">Flags</Link>
-            {ctx.role === "admin" && (
-              <>
-                <Link href="/team" className="hover:text-[var(--brand)]">Team</Link>
-                <Link href="/audit" className="hover:text-[var(--brand)]">Audit</Link>
-              </>
-            )}
-          </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
             <span className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
               {ctx.role}
             </span>
-            <span className="text-[var(--muted)]">{ctx.user.email}</span>
+            <span className="hidden text-[var(--muted)] sm:inline">{ctx.user.email}</span>
             <form action={signOutAction}>
-              <button type="submit" className="text-[var(--muted)] underline hover:text-[var(--ink)]">
+              <button
+                type="submit"
+                className="whitespace-nowrap text-[var(--muted)] underline hover:text-[var(--ink)]"
+              >
                 Sign out
               </button>
             </form>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+
+      <div className="md:flex">
+        <Nav role={ctx.role} />
+        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
+          <div className="mx-auto max-w-6xl">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }
