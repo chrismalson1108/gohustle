@@ -54,7 +54,7 @@ Deno.serve(async (req: Request) => {
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
       .select(`
-        id, job_id, earner_id, counter_offer, status,
+        id, job_id, earner_id, counter_offer, status, amount_cents_quoted,
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, poster_id),
         earner:profiles!bookings_earner_id_fkey(id, name)
       `)
@@ -108,10 +108,42 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'EARNER_NO_PAYOUT', message: "The earner hasn't set up their payout account yet." }, 400);
     }
 
-    // Amount — use counter_offer if set, else listed pay; multiply for hourly
+    // Amount — use counter_offer if set, else listed pay; multiply for hourly.
+    // This is the LIVE recomputation. It is still needed for the MIN_JOB_PAY rate
+    // check below and as the fallback for bookings created before 20260806000000,
+    // but it is NOT what gets charged when a pin exists — see the next block.
     const rate = booking.counter_offer ? Number(booking.counter_offer) : Number(booking.job.pay);
     const hours = booking.job.pay_type === 'hourly' ? Number(booking.job.estimated_hours) : 1;
-    const amountCents = Math.round(rate * hours * 100);
+    const liveAmountCents = Math.round(rate * hours * 100);
+
+    // AUTHORIZE THE AGREED AMOUNT, NOT THE CURRENT ONE.
+    //
+    // bookings.amount_cents_quoted is stamped by trg_z_pin_booking_amount at INSERT
+    // (20260806000000). Charging the live recomputation instead let a poster re-price
+    // an application after the fact: 'pending' is absent from guard_jobs_write's
+    // has_active list, so while a booking is pending the poster may still edit
+    // jobs.pay — drop a $200 gig to $10, accept, and the earner is bound to terms
+    // they never agreed to and are never re-asked about.
+    //
+    // Null pin = a booking that predates the migration; fall back so in-flight work
+    // keeps settling exactly as before.
+    const pinnedCents = Number.isFinite(Number(booking.amount_cents_quoted))
+      ? Number(booking.amount_cents_quoted)
+      : null;
+    const amountCents = pinnedCents ?? liveAmountCents;
+
+    // A divergence means the job was edited between application and accept. The pin
+    // wins (that is the point), but it is worth seeing: a large or frequent gap is
+    // either a poster probing this path or a product bug in the amendment flow.
+    // Non-fatal — never block a legitimate accept to file a log line.
+    if (pinnedCents !== null && pinnedCents !== liveAmountCents) {
+      await logServerError(
+        'stripe-create-payment-intent',
+        `booking amount diverged from pin: agreed ${pinnedCents}c, job now implies ${liveAmountCents}c — charging the agreed amount`,
+        { booking_id: bookingId, job_id: booking.job_id, pinned_cents: pinnedCents, live_cents: liveAmountCents },
+        { userId: user.id },
+      ).catch(() => {});
+    }
     // Sanity-bound the amount — counter_offer is earner-controlled, so reject a
     // non-positive or absurd value (cap $10,000) before it reaches Stripe.
     if (!Number.isFinite(amountCents) || amountCents < 50 || amountCents > 1_000_000) {
@@ -216,8 +248,17 @@ Deno.serve(async (req: Request) => {
       },
     }, { idempotencyKey: `pi_create_${bookingId}_${amountCents}` });
 
-    // Record in payments table (upsert in case of retry)
-    await supabase.from('payments').upsert({
+    // Record in payments table (upsert in case of retry).
+    //
+    // The result is CHECKED. It used to be discarded, which was latent only because
+    // the payload happened to be stable: if this write ever fails, Stripe is holding
+    // a real authorization on the poster's card and no payments row exists to settle
+    // it. stripe-capture-payment and earner-claim-payment both look the booking up by
+    // that row, so both 404; the hold then lapses on Stripe's ~7-day timer and the
+    // earner has worked for nothing. Nothing logged it. Adding any column to this
+    // payload — the pricing work adds fee_bps — makes a deploy-order slip do exactly
+    // that, so the hold is now cancelled and the failure surfaced instead.
+    const { error: payErr } = await supabase.from('payments').upsert({
       booking_id: bookingId,
       payment_intent_id: pi.id,
       amount_cents: amountCents,
@@ -225,6 +266,17 @@ Deno.serve(async (req: Request) => {
       earner_amount_cents: earnerAmountCents,
       status: 'authorized',
     }, { onConflict: 'booking_id' });
+
+    if (payErr) {
+      await stripe.paymentIntents.cancel(pi.id).catch(() => {});
+      await logServerError(
+        'stripe-create-payment-intent',
+        `payments row write failed after authorizing — hold cancelled: ${payErr.message}`,
+        { booking_id: bookingId, payment_intent_id: pi.id, amount_cents: amountCents },
+        { fatal: true, userId: user.id },
+      );
+      return json({ error: 'Something went wrong placing the hold. Please try again.' }, 500);
+    }
 
     // The poster's saved card (if any) so the web client can offer one-tap accept
     // with the card on file instead of re-collecting it. (Mobile uses the ephemeral
