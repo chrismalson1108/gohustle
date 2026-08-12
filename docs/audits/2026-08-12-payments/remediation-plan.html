@@ -1,0 +1,815 @@
+<title>GoHustlr Payments — Audit Findings & Remediation Plan</title>
+<style>
+  :root {
+    --ground:      #F7F4EC;
+    --surface:     #FFFFFF;
+    --surface-2:   #FBF9F4;
+    --ink:         #363636;
+    --ink-soft:    #6B6482;
+    --ink-faint:   #938CA8;
+    --rule:        #E2DCD0;
+    --rule-strong: #CFC7B8;
+    --accent:      #5038FF;
+    --accent-deep: #2E1BC7;
+    --accent-wash: #EAE6FF;
+    --critical:    #C22A1C;
+    --critical-bg: #FBE7E4;
+    --high:        #EA4637;
+    --high-bg:     #FDEDEA;
+    --medium:      #A9670A;
+    --medium-bg:   #FBF0DC;
+    --low:         #6B6482;
+    --low-bg:      #EEEBF3;
+    --good:        #15803D;
+    --good-bg:     #E4F2E8;
+
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #14121C;
+      --surface:     #1D1A28;
+      --surface-2:   #232032;
+      --ink:         #EDEAF5;
+      --ink-soft:    #A8A1BE;
+      --ink-faint:   #7C7594;
+      --rule:        #322D42;
+      --rule-strong: #453E5B;
+      --accent:      #9E8DFF;
+      --accent-deep: #BFB2FF;
+      --accent-wash: #2A2340;
+      --critical:    #FF7A6B;
+      --critical-bg: #3A1F1C;
+      --high:        #FF8B7A;
+      --high-bg:     #35201C;
+      --medium:      #E3B25C;
+      --medium-bg:   #332815;
+      --low:         #A8A1BE;
+      --low-bg:      #262234;
+      --good:        #5FD08A;
+      --good-bg:     #17301F;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #14121C;
+    --surface:     #1D1A28;
+    --surface-2:   #232032;
+    --ink:         #EDEAF5;
+    --ink-soft:    #A8A1BE;
+    --ink-faint:   #7C7594;
+    --rule:        #322D42;
+    --rule-strong: #453E5B;
+    --accent:      #9E8DFF;
+    --accent-deep: #BFB2FF;
+    --accent-wash: #2A2340;
+    --critical:    #FF7A6B;
+    --critical-bg: #3A1F1C;
+    --high:        #FF8B7A;
+    --high-bg:     #35201C;
+    --medium:      #E3B25C;
+    --medium-bg:   #332815;
+    --low:         #A8A1BE;
+    --low-bg:      #262234;
+    --good:        #5FD08A;
+    --good-bg:     #17301F;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 940px; margin: 0 auto; }
+
+  /* ---- masthead ---- */
+  .masthead {
+    padding: 56px 0 28px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 0;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.08;
+    letter-spacing: -0.022em;
+    font-weight: 760;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 17px;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 62ch;
+  }
+
+  /* ---- stat band ---- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 0;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 44px;
+  }
+  .stat {
+    padding: 22px 20px 22px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-n {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1.1;
+  }
+  .stat-l {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 5px;
+    display: block;
+    line-height: 1.35;
+  }
+  .stat.is-alarm .stat-n { color: var(--high); }
+  .stat.is-good  .stat-n { color: var(--good); }
+
+  /* ---- sections ---- */
+  section { margin-bottom: 60px; }
+  h2 {
+    font-size: 12px;
+    font-family: var(--mono);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    margin: 0 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3 {
+    font-size: 20px;
+    letter-spacing: -0.012em;
+    font-weight: 680;
+    margin: 34px 0 10px;
+    text-wrap: balance;
+  }
+  h4 {
+    font-size: 15px;
+    font-weight: 660;
+    margin: 22px 0 8px;
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; max-width: 68ch; }
+  li { margin-bottom: 7px; }
+  a { color: var(--accent); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1px 5px;
+    word-break: break-word;
+  }
+
+  .lede {
+    font-size: 17px;
+    line-height: 1.62;
+    border-left: 3px solid var(--accent);
+    padding-left: 20px;
+    margin: 0 0 26px;
+    max-width: 66ch;
+  }
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin: 0 0 22px;
+  }
+  .callout.is-alarm { border-color: var(--high); background: var(--high-bg); }
+  .callout.is-good  { border-color: var(--good); background: var(--good-bg); }
+  .callout p:last-child, .callout ul:last-child, .callout ol:last-child { margin-bottom: 0; }
+  .callout-h {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0 0 9px;
+    color: var(--ink-soft);
+  }
+  .callout.is-alarm .callout-h { color: var(--critical); }
+  .callout.is-good  .callout-h { color: var(--good); }
+
+  /* ---- cluster cards ---- */
+  .cluster {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 5px;
+    padding: 20px 22px;
+    margin-bottom: 14px;
+  }
+  .cluster-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 7px;
+  }
+  .cluster h3 { margin: 0 0 9px; font-size: 18px; }
+  .cluster p { margin-bottom: 11px; }
+  .cluster ul { margin-bottom: 0; }
+
+  /* ---- findings ---- */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--rule-strong);
+    border-radius: 5px;
+    padding: 17px 20px;
+    margin-bottom: 11px;
+  }
+  .finding.sev-high     { border-left-color: var(--high); }
+  .finding.sev-medium   { border-left-color: var(--medium); }
+  .finding.sev-low      { border-left-color: var(--low); }
+  .finding-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 8px;
+  }
+  .pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 640;
+    padding: 3px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .pill-high   { background: var(--high-bg);   color: var(--critical); }
+  .pill-medium { background: var(--medium-bg); color: var(--medium); }
+  .pill-low    { background: var(--low-bg);    color: var(--low); }
+  .pill-live   { background: var(--critical-bg); color: var(--critical); }
+  .pill-dormant{ background: var(--low-bg);    color: var(--ink-soft); }
+  .pill-conf   { background: var(--accent-wash); color: var(--accent-deep); }
+  .finding-title { font-weight: 650; font-size: 15.5px; line-height: 1.35; margin: 0 0 6px; }
+  .finding-loc {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    margin: 0 0 9px;
+    word-break: break-all;
+  }
+  .finding p { font-size: 14.5px; margin-bottom: 8px; }
+  .finding p:last-child { margin-bottom: 0; }
+
+  /* ---- phases ---- */
+  .phase {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .phase-head {
+    display: flex;
+    align-items: baseline;
+    gap: 13px;
+    padding: 15px 20px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    flex-wrap: wrap;
+  }
+  .phase-n {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 660;
+    color: var(--surface);
+    background: var(--accent);
+    padding: 3px 9px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .phase-t { font-weight: 670; font-size: 16.5px; }
+  .phase-when {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-left: auto;
+    letter-spacing: 0.03em;
+  }
+  .phase-body { padding: 18px 20px; }
+  .phase-body > p:first-child { margin-top: 0; }
+  .phase-body ol { margin-bottom: 0; }
+  .phase-body li { margin-bottom: 11px; }
+
+  .vec {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 640;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--rule-strong);
+    color: var(--ink-soft);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  .hazard {
+    border-left: 3px solid var(--high);
+    background: var(--high-bg);
+    padding: 10px 14px;
+    margin: 9px 0 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 14px;
+    max-width: none;
+  }
+  .hazard strong { color: var(--critical); }
+
+  /* ---- tables ---- */
+  .tscroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; margin-bottom: 22px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; background: var(--surface); font-size: 14px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 620;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.holds-no  { color: var(--critical); font-weight: 620; white-space: nowrap; }
+  td.holds-yes { color: var(--good); font-weight: 620; white-space: nowrap; }
+  td.holds-part{ color: var(--medium); font-weight: 620; white-space: nowrap; }
+
+  .footnote {
+    font-size: 13px;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+    margin-top: 44px;
+  }
+
+  @media (max-width: 620px) {
+    .stat { border-right: none; border-bottom: 1px solid var(--rule); padding-right: 0; }
+    .phase-when { margin-left: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Read-only adversarial audit · 12 Aug 2026</p>
+    <h1>GoHustlr payments: what the audit found, and how to fix it without breaking anything</h1>
+    <p class="standfirst">Two multi-agent audits covering every Stripe money path, the fee and incentive arithmetic, the controls engine, and the admin money authority. No production system was touched. Nothing has been fixed yet — this is the plan.</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span class="stat-n">61</span><span class="stat-l">Opus 5 agents across 22 audit dimensions</span></div>
+    <div class="stat is-alarm"><span class="stat-n">72</span><span class="stat-l">findings surviving adversarial refutation</span></div>
+    <div class="stat is-alarm"><span class="stat-n">14</span><span class="stat-l">severe, after cross-workflow dedup</span></div>
+    <div class="stat"><span class="stat-n">6</span><span class="stat-l">root causes behind nearly all of them</span></div>
+    <div class="stat is-good"><span class="stat-n">494</span><span class="stat-l">existing tests, all passing</span></div>
+  </div>
+
+  <section>
+    <h2>The verdict</h2>
+
+    <p class="lede">The core escrow path is genuinely well built. No agent found a way to create money, steal platform funds, or charge a party an amount they never agreed to on the main flow — and several tried hard. Nothing found is extractable as cash by an outside attacker. The losses are forgone margin, misreported budgets, unpaid workers, and detection you cannot trust.</p>
+
+    <p>But the money layer is <strong>not ready for the live-key cutover today</strong>. The problems cluster in the two subsystems built most recently and defended least — <strong>tips</strong> and <strong>promotions</strong> — plus a set of detectors that report green while watching nothing.</p>
+
+    <div class="callout is-alarm">
+      <p class="callout-h">The single worst thing found</p>
+      <p>A migration that meant only to re-anchor a control's clock silently deleted two predicates from <code>ctl_escrow_hold_expiring_work_done</code>, removing the entire population it exists to watch: an earner who did the work, marked it done, and is 24–48 hours from the escrow hold being voided with nothing left to capture. It is live today, it costs the full gig value per event, and every hourly sweep reports it healthy.</p>
+      <p>I verified this one by hand. The original required <code>coalesce(b.earner_done, false)</code> and matched <code>b.status in ('confirmed','completed')</code>. The live version dropped the <code>earner_done</code> predicate outright and swapped <code>'confirmed'</code> for <code>'verified'</code> — but a verified booking has already been captured, so <code>p.status = 'authorized'</code> can never hold for it. The ghosted-poster case the control was written for is now excluded twice over.</p>
+    </div>
+
+    <p>The runner-up is the <strong>tip rail</strong>. Tips carry no application fee, route 100% to the earner's connected account, and pay out daily. Their three caps are all bypassable by simple concurrency — the check is a lock-free read in one transaction and the charge happens in the next — and the over-cap money rolls back its own ledger row on the way out, so the cap never tightens. Separately, a refunded or charged-back tip is reversed <em>nowhere</em>: no ledger, no dispute row, no console path. The drift control that should catch it instead certifies the inflated balance as correct.</p>
+  </section>
+
+  <section>
+    <h2>Six root causes, not seventy-two bugs</h2>
+
+    <p>This is the part that matters for planning. The findings are not independent defects to be worked through one at a time — they are six systemic patterns, and fixing the pattern is what stops the next one.</p>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 01 · Structural</span>
+      <h3><code>create or replace</code> drift</h3>
+      <p>Money functions are redefined across many migrations and only the last definition in timestamp order is live. <code>pin_booking_amount</code> is redefined <strong>nine</strong> times. A later rewrite that silently drops a guard from an earlier one is invisible to code review, to the test suite, and to every control.</p>
+      <p>This caused the worst finding (the gutted control) and the highest-value one (<code>settle_booking_benefits</code> never receiving the <code>kind</code> filter its sibling function got). It is also exactly the class that produced the July audit's critical escrow drain. <strong>This is the one to fix structurally, first.</strong></p>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 02 · Concurrency</span>
+      <h3>Check-then-act across an I/O boundary</h3>
+      <p>A guard reads state in one transaction, then a Stripe round-trip happens, then a write lands in another. Every instance is bypassable by firing two requests in parallel.</p>
+      <ul>
+        <li>Tip caps: headroom is read, committed, <em>then</em> the card is charged.</li>
+        <li><code>accept-booking</code> vs <code>stripe-cancel-payment</code>: a confirmed booking behind a dead hold.</li>
+        <li>Two concurrent captures at different percentages race the pre-capture split write.</li>
+        <li>The promo-code rate limiter is <code>select count(*)</code> then <code>if</code>.</li>
+      </ul>
+      <p>The codebase already knows the right pattern — <code>consume_promo_grant</code> makes the increment <em>be</em> the check in a single conditional UPDATE. It just was not applied uniformly.</p>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 03 · Ledger</span>
+      <h3>Everything that reverses money is keyed on the <code>payments</code> table</h3>
+      <p>Tips live in <code>tip_ledger</code>, referral bonuses in <code>bonus_ledger</code>, credits on the booking pin. None of them has a <code>payments</code> row — so <code>recordReversal</code>, <code>reconcile-stripe</code>, and <code>admin-payment-action</code> are all structurally blind to them. There is no console path to reverse a tip at all, and an operator told to "reverse the tip" will instead refund the escrow charge and claw back the earner's job pay.</p>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 04 · Detection</span>
+      <h3>Controls that cannot fire, reporting green</h3>
+      <p>Four separate detectors are structurally incapable of firing: the gutted escrow control; <code>ctl_stripe_id_mode_mismatch</code> (gated on an <code>app_flags</code> key no migration creates, <em>and</em> with length predicates that match every real Stripe id); the admin login throttle (which has zero callers, so no lockout exists at all despite being documented); and the alert-dispatch path, where turning the flags off kills all alerting permanently with nothing watching. A control that cannot fire is worse than no control, because it certifies health.</p>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 05 · Accounting</span>
+      <h3>Budget accounting measures the wrong quantity</h3>
+      <p>Three defects each write <em>both sides</em> of the ledger consistently wrong, which is why no existing bookkeeping-vs-bookkeeping control sees them: <code>settle_booking_benefits</code> refunds every delivered poster discount back to its own campaign at capture; <code>max_benefit_cents</code> clamps what a campaign is <em>charged</em> while the discount it <em>delivers</em> stays uncapped; and promo cost is measured against the standing rate, blind to the loyalty tier. Real give-away exceeds the declared budget by 2× to 4.73× while the burn-down bar reads near zero.</p>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-tag">Cause 06 · Hygiene</span>
+      <h3>Console audit and authorization gaps</h3>
+      <p>Five console surfaces write their audit row <em>after</em> the mutation, so a committed change is reported to the operator as a failure and leaves no record. <code>/promotions</code> — the only budget-spending surface — has no MFA step-up while every comparable surface does. <code>addTeamMember</code> can strand the console with no admin.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The severe findings</h2>
+    <p>Deduplicated across both workflows. <code>settle_booking_benefits</code> was independently found by four separate dimensions, which is the strongest confidence signal in the set. Every claim below rests on the <em>last</em> definition in timestamp order, verified by grep before it was written down.</p>
+
+    <div class="finding sev-high">
+      <div class="finding-top">
+        <span class="pill pill-high">High</span>
+        <span class="pill pill-live">Live today</span>
+        <span class="pill pill-conf">Hand-verified</span>
+      </div>
+      <p class="finding-title">The unpaid-worker control was silently gutted by a refactor</p>
+      <p class="finding-loc">supabase/migrations/20260806150000_authorized_at.sql:66</p>
+      <p>Dropped <code>earner_done</code> and replaced <code>'confirmed'</code> with <code>'verified'</code>, removing the only population it watched. Full gig value per event, up to $10,000. Every sweep reports green.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top">
+        <span class="pill pill-high">High</span>
+        <span class="pill pill-live">Live today</span>
+        <span class="pill pill-conf">Hand-verified · 4 dimensions</span>
+      </div>
+      <p class="finding-title"><code>settle_booking_benefits</code> is kind-blind, so <code>budget_cents</code> stops bounding poster-discount campaigns</p>
+      <p class="finding-loc">supabase/migrations/20260806220000_benefit_lifecycle.sql:155</p>
+      <p>The settle loop selects every redemption with no <code>kind</code> filter and prices each with a fee-rate counterfactual. <code>consume_poster_discount</code> stores the booking's <em>own</em> pinned rate, so the differential is exactly zero and the entire discount is credited back to the campaign at every capture. Lifetime exposure becomes <code>max_redemptions × per-use cap</code>: $1,000 against a $500 budget at shipped defaults, $10,000 against $500 if an operator raises the redemption count while reading a burn-down bar that says $0.00.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">Tip caps are bypassable by concurrency, and the over-cap money erases its own ledger row</p>
+      <p class="finding-loc">supabase/functions/stripe-tip/index.ts:86 · supabase/migrations/20260804000000_tip_caps.sql:99</p>
+      <p>N concurrent calls at distinct amounts all read the same headroom and all charge; one ledger insert commits and the rest roll back, so the cap never tightens. Modelled: 100 calls move $19,950 while the ledger records $200. Compounding it — <code>guard_bookings_write</code> gates the captured-payment check only on <code>completed → verified</code>, so a booking reaches the tippable state, and its $200 floor, with nothing ever captured.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">A refunded or charged-back tip is reversed nowhere, and the drift control certifies the inflated balance</p>
+      <p class="finding-loc">supabase/functions/stripe-webhook/index.ts:57</p>
+      <p>Happy path, no attacker. <code>ctl_earnings_total_drift</code> adds every credited tip to <code>expected</code> while drawing clawbacks only from <code>payments.refunded_cents</code>, so a fully reversed tip makes stored and expected match exactly. The control does not merely miss it — it reports the wrong number as healthy.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">The admin login throttle has zero callers — no lockout exists</p>
+      <p class="finding-loc">admin/app/login/page.tsx:20</p>
+      <p>The documented "5 failures per account / 15 min, 20 per IP" is not wired to anything, and <code>ctl_admin_login_bruteforce</code> is therefore permanently blind.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">A redelivered <code>payment_intent.payment_failed</code> kills a live hold, and recovery then mints a second authorization</p>
+      <p class="finding-loc">supabase/functions/stripe-webhook/index.ts:165</p>
+      <p><code>'authorized'</code> is written at two moments that mean opposite things, so no precondition on that column can be correct. A redelivery landing after acceptance stamps a live hold <code>'failed'</code> and demotes the booking. Both settlement paths then return <code>HOLD_EXPIRED</code> — a code that appears in <strong>zero</strong> client files, so nothing translates or routes it.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">Refund idempotency is keyed on the running total, so an operator retry after the 20s console timeout refunds twice</p>
+      <p class="finding-loc">supabase/functions/admin-payment-action/index.ts:190</p>
+      <p>The console aborts at 20s and reports failure while the edge function completes; the operator's amount is still in the box and they click again, minting a different key and a second real refund with <code>reverse_transfer</code>. Partial refunds only — full refunds are already blocked. Invisible afterwards: Stripe and the DB agree, and the arithmetic that hides it is exact (<code>round(3000×0.9)×2 === round(6000×0.9)</code>).</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">Turning off the alert-dispatch flags kills all alerting permanently, and no control can see it</p>
+      <p class="finding-loc">supabase/migrations/20260806160000_dispatch_monitoring.sql:34</p>
+      <p>The 2026-07-10 silent death recurring with a different key. <code>ctl_alert_dispatch_failing</code> reads <code>net._http_response</code>, so it sees only <em>attempted</em> dispatches — no control reads <code>app_flags</code> to ask whether dispatch is switched on at all.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title"><code>max_benefit_cents</code> caps the charge but never the discount</p>
+      <p class="finding-loc">supabase/migrations/20260806220000_benefit_lifecycle.sql:269</p>
+      <p>The increment-is-the-check UPDATE is sound but counts the wrong quantity: the clamp limits what the campaign is charged while the delivered rate stays uncapped. Real give-away reaches 4.73× budget above ~$2,120 gigs.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top">
+        <span class="pill pill-high">High</span>
+        <span class="pill pill-dormant">Dormant</span>
+      </div>
+      <p class="finding-title">Promo cost is measured against the standing rate, blind to the loyalty tier</p>
+      <p class="finding-loc">supabase/migrations/20260806220000_benefit_lifecycle.sql:80</p>
+      <p>The campaign is charged, and a grant use burned, for benefit the tier already delivered — or for nothing at all. Dormant only because every <code>fee_tiers</code> rung is currently seeded <code>enabled = false</code>. Must be fixed <em>before</em> any rung is enabled.</p>
+    </div>
+
+    <div class="finding sev-high">
+      <div class="finding-top"><span class="pill pill-high">High</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title"><code>ctl_stripe_id_mode_mismatch</code> detects nothing, by two independent mechanisms</p>
+      <p class="finding-loc">supabase/migrations/20260806350000_controls_always_on.sql:182</p>
+      <p>Gated on an <code>app_flags</code> key that no migration creates and the console cannot create, <em>and</em> its length predicates match every real Stripe account and customer id. The control designated "the single most likely way the live cutover breaks" is structurally incapable of firing.</p>
+    </div>
+
+    <div class="finding sev-medium">
+      <div class="finding-top"><span class="pill pill-medium">Medium ×3</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">Fee credits and referral bonuses leak in three directions</p>
+      <p class="finding-loc">20260806260000_release_fee_credits.sql:51 · 20260806080000_referral_bonus.sql:133 · 20260806220000_benefit_lifecycle.sql:169</p>
+      <p>A credit is burned in full at booking but delivered only pro-rata on a partial capture; a credit spent on a booking later refunded is lost permanently (release refuses because the payment was captured); and a vested referral bonus is never clawed back — a refund or chargeback on day 8 leaves it fully payable. There is no expiry, no revoke, and no admin lever on <code>bonus_ledger</code> at all.</p>
+    </div>
+
+    <div class="finding sev-medium">
+      <div class="finding-top"><span class="pill pill-medium">Medium</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">Stolen-card cash-out has no velocity limit anywhere on the gig rail</p>
+      <p class="finding-loc">supabase/functions/stripe-webhook/index.ts:281</p>
+      <p>Destination charges with no <code>on_behalf_of</code>, no transfer reversal on dispute, daily payouts with no <code>delay_days</code>, and no per-poster or per-card velocity cap. The platform eats the full charge plus the dispute fee. This is the one rail where the Stripe processing floor — which makes ordinary self-dealing reliably unprofitable — does not help.</p>
+    </div>
+
+    <div class="finding sev-medium">
+      <div class="finding-top"><span class="pill pill-medium">Medium</span><span class="pill pill-live">Live today</span></div>
+      <p class="finding-title">A worker on a "Flexible" gig whose poster ghosts has no settlement path at all</p>
+      <p class="finding-loc">supabase/functions/earner-claim-payment/index.ts:100</p>
+      <p>The client hides the claim button, the edge function refuses with <code>NO_SCHEDULE</code>, and the console it directs them to has no capture operation. Note that <code>PostJobScreen</code> attaches a "Flexible — Contact to Schedule" slot whenever no times are picked, so this is an ordinary listing shape, not an edge case.</p>
+    </div>
+
+    <p style="font-size:14px;color:var(--ink-soft);">The remaining ~58 findings are medium and low: disclosure accuracy, control predicate errors, idempotency-key weaknesses, console hygiene. They are catalogued in the two full reports and folded into phases 4 and 5 below.</p>
+  </section>
+
+  <section>
+    <h2>Does the loss stay bounded?</h2>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Rail</th><th>What is meant to bound it</th><th>Holds?</th><th>Reality</th></tr></thead>
+        <tbody>
+          <tr><td>Self-dealing (gig rail)</td><td>Stripe processing floor + <code>earner_id ≠ poster_id</code></td><td class="holds-yes">Yes</td><td>A wash trade costs ~3.2%. A $10,000 self-dealt gig loses the pair $290.55. The best-designed guard in the money layer.</td></tr>
+          <tr><td>Fee credit (platform side)</td><td>Structural: spendable only against fee-to-floor headroom</td><td class="holds-yes">Yes</td><td>The platform never pays Stripe processing to honour a credit.</td></tr>
+          <tr><td>Referral bonus</td><td>Vest-on-outcome, one-per-pair index, budget</td><td class="holds-part">Partly</td><td>Sound in aggregate; leaks per event. A voided pair can be charged again, and voids never return budget.</td></tr>
+          <tr><td>Promo (<code>fee_override</code>)</td><td><code>budget_cents</code> + <code>max_redemptions</code></td><td class="holds-no">No</td><td>Mechanism is right, quantity is wrong. Up to 4.73× budget above ~$2,120 gigs.</td></tr>
+          <tr><td>Poster discount</td><td>Same budget + per-use headroom clamp</td><td class="holds-no">No</td><td>Settle refunds the whole discount without decrementing uses. 2× budget at defaults, 20× if uses are raised.</td></tr>
+          <tr><td>Fee credit (user side)</td><td>—</td><td class="holds-no">No</td><td>Destroyed by partial capture, by refund, by chargeback. No expiry, no revoke, no admin lever.</td></tr>
+          <tr><td>Tips</td><td><code>guard_tip_caps</code>: per-booking, per-count, $500/24h per poster</td><td class="holds-no">No</td><td>All three bypassable by concurrency; no earner-side counterpart, so receipt is unbounded across shells.</td></tr>
+          <tr><td>Loyalty tier</td><td>Nothing, by design</td><td class="holds-no">None</td><td>Dormant. The threshold is a bare booking count — a permanent 300 bps discount is farmable for about $44.50.</td></tr>
+          <tr><td>Stolen card</td><td>Nothing in this codebase</td><td class="holds-no">No</td><td>Radar unconfigured, no payout delay, no velocity caps, no chargeback-rate control.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>The remediation plan</h2>
+    <p>Ordered by dependency, not by severity. Deploy vectors: <span class="vec">MIGRATION</span> <code>supabase db push --linked</code> · <span class="vec">EDGE FN</span> <code>supabase functions deploy &lt;name&gt;</code> · <span class="vec">CONSOLE</span> <code>cd admin &amp;&amp; npx vercel --prod</code> (never auto-deploys) · <span class="vec">CLIENT</span> app release · <span class="vec">CONFIG</span> dashboard or flag only.</p>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 0</span>
+        <span class="phase-t">Make the tests and the detectors trustworthy</span>
+        <span class="phase-when">first — before any behaviour change</span>
+      </div>
+      <div class="phase-body">
+        <p>Nothing after this is verifiable until it lands: every later fix needs a working detector to confirm it, and four detectors are currently lying. This phase is monitoring and tests only — <strong>zero application behaviour changes</strong>, so it is also the lowest-risk thing to ship.</p>
+        <ol>
+          <li><strong>Add a <code>finalDefinition(fnName)</code> test helper</strong> that walks <code>supabase/migrations/</code> in filename order and returns the <em>last</em> definition of a SQL function. Route every existing SQL assertion through it. A test that reads a named migration file is testing a dead body. <span class="vec">TEST ONLY</span></li>
+          <li><strong>Add <code>controlPopulation.test.js</code></strong> — for every <code>ctl_*</code> function, assert that any load-bearing token present in <em>any</em> definition (<code>earner_done</code>, <code>'confirmed'</code>, <code>'captured'</code>, <code>for update</code>, <code>budget_cents</code>, <code>resolved_at</code>) survives into the last one. The audit ran this logic against the current tree: <strong>one violation, zero false positives across 41 other controls.</strong> <span class="vec">TEST ONLY</span></li>
+          <li><strong>Add the same drift guard for money functions</strong> — a dropped <code>raise exception</code>, clamp, <code>.eq()</code> predicate, or <code>revoke</code> between successive definitions fails the build. <span class="vec">TEST ONLY</span></li>
+          <li><strong>Restore <code>ctl_escrow_hold_expiring_work_done</code></strong>, add an anchor-independent <code>ctl_work_done_never_paid</code>, and add <code>controls.fn_body_sha</code> + <code>ctl_control_body_drift</code> so a silent rewrite pages a human. <span class="vec">MIGRATION</span></li>
+          <li><strong>Wire the admin login throttle</strong> and add <code>ctl_admin_login_not_recorded</code>. <span class="vec">MIGRATION</span> <span class="vec">CONSOLE</span></li>
+          <li><strong>Add <code>ctl_alert_not_dispatching</code></strong> plus a dispatch liveness log and a 24h expiry on the two alerting flags only. <span class="vec">MIGRATION</span> <span class="vec">CONSOLE</span></li>
+          <li><strong>Repair <code>ctl_stripe_id_mode_mismatch</code></strong> — replace the shape heuristic with a provenance check, seed the missing flag, add <code>controls.requires_flags</code> + <code>ctl_control_dependency_missing</code>. <span class="vec">MIGRATION</span></li>
+          <li><strong>Raise the <code>controls_digest</code> pg_net timeout to 120s.</strong> Do this before items 4–7 land, or the daily false HIGH competes with real findings. <span class="vec">MIGRATION</span></li>
+        </ol>
+        <p class="hazard"><strong>Hazard —</strong> item 5 is the realistic failure. <code>gohustlr-admin</code> does not auto-deploy. Pushing the migration without running <code>npx vercel --prod</code> reproduces the exact bug it fixes. The new control is deliberately written to fire on that half-deployed state.</p>
+        <p class="hazard"><strong>Hazard —</strong> re-keying <code>entity_id</code> in item 4 will auto-resolve existing findings with a misleading "no longer returned" note. Resolve them explicitly in the same migration with a truthful note; the real violations reopen under booking ids within the hour.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 1</span>
+        <span class="phase-t">Unpaid workers and dead holds</span>
+        <span class="phase-when">this week</span>
+      </div>
+      <div class="phase-body">
+        <ol>
+          <li><strong>Webhook <code>payment_failed</code> re-derivation.</strong> Drop <code>'authorized'</code> from the allow-list and re-derive truth by retrieving the PaymentIntent; fail closed when it is unretrievable; gate the booking demotion on a matched row. Ship <em>together</em> with widening the orphan-hold reconciler in <code>stripe-create-payment-intent</code> to run for any prior PI, not only <code>'authorized'</code> ones — the second half is what prevents the double authorization. <span class="vec">EDGE FN</span></li>
+          <li><strong>Surface <code>HOLD_EXPIRED</code> in the clients.</strong> It appears in zero client files today, so a worker hits a dead end with no explanation. <span class="vec">CLIENT</span></li>
+          <li><strong>CAS the accept/cancel race.</strong> In <code>accept-booking</code>, publish the booking transition first, then claim the payments row with <code>.eq('status','authorized').select('id')</code> and roll back if the claim returns nothing. In <code>stripe-cancel-payment</code>, claim before the irreversible Stripe call. Ship both endpoints in one deploy. Do <em>not</em> remove <code>'pending'</code> from <code>CANCELLABLE_STATUSES</code> — <code>declineBooking</code> depends on it and a test pins it. <span class="vec">EDGE FN</span></li>
+          <li><strong>Fix the claim time-gate</strong> — <code>coalesce(authorized_at, created_at)</code>. One line; today a recovery re-hold is claimable in full the instant it is placed. <span class="vec">EDGE FN</span></li>
+          <li><strong>Give "Flexible" gigs a settlement path</strong> — an admin capture operation, or at minimum correct the <code>NO_SCHEDULE</code> copy and the runbook so support can actually act. <span class="vec">EDGE FN</span> <span class="vec">CONSOLE</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 2</span>
+        <span class="phase-t">Incentive boundedness</span>
+        <span class="phase-when">before any campaign runs or a redeem screen ships</span>
+      </div>
+      <div class="phase-body">
+        <p>Currently protected only by the fact that <code>redeem_promo_code</code> has no client caller. The moment a redemption screen ships, all of this goes live.</p>
+        <ol>
+          <li><strong>Kind-aware <code>settle_booking_benefits</code></strong>: branch on <code>promotions.kind</code>; for a poster discount the true cost is what was <em>delivered</em>, pro-rated by the captured share; make any unrecognised kind <code>delta = 0</code> — <strong>fail closed</strong>, since today's default for anything it cannot price is a full refund of the reserve. <span class="vec">MIGRATION</span></li>
+          <li><strong>Cap the delivery, not the charge</strong> (<code>capped_promo_bps</code>) and <strong>make promo cost tier-aware</strong> by passing the pinned baseline into <code>consume_promo_grant</code>. <span class="vec">MIGRATION</span> <span class="vec">CONSOLE</span></li>
+          <li><strong>Settle fee credits at the captured amount; restore them on refund and reversal.</strong> <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span></li>
+          <li><strong>Post-vest bonus void/reverse pass</strong>, return budget on void, fix the partial-index predicate, add an audited admin <code>revokeBonus</code>. <span class="vec">MIGRATION</span> <span class="vec">CONSOLE</span></li>
+          <li><strong>Add the missing controls</strong>: <code>spent_cents ≥ sum(reserved_cents)</code>, campaign spend understated, credit delivered vs charged. <span class="vec">MIGRATION</span></li>
+        </ol>
+        <p class="hazard"><strong>Hazard — do items 1 and 2 as a single migration.</strong> Both rewrite <code>consume_promo_grant</code> and <code>settle_booking_benefits</code>. Splitting them means writing the same bodies twice, which is precisely the reproduction error that caused the worst finding in this report.</p>
+        <p class="hazard"><strong>Hazard — drop the superseded overload in the same transaction.</strong> A resolvable stale signature silently restores the old behaviour. This already happened once and was caught only because a later migration explicitly dropped a 4-arg version.</p>
+        <p class="hazard"><strong>Hazard — order matters against Phase 3.</strong> Adding the settle call to <code>earner-claim-payment</code> (a Phase 4 cleanup item) before item 1 lands would extend the poster-discount reserve-refund bug to the one capture path that currently gets it right.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 3</span>
+        <span class="phase-t">The tip rail</span>
+        <span class="phase-when">before the live-key cutover</span>
+      </div>
+      <div class="phase-body">
+        <ol>
+          <li><strong>Replace the pre-check with a reservation.</strong> A <code>reserve_tip_slot</code> RPC takes the same advisory locks and <em>inserts</em> an uncharged <code>tip_ledger</code> row, so the existing trigger evaluates the caps at the moment headroom is consumed — no second copy of the arithmetic. Then charge, then <code>confirm_tip_charge</code>. Key Stripe idempotency on the reservation id, not <code>booking+amount</code>. Refund rather than strand on a credit failure. <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span></li>
+          <li><strong>Add tip reversal.</strong> <code>tip_ledger.reversed_cents</code>, a <code>record_tip_reversal</code> RPC with cumulative-target semantics (pass Stripe's total, debit the delta — redelivery-safe by construction), a <code>tip_ledger</code> fallback in <code>recordReversal</code>, and a Stripe→DB tip loop in <code>reconcile-stripe</code>. <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span></li>
+          <li><strong>Consider an application fee on tips</strong> and add a per-earner 24h cap plus <code>ctl_tip_velocity_anomaly</code>. <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span></li>
+        </ol>
+        <p class="hazard"><strong>Hazard — the <code>tip_clawed</code> CTE in <code>ctl_earnings_total_drift</code> is part of item 2's migration, not a follow-up.</strong> Without it, every <em>correctly</em> handled reversal becomes a false positive on the control you just started trusting.</p>
+        <p class="hazard"><strong>Hazard — the RPCs must exist before the edge function calls them.</strong> Migration first, function second, and <code>guard_tip_caps</code> and <code>tip_headroom_cents</code> must move in the <em>same</em> migration or the caps disagree with each other mid-deploy.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 4</span>
+        <span class="phase-t">Refunds, console authority, abuse rails</span>
+        <span class="phase-when">before meaningful volume</span>
+      </div>
+      <div class="phase-body">
+        <ol>
+          <li><strong>Refund operation idempotency</strong> — mint an <code>opId</code> per decision (not per click), use it as the Stripe key, and enforce a unique index on it inside <code>record_refund</code>. Migration first with a transitional shim so refunds keep working mid-rollout; delete the shim in a follow-up. <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span> <span class="vec">CONSOLE</span></li>
+          <li><strong>Webhook <code>payment_intent.succeeded</code> reconciles to <code>amount_received</code></strong> instead of crediting the pre-computed split — copy the discipline <code>earner-claim-payment</code> already gets right. <span class="vec">EDGE FN</span></li>
+          <li><strong>Make <code>refund_source</code> per-event, not sticky.</strong> Today it permanently disarms <code>charge.dispute.created</code> for that booking. <span class="vec">EDGE FN</span></li>
+          <li><strong>Console batch, one deploy</strong>: MFA step-up on all <code>/promotions</code> actions, audit-before-mutate on the five affected surfaces, <code>addTeamMember</code> guards, budget and uses ceilings. <span class="vec">CONSOLE</span></li>
+          <li><strong><code>admin-payment-action</code> writes its own audit row</strong> — its header currently asserts the opposite of what it does. <span class="vec">EDGE FN</span></li>
+          <li><strong>Stolen-card rails</strong>: <code>delay_days</code> on the Express payout schedule, per-poster velocity caps at hold time, chargeback-rate and new-account-velocity controls. Note <code>delay_days</code> applies only to newly created Connect accounts; existing ones need a Stripe-side update. <span class="vec">MIGRATION</span> <span class="vec">EDGE FN</span></li>
+          <li><strong>Tier threshold by distinct counterparty or GMV</strong>, before enabling any rung. <span class="vec">MIGRATION</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head">
+        <span class="phase-n">Phase 5</span>
+        <span class="phase-t">Cleanup and truth-in-documentation</span>
+        <span class="phase-when">when convenient</span>
+      </div>
+      <div class="phase-body">
+        <ol>
+          <li>The ~58 remaining medium and low findings: disclosure of poster discounts at consent, dispute-row gating, <code>recordReversal</code> keyed on the refund id rather than the charge id, Connect onboarding idempotency, the <code>charges_enabled</code> over-strict payout gate, <code>bookingId</code> on report entry points.</li>
+          <li><strong>Fix the assistant's take-home mirror</strong> (<code>supabase/functions/assistant/index.ts:1164</code>) — it uses <code>Number(feeBps) &gt; 0</code>, the exact pattern <code>safeBps</code> was rewritten to eliminate, so a legitimately pinned 0 bps falls back to 10% and understates earnings on every promoted booking. It is also a fifth hand-rolled copy of <code>platform_fee_cents</code> that no drift test guards. <span class="vec">EDGE FN</span></li>
+          <li><strong>Align <code>reconcile-stripe</code> to <code>npm:stripe@15</code></strong> — it is alone on <code>@14</code>, and a default-API-version difference between exactly those versions already caused one documented bug.</li>
+          <li><strong>Refresh the stale audit docs.</strong> <code>KNOWN_RISKS.md</code>, <code>BETA_QA_PLAN.md</code>, <code>LIFECYCLE_STATE_MACHINES.md</code> and <code>PRODUCT_FLOW_MAP.md</code> all still describe a hardcoded 10% fee at line numbers that no longer exist, and flag "verify the web constant equals the backend 10%" as open — that whole class was closed by the <code>platform_rates</code> work. Also correct <code>CLAUDE.md</code>'s test count (34 suites / 433 tests → 39 / 494) and its claim that an admin login throttle exists.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How each fix gets verified</h2>
+
+    <h3>Per fix, in this order</h3>
+    <ol>
+      <li><strong>Write the failing test first, against unfixed code, and watch it fail.</strong> A test written after the fix proves only that the code does what it does. This is not ceremony — several findings here exist <em>because</em> a green test was examining the wrong thing: <code>tipCaps.test.js</code> has twelve passing tests asserting "checked before the charge" and "the caps are serialised," both true, and neither catches the concurrency bypass, because they examine two transactions in isolation.</li>
+      <li><strong>Pin the wrong answer by value.</strong> Where the bug is arithmetic, assert the specific broken number (<code>promoBenefitCents(20000, 1000, standing=1000) === 0</code>) so a revert cannot be made to pass by editing the mirror alongside the code.</li>
+      <li><strong>Apply the fix. Test passes.</strong></li>
+      <li><strong>Full suite green</strong> — 494 is the floor, and it must not drop.</li>
+      <li><strong>For SQL, assert against <code>finalDefinition()</code>, never a named file.</strong></li>
+      <li><strong>Diff the security-relevant state</strong> before and after: enabled controls, admin roles, RLS policies, function grants. The July round taught this the hard way — damage is not always where the change said it was.</li>
+    </ol>
+
+    <div class="callout is-alarm">
+      <p class="callout-h">Budget for fix-induced regressions</p>
+      <p>The July 2026 audit fixed 54 findings and introduced <strong>7 regressions</strong> doing it — a 13% rate. With ~70 findings here, expect roughly 8–9. Plan a dedicated review pass on the diff itself after each phase; do not treat it as optional. Two of the findings in <em>this</em> report are regressions introduced by earlier fixes.</p>
+    </div>
+
+    <h3>The environment constraint</h3>
+    <p>There is no Docker on this machine, so a local Supabase instance is not available and migrations cannot be dry-run locally. Runtime verification needs one of:</p>
+    <ul>
+      <li>A <strong>Supabase branch database</strong> (cloud, no Docker) — the right home for anything that must actually execute SQL, and the only safe place for the adversarial simulations.</li>
+      <li><strong>Stripe test mode</strong> for the end-to-end money flows — which is where you already are, so this costs nothing.</li>
+      <li>Static assertion via the migration-parsing test convention for everything else. This is why the <code>finalDefinition()</code> helper is Phase 0 item 1: without local SQL execution, parsed-off-disk tests are the primary defence.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The re-audit</h2>
+
+    <p>After each phase, three passes — each catching something the others structurally cannot.</p>
+
+    <h4>1 · Fix verification</h4>
+    <p>One agent per fixed finding, given the original finding and the diff, asked to prove the specific failure is now impossible. Paired with an adversarial agent asked to reach the <em>same outcome by a different route</em> — fixes frequently move a bug rather than close it, and the original finding text is exactly the wrong thing to search against.</p>
+
+    <h4>2 · Regression hunt on the diff</h4>
+    <p>Scoped to the changed lines and their callers, not the whole repo. This is the pass that catches the 13%. Specifically instructed to check whether any <code>create or replace</code> in the fix dropped a guard from the definition it replaced — the drift class that caused two findings in this report.</p>
+
+    <h4>3 · Full re-run of both audit workflows</h4>
+    <p>The scripts are saved and re-runnable. <strong>Invoke them fresh — do not pass <code>resumeFromRunId</code>.</strong> Resume replays cached results for unchanged prompts, and since the prompts will not have changed but the code will have, a resumed run would confidently report the old findings against the new code.</p>
+
+    <div class="callout">
+      <p class="callout-h">Read-only, always</p>
+      <p>Every audit agent ran with an explicit read-only constraint: no <code>supabase</code>/<code>psql</code>/<code>stripe</code> CLI, no HTTP to any endpoint, no forged JWTs, no edge-function invocation, no repo writes. This is not caution for its own sake — a round-1 agent in a previous audit disabled a live security control through the console and it stayed off for hours, unnoticed, because a disabled control reports neither errors nor staleness. Keep the constraint on every future round. Anything that must mutate belongs on a branch database.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is sound — do not churn these</h2>
+    <div class="callout is-good">
+      <p class="callout-h">Attacked and held</p>
+      <ul>
+        <li><strong>The Stripe processing floor in <code>platform_fee_cents</code></strong> — <code>max(round-half-up(a×bps/10000), ceil(a×0.029)+30+25)</code>, capped at the amount, bigint-widened. The single load-bearing guard in the money layer: it makes self-dealing cost ~3.2%, means a 0% promotion never settles at a loss, and caps what a fee credit can ever be worth.</li>
+        <li><strong>The three immutable pins at booking INSERT</strong> and their inheritance by <code>payments</code>. Capture idempotency genuinely follows from deriving only from immutable values — the <code>fee × pct²</code> retry hazard is closed, and a rate change provably cannot re-price agreed work.</li>
+        <li><strong><code>consume_promo_grant</code>'s increment-is-the-check UPDATE</strong> and the two stacking unique indexes. The mechanism is correct; Phase 2 fixes what it counts, not how it counts.</li>
+        <li><strong>Vest-on-outcome for referrals</strong>, delivered as credits rather than cash. It genuinely defeats the non-working farmer.</li>
+        <li><strong><code>guard_bookings_write</code>'s <code>completed → verified</code> gate</strong> requiring a captured payment — this is what turns several defects above into "stuck" rather than "settled without payment."</li>
+        <li><strong>No RLS or IDOR gap was found on any money table or endpoint.</strong> Every defect in this report requires either a legitimate role or an unlucky ordering — never a privilege bypass. Grants discipline on money RPCs is applied consistently.</li>
+        <li><strong>The controls framework itself</strong> — functions rather than stored SQL text, <code>fn_name</code> validated against both a regex and <code>pg_proc</code>, findings unique per <code>(control_key, entity_id)</code> with auto-resolve, config in <code>app_flags</code> rather than a GUC. The failures are in individual predicates, not the engine.</li>
+        <li><strong><code>reconcile-stripe</code></strong> — authenticated on a rotating shared secret, fails closed, and its checks 1, 4 and 5 are real working hourly detectors that backstop several findings above.</li>
+        <li><strong><code>__tests__/pricing.test.js</code> parsing the migration off disk.</strong> This is the right pattern and it works — Phase 0 generalises it rather than replacing it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Open questions only runtime can settle</h2>
+    <p>All runnable in Stripe test mode or a branch database. None requires touching production.</p>
+    <ol>
+      <li><strong>Is the full event set registered on the live webhook destination?</strong> The highest-leverage unknown in the report. Test-mode registration does not carry over, and <code>payment_intent.canceled</code> is the only thing currently healing the accept/cancel race. Verify <em>before</em> any real earner works a gig.</li>
+      <li><strong>Has any <code>poster_discount</code> campaign already run?</strong> The settle bug corrupts <code>spent_cents</code> historically. Read-only check: if <code>spent_cents</code> is near zero with a non-zero <code>redemptions_used</code>, that campaign has already overspent and needs an audited recompute. No blind backfill.</li>
+      <li><strong>Does Stripe Radar throttle a concurrent off-session tip burst?</strong> It could reduce the multiplier — but a bypass whose bound is "whatever Radar allows" is not a $200 cap, so this does not change the fix.</li>
+      <li><strong>Does GoTrue record failed password grants?</strong> The shape of the login-throttle fix depends on it. Either way the throttle still needs wiring — an audit log cannot block.</li>
+      <li><strong>The real Stripe account and customer counts.</strong> Two docs disagree (7 and 4 vs 7 and 3), and this is the population that breaks at cutover.</li>
+      <li><strong>The true out-of-pocket on a partial capture with a full fee credit</strong> — derived algebraically at 2–3c; worth observing once.</li>
+    </ol>
+  </section>
+
+  <p class="footnote">
+    Sources: two adversarial multi-agent audits, 61 Opus 5 agents over 22 dimensions, ~8.4M tokens. Every finding was produced by one agent, attacked by an independent agent instructed to refute it by default, and — where severe — reproduced in cents by a third. 72 findings survived; refuted findings are not listed. The worst two findings and the fee-literal sweep were re-verified by hand against the final function definitions. Full per-dimension reports are retained alongside this plan.
+  </p>
+
+</div>
