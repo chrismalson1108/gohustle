@@ -48,6 +48,7 @@ const GROUPS: Group[] = [
     title: "Money",
     items: [
       { href: "/payments", label: "Payments", minRole: "finance" },
+      { href: "/promotions", label: "Promotions", minRole: "admin" },
       { href: "/disputes", label: "Disputes", minRole: "trust" },
     ],
   },
