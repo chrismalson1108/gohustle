@@ -201,8 +201,12 @@ grant all on public.promotions, public.promo_codes, public.promo_grants,
   to service_role;
 
 grant select on public.promo_grants, public.bonus_ledger to authenticated;
+-- Idempotent: a migration that cannot be re-run is a migration that will one day
+-- half-apply and leave the schema in a state nobody can reproduce.
+drop policy if exists promo_grants_own_select on public.promo_grants;
 create policy promo_grants_own_select on public.promo_grants
   for select using (auth.uid() = user_id);
+drop policy if exists bonus_ledger_own_select on public.bonus_ledger;
 create policy bonus_ledger_own_select on public.bonus_ledger
   for select using (auth.uid() = user_id);
 
