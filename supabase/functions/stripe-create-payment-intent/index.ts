@@ -240,15 +240,20 @@ Deno.serve(async (req: Request) => {
     // processing floor after the credit, so platformFee can never go negative — which
     // Stripe cannot represent.
     const feeAfterCredit = Number(feeCalc);
-    const chargeCents = Math.max(50, amountCents - discountCents);
+    // ONE name for the ONE quantity: what Stripe actually holds, what
+    // payments.amount_cents stores, what the re-hold reconciler compares, and what the
+    // idempotency key is built from. This was previously spelled out at four call sites
+    // and two of them were missed when the poster discount landed, which is what let a
+    // live hold be cancelled and a dead PaymentIntent be replayed. Keep it single.
+    const authorizedCents = Math.max(50, amountCents - discountCents);
     const platformFeeCents = Math.max(0, feeAfterCredit - discountCents);
     const earnerAmountCents = amountCents - feeAfterCredit;
 
     // The invariant, asserted rather than assumed. If these ever disagree we would be
     // moving money that does not reconcile, so refuse instead.
-    if (chargeCents !== earnerAmountCents + platformFeeCents) {
+    if (authorizedCents !== earnerAmountCents + platformFeeCents) {
       await logServerError('stripe-create-payment-intent',
-        `split does not reconcile: charge=${chargeCents} earner=${earnerAmountCents} fee=${platformFeeCents} ` +
+        `split does not reconcile: charge=${authorizedCents} earner=${earnerAmountCents} fee=${platformFeeCents} ` +
         `(amount=${amountCents} bps=${feeBps} credit=${creditCents} discount=${discountCents})`,
         { booking_id: bookingId }, { fatal: true, userId: user.id });
       return json({ error: 'Could not price this booking. Please try again.' }, 503);
@@ -290,13 +295,29 @@ Deno.serve(async (req: Request) => {
     // row points at an empty PI, i.e. an escrow-bypass on an already-confirmed booking
     // (the 24h idempotency key only masks this within its window). Only re-create when
     // the amount actually changed (re-priced booking) or the old hold is truly gone.
+    // The PaymentIntent this call is replacing, if any. Feeds the idempotency key so a
+    // cancel-and-recreate can never replay the hold it just killed.
+    //
+    // Read from the ROW, not from the branch below, and regardless of the row's status.
+    // If the process dies between paymentIntents.create and the payments upsert, the row
+    // still names the OLD intent — so a retry rebuilds the identical key and REPLAYS the
+    // intent that was already created, instead of minting a second, orphaned hold. That
+    // crash window is the whole reason a deterministic key exists.
+    const replacingPi = existingPay?.payment_intent_id ?? 'new';
     if (existingPay?.payment_intent_id && existingPay.status === 'authorized') {
       let existingPI: Stripe.PaymentIntent | null = null;
       try { existingPI = await stripe.paymentIntents.retrieve(existingPay.payment_intent_id); }
       catch (_) { /* not retrievable — fall through and create a fresh one */ }
       const liveStatuses = ['requires_capture', 'requires_confirmation', 'requires_payment_method', 'requires_action', 'processing'];
       if (existingPI && liveStatuses.includes(existingPI.status)) {
-        if ((existingPay.amount_cents ?? 0) === amountCents) {
+        // COMPARE WHAT IS STORED. payments.amount_cents holds authorizedCents (the
+        // DISCOUNTED total that Stripe is actually holding), so comparing it against
+        // the pre-discount gig amount made these permanently unequal for any booking
+        // with a poster discount — every second call fell through to the "re-priced"
+        // branch and cancelled a perfectly live hold. No `?? 0`: authorizedCents is
+        // always >= 50, so a NULL can never legitimately match and the coalesce would
+        // only hide a malformed row.
+        if (existingPay.amount_cents === authorizedCents) {
           // Same amount, still live → hand back the existing client secret (idempotent).
           let savedCardExisting: { id: string; brand: string | null; last4: string | null } | null = null;
           try {
@@ -315,17 +336,40 @@ Deno.serve(async (req: Request) => {
           });
         }
         // Amount changed (re-priced) → cancel the stale hold before creating the new one.
-        try { await stripe.paymentIntents.cancel(existingPay.payment_intent_id); }
-        catch (_) { /* already captured / cancelled / expired — ignore */ }
+        try {
+          await stripe.paymentIntents.cancel(existingPay.payment_intent_id);
+          // Mark the row dead IMMEDIATELY. Between the cancel and the upsert below it
+          // still claimed status:'authorized' against a cancelled PaymentIntent, and
+          // that is exactly what accept-booking and the escrow-age controls read. A
+          // crash in that window left a booking looking funded when nothing was held.
+          await supabase.from('payments')
+            .update({ status: 'cancelled' })
+            .eq('booking_id', bookingId)
+            .eq('payment_intent_id', existingPay.payment_intent_id);
+        } catch (_) { /* already captured / cancelled / expired — ignore */ }
       }
     }
 
     // PaymentIntent with manual capture (funds held, not charged until capture).
-    // Idempotency key (booking + amount) makes a transport retry return the SAME
-    // intent instead of creating a second, orphaned authorization hold.
+    //
+    // THE IDEMPOTENCY KEY CARRIES THE FULL ECONOMIC PAYLOAD *AND* THE HOLD IT REPLACES.
+    // It used to be `${bookingId}_${amountCents}`, which never changed across a
+    // cancel-and-recreate — so Stripe replayed the cached creation response and handed
+    // back the PaymentIntent that had just been cancelled, which the row then recorded
+    // as 'authorized'. The poster could never complete acceptance for 24h.
+    //
+    // Keying on authorizedCents alone is NOT sufficient: return a discount and re-apply
+    // it and the value comes back to one already used, replaying that dead PI again.
+    // Including the prior PI id guarantees a distinct key after every cancel, while a
+    // genuine transport retry (same prior hold, same money) still replays and cannot
+    // open a second orphaned authorization — which is the property the key exists for.
+    //
+    // feeCents is in the key because application_fee_amount is a CREATE parameter:
+    // reusing a key with different parameters makes Stripe reject the call outright,
+    // which would surface as an opaque 500 and an equally permanent failure to accept.
     const pi = await stripe.paymentIntents.create({
       // The poster is charged the DISCOUNTED total, not the gig price.
-      amount: chargeCents,
+      amount: authorizedCents,
       currency: 'usd',
       customer: customerId,
       capture_method: 'manual',
@@ -338,7 +382,7 @@ Deno.serve(async (req: Request) => {
         earner_id: booking.earner_id,
         poster_id: user.id,
       },
-    }, { idempotencyKey: `pi_create_${bookingId}_${amountCents}` });
+    }, { idempotencyKey: `pi_create_${bookingId}_${authorizedCents}_${feeCents}_${replacingPi}` });
 
     // Record in payments table (upsert in case of retry).
     //
@@ -355,7 +399,7 @@ Deno.serve(async (req: Request) => {
       payment_intent_id: pi.id,
       // amount_cents is the ORIGINAL AUTHORIZATION — with a poster discount that is
       // the discounted total, because that is what Stripe is holding.
-      amount_cents: chargeCents,
+      amount_cents: authorizedCents,
       fee_cents: feeCents,
       earner_amount_cents: earnerAmountCents,
       status: 'authorized',
