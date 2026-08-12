@@ -876,7 +876,9 @@ export default function EarnScreen({ navigation }) {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle} numberOfLines={2}>Finish this job</Text>
             <Text style={styles.modalSub}>
-              Add before & after photos of your work (optional). The poster sees these when verifying.
+              Add before & after photos of your work (optional). The poster sees them when
+              verifying. If there&rsquo;s ever a disagreement about the work, these are the
+              record we go on &mdash; so they protect you as much as them.
             </Text>
 
             <Text style={styles.finishPhotoLabel}>Before photos (optional)</Text>

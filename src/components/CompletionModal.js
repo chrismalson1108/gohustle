@@ -248,7 +248,11 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   textAlignVertical="top"
                   inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
-                <Text style={styles.tipNote}>The rest of the hold is released back to you.</Text>
+                <Text style={styles.tipNote}>
+                  The rest of the hold is released back to you. Your reason and any photos
+                  attached to this job are kept as the record of what happened, and are what
+                  support reviews if this is escalated.
+                </Text>
               </>
             )}
 
