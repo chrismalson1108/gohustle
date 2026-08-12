@@ -26,13 +26,14 @@ export async function createPromotion(formData: FormData): Promise<ActionResult>
   const kind = String(formData.get("kind") ?? "fee_override");
   const feePct = Number(formData.get("fee_pct"));
   const bonusDollars = Number(formData.get("bonus_dollars"));
+  const discountDollars = Number(formData.get("discount_dollars"));
   const uses = Number(formData.get("uses_allowed") ?? 1);
   const budgetDollars = Number(formData.get("budget_dollars") ?? 250);
   const maxRedemptions = Number(formData.get("max_redemptions") ?? 100);
   const days = Number(formData.get("days") ?? 30);
 
   if (!name) return { ok: false, message: "Give it a name you'll recognise in three months." };
-  if (kind !== "fee_override" && kind !== "bonus") return { ok: false, message: "Bad kind." };
+  if (!["fee_override", "bonus", "poster_discount"].includes(kind)) return { ok: false, message: "Bad kind." };
   if (!Number.isFinite(budgetDollars) || budgetDollars <= 0) {
     return { ok: false, message: "Budget must be a positive amount — an uncapped promotion is an incident." };
   }
@@ -45,6 +46,9 @@ export async function createPromotion(formData: FormData): Promise<ActionResult>
   if (kind === "bonus" && (!Number.isFinite(bonusDollars) || bonusDollars <= 0 || bonusDollars > 500)) {
     return { ok: false, message: "Bonus must be $0.01–$500." };
   }
+  if (kind === "poster_discount" && (!Number.isFinite(discountDollars) || discountDollars <= 0 || discountDollars > 500)) {
+    return { ok: false, message: "Discount must be $0.01–$500." };
+  }
 
   try {
     const ctx = await requireAdmin("admin");
@@ -54,6 +58,7 @@ export async function createPromotion(formData: FormData): Promise<ActionResult>
       status: "draft" as const,
       fee_bps: kind === "fee_override" ? Math.round(feePct * 100) : null,
       bonus_cents: kind === "bonus" ? Math.round(bonusDollars * 100) : null,
+      poster_discount_cents: kind === "poster_discount" ? Math.round(discountDollars * 100) : null,
       uses_allowed: kind === "fee_override" ? Math.max(1, Math.min(20, Math.round(uses))) : 1,
       budget_cents: Math.round(budgetDollars * 100),
       max_redemptions: Math.max(1, Math.round(maxRedemptions)),

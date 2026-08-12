@@ -21,7 +21,7 @@ export default async function PromotionsPage() {
 
   const { data: promos, error } = await ctx.service
     .from("promotions")
-    .select("id, name, kind, status, fee_bps, bonus_cents, uses_allowed, max_redemptions, redemptions_used, budget_cents, spent_cents, starts_at, ends_at, created_at")
+    .select("id, name, kind, status, fee_bps, bonus_cents, poster_discount_cents, uses_allowed, max_redemptions, redemptions_used, budget_cents, spent_cents, starts_at, ends_at, created_at")
     .order("created_at", { ascending: false });
 
   const { data: codes } = await ctx.service
@@ -103,8 +103,10 @@ export default async function PromotionsPage() {
                     </td>
                     <td className="px-3 py-2 text-xs">
                       {p.kind === "fee_override"
-                        ? `${(p.fee_bps ?? 0) / 100}% fee · ${p.uses_allowed} gig(s)`
-                        : `${money(p.bonus_cents ?? 0)} per referral`}
+                        ? `${(p.fee_bps ?? 0) / 100}% fee · ${p.uses_allowed} gig(s) · students`
+                        : p.kind === "poster_discount"
+                          ? `${money(p.poster_discount_cents ?? 0)} off · posters`
+                          : `${money(p.bonus_cents ?? 0)} per referral · students`}
                     </td>
                     <td className="px-3 py-2">
                       <div className="text-xs">
