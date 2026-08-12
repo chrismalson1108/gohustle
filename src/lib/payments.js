@@ -1,0 +1,311 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// The money ledger — every transaction a user has been part of, both sides.
+//
+// `payments` has always held enough for a real statement (authorized/captured/
+// failed/cancelled, fee, net, refunds, timestamps, and the fee rate PINNED at
+// booking time) and RLS already lets each party read their own rows — earners via
+// payments_earner_select, posters via payments_poster_select. Nothing in the app
+// had ever selected from it. Users saw one aggregate "earnings" number and posters
+// saw nothing at all: no record of what they were charged, when, or what came back.
+//
+// "Where is my money" is the single most common support ticket any marketplace
+// gets, and the honest fix is not a better reply macro — it is a screen that
+// already answers it.
+//
+// ── WHAT WE DO NOT CLAIM ────────────────────────────────────────────────────
+//
+// We do NOT know when money lands in an earner's bank. Capture transfers to their
+// Stripe Connect account; Stripe then pays out on that account's own schedule, and
+// we store no transfer or payout record. Inventing "arrives Tuesday" would be a
+// lie that costs trust exactly when trust matters. So a released payment says it
+// was released and points at the payout account, which does know.
+// ─────────────────────────────────────────────────────────────────────────────
+import { supabase } from './supabase';
+import { DEFAULT_FEE_BPS, feeLabel } from '../../shared/pricing';
+
+export const LEDGER_CACHE_KEY = 'ledger:v1';
+
+// ── Plain language, per side ────────────────────────────────────────────────
+// The same row means different things to the two parties: 'captured' is "you were
+// paid" to an earner and "you were charged" to a poster. Competitors that get this
+// right (Uber's earnings vs a rider's receipt) never show one party the other's
+// wording, and the wording is the whole product here — a status nobody can read is
+// a support ticket.
+const STATE = {
+  earner: {
+    authorized: { label: 'In escrow', tone: 'hold', note: 'Held by the poster. Released to you when they verify the work.' },
+    captured:   { label: 'Released',  tone: 'good', note: 'Sent to your payout account. Your bank deposit follows Stripe\'s payout schedule.' },
+    failed:     { label: 'Payment failed', tone: 'bad', note: 'The poster\'s card was declined. Nothing was transferred.' },
+    cancelled:  { label: 'Hold released', tone: 'muted', note: 'The booking ended before the work started, so nothing was charged.' },
+  },
+  poster: {
+    authorized: { label: 'On hold',   tone: 'hold', note: 'Authorized on your card but not charged. You are charged when you verify the work.' },
+    captured:   { label: 'Charged',   tone: 'good', note: 'Charged to your card and released to the hustler.' },
+    failed:     { label: 'Card declined', tone: 'bad', note: 'Your card was declined, so nothing was charged.' },
+    cancelled:  { label: 'Not charged', tone: 'muted', note: 'The hold was released. Your card was never charged.' },
+  },
+};
+
+export function paymentState(status, side) {
+  return STATE[side]?.[status] ?? { label: status || 'unknown', tone: 'muted', note: '' };
+}
+
+const cents = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+/**
+ * One ledger entry, normalized so the UI never re-derives money.
+ *
+ * The amounts come from the payment row, NOT from the current rate card. A
+ * booking's fee was pinned when it was made, and showing a past transaction at
+ * today's rate would misstate what the person actually paid or received — the
+ * disclosure trap called out in CLAUDE.md.
+ */
+function toEntry(row, side, jobsById, bookingsById) {
+  const b = bookingsById[row.booking_id] ?? {};
+  const job = jobsById[b.job_id] ?? {};
+  const gross = cents(row.amount_cents);
+  const fee = cents(row.fee_cents);
+  const refunded = cents(row.refunded_cents);
+  const tip = cents(b.tip_amount);
+  const feeBps = typeof row.fee_bps === 'number' ? row.fee_bps : DEFAULT_FEE_BPS;
+
+  // What actually moved, after any partial refund. A dispute that pays 60% leaves
+  // refunded_cents on the row; the ledger must show the settled number, because
+  // that is the one the user is reconciling against their bank.
+  const settledGross = Math.max(0, gross - refunded);
+  const net = side === 'earner'
+    ? Math.max(0, cents(row.earner_amount_cents) - refunded) + tip
+    : settledGross + tip;
+
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    side,
+    title: job.title || 'Gig',
+    status: row.status,
+    // The date the money did its last meaningful thing, which is what a person
+    // scanning a statement is looking for.
+    at: row.captured_at || row.cancelled_at || row.authorized_at || row.created_at,
+    authorizedAt: row.authorized_at || row.created_at,
+    capturedAt: row.captured_at,
+    cancelledAt: row.cancelled_at,
+    grossCents: gross,
+    feeCents: fee,
+    feeBps,
+    feeLabel: feeLabel(feeBps),
+    tipCents: tip,
+    refundedCents: refunded,
+    refundedAt: row.refunded_at,
+    refundReason: row.refund_reason,
+    discountCents: cents(row.poster_discount_cents),
+    feeCreditCents: cents(row.fee_credit_cents),
+    netCents: net,
+    // Only a released payment is money that has actually moved.
+    settled: row.status === 'captured',
+    pending: row.status === 'authorized',
+  };
+}
+
+/**
+ * Every payment the signed-in user is a party to, newest first.
+ *
+ * Two queries rather than one: RLS exposes a payment through either the earner
+ * policy or the poster policy, and a single select cannot tell us WHICH side the
+ * reader is on — that is the difference between "you earned $54" and "you paid
+ * $60". So each side is fetched against its own booking set.
+ */
+export async function fetchLedger(userId) {
+  if (!userId) return [];
+
+  const [asEarner, asPoster] = await Promise.all([
+    supabase.from('bookings').select('id, job_id, tip_amount').eq('earner_id', userId),
+    supabase
+      .from('bookings')
+      .select('id, job_id, tip_amount, jobs!bookings_job_id_fkey!inner(id, title, poster_id)')
+      .eq('jobs.poster_id', userId),
+  ]);
+
+  const earnerBookings = asEarner.data ?? [];
+  const posterBookings = asPoster.data ?? [];
+  const sideOf = {};
+  earnerBookings.forEach((b) => { sideOf[b.id] = 'earner'; });
+  posterBookings.forEach((b) => { sideOf[b.id] = 'poster'; });
+
+  const bookingsById = {};
+  [...earnerBookings, ...posterBookings].forEach((b) => { bookingsById[b.id] = b; });
+  const ids = Object.keys(sideOf);
+  if (!ids.length) return [];
+
+  // Titles: the poster query already embedded them; the earner side needs a lookup.
+  const jobsById = {};
+  posterBookings.forEach((b) => { if (b.jobs) jobsById[b.jobs.id] = b.jobs; });
+  const missing = [...new Set(earnerBookings.map((b) => b.job_id).filter((j) => j && !jobsById[j]))];
+  if (missing.length) {
+    const { data } = await supabase.from('jobs').select('id, title').in('id', missing);
+    (data ?? []).forEach((j) => { jobsById[j.id] = j; });
+  }
+
+  const { data: rows, error } = await supabase
+    .from('payments')
+    .select(
+      'id, booking_id, amount_cents, fee_cents, earner_amount_cents, status, ' +
+      'authorized_at, captured_at, cancelled_at, created_at, ' +
+      'refunded_cents, refunded_at, refund_reason, fee_bps, fee_credit_cents, poster_discount_cents',
+    )
+    .in('booking_id', ids)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (rows ?? [])
+    .map((r) => toEntry(r, sideOf[r.booking_id], jobsById, bookingsById))
+    .filter((e) => e.side)
+    .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')));
+}
+
+/** Year-to-date rollup for one side. `held` is the number people actually chase. */
+export function summarize(entries, side, year) {
+  const y = year ?? new Date().getFullYear();
+  const mine = entries.filter((e) => e.side === side && new Date(e.at ?? 0).getFullYear() === y);
+  return {
+    year: y,
+    count: mine.filter((e) => e.settled).length,
+    settledCents: mine.filter((e) => e.settled).reduce((s, e) => s + e.netCents, 0),
+    heldCents: mine.filter((e) => e.pending).reduce((s, e) => s + e.netCents, 0),
+    feesCents: side === 'earner' ? mine.filter((e) => e.settled).reduce((s, e) => s + e.feeCents, 0) : 0,
+    refundedCents: mine.reduce((s, e) => s + e.refundedCents, 0),
+  };
+}
+
+// ── Filtering ───────────────────────────────────────────────────────────────
+// A statement you cannot slice is a list, not a statement. The ranges below are
+// the ones people actually ask for: a tax year, a recent window, and everything.
+export const RANGES = [
+  { key: '30d', label: '30 days', days: 30 },
+  { key: '90d', label: '90 days', days: 90 },
+  { key: 'ytd', label: 'This year' },
+  { key: 'last', label: 'Last year' },
+  { key: 'all', label: 'All time' },
+];
+
+/** [start, end) for a range key. Nulls mean unbounded. */
+export function rangeBounds(key, now = new Date()) {
+  const r = RANGES.find((x) => x.key === key);
+  if (!r || key === 'all') return { start: null, end: null };
+  if (r.days) {
+    const s = new Date(now);
+    s.setDate(s.getDate() - r.days);
+    return { start: s, end: null };
+  }
+  const y = now.getFullYear() - (key === 'last' ? 1 : 0);
+  return { start: new Date(y, 0, 1), end: new Date(y + 1, 0, 1) };
+}
+
+// Status groupings in the user's terms, not Stripe's. "Refunded" is not a status
+// on the row at all — it is a non-zero refunded_cents on an otherwise captured
+// payment — but it is absolutely a thing people filter for.
+export const STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'held', label: 'In escrow', match: (e) => e.pending },
+  { key: 'settled', label: 'Completed', match: (e) => e.settled && !e.refundedCents },
+  { key: 'refunded', label: 'Refunded', match: (e) => e.refundedCents > 0 },
+  { key: 'failed', label: 'Declined', match: (e) => e.status === 'failed' },
+  { key: 'cancelled', label: 'Cancelled', match: (e) => e.status === 'cancelled' },
+];
+
+export function filterEntries(entries, { side, range = 'ytd', status = 'all', query = '' } = {}) {
+  const { start, end } = rangeBounds(range);
+  const q = query.trim().toLowerCase();
+  const st = STATUS_FILTERS.find((s) => s.key === status);
+  return entries.filter((e) => {
+    if (side && e.side !== side) return false;
+    const t = e.at ? new Date(e.at) : null;
+    if (start && (!t || t < start)) return false;
+    if (end && (!t || t >= end)) return false;
+    if (st?.match && !st.match(e)) return false;
+    if (q && !String(e.title ?? '').toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+/**
+ * Everything worth knowing about a filtered set, computed once.
+ *
+ * Deliberately reports gross AND net AND what came out in between, because "why is
+ * this $54 when the gig was $60" is a support ticket the screen should answer by
+ * itself. `avg` uses settled transactions only — averaging in a cancelled booking
+ * would quietly drag it toward zero.
+ */
+export function stats(entries) {
+  const settled = entries.filter((e) => e.settled);
+  const grossCents = settled.reduce((s, e) => s + e.grossCents, 0);
+  const netCents = settled.reduce((s, e) => s + e.netCents, 0);
+  return {
+    count: entries.length,
+    settledCount: settled.length,
+    grossCents,
+    netCents,
+    heldCents: entries.filter((e) => e.pending).reduce((s, e) => s + e.netCents, 0),
+    feesCents: settled.reduce((s, e) => s + e.feeCents, 0),
+    tipsCents: settled.reduce((s, e) => s + e.tipCents, 0),
+    refundedCents: entries.reduce((s, e) => s + e.refundedCents, 0),
+    discountCents: entries.reduce((s, e) => s + e.discountCents, 0),
+    declinedCount: entries.filter((e) => e.status === 'failed').length,
+    avgCents: settled.length ? Math.round(netCents / settled.length) : 0,
+  };
+}
+
+/** Trailing-N-month totals for a trend strip. Empty months are kept — a gap is data. */
+export function monthlyTotals(entries, months = 6, now = new Date()) {
+  const out = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const cents = entries
+      .filter((e) => e.settled && e.at && new Date(e.at) >= d && new Date(e.at) < next)
+      .reduce((s, e) => s + e.netCents, 0);
+    out.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }), cents });
+  }
+  return out;
+}
+
+/** Group into month buckets for a statement-style list. */
+export function byMonth(entries) {
+  const out = [];
+  const seen = {};
+  entries.forEach((e) => {
+    const d = new Date(e.at ?? 0);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!seen[key]) {
+      seen[key] = { key, label: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }), data: [] };
+      out.push(seen[key]);
+    }
+    seen[key].data.push(e);
+  });
+  return out;
+}
+
+const csvCell = (v) => {
+  const s = String(v ?? '');
+  // Neutralize spreadsheet formula injection: a gig titled "=HYPERLINK(...)" must
+  // land in Excel as text, not as a live formula.
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+
+/** A statement the user can hand to an accountant, or reconcile against a bank feed. */
+export function ledgerCsv(entries, side) {
+  const money = (c) => (c / 100).toFixed(2);
+  const head = side === 'earner'
+    ? ['Date', 'Gig', 'Status', 'Gross', 'Platform fee', 'Fee rate', 'Tip', 'Refunded', 'Net to you']
+    : ['Date', 'Gig', 'Status', 'Charged', 'Tip', 'Discount', 'Refunded', 'Total'];
+  const lines = [head.map(csvCell).join(',')];
+  entries.filter((e) => e.side === side).forEach((e) => {
+    const st = paymentState(e.status, side).label;
+    const d = e.at ? new Date(e.at).toISOString().slice(0, 10) : '';
+    const row = side === 'earner'
+      ? [d, e.title, st, money(e.grossCents), money(e.feeCents), e.feeLabel, money(e.tipCents), money(e.refundedCents), money(e.netCents)]
+      : [d, e.title, st, money(e.grossCents), money(e.tipCents), money(e.discountCents), money(e.refundedCents), money(e.netCents)];
+    lines.push(row.map(csvCell).join(','));
+  });
+  return lines.join('\n');
+}

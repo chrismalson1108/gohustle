@@ -700,10 +700,17 @@ export default function EarnScreen({ navigation }) {
           <Text style={styles.screenTitle} numberOfLines={1}>My Jobs</Text>
         </View>
         <View style={styles.headerChipsRow}>
-          <View style={styles.weekChip}>
+          {/* The week number is the summary; the tap is the answer to "where is it".
+              That question is the most common one an earner has, and it used to have
+              no destination at all. */}
+          <TouchableOpacity
+            style={styles.weekChip}
+            activeOpacity={0.7}
+            onPress={() => { haptic.light(); navigation.navigate('Payments'); }}
+          >
             <Text style={styles.weekChipValue} numberOfLines={1}>${earningsWeek}</Text>
-            <Text style={styles.weekChipLabel} numberOfLines={1}>this week</Text>
-          </View>
+            <Text style={styles.weekChipLabel} numberOfLines={1}>this week ›</Text>
+          </TouchableOpacity>
           <View style={styles.streakPill}>
             <Ionicons name="flame" size={15} color={colors.primary} style={{ marginRight: 5 }} />
             <Text style={styles.streakText} numberOfLines={1}>{streakDays}-week streak</Text>

@@ -398,7 +398,7 @@ export default function ProfileScreen({ navigation }) {
             )}
             <Row
               icon="card-outline"
-              title="Payments"
+              title="Payments & payouts"
               sub={paymentsSub}
               onPress={() => { haptic.medium(); navigation.navigate('PayoutSetup'); }}
             />

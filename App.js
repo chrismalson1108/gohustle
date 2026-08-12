@@ -31,6 +31,7 @@ import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
 import ProfileSettingsScreen from './src/screens/ProfileSettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
+import PaymentsScreen from './src/screens/PaymentsScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
 import PublicProfileScreen  from './src/screens/PublicProfileScreen';
@@ -114,6 +115,7 @@ function EarnStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
+      <Stack.Screen name="Payments"  component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
@@ -126,6 +128,7 @@ function GigsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="GigsMain"  component={GigsScreen} />
+      <Stack.Screen name="Payments"  component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="EditJob"   component={EditJobScreen} options={DETAIL_OPTS} />
@@ -163,6 +166,7 @@ function ProfileStack() {
       <Stack.Screen name="Notifications"  component={NotificationsScreen} options={{ ...DETAIL_OPTS, title: 'Alerts' }} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
+      <Stack.Screen name="Payments"       component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />

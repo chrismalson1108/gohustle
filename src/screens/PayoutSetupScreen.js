@@ -10,6 +10,8 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { useAuth } from '../context/AuthContext';
+import { fetchLedger, summarize } from '../lib/payments';
 import { colors, radii, shadows } from '../theme';
 
 // Unified "GoHustlr Payments" hub — always reachable from Profile so users can
@@ -23,6 +25,21 @@ export default function PayoutSetupScreen({ navigation }) {
     createSetupIntent, getPaymentMethodStatus, detachPaymentMethod,
   } = useJobs();
   const { role, showToast } = useUser();
+  const { user } = useAuth();
+
+  // The hub's first question is "where is my money", so it answers it in the row
+  // rather than making the user open another screen to find out. Best-effort: a
+  // failed fetch just hides the numbers — it must never block payout setup, which
+  // is the thing on this screen that actually unblocks earning.
+  const [ledger, setLedger] = useState(null);
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    if (!user?.id) return undefined;
+    fetchLedger(user.id)
+      .then((rows) => { if (alive) setLedger(rows); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [user?.id]));
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
@@ -158,6 +175,17 @@ export default function PayoutSetupScreen({ navigation }) {
     ? `${(cardInfo.brand || 'card').charAt(0).toUpperCase() + (cardInfo.brand || 'card').slice(1)} •••• ${cardInfo.last4 || '----'}`
     : null;
 
+  // Escrow first: it is the only figure that represents money owed to someone.
+  const money = (c) => `$${(c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  let ledgerLine = 'Every payment in and out of your account.';
+  if (ledger) {
+    const earn = summarize(ledger, 'earner');
+    const spend = summarize(ledger, 'poster');
+    const held = earn.heldCents + spend.heldCents;
+    if (held > 0) ledgerLine = `${money(held)} in escrow · tap to see every payment`;
+    else if (ledger.length) ledgerLine = `${ledger.length} transaction${ledger.length === 1 ? '' : 's'} · receipts, fees and refunds`;
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -174,6 +202,26 @@ export default function PayoutSetupScreen({ navigation }) {
           Get paid for work and pay for gigs — all securely inside GoHustlr.
         </Text>
       </View>
+
+      {/* ── Transactions ──────────────────────────────────────────────────────
+          Deliberately FIRST. Setting up a payout account is a once-ever task;
+          "what happened to my money" is a weekly one, and it used to have nowhere
+          to go at all. The subtitle carries the escrow figure because that is the
+          number people are actually chasing when they come here. */}
+      <TouchableOpacity
+        style={styles.section}
+        activeOpacity={0.75}
+        onPress={() => { haptic.light(); navigation.navigate('Payments'); }}
+      >
+        <View style={styles.sectionHead}>
+          <Ionicons name="swap-vertical-outline" size={20} color={colors.textPrimary} />
+          <Text style={styles.sectionTitle} numberOfLines={1}>Transactions</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
+        </View>
+        <Text style={styles.txnSub}>
+          {ledgerLine}
+        </Text>
+      </TouchableOpacity>
 
       {/* Get paid (earner) */}
       {showEarn && (
@@ -357,6 +405,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  txnSub: { fontSize: 13, color: colors.textSecondary, marginTop: 6, lineHeight: 18 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, flex: 1, lineHeight: 21 },
   sectionDesc: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
 

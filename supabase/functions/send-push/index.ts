@@ -39,8 +39,61 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(authToken);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    const { userId, title, body, data, adminNotice } = await req.json();
-    if (!userId || !title) return json({ error: 'userId and title are required' }, 400);
+    const payload = await req.json();
+    const { title, body, data, adminNotice, supportTicketId } = payload;
+    let { userId } = payload;
+
+    // ── Support-reply path ───────────────────────────────────────────────────
+    // Support moved in-app. The console has always emailed its replies, which was
+    // the whole delivery mechanism back when support WAS email — but the user now
+    // reads the thread in Messages, and that surface had no way to tell them a
+    // reply had landed. "We answered you and you had no way to know" is the worst
+    // failure a support system can have, so this closes it.
+    //
+    // Narrower than adminNotice by construction, which is why it can sit a tier
+    // lower:
+    //   • the RECIPIENT is read from the ticket, never from the request — an agent
+    //     cannot aim this at someone who did not write in;
+    //   • the WORDING is fixed here, never caller-authored, so this path can't be
+    //     turned into "send arbitrary text to arbitrary user" the way adminNotice
+    //     deliberately can (which is exactly why THAT one costs full admin);
+    //   • it carries no reply content. Support threads discuss payouts, disputes
+    //     and safety, and a lock screen is readable by whoever is holding the
+    //     phone. The detail lives behind the login.
+    let isSupportReply = false;
+    if (supportTicketId) {
+      const { data: adminRow, error: adminErr } = await supabase
+        .from('admin_users').select('role, status').eq('user_id', user.id).maybeSingle();
+      // FAIL CLOSED, same as adminNotice: a dropped lookup must not degrade into
+      // unauthenticated push.
+      if (adminErr) {
+        console.error('send-push: admin_users lookup failed — refusing (fail-closed):', adminErr);
+        return json({ error: 'admin_check_unavailable' }, 503);
+      }
+      const ROLES = new Set(['support', 'trust', 'finance', 'admin']);
+      if (!adminRow || adminRow.status !== 'active' || !ROLES.has(adminRow.role)) {
+        return json({ error: 'Not support staff' }, 403);
+      }
+      if (aalFromToken(authToken) !== 'aal2') return json({ error: 'MFA required' }, 403);
+
+      const { data: ticket, error: tErr } = await supabase
+        .from('support_tickets').select('user_id').eq('id', supportTicketId).maybeSingle();
+      if (tErr) {
+        console.error('send-push: ticket lookup failed — refusing (fail-closed):', tErr);
+        return json({ error: 'lookup_failed' }, 503);
+      }
+      // A ticket from the public website contact form has no user_id — there is no
+      // app account to push to, and the email is the delivery. Not an error.
+      if (!ticket?.user_id) return json({ sent: 0, skipped: 'ticket_has_no_app_user' });
+      userId = ticket.user_id;
+      isSupportReply = true;
+    }
+
+    // A support reply's wording is server-defined below, so the caller has no title
+    // to supply and is not asked for one.
+    if (!userId || (!title && !isSupportReply)) {
+      return json({ error: 'userId and title are required' }, 400);
+    }
 
     // ── Admin notice path ────────────────────────────────────────────────────
     // The anti-spoof gates below exist to stop a STRANGER planting alerts: they
@@ -140,7 +193,11 @@ Deno.serve(async (req: Request) => {
     ]);
     const sharedRows = [...(asEarner.data ?? []), ...(asPoster.data ?? [])];
     // An admin has no booking with the user they're moderating — that's the point.
-    if (!sharedRows.length && !isAdminNotice) return json({ error: 'Not allowed to notify this user' }, 403);
+    // Neither does a support agent with the user who wrote in; the ticket IS the
+    // relationship, and it was verified above.
+    if (!sharedRows.length && !isAdminNotice && !isSupportReply) {
+      return json({ error: 'Not allowed to notify this user' }, 403);
+    }
     const sharedJobIds = new Set(sharedRows.map((r: any) => r.job_id).filter(Boolean));
 
     // Is there a booking the RECIPIENT actually agreed to?
@@ -192,7 +249,7 @@ Deno.serve(async (req: Request) => {
     const clean = (s: unknown, max: number) =>
       String(s ?? "").replace(CTRL, "").trim().slice(0, max);
     const callerTitle = clean(title, 100);
-    if (!callerTitle) return json({ error: 'title required' }, 400);
+    if (!callerTitle && !isSupportReply) return json({ error: 'title required' }, 400);
     const callerBody = clean(body, 280);
     const rawType = data && typeof data.type === 'string' ? data.type : 'update';
     const safeType = KNOWN_TYPES.has(rawType) ? rawType : 'update';
@@ -215,8 +272,17 @@ Deno.serve(async (req: Request) => {
     const tpl = (hasLiveRelationship || isAdminNotice)
       ? null
       : (PENDING_TEMPLATES[safeType] ?? PENDING_TEMPLATES.update);
-    const safeTitle = tpl ? tpl.title : callerTitle;
-    const safeBody = tpl ? tpl.body : callerBody;
+    // A support reply is ALWAYS server-worded — not because the agent is untrusted
+    // (they authored the reply), but because the reply itself must not be echoed to
+    // a lock screen. Support threads carry payout amounts, dispute details and
+    // safety reports; whoever is holding the phone is not necessarily the account
+    // holder. So the push says only that there is a reply, and where to read it.
+    const SUPPORT_TPL = {
+      title: 'GoHustlr Support replied',
+      body: 'You have a new reply on your support conversation. Open Messages to read it.',
+    };
+    const safeTitle = isSupportReply ? SUPPORT_TPL.title : tpl ? tpl.title : callerTitle;
+    const safeBody = isSupportReply ? SUPPORT_TPL.body : tpl ? tpl.body : callerBody;
     const rawTab = data && typeof data.tab === 'string' ? data.tab : null;
     const safeTab = rawTab && KNOWN_TABS.has(rawTab) ? rawTab : null;
     const rawJobId = data && typeof data.jobId === 'string' ? data.jobId : null;

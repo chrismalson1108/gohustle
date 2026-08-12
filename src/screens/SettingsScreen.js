@@ -82,8 +82,12 @@ export default function SettingsScreen({ navigation }) {
     {
       title: 'Money',
       rows: [
+        { icon: 'swap-vertical-outline', title: 'Transactions',
+          sub: 'Receipts, fees, refunds & escrow',
+          keywords: 'history statement receipts transactions payments spending earnings escrow refund invoice csv declined charge',
+          onPress: () => go('Payments') },
         { icon: 'card-outline', title: 'Payments & payouts', sub: paymentsSub,
-          keywords: 'stripe bank card payout money withdraw earnings deposit',
+          keywords: 'stripe bank card payout method money withdraw deposit account',
           onPress: () => go('PayoutSetup') },
         { icon: 'receipt-outline', title: 'Tax Center',
           sub: 'Track expenses & export for taxes',
