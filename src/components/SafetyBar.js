@@ -18,13 +18,14 @@ import { useHaptic } from '../hooks/useHaptic';
 //              person — but the confirm is one tap and the wording does not scold.
 
 const SHARE_HOURS = 12;
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 
-function mintToken(len = 32) {
-  let out = '';
-  for (let i = 0; i < len; i++) out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  return `tok_${out}`;
-}
+// The token is minted SERVER-SIDE by create_gig_share, not here.
+//
+// This used to build it from Math.random() — a fast non-cryptographic PRNG with a small
+// internal state, not a CSPRNG. That token is the sole credential for a page showing the
+// gig's exact street address and the earner's live status, so it is generated with
+// gen_random_bytes instead. The server also owns the expiry, which is capped at 24h;
+// the client cannot choose either value, and INSERT on gig_shares is revoked.
 
 export default function SafetyBar({ booking, siteUrl = 'https://gohustlr.com' }) {
   const haptic = useHaptic();
@@ -34,31 +35,18 @@ export default function SafetyBar({ booking, siteUrl = 'https://gohustlr.com' })
     setBusy('share');
     haptic('light');
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not signed in.');
-
-      // Reuse a live link rather than minting a new one each tap: someone who sends it
-      // to their housemate and then their mum should be sending the SAME link, or
-      // revoking one leaves the other quietly live.
-      const { data: existing } = await supabase
-        .from('gig_shares')
-        .select('token, expires_at')
-        .eq('booking_id', booking.id)
-        .is('revoked_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
-
-      let token = existing?.token;
-      if (!token) {
-        token = mintToken();
-        const { error } = await supabase.from('gig_shares').insert({
-          booking_id: booking.id,
-          created_by: user.id,
-          token,
-          expires_at: new Date(Date.now() + SHARE_HOURS * 3600_000).toISOString(),
-        });
-        if (error) throw error;
-      }
+      // One call does everything the client used to do by hand: it authorises the
+      // caller, hands back an existing live link if there is one, and otherwise mints
+      // a fresh token and expiry. Reusing a live link matters — someone who sends it to
+      // their housemate and then their mum must be sending the SAME link, or revoking
+      // one leaves the other quietly live — and doing that server-side makes it
+      // authoritative rather than advisory.
+      const { data: token, error } = await supabase.rpc('create_gig_share', {
+        p_booking: booking.id,
+        p_hours: SHARE_HOURS,
+      });
+      if (error) throw error;
+      if (!token) throw new Error('Could not create a link for this gig.');
 
       await Share.share({
         message:
