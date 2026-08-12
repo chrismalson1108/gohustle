@@ -252,3 +252,39 @@ export async function revokeGrant(formData: FormData): Promise<ActionResult> {
     return { ok: false, message: "Could not revoke that grant." };
   }
 }
+
+export interface CostEstimate {
+  perUseCents: number;
+  maxTotalCents: number;
+  typicalGigCents: number;
+  note: string;
+}
+
+// Cost preview. Calls the SAME SQL the charge path uses, rather than doing the
+// arithmetic again in TypeScript — a preview that re-implements the fee is a preview
+// that can disagree with the bill, which is worse than no preview at all.
+export async function previewCost(formData: FormData): Promise<CostEstimate | null> {
+  try {
+    const ctx = await requireAdmin("admin");
+    const kind = String(formData.get("kind") ?? "fee_override");
+    const { data, error } = await ctx.service.rpc("estimate_campaign_cost", {
+      p_kind: kind,
+      p_fee_bps: kind === "fee_override" ? Math.round(Number(formData.get("fee_pct") || 0) * 100) : null,
+      p_discount_cents: kind === "poster_discount" ? Math.round(Number(formData.get("discount_dollars") || 0) * 100) : null,
+      p_bonus_cents: kind === "bonus" ? Math.round(Number(formData.get("bonus_dollars") || 0) * 100) : null,
+      p_uses: Math.max(1, Math.round(Number(formData.get("uses_allowed") || 1))),
+      p_redemptions: Math.max(1, Math.round(Number(formData.get("max_redemptions") || 1))),
+      p_typical_gig_cents: Math.max(1000, Math.round(Number(formData.get("typical_gig") || 50) * 100)),
+    });
+    if (error || !data) return null;
+    const d = data as Record<string, number | string>;
+    return {
+      perUseCents: Number(d.per_use_cents ?? 0),
+      maxTotalCents: Number(d.max_total_cents ?? 0),
+      typicalGigCents: Number(d.typical_gig_cents ?? 5000),
+      note: String(d.note ?? ""),
+    };
+  } catch {
+    return null;
+  }
+}

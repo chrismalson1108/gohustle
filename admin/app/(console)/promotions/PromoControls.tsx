@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, type ActionResult } from "./actions";
+import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, previewCost, type ActionResult, type CostEstimate } from "./actions";
 import { PRESETS, type Preset } from "./presets";
+
+const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 function Result({ r }: { r: ActionResult | null }) {
   if (!r) return null;
@@ -18,13 +20,26 @@ export function CreatePromotion() {
   // draft either way.
   const [pre, setPre] = useState<Preset["fields"] | null>(null);
   const [chosen, setChosen] = useState<Preset | null>(null);
-  const apply = (p: Preset) => { setChosen(p); setPre(p.fields); setKind(p.fields.kind); };
+  const apply = (p: Preset) => { setChosen(p); setPre(p.fields); setKind(p.fields.kind); setEstimate(null); };
+
+  // Live cost preview. Recomputed from the form on every change, through the SAME SQL
+  // the charge path uses — so what this says and what the campaign bills cannot drift.
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [typicalGig, setTypicalGig] = useState("50");
+  const [estPending, startEst] = useTransition();
+  const refreshEstimate = (form: HTMLFormElement | null) => {
+    if (!form) return;
+    const fd = new FormData(form);
+    fd.set("typical_gig", typicalGig);
+    startEst(async () => setEstimate(await previewCost(fd)));
+  };
 
   const input = "rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-sm";
 
   return (
     <form
       className="mt-4 rounded-xl border border-[var(--line)] bg-white p-4"
+      onChange={(e) => refreshEstimate(e.currentTarget)}
       action={(fd) => start(async () => setResult(await createPromotion(fd)))}
     >
       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Start from a preset</div>
@@ -113,6 +128,34 @@ export function CreatePromotion() {
         </button>
         <Result r={result} />
       </div>
+      {/* WHAT WILL THIS COST. Answered before activating, rather than discovered from
+          the burn-down bar two weeks later. */}
+      <div className="mt-3 rounded-lg bg-[var(--surface)] px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+          <span>On a typical gig of $</span>
+          <input
+            value={typicalGig}
+            onChange={(e) => { setTypicalGig(e.target.value.replace(/[^0-9]/g, "")); }}
+            onBlur={(e) => refreshEstimate(e.currentTarget.form)}
+            className="w-14 rounded border border-[var(--line)] px-1.5 py-0.5 text-xs"
+          />
+          {estPending && <span>calculating…</span>}
+        </div>
+        {estimate ? (
+          <div className="mt-1.5 text-sm">
+            <strong>{money(estimate.perUseCents)}</strong>
+            <span className="text-[var(--muted)]"> per use · </span>
+            <strong>{money(estimate.maxTotalCents)}</strong>
+            <span className="text-[var(--muted)]"> if fully redeemed</span>
+            <div className="mt-0.5 text-xs text-[var(--muted)]">{estimate.note}</div>
+          </div>
+        ) : (
+          <div className="mt-1 text-xs text-[var(--muted)]">
+            Change any field to see what this campaign would cost.
+          </div>
+        )}
+      </div>
+
       <p className="mt-2 text-xs text-[var(--muted)]">
         Created as a <strong>draft</strong> — nothing spends until you activate it. A
         &ldquo;0% fee&rdquo; still collects card processing (~2.9% + 30&cent;), so a free
