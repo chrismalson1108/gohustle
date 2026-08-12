@@ -24,6 +24,7 @@ import { canClaimEarnerPayment } from '../../shared/lifecycle';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
+import SafetyBar from '../components/SafetyBar';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -484,6 +485,9 @@ export default function EarnScreen({ navigation }) {
           </TouchableOpacity>
           <Text style={styles.helperText}>Next: mark the job done when you've finished.</Text>
           {renderDrive(j, booking)}
+          {/* Only while a gig is actually in progress. Before that there is nothing to
+              share and nobody to worry; on every card it would become furniture. */}
+          <SafetyBar booking={booking} />
           <View style={styles.secondaryRow}>
             {messageButton(j, booking)}
             <Text style={styles.cancelLockedText} numberOfLines={2}>Can't cancel — you've started.</Text>
