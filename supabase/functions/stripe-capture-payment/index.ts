@@ -68,7 +68,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, fee_bps')
       .eq('booking_id', bookingId)
       .single();
 
@@ -106,6 +106,28 @@ Deno.serve(async (req: Request) => {
     // Capture the hold if not already captured (idempotent on retry).
     if (payment.status !== 'captured') {
       const capturePct = capturePctFinal; // validated + floored above
+
+      // The FULL fee for this authorization, computed ONCE from two immutable
+      // inputs: amount_cents (never rewritten) and fee_bps (pinned at authorization
+      // by trg_z_pin_payment_fee_bps, 20260806050000). Both branches below scale
+      // from this, so a partial capture and a retry of that partial always agree.
+      //
+      // Replaces `Math.round(amount_cents * 0.10)` in two places. The rate is no
+      // longer a literal, but the idempotency property is unchanged and is still the
+      // reason this is derived rather than read from the mutable fee_cents column.
+      const { data: fullFeeCalc, error: feeErr } = await supabase.rpc('platform_fee_cents', {
+        p_amount_cents: payment.amount_cents || 0,
+        p_fee_bps: Number.isFinite(Number(payment.fee_bps)) ? Number(payment.fee_bps) : 1000,
+      });
+      if (feeErr || !Number.isFinite(Number(fullFeeCalc))) {
+        // FAIL CLOSED — refuse to capture rather than guess a fee. Money that moves
+        // at a made-up rate is worse than money that has not moved yet.
+        await logServerError('stripe-capture-payment',
+          `fee computation failed for payment ${payment.id}: ${feeErr?.message ?? 'non-numeric'}`,
+          { booking_id: bookingId, payment_id: payment.id }, { fatal: true });
+        return json({ error: 'Could not price this capture. Please try again.' }, 503);
+      }
+      const fullFeeForAuth = Number(fullFeeCalc);
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
         // Derive the fee from the IMMUTABLE authorized amount, never from the
@@ -115,7 +137,7 @@ Deno.serve(async (req: Request) => {
         // value again (fee * pct²) — the platform under-collects and the earner is
         // over-credited. amount_cents is never overwritten, so round(fullFee * pct)
         // yields the same result on the first call and every retry.
-        const fullFeeCents = Math.round((payment.amount_cents || 0) * 0.10);
+        const fullFeeCents = fullFeeForAuth;
         const feeCents = Math.min(captureCents, Math.round(fullFeeCents * capturePct));
         earnerAmountCents = captureCents - feeCents;
         // Persist the REDUCED net BEFORE capturing. Capturing emits
@@ -143,7 +165,7 @@ Deno.serve(async (req: Request) => {
         // whatever earner_amount_cents the row holds, so a prior failed partial
         // attempt's stale reduced value must be corrected before a racing webhook can
         // read it (otherwise the earner is under-credited vs. the full amount paid).
-        const fullFee = Math.round((payment.amount_cents || 0) * 0.10);
+        const fullFee = fullFeeForAuth;
         earnerAmountCents = (payment.amount_cents || 0) - fullFee;
         await supabase.from('payments').update({
           fee_cents: fullFee,

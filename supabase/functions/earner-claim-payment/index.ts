@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at, fee_bps')
       .eq('booking_id', bookingId)
       .single();
     if (pErr || !payment) return json({ error: 'NO_PAYMENT', message: 'No escrow hold found for this booking.' }, 404);
@@ -218,11 +218,26 @@ Deno.serve(async (req: Request) => {
     if (capturedCents <= 0) {
       return json({ error: 'CAPTURE_FAILED', message: 'Could not release the payment. Please try again.' }, 502);
     }
-    // 10% platform fee on the amount ACTUALLY captured — proportional, matching
-    // stripe-capture-payment's partial-fee basis (round(fullFee * pct)). For a full
-    // capture this equals round(amount_cents * 0.10); for a poster's partial it tracks
-    // the reduced amount, so the ledger is exact and still never > captured.
-    const feeCents = Math.round(capturedCents * 0.10);
+    // Platform fee on the amount ACTUALLY captured — proportional, matching
+    // stripe-capture-payment's partial-fee basis. The RATE comes from payments.fee_bps,
+    // pinned at authorization (20260806050000), so an earner self-settling weeks later
+    // is charged the rate their booking was struck at, not whatever is current.
+    // Computed by public.platform_fee_cents so this path cannot drift from the other
+    // three — one definition of the fee, everywhere.
+    const claimBps = Number.isFinite(Number(payment.fee_bps)) ? Number(payment.fee_bps) : 1000;
+    const { data: claimFee, error: claimFeeErr } = await supabase.rpc('platform_fee_cents', {
+      p_amount_cents: capturedCents,
+      p_fee_bps: claimBps,
+    });
+    if (claimFeeErr || !Number.isFinite(Number(claimFee))) {
+      // FAIL CLOSED. Stripe has already captured at this point, so we must not write
+      // a guessed split — leave the row for remediation and surface it as fatal.
+      await logServerError('earner-claim-payment',
+        `fee computation failed after capture (bps=${claimBps}, captured=${capturedCents}): ${claimFeeErr?.message ?? 'non-numeric'}`,
+        { booking_id: bookingId, payment_id: payment.id }, { fatal: true });
+      return json({ error: 'CAPTURE_FAILED', message: 'Payment captured but could not be split. Support has been notified.' }, 500);
+    }
+    const feeCents = Number(claimFee);
     await supabase.from('payments').update({
       status: 'captured',
       captured_at: new Date().toISOString(),

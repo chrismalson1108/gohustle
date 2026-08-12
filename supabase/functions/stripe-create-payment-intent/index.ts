@@ -54,7 +54,7 @@ Deno.serve(async (req: Request) => {
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
       .select(`
-        id, job_id, earner_id, counter_offer, status, amount_cents_quoted,
+        id, job_id, earner_id, counter_offer, status, amount_cents_quoted, fee_bps_quoted,
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, poster_id),
         earner:profiles!bookings_earner_id_fkey(id, name)
       `)
@@ -161,7 +161,29 @@ Deno.serve(async (req: Request) => {
         message: `Gigs must pay at least $${MIN_JOB_PAY}.`,
       }, 400);
     }
-    const feeCents = Math.round(amountCents * 0.10);         // 10% GoHustlr fee
+    // Fee comes from the RATE PINNED ON THE BOOKING, not a literal and not the live
+    // rate. bookings.fee_bps_quoted was stamped at INSERT (20260806050000), so a rate
+    // change between application and accept cannot re-price an agreed deal.
+    //
+    // The arithmetic itself is done by public.platform_fee_cents rather than
+    // reimplemented here, so there is exactly ONE definition of the fee in the system.
+    // It rounds half up (matching the Math.round this replaces), floors at Stripe's
+    // own cost + margin so a 0% promotion can never settle at a loss, and caps at the
+    // amount. Duplicating that in TypeScript is how the seven-copies problem started.
+    const feeBps = Number.isFinite(Number(booking.fee_bps_quoted))
+      ? Number(booking.fee_bps_quoted)
+      : 1000;
+    const { data: feeCalc, error: feeErr } = await supabase
+      .rpc('platform_fee_cents', { p_amount_cents: amountCents, p_fee_bps: feeBps });
+    if (feeErr || !Number.isFinite(Number(feeCalc))) {
+      // FAIL CLOSED. Never fall through to a zero or guessed fee — that is a silent
+      // revenue outage. Refuse the hold and surface it.
+      await logServerError('stripe-create-payment-intent',
+        `fee computation failed (bps=${feeBps}, amount=${amountCents}): ${feeErr?.message ?? 'non-numeric'}`,
+        { booking_id: bookingId }, { fatal: true, userId: user.id });
+      return json({ error: 'Could not price this booking. Please try again.' }, 503);
+    }
+    const feeCents = Number(feeCalc);
     const earnerAmountCents = amountCents - feeCents;
 
     // Get/create Stripe Customer for poster (enables saved cards)
