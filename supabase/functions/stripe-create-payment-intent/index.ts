@@ -12,7 +12,13 @@ import { logServerError, errMessage } from '../_shared/logError.ts';
 function safeBps(v: unknown, fallback = 1000): number {
   if (v === null || v === undefined) return fallback;
   const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+  // >= 0, NOT > 0. A pinned ZERO is legitimate and common — it is exactly what a
+  // "first 2 gigs free" promotion and a 0% loyalty rung store. The previous `n > 0`
+  // mapped it to the 1000 fallback, so the flagship presets would have charged the
+  // full fee. That is the same class of bug as Number(null)===0, which this helper was
+  // written to fix: a guard that cannot tell "absent" from "legitimately zero".
+  // Negative is still nonsense and still falls back.
+  return Number.isFinite(n) && n >= 0 && n <= 3000 ? Math.trunc(n) : fallback;
 }
 
 
@@ -67,6 +73,7 @@ Deno.serve(async (req: Request) => {
       .from('bookings')
       .select(`
         id, job_id, earner_id, counter_offer, status, amount_cents_quoted, fee_bps_quoted,
+        fee_credit_cents, poster_discount_cents,
         job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, poster_id),
         earner:profiles!bookings_earner_id_fkey(id, name)
       `)
@@ -197,18 +204,56 @@ Deno.serve(async (req: Request) => {
     // own cost + margin so a 0% promotion can never settle at a loss, and caps at the
     // amount. Duplicating that in TypeScript is how the seven-copies problem started.
     const feeBps = safeBps(booking.fee_bps_quoted);
+
+    // THE BENEFITS ARE APPLIED HERE, OR THEY ARE NOT APPLIED AT ALL.
+    //
+    // pin_booking_amount consumes a fee credit and a poster discount at booking INSERT
+    // — burning the bonus ledger row and debiting the campaign budget — but nothing
+    // downstream read them, so the benefit was destroyed and the poster was still
+    // charged full price. Every promotion, credit and discount built today was
+    // cosmetic. These two lines are what make them real.
+    const creditCents = Math.max(0, Math.trunc(Number(booking.fee_credit_cents) || 0));
+    const discountCents = Math.max(0, Math.trunc(Number(booking.poster_discount_cents) || 0));
+
+    // Fee AFTER the earner's credit, floored at processing cost by the SQL.
     const { data: feeCalc, error: feeErr } = await supabase
-      .rpc('platform_fee_cents', { p_amount_cents: amountCents, p_fee_bps: feeBps });
+      .rpc('platform_fee_after_credit', {
+        p_amount_cents: amountCents, p_fee_bps: feeBps, p_credit_cents: creditCents,
+      });
     if (feeErr || !Number.isFinite(Number(feeCalc))) {
       // FAIL CLOSED. Never fall through to a zero or guessed fee — that is a silent
       // revenue outage. Refuse the hold and surface it.
       await logServerError('stripe-create-payment-intent',
-        `fee computation failed (bps=${feeBps}, amount=${amountCents}): ${feeErr?.message ?? 'non-numeric'}`,
+        `fee computation failed (bps=${feeBps}, amount=${amountCents}, credit=${creditCents}): ${feeErr?.message ?? 'non-numeric'}`,
         { booking_id: bookingId }, { fatal: true, userId: user.id });
       return json({ error: 'Could not price this booking. Please try again.' }, 503);
     }
-    const feeCents = Number(feeCalc);
-    const earnerAmountCents = amountCents - feeCents;
+    // feeAfterCredit is what comes out of the EARNER's side. The poster discount comes
+    // out of OUR side on top of that.
+    //
+    //   poster is charged   amount - discount
+    //   earner receives     amount - feeAfterCredit      (unchanged by the discount)
+    //   platform keeps      feeAfterCredit - discount
+    //   and charge == earner + platform, exactly.
+    //
+    // pin_booking_amount already clamped discount to the headroom left above the
+    // processing floor after the credit, so platformFee can never go negative — which
+    // Stripe cannot represent.
+    const feeAfterCredit = Number(feeCalc);
+    const chargeCents = Math.max(50, amountCents - discountCents);
+    const platformFeeCents = Math.max(0, feeAfterCredit - discountCents);
+    const earnerAmountCents = amountCents - feeAfterCredit;
+
+    // The invariant, asserted rather than assumed. If these ever disagree we would be
+    // moving money that does not reconcile, so refuse instead.
+    if (chargeCents !== earnerAmountCents + platformFeeCents) {
+      await logServerError('stripe-create-payment-intent',
+        `split does not reconcile: charge=${chargeCents} earner=${earnerAmountCents} fee=${platformFeeCents} ` +
+        `(amount=${amountCents} bps=${feeBps} credit=${creditCents} discount=${discountCents})`,
+        { booking_id: bookingId }, { fatal: true, userId: user.id });
+      return json({ error: 'Could not price this booking. Please try again.' }, 503);
+    }
+    const feeCents = platformFeeCents;
 
     // Get/create Stripe Customer for poster (enables saved cards)
     let customerId: string;
@@ -279,7 +324,8 @@ Deno.serve(async (req: Request) => {
     // Idempotency key (booking + amount) makes a transport retry return the SAME
     // intent instead of creating a second, orphaned authorization hold.
     const pi = await stripe.paymentIntents.create({
-      amount: amountCents,
+      // The poster is charged the DISCOUNTED total, not the gig price.
+      amount: chargeCents,
       currency: 'usd',
       customer: customerId,
       capture_method: 'manual',
@@ -307,7 +353,9 @@ Deno.serve(async (req: Request) => {
     const { error: payErr } = await supabase.from('payments').upsert({
       booking_id: bookingId,
       payment_intent_id: pi.id,
-      amount_cents: amountCents,
+      // amount_cents is the ORIGINAL AUTHORIZATION — with a poster discount that is
+      // the discounted total, because that is what Stripe is holding.
+      amount_cents: chargeCents,
       fee_cents: feeCents,
       earner_amount_cents: earnerAmountCents,
       status: 'authorized',

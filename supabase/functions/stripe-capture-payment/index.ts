@@ -12,7 +12,13 @@ import { logServerError, errMessage } from '../_shared/logError.ts';
 function safeBps(v: unknown, fallback = 1000): number {
   if (v === null || v === undefined) return fallback;
   const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+  // >= 0, NOT > 0. A pinned ZERO is legitimate and common — it is exactly what a
+  // "first 2 gigs free" promotion and a 0% loyalty rung store. The previous `n > 0`
+  // mapped it to the 1000 fallback, so the flagship presets would have charged the
+  // full fee. That is the same class of bug as Number(null)===0, which this helper was
+  // written to fix: a guard that cannot tell "absent" from "legitimately zero".
+  // Negative is still nonsense and still falls back.
+  return Number.isFinite(n) && n >= 0 && n <= 3000 ? Math.trunc(n) : fallback;
 }
 
 
@@ -80,7 +86,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, fee_bps')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, fee_bps, fee_credit_cents, poster_discount_cents')
       .eq('booking_id', bookingId)
       .single();
 
@@ -127,9 +133,19 @@ Deno.serve(async (req: Request) => {
       // Replaces `Math.round(amount_cents * 0.10)` in two places. The rate is no
       // longer a literal, but the idempotency property is unchanged and is still the
       // reason this is derived rather than read from the mutable fee_cents column.
-      const { data: fullFeeCalc, error: feeErr } = await supabase.rpc('platform_fee_cents', {
-        p_amount_cents: payment.amount_cents || 0,
+      // Recover the ORIGINAL gig amount: amount_cents is what Stripe is holding, which
+      // with a poster discount is already net of it. Every input here is immutable —
+      // amount_cents is never rewritten, and fee_bps / fee_credit_cents /
+      // poster_discount_cents are pinned by trg_z_pin_payment_fee_bps — so this stays
+      // idempotent under retry, which is the property the partial branch depends on.
+      const discountCents = Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0));
+      const creditCents = Math.max(0, Math.trunc(Number(payment.fee_credit_cents) || 0));
+      const gigAmountCents = (payment.amount_cents || 0) + discountCents;
+
+      const { data: fullFeeCalc, error: feeErr } = await supabase.rpc('platform_fee_after_credit', {
+        p_amount_cents: gigAmountCents,
         p_fee_bps: safeBps(payment.fee_bps),
+        p_credit_cents: creditCents,
       });
       if (feeErr || !Number.isFinite(Number(fullFeeCalc))) {
         // FAIL CLOSED — refuse to capture rather than guess a fee. Money that moves
@@ -139,7 +155,9 @@ Deno.serve(async (req: Request) => {
           { booking_id: bookingId, payment_id: payment.id }, { fatal: true });
         return json({ error: 'Could not price this capture. Please try again.' }, 503);
       }
-      const fullFeeForAuth = Number(fullFeeCalc);
+      // The platform's share is what is left of the fee after funding the poster's
+      // discount out of it. The earner's side is unaffected by that discount.
+      const fullFeeForAuth = Math.max(0, Number(fullFeeCalc) - discountCents);
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
         // Derive the fee from the IMMUTABLE authorized amount, never from the

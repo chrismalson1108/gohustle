@@ -23,7 +23,13 @@ import { logServerError, errMessage } from '../_shared/logError.ts';
 function safeBps(v: unknown, fallback = 1000): number {
   if (v === null || v === undefined) return fallback;
   const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+  // >= 0, NOT > 0. A pinned ZERO is legitimate and common — it is exactly what a
+  // "first 2 gigs free" promotion and a 0% loyalty rung store. The previous `n > 0`
+  // mapped it to the 1000 fallback, so the flagship presets would have charged the
+  // full fee. That is the same class of bug as Number(null)===0, which this helper was
+  // written to fix: a guard that cannot tell "absent" from "legitimately zero".
+  // Negative is still nonsense and still falls back.
+  return Number.isFinite(n) && n >= 0 && n <= 3000 ? Math.trunc(n) : fallback;
 }
 
 
@@ -177,7 +183,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at, fee_bps')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at, fee_bps, fee_credit_cents, poster_discount_cents')
       .eq('booking_id', bookingId)
       .single();
     if (pErr || !payment) return json({ error: 'NO_PAYMENT', message: 'No escrow hold found for this booking.' }, 404);
@@ -262,9 +268,10 @@ Deno.serve(async (req: Request) => {
     const claimBps = safeBps(payment.fee_bps);
     const { data: claimFee, error: claimFeeErr } = stripeFeeCents !== null
       ? { data: stripeFeeCents, error: null }
-      : await supabase.rpc('platform_fee_cents', {
-          p_amount_cents: capturedCents,
+      : await supabase.rpc('platform_fee_after_credit', {
+          p_amount_cents: capturedCents + Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0)),
           p_fee_bps: claimBps,
+          p_credit_cents: Math.max(0, Math.trunc(Number(payment.fee_credit_cents) || 0)),
         });
     if (claimFeeErr || !Number.isFinite(Number(claimFee))) {
       // FAIL CLOSED. Stripe has already captured at this point, so we must not write
