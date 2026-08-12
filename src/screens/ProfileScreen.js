@@ -410,7 +410,14 @@ export default function ProfileScreen({ navigation }) {
               last
             />
           </Group>
-          <Group title="Saved & alerts">
+          {/* ALERTS STAYS, SAVED MOVED TO SETTINGS. The test is whether a row
+              accumulates things that need you: Alerts carries an unread count, and a
+              badge you can only find by opening Settings is a badge nobody sees — it
+              is an inbox, like Messages, not a preference. Saved gigs and saved
+              people accrue nothing; they are bookmark lists you return to on purpose,
+              which is exactly what Settings' searchable index is for. Both already
+              existed there, so this removes a duplicate rather than a destination. */}
+          <Group title="Activity">
             <Row
               icon="notifications-outline"
               title="Alerts"
@@ -418,18 +425,6 @@ export default function ProfileScreen({ navigation }) {
               badge={alertCount > 0 ? alertCount : null}
               badgeColor={colors.primary}
               onPress={() => { haptic.medium(); navigation.navigate('Notifications'); }}
-            />
-            <Row
-              icon="bookmark-outline"
-              title="Saved gigs"
-              sub="Gigs you've bookmarked to book later"
-              onPress={() => { haptic.medium(); navigation.navigate('SavedGigs'); }}
-            />
-            <Row
-              icon="heart-outline"
-              title="Saved people"
-              sub="Workers & clients you've favorited"
-              onPress={() => { haptic.medium(); navigation.navigate('Favorites'); }}
               last
             />
           </Group>

@@ -75,7 +75,6 @@ export default function SupportScreen({ navigation, route }) {
   // conversation — but the old one is still reachable, because "what did support tell
   // me last month" is a real question and losing it feels like being forgotten.
   const [allTickets, setAllTickets] = useState([]);
-  const [showPast, setShowPast] = useState(false);
   // Several open tickets are allowed — the database never capped them, only this screen
   // did by always selecting the newest. A payments problem and a safety problem are not
   // the same conversation, and nobody should have to resolve one to report the other.
@@ -101,6 +100,7 @@ export default function SupportScreen({ navigation, route }) {
   // by a blank compose screen the user did not ask for.
   const routeCategoryUsedRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [threadsOpen, setThreadsOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -186,6 +186,14 @@ export default function SupportScreen({ navigation, route }) {
   );
   const otherLive = grouped.live;
   const otherArchived = grouped.archived;
+  const otherTickets = React.useMemo(
+    () => [...otherLive, ...otherArchived],
+    [otherLive, otherArchived],
+  );
+  const unreadElsewhere = React.useMemo(
+    () => otherLive.filter(ticketHasUnread).length,
+    [otherLive],
+  );
   const recentGigs = React.useMemo(() => {
     const seen = new Set();
     // Says what happened to the money, in the words someone would use to recognise it.
@@ -229,7 +237,6 @@ export default function SupportScreen({ navigation, route }) {
     haptic.selection();
     pickedIdRef.current = t.id;
     setTicket(t);
-    setShowPast(false);
     setMessages(await fetchTicketMessages(t.id).catch(() => []));
     markTicketRead(t.id).catch(() => {});
   };
@@ -306,35 +313,6 @@ export default function SupportScreen({ navigation, route }) {
             : 'A real person reads this. For anything urgent about your safety, contact your local emergency number first.'}
         </Text>
       </View>
-
-      {/* Other live conversations — OUTSIDE the ScrollView on purpose. The thread
-          below force-scrolls to the bottom (it is a chat), so anything rendered above
-          the messages is scrolled past before the user ever sees it. A thread support
-          opened about a flag cannot live somewhere you have to scroll up to find. */}
-      {!loading && otherLive.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.switcher}
-          contentContainerStyle={styles.switcherInner}
-        >
-          {otherLive.map(t => {
-            const un = ticketHasUnread(t);
-            return (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.switchChip, un && styles.switchChipUnread]}
-                onPress={() => openTicket(t)}
-              >
-                {un && <View style={styles.unreadDot} />}
-                <Text style={[styles.switchChipText, un && styles.switchChipTextUnread]} numberOfLines={1}>
-                  {t.subject || CATEGORY_LABEL[t.category] || 'Support'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      )}
 
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
@@ -422,13 +400,39 @@ export default function SupportScreen({ navigation, route }) {
 
           {!!ticket && (
             <View style={styles.ticketHead}>
-              <Text style={styles.ticketSubject} numberOfLines={2}>{ticket.subject || 'Support request'}</Text>
-              <Text style={styles.ticketMeta}>
-                {CATEGORY_LABEL[ticket.category] ?? 'Support'}
-                {' · '}
-                {ticket.status === 'closed' ? 'Closed' : ticket.status === 'pending' ? 'We replied' : 'We’re on it'}
-                {ticket.priority === 'urgent' ? ' · urgent' : ''}
-              </Text>
+              {/* THE TITLE IS THE SWITCHER. A horizontal strip of chips was the wrong
+                  shape for this: it truncated the subjects people needed to tell
+                  threads apart, gave no hint it scrolled, and cost a whole row of the
+                  screen to show two of them. Tapping the thread name is the pattern
+                  every mail and chat client already taught, it costs no vertical
+                  space, and the sheet behind it shows full titles however many there
+                  are. */}
+              <TouchableOpacity
+                activeOpacity={otherTickets.length ? 0.6 : 1}
+                onPress={() => { if (otherTickets.length) { haptic.selection(); setThreadsOpen(true); } }}
+              >
+                <View style={styles.subjectRow}>
+                  <Text style={styles.ticketSubject} numberOfLines={2}>
+                    {ticket.subject || 'Support request'}
+                  </Text>
+                  {otherTickets.length > 0 && (
+                    <Ionicons name="chevron-down" size={17} color={colors.textSecondary} style={{ marginTop: 2 }} />
+                  )}
+                </View>
+                <Text style={styles.ticketMeta}>
+                  {CATEGORY_LABEL[ticket.category] ?? 'Support'}
+                  {' · '}
+                  {ticket.status === 'closed' ? 'Closed' : ticket.status === 'pending' ? 'We replied' : 'We’re on it'}
+                  {ticket.priority === 'urgent' ? ' · urgent' : ''}
+                </Text>
+                {otherTickets.length > 0 && (
+                  <Text style={styles.switchHint}>
+                    {otherTickets.length + 1} conversations
+                    {unreadElsewhere > 0 ? ` · ${unreadElsewhere} unread` : ''}
+                    {' · tap to switch'}
+                  </Text>
+                )}
+              </TouchableOpacity>
               {/* What it is ABOUT, restated at the top. A thread that has scrolled for a
                   week should still answer "which gig is this?" without reading upward. */}
               {!!ticketContext && (
@@ -556,46 +560,83 @@ export default function SupportScreen({ navigation, route }) {
               </TouchableOpacity>
             )}
 
-            {otherArchived.length > 0 && (
+            {otherTickets.length > 0 && (
               <TouchableOpacity
                 style={styles.menuItem}
-                onPress={() => { setMenuOpen(false); haptic.selection(); setShowPast(true); }}
+                onPress={() => { setMenuOpen(false); haptic.selection(); setThreadsOpen(true); }}
               >
-                <Ionicons name="file-tray-full-outline" size={19} color={colors.textPrimary} />
-                <Text style={styles.menuText}>Past conversations ({otherArchived.length})</Text>
+                <Ionicons name="chatbubbles-outline" size={19} color={colors.textPrimary} />
+                <Text style={styles.menuText}>All conversations ({otherTickets.length + 1})</Text>
               </TouchableOpacity>
             )}
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* Archive list, opened from the menu. */}
-      <Modal visible={showPast} transparent animationType="slide" onRequestClose={() => setShowPast(false)}>
+      {/* ── All conversations ────────────────────────────────────────────────
+          ONE list, not a chip strip plus a separate archive modal. Full subjects,
+          unread first, and the archived ones below a divider rather than behind a
+          second toggle — "which conversation am I in" and "what else is going on"
+          are the same question. */}
+      <Modal visible={threadsOpen} transparent animationType="slide" onRequestClose={() => setThreadsOpen(false)}>
         <View style={styles.menuBackdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowPast(false)} />
-          <View style={styles.archiveSheet}>
-            <Text style={styles.archiveTitle}>Past conversations</Text>
-            <ScrollView>
-              {otherArchived.map(t => (
-                <TouchableOpacity
-                  key={t.id}
-                  style={styles.pastRow}
-                  onPress={() => { setShowPast(false); openTicket(t); }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pastRowTitle} numberOfLines={1}>{t.subject || 'Support request'}</Text>
-                    <Text style={styles.pastRowMeta} numberOfLines={1}>
-                      {CATEGORY_LABEL[t.category] ?? 'Support'}
-                      {' · '}
-                      {t.archived_at && t.status !== 'closed' ? 'archived' : 'resolved'}
-                    </Text>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setThreadsOpen(false)} />
+          <View style={styles.threadSheet}>
+            <View style={styles.grabber} />
+            <Text style={styles.archiveTitle}>Your conversations</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {[
+                { key: 'live', label: null, rows: [ticket, ...otherLive].filter(Boolean) },
+                { key: 'past', label: 'Past', rows: otherArchived },
+              ].map(sec => (
+                sec.rows.length === 0 ? null : (
+                  <View key={sec.key}>
+                    {!!sec.label && <Text style={styles.threadSectionLabel}>{sec.label}</Text>}
+                    {sec.rows.map(t => {
+                      const un = ticketHasUnread(t);
+                      const current = t.id === ticket?.id;
+                      return (
+                        <TouchableOpacity
+                          key={t.id}
+                          style={[styles.threadRow, current && styles.threadRowCurrent]}
+                          onPress={() => { setThreadsOpen(false); if (!current) openTicket(t); }}
+                        >
+                          <View style={styles.threadDotCol}>
+                            {un ? <View style={styles.unreadDot} /> : current
+                              ? <Ionicons name="checkmark" size={15} color={colors.primary} />
+                              : null}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            {/* Full subject over two lines — the truncation in the old
+                                chips was exactly what made threads indistinguishable. */}
+                            <Text style={[styles.threadTitle, un && styles.threadTitleUnread]} numberOfLines={2}>
+                              {t.subject || 'Support request'}
+                            </Text>
+                            <Text style={styles.threadMeta} numberOfLines={1}>
+                              {CATEGORY_LABEL[t.category] ?? 'Support'}
+                              {' · '}
+                              {un ? 'new reply'
+                                : t.status === 'closed' ? 'resolved'
+                                : t.archived_at ? 'archived'
+                                : t.status === 'pending' ? 'we replied' : 'open'}
+                              {t.priority === 'urgent' ? ' · urgent' : ''}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                </TouchableOpacity>
+                )
               ))}
+
+              <TouchableOpacity
+                style={styles.threadNewRow}
+                onPress={() => { setThreadsOpen(false); haptic.selection(); setComposingNew(true); setLinkedBooking(null); }}
+              >
+                <Ionicons name="add-circle-outline" size={19} color={colors.primary} />
+                <Text style={styles.threadNewText}>Start a new request</Text>
+              </TouchableOpacity>
             </ScrollView>
-            <TouchableOpacity style={styles.archiveClose} onPress={() => setShowPast(false)}>
-              <Text style={styles.archiveCloseText}>Done</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -669,16 +710,6 @@ const styles = StyleSheet.create({
     fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 12,
   },
   pastToggle: { fontSize: 12, fontWeight: '600', color: colors.primary, marginTop: 10 },
-  switcher: { maxHeight: 46, flexGrow: 0, backgroundColor: colors.background },
-  switcherInner: { gap: 6, paddingHorizontal: 14, paddingBottom: 8 },
-  switchChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 11, paddingVertical: 7, borderRadius: radii.pill,
-    borderWidth: 1, borderColor: colors.divider, backgroundColor: colors.surface, maxWidth: 210,
-  },
-  switchChipUnread: { borderColor: colors.primary },
-  switchChipText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
-  switchChipTextUnread: { color: colors.textPrimary, fontWeight: '800' },
   groupLabel: {
     fontSize: 11, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase',
     letterSpacing: 0.4, marginTop: 14, marginBottom: 6,
@@ -693,6 +724,30 @@ const styles = StyleSheet.create({
   },
   pastRowTitle: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   pastRowMeta: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  subjectRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  switchHint: { fontSize: 12, color: colors.primary, fontWeight: '600', marginTop: 5 },
+  threadSheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 26, maxHeight: '75%',
+  },
+  threadSectionLabel: {
+    fontSize: 11, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase',
+    letterSpacing: 0.4, marginTop: 16, marginBottom: 4,
+  },
+  threadRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 10, borderRadius: radii.md,
+  },
+  threadRowCurrent: { backgroundColor: colors.background },
+  threadDotCol: { width: 16, alignItems: 'center', paddingTop: 4 },
+  threadTitle: { fontSize: 14.5, fontWeight: '600', color: colors.textPrimary, lineHeight: 19 },
+  threadTitleUnread: { fontWeight: '800' },
+  threadMeta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  threadNewRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 10,
+    marginTop: 8, borderTopWidth: 1, borderTopColor: colors.divider,
+  },
+  threadNewText: { fontSize: 15, fontWeight: '700', color: colors.primary },
   ticketSubject: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
   ticketMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   bubbleWrap: { marginBottom: 14, maxWidth: '85%' },
