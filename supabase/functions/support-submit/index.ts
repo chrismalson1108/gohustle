@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const { email, name, subject, category, message } = await req.json();
+    const { email, name, subject, category, message, bookingId, jobId } = await req.json();
     if (!isEmail(email)) return json({ error: 'invalid_email', message: 'Enter a valid email.' }, 400);
     const body = String(message || '').trim();
     const subj = String(subject || '').trim() || 'Support request';
@@ -68,6 +68,30 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'unavailable', message: 'Support is briefly unavailable. Please try again shortly.' }, 503);
     }
 
+    // Optional gig context, VERIFIED rather than trusted. The client names a booking,
+    // and a ticket that cites one is read by an agent as "this user is involved in that
+    // gig" — so an unchecked id would let anyone attach their complaint to a stranger's
+    // booking and invite staff to go looking at it. Only a booking this user is actually
+    // a party to survives.
+    let ctxBookingId: string | null = null;
+    let ctxJobId: string | null = null;
+    if (userId && typeof bookingId === 'string' && bookingId) {
+      const { data: b } = await supabase
+        .from('bookings')
+        .select('id, job_id, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (b && (b.earner_id === userId || (b as any).job?.poster_id === userId)) {
+        ctxBookingId = b.id;
+        ctxJobId = b.job_id;
+      }
+    }
+    if (!ctxJobId && userId && typeof jobId === 'string' && jobId) {
+      const { data: j } = await supabase
+        .from('jobs').select('id, poster_id').eq('id', jobId).maybeSingle();
+      if (j && j.poster_id === userId) ctxJobId = j.id;
+    }
+
     const { data: ticket, error: tErr } = await supabase
       .from('support_tickets')
       .insert({
@@ -76,6 +100,8 @@ Deno.serve(async (req: Request) => {
         name: (name || '').toString().slice(0, 120) || null,
         subject: subj.slice(0, 200),
         category: (category || '').toString().slice(0, 60) || null,
+        booking_id: ctxBookingId,
+        job_id: ctxJobId,
         ip,
       })
       .select('id')

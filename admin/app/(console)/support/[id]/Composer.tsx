@@ -29,6 +29,13 @@ export default function Composer({ ticketId, currentStatus }: { ticketId: string
   }
 
   function status(s: "open" | "pending" | "closed") {
+    // Closing is the only one that ends the conversation for the user: the RLS insert
+    // policy refuses a reply on a closed ticket, so from their side the thread stops
+    // accepting messages. That deserves a confirm; open/pending are freely reversible
+    // and do not.
+    if (s === "closed" && !confirm(
+      "Close this ticket?\n\nThe user can no longer reply on this thread — a new message from them starts a fresh ticket. You can reopen this one at any time.",
+    )) return;
     const fd = new FormData();
     fd.set("ticketId", ticketId);
     fd.set("status", s);
@@ -63,17 +70,39 @@ export default function Composer({ ticketId, currentStatus }: { ticketId: string
           {drafting ? "Drafting…" : "✨ Draft with AI"}
         </button>
         <div className="ml-auto flex items-center gap-1 text-xs">
-          <span className="text-[var(--muted)]">Mark:</span>
-          {(["open", "pending", "closed"] as const).map((s) => (
+          {currentStatus === "closed" ? (
+            // A closed ticket is never a dead end. Reopening is one obvious click, and
+            // it is the primary action here because the reason you are looking at a
+            // closed ticket is usually that it should not have been closed.
             <button
-              key={s}
-              onClick={() => status(s)}
-              disabled={pending || currentStatus === s}
-              className={`rounded px-2 py-1 capitalize ${currentStatus === s ? "bg-[var(--surface)] text-[var(--muted)]" : "border border-[var(--line)] hover:bg-[var(--surface)]"}`}
+              onClick={() => status("open")}
+              disabled={pending}
+              className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
-              {s}
+              Reopen ticket
             </button>
-          ))}
+          ) : (
+            <>
+              <span className="text-[var(--muted)]">Mark:</span>
+              {(["open", "pending"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => status(s)}
+                  disabled={pending || currentStatus === s}
+                  className={`rounded px-2 py-1 capitalize ${currentStatus === s ? "bg-[var(--surface)] text-[var(--muted)]" : "border border-[var(--line)] hover:bg-[var(--surface)]"}`}
+                >
+                  {s}
+                </button>
+              ))}
+              <button
+                onClick={() => status("closed")}
+                disabled={pending}
+                className="ml-1 rounded px-2 py-1 font-medium text-[var(--danger)] border border-[var(--line)] hover:bg-[var(--surface)] disabled:opacity-50"
+              >
+                Close…
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

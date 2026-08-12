@@ -16,7 +16,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   if (!ticket) notFound();
   await auditRead(ctx, "support.view", "ticket", id);
 
-  const [messagesRes, linkedUser] = await Promise.all([
+  const [messagesRes, linkedUser, linkedBooking] = await Promise.all([
     ctx.service
       .from("support_ticket_messages")
       .select("id, author, admin_id, body, created_at")
@@ -24,6 +24,16 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       .order("created_at", { ascending: true }),
     ticket.user_id
       ? ctx.service.from("profiles").select("id, name, username").eq("id", ticket.user_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // The gig the user attached when they opened the ticket. Collecting that context in
+    // the app is pointless unless it lands in front of the agent, and the whole reason
+    // to ask for it is to save a round trip of "which gig do you mean?".
+    ticket.booking_id
+      ? ctx.service
+          .from("bookings")
+          .select("id, status, amount_cents_quoted, job:jobs!bookings_job_id_fkey(id, title)")
+          .eq("id", ticket.booking_id)
+          .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -37,6 +47,23 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         <h1 className="text-2xl font-semibold">#{ticket.id} · {ticket.subject}</h1>
         <Pill tone={statusTone(ticket.status)}>{ticket.status}</Pill>
       </div>
+      {linkedBooking?.data ? (
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
+          <span className="text-[var(--muted)]">About this gig: </span>
+          <Link
+            href={`/bookings/${linkedBooking.data.id}`}
+            className="font-medium text-[var(--brand)] hover:underline"
+          >
+            {(linkedBooking.data as { job?: { title?: string } }).job?.title ?? "booking"}
+          </Link>
+          <span className="text-[var(--muted)]">
+            {" · "}{linkedBooking.data.status}
+            {typeof linkedBooking.data.amount_cents_quoted === "number"
+              ? ` · $${(linkedBooking.data.amount_cents_quoted / 100).toFixed(2)}`
+              : ""}
+          </span>
+        </div>
+      ) : null}
       <p className="text-sm text-[var(--muted)]">
         {ticket.name ? `${ticket.name} · ` : ""}
         {ticket.email}

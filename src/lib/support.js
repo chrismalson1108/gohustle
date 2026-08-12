@@ -40,7 +40,7 @@ export class SupportError extends Error {
  * @param {string} [p.email]   defaults to the signed-in user's email
  * @param {string} [p.name]    defaults to the signed-in user's profile name
  */
-export async function submitSupportRequest({ subject, message, category, email, name }) {
+export async function submitSupportRequest({ subject, message, category, email, name, bookingId, jobId }) {
   const body = String(message ?? '').trim();
   if (!body) throw new SupportError('Please describe your issue.', 'empty');
   if (body.length > 5000) throw new SupportError('That message is too long.', 'too_long');
@@ -72,6 +72,10 @@ export async function submitSupportRequest({ subject, message, category, email, 
       subject: String(subject ?? '').trim() || 'Support request',
       category: category ?? null,
       message: body,
+      // Optional context so an agent opens the right gig instead of asking "which one?".
+      // Verified server-side against this user's own bookings — see support-submit.
+      bookingId: bookingId ?? null,
+      jobId: jobId ?? null,
     },
   });
 

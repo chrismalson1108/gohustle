@@ -6,8 +6,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import SignedImage from '../components/SignedImage';
-import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 import { useAuth } from '../context/AuthContext';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
 import {
@@ -49,6 +49,11 @@ export default function SupportScreen({ navigation, route }) {
   const [photos, setPhotos] = useState([]);
   // Only asked when there is no open thread — an existing conversation already has one.
   const [category, setCategory] = useState(route?.params?.category ?? 'other');
+  // Optional context. An agent who can open the exact gig resolves in one reply instead
+  // of spending a round trip asking "which one?" — and the person asking for help is
+  // usually least able to describe it precisely, because they are upset.
+  const { bookings, posterBookings } = useJobs();
+  const [linkedBooking, setLinkedBooking] = useState(route?.params?.bookingId ?? null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -76,6 +81,18 @@ export default function SupportScreen({ navigation, route }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Both sides of the marketplace: gigs you worked and gigs you posted. Newest first,
+  // capped — this is a shortcut, not a browser, and a long list would bury the composer.
+  const recentGigs = React.useMemo(() => {
+    const seen = new Set();
+    return [...(bookings ?? []), ...(posterBookings ?? [])]
+      .filter(b => b?.id && b?.job?.title)
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
+      .filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)))
+      .slice(0, 6)
+      .map(b => ({ bookingId: b.id, title: b.job.title }));
+  }, [bookings, posterBookings]);
+
   const addPhotos = async () => {
     haptic.selection();
     const res = await pickImages({ multiple: true });
@@ -91,7 +108,12 @@ export default function SupportScreen({ navigation, route }) {
       if (photos.length && user?.id) {
         paths = await uploadPrivateImages({ uris: photos, bucket: 'support-photos', userId: user.id });
       }
-      if (ticket) {
+      // A CLOSED ticket cannot be replied to — support_messages_write_own refuses it,
+      // by design. Without this branch a user whose only thread had been closed would
+      // tap send and get "this conversation was closed" forever, with no way to start
+      // another: the screen would keep selecting that same closed ticket. Opening a new
+      // one is the correct behaviour and needs no action from them.
+      if (ticket && ticket.status !== 'closed') {
         await replyToTicket(ticket.id, { body, images: paths });
       } else {
         // No open thread — this first message opens one. submitSupportRequest goes
@@ -101,6 +123,7 @@ export default function SupportScreen({ navigation, route }) {
           subject: body.slice(0, 60) || 'Support request',
           message: body || 'See attached photos.',
           category,
+          bookingId: linkedBooking,
         });
       }
       setDraft(''); setPhotos([]);
@@ -118,8 +141,8 @@ export default function SupportScreen({ navigation, route }) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
     >
       <View style={styles.banner}>
         <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
@@ -164,6 +187,33 @@ export default function SupportScreen({ navigation, route }) {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {recentGigs.length > 0 && (
+                <>
+                  <Text style={styles.pickerLabel}>Is this about a specific gig? (optional)</Text>
+                  <View style={styles.catRow}>
+                    {recentGigs.map(g => {
+                      const on = linkedBooking === g.bookingId;
+                      return (
+                        <TouchableOpacity
+                          key={g.bookingId}
+                          style={[styles.gigChip, on && styles.gigChipActive]}
+                          onPress={() => { haptic.selection(); setLinkedBooking(on ? null : g.bookingId); }}
+                        >
+                          <Ionicons
+                            name={on ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={13}
+                            color={on ? '#fff' : colors.textMuted}
+                          />
+                          <Text style={[styles.gigChipText, on && styles.gigChipTextActive]} numberOfLines={1}>
+                            {g.title}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -237,7 +287,10 @@ export default function SupportScreen({ navigation, route }) {
             value={draft}
             onChangeText={setDraft}
             multiline
-            inputAccessoryViewID={KEYBOARD_DONE_ID}
+            maxLength={2000}
+            returnKeyType="send"
+            blurOnSubmit={false}
+            onSubmitEditing={send}
           />
           <TouchableOpacity
             onPress={send}
@@ -251,7 +304,6 @@ export default function SupportScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
       </View>
-      <KeyboardDoneBar />
     </KeyboardAvoidingView>
   );
 }
@@ -275,6 +327,17 @@ const styles = StyleSheet.create({
   catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   catText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   catTextActive: { color: '#fff' },
+  pickerLabel: {
+    fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginTop: 6, marginBottom: 8,
+  },
+  gigChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%',
+    paddingVertical: 7, paddingHorizontal: 12, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.divider, backgroundColor: colors.surface,
+  },
+  gigChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  gigChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', flexShrink: 1 },
+  gigChipTextActive: { color: '#fff' },
   ticketHead: { marginBottom: 14 },
   ticketSubject: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
   ticketMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
@@ -293,8 +356,9 @@ const styles = StyleSheet.create({
   closedBar: { paddingHorizontal: 16, paddingBottom: 6 },
   closedText: { fontSize: 12, color: colors.textMuted },
   composer: {
-    borderTopWidth: 1, borderTopColor: colors.divider, backgroundColor: colors.surface,
-    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12,
+    borderTopWidth: 1, borderTopColor: colors.divider, backgroundColor: colors.background,
+    paddingHorizontal: 20, paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
   },
   photoStrip: { marginBottom: 8 },
   thumbWrap: { position: 'relative', marginRight: 8 },
@@ -303,16 +367,19 @@ const styles = StyleSheet.create({
     position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9,
     backgroundColor: colors.textPrimary, alignItems: 'center', justifyContent: 'center',
   },
-  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  attachBtn: { paddingBottom: 8, paddingHorizontal: 2 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  attachBtn: { paddingBottom: 10, paddingRight: 10 },
   input: {
-    flex: 1, maxHeight: 120, fontSize: 14, color: colors.textPrimary,
-    backgroundColor: colors.background, borderRadius: radii.lg,
-    paddingHorizontal: 14, paddingVertical: 10,
+    flex: 1, backgroundColor: colors.surface, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 10,
+    fontSize: 14, color: colors.textPrimary, maxHeight: 100, lineHeight: 19,
+    marginRight: 8,
   },
   sendBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
+    width: 42, height: 42, borderRadius: radii.pill,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
   },
+  // Keep the brand fill so the white arrow stays legible; fade the whole control.
   sendBtnOff: { opacity: 0.4 },
 });
