@@ -4,6 +4,18 @@ import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
+// Number(null) is 0 and Number.isFinite(0) is true, so a bare
+// `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
+// a free gig — rather than to the fallback. These columns are NOT NULL DEFAULT 1000
+// today so it cannot fire, but the pattern must not survive to the next nullable
+// column. Test for null/undefined first, and require a positive rate.
+function safeBps(v: unknown, fallback = 1000): number {
+  if (v === null || v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
+
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -127,9 +139,23 @@ Deno.serve(async (req: Request) => {
     //
     // Null pin = a booking that predates the migration; fall back so in-flight work
     // keeps settling exactly as before.
-    const pinnedCents = Number.isFinite(Number(booking.amount_cents_quoted))
-      ? Number(booking.amount_cents_quoted)
-      : null;
+    // NULL MUST BE HANDLED EXPLICITLY. Number(null) is 0 and Number.isFinite(0) is
+    // true, so the obvious `Number.isFinite(Number(x)) ? Number(x) : null` yields 0 for
+    // a null pin — and `0 ?? live` is 0, because nullish-coalescing does not fall
+    // through on zero. Every booking created before 20260806000000 has a null pin (all
+    // 19 in production), so this made them all fail the amountCents >= 50 bound below
+    // and become permanently unacceptable: the poster clicks accept and gets "Invalid
+    // booking amount" forever.
+    //
+    // This is the same Number(null) === 0 trap that made a null RATE resolve to 0 bps
+    // in shared/pricing.js. Test for null/undefined first, always.
+    const rawPin = booking.amount_cents_quoted;
+    const pinnedCents =
+      rawPin === null || rawPin === undefined
+        ? null
+        : Number.isFinite(Number(rawPin)) && Number(rawPin) > 0
+          ? Number(rawPin)
+          : null;
     const amountCents = pinnedCents ?? liveAmountCents;
 
     // A divergence means the job was edited between application and accept. The pin
@@ -170,9 +196,7 @@ Deno.serve(async (req: Request) => {
     // It rounds half up (matching the Math.round this replaces), floors at Stripe's
     // own cost + margin so a 0% promotion can never settle at a loss, and caps at the
     // amount. Duplicating that in TypeScript is how the seven-copies problem started.
-    const feeBps = Number.isFinite(Number(booking.fee_bps_quoted))
-      ? Number(booking.fee_bps_quoted)
-      : 1000;
+    const feeBps = safeBps(booking.fee_bps_quoted);
     const { data: feeCalc, error: feeErr } = await supabase
       .rpc('platform_fee_cents', { p_amount_cents: amountCents, p_fee_bps: feeBps });
     if (feeErr || !Number.isFinite(Number(feeCalc))) {

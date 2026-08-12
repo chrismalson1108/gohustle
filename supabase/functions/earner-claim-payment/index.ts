@@ -15,6 +15,18 @@ import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
+// Number(null) is 0 and Number.isFinite(0) is true, so a bare
+// `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
+// a free gig — rather than to the fallback. These columns are NOT NULL DEFAULT 1000
+// today so it cannot fire, but the pattern must not survive to the next nullable
+// column. Test for null/undefined first, and require a positive rate.
+function safeBps(v: unknown, fallback = 1000): number {
+  if (v === null || v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
+
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -224,7 +236,7 @@ Deno.serve(async (req: Request) => {
     // is charged the rate their booking was struck at, not whatever is current.
     // Computed by public.platform_fee_cents so this path cannot drift from the other
     // three — one definition of the fee, everywhere.
-    const claimBps = Number.isFinite(Number(payment.fee_bps)) ? Number(payment.fee_bps) : 1000;
+    const claimBps = safeBps(payment.fee_bps);
     const { data: claimFee, error: claimFeeErr } = await supabase.rpc('platform_fee_cents', {
       p_amount_cents: capturedCents,
       p_fee_bps: claimBps,

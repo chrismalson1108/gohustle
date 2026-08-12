@@ -4,6 +4,18 @@ import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
+// Number(null) is 0 and Number.isFinite(0) is true, so a bare
+// `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
+// a free gig — rather than to the fallback. These columns are NOT NULL DEFAULT 1000
+// today so it cannot fire, but the pattern must not survive to the next nullable
+// column. Test for null/undefined first, and require a positive rate.
+function safeBps(v: unknown, fallback = 1000): number {
+  if (v === null || v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
+
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -117,7 +129,7 @@ Deno.serve(async (req: Request) => {
       // reason this is derived rather than read from the mutable fee_cents column.
       const { data: fullFeeCalc, error: feeErr } = await supabase.rpc('platform_fee_cents', {
         p_amount_cents: payment.amount_cents || 0,
-        p_fee_bps: Number.isFinite(Number(payment.fee_bps)) ? Number(payment.fee_bps) : 1000,
+        p_fee_bps: safeBps(payment.fee_bps),
       });
       if (feeErr || !Number.isFinite(Number(fullFeeCalc))) {
         // FAIL CLOSED — refuse to capture rather than guess a fee. Money that moves
