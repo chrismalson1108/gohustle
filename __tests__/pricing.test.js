@@ -28,6 +28,27 @@ describe('platform_fee_cents SQL/JS parity', () => {
     expect(sql).toMatch(/create or replace function public\.platform_fee_cents/);
   });
 
+  test('the percentage multiply is widened to bigint — int4 overflows above ~21.47%', () => {
+    // THIS ASSERTION EXISTS BECAUSE THE MATRIX BELOW CANNOT CATCH IT.
+    //
+    // (amount * bps) is int4 * int4 in Postgres and raises 22003 whenever the product
+    // exceeds 2^31-1 — at 3000 bps (which platform_rates.fee_bps explicitly permits and
+    // the /pricing page lets an admin set) that is every booking over ~$7,158, well
+    // inside the $10,000 pay ceiling. Reproduced live before the fix:
+    //   platform_fee_cents(1000000, 2147) -> 214700
+    //   platform_fee_cents(1000000, 2148) -> ERROR 22003
+    //
+    // sqlFee() below is JavaScript, which has no 32-bit overflow, so the parity matrix
+    // passes on amount=1000000/bps=3000 — the exact pair that raised in Postgres. A
+    // behavioural mirror cannot detect an arithmetic-WIDTH defect; only reading the
+    // cast out of the migration can. Fixed in 20260806140000.
+    const fix = fs.readFileSync(
+      path.join(__dirname, '..', 'supabase', 'migrations', '20260806140000_fee_overflow_fix.sql'),
+      'utf8',
+    );
+    expect(fix).toMatch(/coalesce\(p_amount_cents,\s*0\)::bigint\s*\*\s*coalesce\(p_fee_bps,\s*1000\)/);
+  });
+
   test('SQL rounds half up (+ 5000) — not truncating division', () => {
     // If someone "simplifies" this back to (amount * bps) / 10000 the JS would
     // silently over-quote by a cent on odd amounts. Pin the exact expression.
