@@ -5,7 +5,7 @@ import { computeGoalPlan, rankGigsForGoal } from '../lib/finance';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
-import { SERVICE_FEE_PCT } from '../lib/stripeClient';
+import { bookingNetDollars } from '../../shared/pricing';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from './KeyboardDoneBar';
 
@@ -43,14 +43,14 @@ export default function MoneyGoalCard({ navigation }) {
     // estimatedHours, so this under- rather than over-states them, which is the
     // honest direction for a goal tracker.)
     const vals = paid
-      .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
+      .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
       .filter((v) => v > 0);
     const earned = vals.reduce((s, v) => s + v, 0);
     let avg = vals.length ? earned / vals.length : 0;
     if (!avg) {
       const anyPaid = (bookings || [])
         .filter((b) => b.status === 'verified' || b.status === 'completed')
-        .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
+        .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
         .filter((v) => v > 0);
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }

@@ -16,7 +16,7 @@ import {
   expensesByJob,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
-import { SERVICE_FEE_PCT } from '../lib/stripeClient';
+import { bookingNetDollars } from '../../shared/pricing';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
@@ -115,7 +115,7 @@ export default function ExpensesScreen() {
     .filter((b) => b?.status === 'verified' && String(b?.completedAt || '').startsWith(String(year)))
     .reduce((sum, b) => {
       const gross = computeEffectivePay(b, null);
-      return sum + gross * (1 - SERVICE_FEE_PCT);
+      return sum + bookingNetDollars(gross, b?.feeBpsQuoted);
     }, 0);
 
   const grossIncome = platformIncome + cashTotal;

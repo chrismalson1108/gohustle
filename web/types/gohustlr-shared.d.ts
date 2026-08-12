@@ -24,6 +24,8 @@ declare module "@gohustlr/shared" {
   export function platformFeeCents(amountCents: number, feeBps?: number | null): number;
   export function earnerNetCents(amountCents: number, feeBps?: number | null): number;
   export function feeLabel(feeBps?: number | null): string;
+  /** Net-of-fee value of a booking in DOLLARS, using that booking's OWN pinned rate. */
+  export function bookingNetDollars(grossDollars: number, feeBps?: number | null): number;
 
   // ── categories ──
   // The gig taxonomy. `slug` is the identity everything filters, groups and

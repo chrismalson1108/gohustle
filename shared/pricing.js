@@ -62,3 +62,16 @@ export function feeLabel(feeBps = DEFAULT_FEE_BPS) {
   const pct = bps / 100;
   return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(2).replace(/0$/, '')}%`;
 }
+
+/**
+ * Net-of-fee value of a booking in DOLLARS, using that booking's OWN pinned rate.
+ *
+ * Goal trackers and tax estimates sum many bookings, and after a rate change or a
+ * promotion those bookings do not share a rate — applying one global percentage to
+ * all of them silently misreports what the earner actually took home. Falls back to
+ * the founding rate for rows predating the pin.
+ */
+export function bookingNetDollars(grossDollars, feeBps) {
+  const cents = Math.round((Number(grossDollars) || 0) * 100);
+  return earnerNetCents(cents, feeBps) / 100;
+}

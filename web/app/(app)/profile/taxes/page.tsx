@@ -32,7 +32,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { useJobs, computeEffectivePay } from "@/lib/jobs";
-import { SERVICE_FEE_PCT } from "@/lib/config";
+import { bookingNetDollars } from "@gohustlr/shared";
 import {
   fetchExpenses,
   addExpense,
@@ -167,7 +167,7 @@ export default function TaxesPage() {
     () =>
       (bookings || [])
         .filter((b) => b?.status === "verified" && String(b?.completedAt || "").startsWith(String(year)))
-        .reduce((sum, b) => sum + computeEffectivePay(b) * (1 - SERVICE_FEE_PCT), 0),
+        .reduce((sum, b) => sum + bookingNetDollars(computeEffectivePay(b), b.feeBpsQuoted), 0),
     [bookings, year],
   );
 

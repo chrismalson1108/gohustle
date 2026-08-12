@@ -8,7 +8,7 @@ import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { money, classNames } from "@/lib/format";
-import { SERVICE_FEE_PCT } from "@/lib/config";
+import { bookingNetDollars } from "@gohustlr/shared";
 import Button from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 
@@ -46,7 +46,7 @@ export default function MoneyGoalCard() {
     // has done this since the fee-net goal fix; web was left on gross, so the same
     // account read $45 here and $41 in the app at the same moment.
     const vals = paid
-      .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
+      .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
       .filter((v) => v > 0);
     const earnedThisMonth = vals.reduce((s, v) => s + v, 0);
 
@@ -55,7 +55,7 @@ export default function MoneyGoalCard() {
     if (!avg) {
       const anyPaid = bookings
         .filter((b) => b.status === "verified" || b.status === "completed")
-        .map((b) => (b.counterOffer ?? b.job?.pay ?? 0) * (1 - SERVICE_FEE_PCT))
+        .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
         .filter((v) => v > 0);
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }

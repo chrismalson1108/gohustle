@@ -1143,7 +1143,7 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const { data: bookings } = await sb
     .from('bookings')
-    .select('counter_offer, status, created_at, jobs(pay)')
+    .select('counter_offer, status, created_at, fee_bps_quoted, jobs(pay)')
     .eq('earner_id', userId)
     .in('status', ['verified', 'completed'])
     .gte('created_at', monthStart);
@@ -1153,9 +1153,23 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
   // app for the same account and the same month, and told the user they were closer to
   // their goal than they are. Keep in sync with shared/constants + src/lib/stripeClient
   // + web/lib/config (all 0.10).
-  const SERVICE_FEE_PCT = 0.10;
+  // Each booking carries the rate it was STRUCK at (bookings.fee_bps_quoted,
+  // 20260806050000). After a rate change or a promotion these differ per booking, so
+  // one global percentage would misreport take-home — the exact class of bug the
+  // comment above describes, just with a moving rate instead of a missing one.
+  // Mirrors platform_fee_cents including its floor; DEFAULT for rows predating the pin.
+  const DEFAULT_FEE_BPS = 1000;
+  const netOf = (gross: number, feeBps: unknown) => {
+    const cents = Math.round((Number(gross) || 0) * 100);
+    const bps = Number.isFinite(Number(feeBps)) && Number(feeBps) > 0
+      ? Math.trunc(Number(feeBps)) : DEFAULT_FEE_BPS;
+    const pct = Math.trunc((cents * bps + 5000) / 10000);
+    const floor = Math.ceil(cents * 0.029) + 30 + 25;
+    const fee = Math.max(0, Math.min(cents, Math.max(pct, floor)));
+    return (cents - fee) / 100;
+  };
   const vals = (bookings ?? [])
-    .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
+    .map((b: Json) => netOf(Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0, b.fee_bps_quoted))
     .filter((v) => v > 0);
   const earned = vals.reduce((s, v) => s + v, 0);
 
@@ -1163,13 +1177,13 @@ async function earningsPlan(sb: SupabaseClient, userId: string): Promise<string>
   if (!avg) {
     const { data: recent } = await sb
       .from('bookings')
-      .select('counter_offer, jobs(pay)')
+      .select('counter_offer, fee_bps_quoted, jobs(pay)')
       .eq('earner_id', userId)
       .in('status', ['verified', 'completed'])
       .order('created_at', { ascending: false })
       .limit(10);
     const rv = (recent ?? [])
-      .map((b: Json) => (Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0) * (1 - SERVICE_FEE_PCT))
+      .map((b: Json) => netOf(Number(b.counter_offer) || Number((b.jobs as Json | null)?.pay) || 0, b.fee_bps_quoted))
       .filter((v) => v > 0);
     avg = rv.length ? rv.reduce((s, v) => s + v, 0) / rv.length : 40;
   }
