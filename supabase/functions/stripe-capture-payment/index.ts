@@ -103,6 +103,9 @@ Deno.serve(async (req: Request) => {
     }
 
     let earnerAmountCents = payment.earner_amount_cents ?? 0;
+    // The final gig value this capture settles at, for the promo budget. Null means the
+    // capture branch never ran (already captured) and there is nothing new to settle.
+    let capturedGigCents: number | null = null;
 
     // Re-check the earner's Connect account is STILL payout-capable before we move
     // money. It was verified at accept time, but Stripe can restrict an account in
@@ -141,6 +144,8 @@ Deno.serve(async (req: Request) => {
       const discountCents = Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0));
       const creditCents = Math.max(0, Math.trunc(Number(payment.fee_credit_cents) || 0));
       const gigAmountCents = (payment.amount_cents || 0) + discountCents;
+      // Defaults to the full authorized value; the partial branch narrows it.
+      capturedGigCents = gigAmountCents;
 
       const { data: fullFeeCalc, error: feeErr } = await supabase.rpc('platform_fee_after_credit', {
         p_amount_cents: gigAmountCents,
@@ -160,6 +165,9 @@ Deno.serve(async (req: Request) => {
       const fullFeeForAuth = Math.max(0, Number(fullFeeCalc) - discountCents);
       if (capturePct < 1) {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
+        // The real, final gig value — what the promo budget should actually be charged.
+        // Derived from the same immutable inputs as the fee, so it survives a retry.
+        capturedGigCents = captureCents + discountCents;
         // Derive the fee from the IMMUTABLE authorized amount, never from the
         // mutable fee_cents column: this branch rewrites fee_cents below, so if a
         // first partial attempt persisted the reduced fee and then failed (Stripe
@@ -216,6 +224,30 @@ Deno.serve(async (req: Request) => {
     // double-credit, and a transient failure rolls back so a retry still credits.
     void earnerAmountCents; // (now read inside the RPC from the payments row)
     await supabase.rpc('credit_earnings', { p_payment_id: payment.id });
+
+    // Settle the promo budget against what was ACTUALLY captured.
+    //
+    // At booking, consume_promo_grant charges the campaign the worst-case benefit so
+    // in-flight work cannot oversubscribe the budget. This is the other half: now that
+    // the real figure is known — and it is lower on every partial capture — give the
+    // difference back. Without it a campaign is permanently charged the maximum per
+    // redemption and exhausts long before its budget is really spent.
+    //
+    // Deliberately AFTER the money has moved and deliberately non-fatal: a budget that
+    // is momentarily over-charged is a reporting error, while a throw here would fail a
+    // capture whose funds have already settled. ctl_benefit_never_settled catches any
+    // redemption this misses.
+    if (capturedGigCents !== null) {
+      const { error: settleErr } = await supabase.rpc('settle_booking_benefits', {
+        p_booking: bookingId,
+        p_amount_cents: capturedGigCents,
+      });
+      if (settleErr) {
+        await logServerError('stripe-capture-payment',
+          `benefit settle failed for booking ${bookingId}: ${settleErr.message}`,
+          { booking_id: bookingId, payment_id: payment.id });
+      }
+    }
 
     // Record the dispute server-side so a reduced payout ALWAYS has an audit trail
     // (the client no longer inserts this). Idempotent per booking so a capture retry

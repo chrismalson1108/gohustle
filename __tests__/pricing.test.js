@@ -142,3 +142,61 @@ describe('platform_fee_cents SQL/JS parity', () => {
     expect(feeLabel(1250)).toBe('12.5%');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The promo budget counterfactual, pinned textually.
+//
+// consume_promo_grant measures "what this discount costs" as (what they would have
+// paid) − (what they will pay). The first term was a hardcoded 1000 bps while the
+// standing rate is configurable via fee_bps_at — so raising the platform rate to 15%
+// made every 0%-fee promo cost 15% while charging the budget 10%. A 50% undercount,
+// in the unsafe direction, silently.
+//
+// This cannot be caught by exercising the JS mirror: the defect is which SQL function
+// supplies one operand. So assert on the migration text, the same way the bigint
+// overflow cast is pinned above.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('promo budget counterfactual', () => {
+  const lifecycle = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase', 'migrations', '20260806220000_benefit_lifecycle.sql'),
+    'utf8',
+  );
+
+  test('promo_benefit_cents measures against the standing rate, not a literal', () => {
+    const fn = lifecycle.match(
+      /create or replace function public\.promo_benefit_cents[\s\S]*?\$\$;/,
+    );
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toMatch(/fee_bps_at\(/);
+    // The literal that was the bug. Any bare 1000 as a bps operand is a regression.
+    expect(fn[0]).not.toMatch(/platform_fee_cents\(\s*p_amount_cents\s*,\s*1000\s*\)/);
+  });
+
+  test('consume_promo_grant uses the helper rather than recomputing the counterfactual', () => {
+    const fn = lifecycle.match(
+      /create or replace function public\.consume_promo_grant[\s\S]*?\$\$;/,
+    );
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toMatch(/promo_benefit_cents\(/);
+    expect(fn[0]).not.toMatch(/platform_fee_cents\(\s*p_amount_cents\s*,\s*1000\s*\)/);
+  });
+
+  test('the replacement preserves the guards the live function had gained', () => {
+    // Reproducing a function from a stale migration file silently reverts everything
+    // added since. These three were added after consume_promo_grant was first written
+    // and MUST survive any future replacement.
+    const fn = lifecycle.match(
+      /create or replace function public\.consume_promo_grant[\s\S]*?\$\$;/,
+    )[0];
+    expect(fn).toMatch(/promotions_enabled/);      // the kill switch
+    expect(fn).toMatch(/revoked_at is null/);      // revoked grants cannot be spent
+    expect(fn).toMatch(/kind = 'fee_override'/);   // only fee promos apply here
+  });
+
+  test('release refuses to touch bookings (an AFTER-trigger write would roll back the decline)', () => {
+    const fn = lifecycle.match(
+      /create or replace function public\.release_booking_benefits[\s\S]*?\$\$;/,
+    )[0];
+    expect(fn).not.toMatch(/update public\.bookings/);
+  });
+});
