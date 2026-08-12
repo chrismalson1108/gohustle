@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { computeGoalPlan, rankGigsForGoal } from '../lib/finance';
 import { useUser } from '../context/UserContext';
-import { useJobs } from '../context/JobsContext';
+import { useJobs, computeEffectivePay } from '../context/JobsContext';
 import { useAuth } from '../context/AuthContext';
 import { bookingNetDollars } from '../../shared/pricing';
 import { colors, radii, shadows } from '../theme';
@@ -34,23 +34,39 @@ export default function MoneyGoalCard({ navigation }) {
   const [draft, setDraft] = useState(String(monthlyEarningGoal || 1000));
 
   const { plan, picks } = useMemo(() => {
+    // For the pre-pin fallback only: the browse list is the sole client-side source
+    // of estimatedHours, and a finished gig is often no longer in it — hence the
+    // pinned amount being strongly preferred above.
+    const jobById = new Map((jobs || []).map((j) => [j.id, j]));
     const paid = (bookings || []).filter(
       (b) => (b.status === 'verified' || b.status === 'completed') && isThisMonth(b.completedAt),
     );
     // Net of the platform fee — this card tracks progress toward what the earner
-    // actually RECEIVES, and the gross list price overstates that by 10%. (Hourly
-    // gigs are still valued at the listed rate: the booking embed carries no
-    // estimatedHours, so this under- rather than over-states them, which is the
-    // honest direction for a goal tracker.)
+    // actually RECEIVES, and the gross list price overstates that by the fee.
+    //
+    // Gross comes from amount_cents_quoted, the amount PINNED to the booking at
+    // insert (20260806000000). That is the figure the charge is actually derived
+    // from, so the goal card and the payout cannot disagree.
+    //
+    // This previously used the raw list pay and valued every hourly gig at ONE
+    // hour — a 6-hour $25/hr job counted as $25 — which was rationalised in a
+    // comment here as "under- rather than over-stating, the honest direction for a
+    // goal tracker". Undercounting an earner's income by 6x is not honest, it is
+    // just wrong in a flattering direction. The pin removes the excuse; where it is
+    // absent (bookings predating it) computeEffectivePay multiplies by the hours.
+    const grossDollars = (b) =>
+      b.amountCentsQuoted != null
+        ? b.amountCentsQuoted / 100
+        : computeEffectivePay(b, jobById.get(b.jobId));
     const vals = paid
-      .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
+      .map((b) => bookingNetDollars(grossDollars(b), b.feeBpsQuoted))
       .filter((v) => v > 0);
     const earned = vals.reduce((s, v) => s + v, 0);
     let avg = vals.length ? earned / vals.length : 0;
     if (!avg) {
       const anyPaid = (bookings || [])
         .filter((b) => b.status === 'verified' || b.status === 'completed')
-        .map((b) => bookingNetDollars(b.counterOffer ?? b.job?.pay ?? 0, b.feeBpsQuoted))
+        .map((b) => bookingNetDollars(grossDollars(b), b.feeBpsQuoted))
         .filter((v) => v > 0);
       avg = anyPaid.length ? anyPaid.reduce((s, v) => s + v, 0) / anyPaid.length : 40;
     }

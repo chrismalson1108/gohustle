@@ -284,7 +284,7 @@ export function JobsProvider({ children }) {
       .from('bookings')
       .select(`
         *,
-        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, location, category, category_slug, poster_id, created_at)
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, location, category, category_slug, poster_id, created_at)
       `)
       .eq('earner_id', user.id)
       .order('created_at', { ascending: false });
@@ -332,7 +332,7 @@ export function JobsProvider({ children }) {
       .select(`
         *,
         earner:profiles!bookings_earner_id_fkey(id, name, avatar_initial, avatar_url, rating, review_count, skills, school, student_verified, student_status),
-        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, category, category_slug, poster_id, created_at)
+        job:jobs!bookings_job_id_fkey(id, title, pay, pay_type, estimated_hours, category, category_slug, poster_id, created_at)
       `)
       .in('job_id', jobIds)
       .order('created_at', { ascending: false });

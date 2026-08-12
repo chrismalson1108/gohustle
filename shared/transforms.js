@@ -172,6 +172,9 @@ export function transformBooking(b) {
       title: b.job.title,
       pay: Number(b.job.pay),
       payType: b.job.pay_type,
+      // Without this an hourly booking's value reads as the RATE — a 6-hour $25/hr gig
+      // counts as $25. Both booking selects now request it.
+      estimatedHours: b.job.estimated_hours != null ? Number(b.job.estimated_hours) : null,
       location: b.job.location || null,
       // Needed by the badge engine (category variety, repeat-client and
       // apply-speed rules). Nullable — older joins may not select them.
