@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay, platformFeeCents, effectiveFeeLabel } from "@gohustlr/shared";
+import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay, platformFeeCents, effectiveFeeLabel, feeLabel, feeBreakdown } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
@@ -503,9 +503,30 @@ export default function JobDetailPage() {
               <div>
                 <PanelLabel>Payment</PanelLabel>
                 <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
-                <Row label={`GoHustlr service fee${effectiveFeeLabel(grossCents, feeBps) ? ` (${effectiveFeeLabel(grossCents, feeBps)})` : ""}`} value={`−${money(fee)}`} />
+                {/* Below the processing floor the deduction is the FLOOR, not the
+                    percentage — so "0%" beside a real deduction reads as a lie unless
+                    we say where the money went. Above it, one line is the honest and
+                    simpler answer. Mirrors JobDetailScreen on mobile exactly. */}
+                <Row
+                  label={
+                    feeBreakdown(grossCents, feeBps).isFloored
+                      ? "Payment processing"
+                      : `GoHustlr service fee${effectiveFeeLabel(grossCents, feeBps) ? ` (${effectiveFeeLabel(grossCents, feeBps)})` : ""}`
+                  }
+                  value={`−${money(fee)}`}
+                />
                 <div className="my-2 h-px bg-divider" />
                 <Row label="You receive" value={money(net)} bold />
+                {feeBreakdown(grossCents, feeBps).isFloored && (
+                  // Deliberately NOT a pure pass-through claim: Stripe takes 2.9% + 30c
+                  // and the remaining 25c is ours. "Processing only" would be the nicer
+                  // story and the false one.
+                  <p className="mt-3 text-xs leading-[17px] text-ink-muted">
+                    GoHustlr is taking {feeLabel(feeBps)} in platform fee on this gig. That{" "}
+                    {money(fee)} is card processing ({money(feeBreakdown(grossCents, feeBps).processingCents / 100)}){" "}
+                    plus {money(feeBreakdown(grossCents, feeBps).platformCents / 100)} toward payment costs — we keep nothing on top.
+                  </p>
+                )}
                 <p className="mt-3 text-xs leading-[17px] text-ink-muted">
                   Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.
                 </p>

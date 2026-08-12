@@ -16,7 +16,8 @@
 // migration is what gives it teeth.
 const fs = require('fs');
 const path = require('path');
-const { platformFeeCents, earnerNetCents, feeLabel, DEFAULT_FEE_BPS } = require('../shared/pricing.js');
+const { platformFeeCents, earnerNetCents, feeLabel, DEFAULT_FEE_BPS, feeBreakdown
+} = require('../shared/pricing.js');
 
 const MIGRATION = path.join(
   __dirname, '..', 'supabase', 'migrations', '20260806050000_platform_rate.sql',
@@ -212,5 +213,60 @@ describe('promo budget counterfactual', () => {
     expect(idx[0]).not.toMatch(/\bwhere\b/i);
     // And the migration must not resurrect the partial one.
     expect(lifecycle).not.toMatch(/create unique index[^;]*promo_redemptions_one_live_per_booking/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The honest 0% breakdown.
+//
+// At 0 bps the deduction does not vanish — platform_fee_cents floors at Stripe's cost
+// so a free gig never settles at a loss. Showing "0%" while the earner watches money
+// come off is the small dishonesty this split exists to prevent.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('feeBreakdown', () => {
+  test('the parts always reconstruct the whole', () => {
+    for (const amt of [500, 1005, 5000, 10000, 123456]) {
+      for (const bps of [0, 200, 500, 1000, 3000]) {
+        const b = feeBreakdown(amt, bps);
+        expect(b.processingCents + b.platformCents).toBe(b.totalCents);
+        expect(b.netCents + b.totalCents).toBe(amt);
+        // And it must agree with the function the server mirrors.
+        expect(b.totalCents).toBe(platformFeeCents(amt, bps));
+      }
+    }
+  });
+
+  test('a 0% rate still collects processing, and says so', () => {
+    const b = feeBreakdown(10000, 0);
+    expect(b.totalCents).toBe(345);        // the floor
+    expect(b.processingCents).toBe(320);   // ceil(10000*0.029) + 30 — Stripe's
+    expect(b.platformCents).toBe(25);      // the floor margin — ours, not hidden
+    expect(b.isFloored).toBe(true);
+  });
+
+  test('a rate below the floor behaves exactly like 0%', () => {
+    // 2% of $100 is $2.00, under the $3.45 floor — so 2% and 0% are the same charge.
+    // Worth pinning: it is the reason a "2% platform fee" would not mean what it says.
+    expect(feeBreakdown(10000, 200)).toEqual(feeBreakdown(10000, 0));
+  });
+
+  test('above the floor, the platform keeps the difference and nothing is floored', () => {
+    const b = feeBreakdown(10000, 1000);
+    expect(b.totalCents).toBe(1000);
+    expect(b.processingCents).toBe(320);
+    expect(b.platformCents).toBe(680);
+    expect(b.isFloored).toBe(false);
+  });
+
+  test('processing is never reported as more than was actually taken', () => {
+    // On a tiny amount platform_fee_cents clamps to the amount itself.
+    const b = feeBreakdown(50, 0);
+    expect(b.processingCents).toBeLessThanOrEqual(b.totalCents);
+    expect(b.platformCents).toBeGreaterThanOrEqual(0);
+    expect(b.netCents).toBeGreaterThanOrEqual(0);
+  });
+
+  test('a null rate does not become a free gig', () => {
+    expect(feeBreakdown(10000, null).totalCents).toBe(platformFeeCents(10000, 1000));
   });
 });

@@ -47,6 +47,46 @@ export function platformFeeCents(amountCents, feeBps = DEFAULT_FEE_BPS) {
   return Math.max(0, Math.min(amt, Math.max(pct, floor)));
 }
 
+/**
+ * Split the deduction into the part that is OURS and the part that is the card
+ * network's, so a screen can be honest about a 0% fee.
+ *
+ * At 0 bps the deduction does not go to zero — platform_fee_cents floors at Stripe's
+ * cost so a free gig never settles at a loss. Labelling that "0%" while the earner
+ * watches $3.45 come off a $100 gig is the kind of small dishonesty that costs more
+ * trust than the fee itself. This lets the UI say what is actually happening:
+ *
+ *     Platform fee    $0.00
+ *     Card processing $3.20
+ *     You receive    $96.80
+ *
+ * NOT a pure pass-through, and the split says so. The floor is
+ * ceil(amount x 2.9%) + 30c + 25c, and only the first two are Stripe's — the last 25c
+ * is ours. Folding it into "processing" would be a nicer story and a false one, so
+ * processingCents is Stripe's real take and everything above it lands in platformCents,
+ * including that 25c.
+ *
+ * Mirrors platform_fee_cents; the same migration-parsing test guards the drift.
+ */
+export function feeBreakdown(amountCents, feeBps = DEFAULT_FEE_BPS) {
+  const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;
+  const bps = coerceBps(feeBps);
+  const totalCents = platformFeeCents(amt, bps);
+  // Capped at the total: on a very small gig platform_fee_cents clamps to the amount
+  // itself, and processing must never be reported as more than was actually taken.
+  const processingCents = Math.min(totalCents, Math.ceil(amt * STRIPE_PCT) + STRIPE_FIXED_CENTS);
+  const nominalCents = Math.trunc((amt * bps + 5000) / 10000);
+  return {
+    totalCents,
+    processingCents,
+    platformCents: totalCents - processingCents,
+    netCents: amt - totalCents,
+    // True when the headline rate was too low to cover processing, i.e. the number the
+    // earner sees is the floor rather than the percentage.
+    isFloored: totalCents > nominalCents,
+  };
+}
+
 /** What the earner actually receives. The fee comes out of THEIR side. */
 export function earnerNetCents(amountCents, feeBps = DEFAULT_FEE_BPS) {
   const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;

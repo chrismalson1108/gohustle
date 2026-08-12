@@ -28,6 +28,23 @@ declare module "@gohustlr/shared" {
   export function bookingNetDollars(grossDollars: number, feeBps?: number | null): number;
   /** Rate to show beside a computed fee, or null when the processing floor set it. */
   export function effectiveFeeLabel(amountCents: number, feeBps?: number | null): string | null;
+  /**
+   * Splits the deduction into the card network's share and ours, so a screen can be
+   * honest when the headline rate is below what processing costs. processingCents is
+   * Stripe's real take (2.9% + 30c); everything above it — including the 25c floor
+   * margin — is platformCents, because folding that into "processing" would be a
+   * nicer story and a false one.
+   */
+  export function feeBreakdown(
+    amountCents: number,
+    feeBps?: number | null,
+  ): {
+    totalCents: number;
+    processingCents: number;
+    platformCents: number;
+    netCents: number;
+    isFloored: boolean;
+  };
 
   // ── categories ──
   // The gig taxonomy. `slug` is the identity everything filters, groups and

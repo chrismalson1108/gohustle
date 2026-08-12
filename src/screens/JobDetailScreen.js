@@ -22,7 +22,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { categoryLabel, sameCategory } from '../../shared/categories.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
-import { getFeeBps, feeBpsSync, platformFeeCents, effectiveFeeLabel } from '../lib/pricing';
+import { getFeeBps, feeBpsSync, platformFeeCents, effectiveFeeLabel, feeLabel, feeBreakdown } from '../lib/pricing';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const STATUS_CONTENT = {
@@ -430,9 +430,14 @@ export default function JobDetailScreen({ route, navigation }) {
                 // what stripe-create-payment-intent will actually charge — including
                 // the processing floor, which a plain percentage multiply misses.
                 const grossCents = Math.round(gross * 100);
-                const feeCents = platformFeeCents(grossCents, feeBps);
-                const fee = feeCents / 100;
-                const net = (grossCents - feeCents) / 100;
+                const b = feeBreakdown(grossCents, feeBps);
+                const fee = b.totalCents / 100;
+                const net = b.netCents / 100;
+                // When the headline rate is below what the card networks cost, the
+                // deduction is the FLOOR, not the percentage — so "0%" next to a real
+                // deduction reads as a lie unless we say where the money went. Above
+                // the floor the single line is the honest and simpler answer.
+                const label = effectiveFeeLabel(grossCents, feeBps);
                 return (
                   <>
                     <View style={styles.feeRow}>
@@ -440,7 +445,9 @@ export default function JobDetailScreen({ route, navigation }) {
                       <Text style={styles.feeVal} numberOfLines={1}>${gross.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeRow}>
-                      <Text style={styles.feeLabel} numberOfLines={2}>GoHustlr service fee{effectiveFeeLabel(grossCents, feeBps) ? ` (${effectiveFeeLabel(grossCents, feeBps)})` : ''}</Text>
+                      <Text style={styles.feeLabel} numberOfLines={2}>
+                        {b.isFloored ? 'Payment processing' : `GoHustlr service fee${label ? ` (${label})` : ''}`}
+                      </Text>
                       <Text style={styles.feeVal} numberOfLines={1}>−${fee.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeDivider} />
@@ -448,6 +455,16 @@ export default function JobDetailScreen({ route, navigation }) {
                       <Text style={styles.feeTotalLabel} numberOfLines={1}>You receive</Text>
                       <Text style={styles.feeTotalVal} numberOfLines={1}>${net.toFixed(2)}</Text>
                     </View>
+                    {b.isFloored && (
+                      // Deliberately does NOT claim a pure pass-through. Stripe takes
+                      // 2.9% + 30c; the remaining 25c is ours, and saying "processing
+                      // only" would be the nicer story and the false one.
+                      <Text style={styles.feeNote}>
+                        GoHustlr is taking {feeLabel(feeBps)} in platform fee on this gig.
+                        That ${fee.toFixed(2)} is card processing (${(b.processingCents / 100).toFixed(2)})
+                        plus ${(b.platformCents / 100).toFixed(2)} toward payment costs — we keep nothing on top.
+                      </Text>
+                    )}
                     <Text style={styles.feeNote}>Paid securely in-app and released to you after the poster verifies your work. Tips (if any) are yours in full.</Text>
                   </>
                 );
