@@ -1,6 +1,6 @@
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
-import { SetRate, TierToggle, GrantDirect } from "./PricingControls";
+import { SetRate, TierToggle, GrantDirect, TierEditor } from "./PricingControls";
 
 export const metadata = { title: "Pricing" };
 
@@ -66,6 +66,7 @@ export default async function PricingPage() {
             <th className="px-3 py-2">After</th>
             <th className="px-3 py-2">Fee</th>
             <th className="px-3 py-2">Live</th>
+            <th className="px-3 py-2">Edit</th>
           </tr>
         </thead>
         <tbody>
@@ -78,10 +79,15 @@ export default async function PricingPage() {
               <td className="px-3 py-2 text-xs">{t.min_completed} verified gigs</td>
               <td className="px-3 py-2 text-xs">{t.fee_bps / 100}%</td>
               <td className="px-3 py-2"><TierToggle id={t.id} enabled={t.enabled} /></td>
+              <td className="px-3 py-2"><TierEditor tier={t} /></td>
             </tr>
           ))}
         </tbody>
       </table>
+      <div className="mt-3 rounded-xl border border-dashed border-[var(--line)] p-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Add a rung</div>
+        <TierEditor />
+      </div>
 
       <h2 className="mt-8 text-base font-semibold text-[var(--ink)]">Grant to specific people</h2>
       <p className="mt-1 text-sm text-[var(--muted)]">

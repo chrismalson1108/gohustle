@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createPromotion, setPromotionStatus, mintCodes, type ActionResult } from "./actions";
+import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, type ActionResult } from "./actions";
 import { PRESETS, type Preset } from "./presets";
 
 function Result({ r }: { r: ActionResult | null }) {
@@ -204,5 +204,94 @@ export function MintCodes({ id }: { id: string }) {
       </div>
       <Result r={result} />
     </div>
+  );
+}
+
+// Edit a live campaign: rename, top up the budget, raise the cap, extend the run.
+//
+// Top-up and extend are the two operations you actually reach for — a campaign that is
+// working and about to expire, or one that exhausted its budget mid-launch. Neither was
+// possible without SQL. Extend is expressed in DAYS FROM NOW rather than as a date,
+// because "give it another two weeks" is the real thought and a date picker makes you
+// do the arithmetic yourself.
+export function EditPromotion({
+  promo,
+}: {
+  promo: { id: string; name: string; budget_cents: number; spent_cents: number; max_redemptions: number };
+}) {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  const [open, setOpen] = useState(false);
+  const input = "rounded-lg border border-[var(--line)] px-2 py-1 text-xs";
+
+  if (!open) {
+    return (
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setOpen(true)} className="text-xs text-[var(--brand)] underline">
+          edit
+        </button>
+        <CloneButton id={promo.id} />
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-1"
+      action={(fd) => start(async () => setResult(await editPromotion(fd)))}
+    >
+      <input type="hidden" name="id" value={promo.id} />
+      <div className="flex flex-wrap items-end gap-1.5">
+        <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">
+          Name
+          <input name="name" defaultValue={promo.name} className={`${input} w-36`} />
+        </label>
+        <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">
+          Budget $
+          <input name="budget_dollars" type="number" step="10" min={promo.spent_cents / 100}
+                 defaultValue={promo.budget_cents / 100} className={`${input} w-20`} />
+        </label>
+        <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">
+          Max uses
+          <input name="max_redemptions" type="number" min="1" defaultValue={promo.max_redemptions} className={`${input} w-16`} />
+        </label>
+        <label className="flex flex-col gap-0.5 text-[10px] text-[var(--muted)]">
+          Extend (days)
+          <input name="extend_days" type="number" step="1" defaultValue="0" className={`${input} w-16`} />
+        </label>
+        <button type="submit" disabled={pending} className="rounded bg-[var(--brand)] px-2 py-1 text-xs font-medium text-white disabled:opacity-40">
+          {pending ? "Saving…" : "Save"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-[var(--muted)] underline">
+          cancel
+        </button>
+      </div>
+      <span className="text-[10px] text-[var(--muted)]">
+        Budget can&rsquo;t go below the ${(promo.spent_cents / 100).toFixed(2)} already committed.
+      </span>
+      <Result r={result} />
+    </form>
+  );
+}
+
+function CloneButton({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => start(async () => {
+          const fd = new FormData();
+          fd.set("id", id);
+          setResult(await clonePromotion(fd));
+        })}
+        className="text-xs text-[var(--brand)] underline disabled:opacity-40"
+      >
+        clone
+      </button>
+      <Result r={result} />
+    </>
   );
 }

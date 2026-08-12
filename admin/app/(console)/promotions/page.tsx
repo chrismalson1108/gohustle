@@ -1,6 +1,6 @@
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
-import { CreatePromotion, StatusButtons, MintCodes } from "./PromoControls";
+import { CreatePromotion, StatusButtons, MintCodes, EditPromotion } from "./PromoControls";
 
 export const metadata = { title: "Promotions" };
 
@@ -146,6 +146,9 @@ export default async function PromotionsPage() {
                       </span>
                       <div className="mt-1">
                         <StatusButtons id={p.id} status={p.status} />
+                      </div>
+                      <div className="mt-1">
+                        <EditPromotion promo={p} />
                       </div>
                     </td>
                   </tr>
