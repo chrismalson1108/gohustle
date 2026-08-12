@@ -51,12 +51,21 @@ alter table public.promo_redemptions
   add column if not exists settled_at  timestamptz,
   add column if not exists release_reason text;
 
--- Partial: only ONE live redemption per booking, but a released one must not block a
--- later legitimate re-book of the same booking id. (It cannot happen today — booking
--- ids are never reused — but the constraint should express the rule, not the accident.)
-drop index if exists promo_redemptions_one_per_booking;
-create unique index if not exists promo_redemptions_one_live_per_booking
-  on public.promo_redemptions (booking_id) where released_at is null;
+-- THE INDEX STAYS PLAIN. An earlier version of this migration made it partial
+-- (`where released_at is null`) on the reasoning that a released redemption should not
+-- block a re-book of the same booking. That was wrong twice over:
+--
+--   1. It broke a live path immediately. consume_poster_discount inserts with
+--      `on conflict (booking_id) do nothing`, and ON CONFLICT inference CANNOT match a
+--      partial index — every poster-discount consumption began failing with 42P10.
+--   2. The scenario it protected against cannot occur: booking ids are never reused,
+--      and a released redemption belongs to a declined or cancelled booking, which is
+--      terminal.
+--
+-- So it bought nothing and cost a production regression. Any future change here must
+-- keep the index inferrable by a bare `on conflict (booking_id)`.
+create unique index if not exists promo_redemptions_one_per_booking
+  on public.promo_redemptions (booking_id);
 
 -- ── The standing-rate counterfactual ────────────────────────────────────────
 -- What the user would have paid absent any promo, at the rate in force right now.

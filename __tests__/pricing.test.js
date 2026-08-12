@@ -199,4 +199,18 @@ describe('promo budget counterfactual', () => {
     )[0];
     expect(fn).not.toMatch(/update public\.bookings/);
   });
+  test('the redemption index stays inferrable by a bare ON CONFLICT (booking_id)', () => {
+    // consume_poster_discount inserts with `on conflict (booking_id) do nothing`, and
+    // ON CONFLICT inference cannot match a PARTIAL unique index. A previous version of
+    // this migration made the index partial and every poster-discount consumption began
+    // failing with 42P10 in production. If the index ever grows a WHERE clause again,
+    // that writer has to change in the same commit.
+    const idx = lifecycle.match(
+      /create unique index[^;]*promo_redemptions_one_per_booking[^;]*;/,
+    );
+    expect(idx).not.toBeNull();
+    expect(idx[0]).not.toMatch(/\bwhere\b/i);
+    // And the migration must not resurrect the partial one.
+    expect(lifecycle).not.toMatch(/create unique index[^;]*promo_redemptions_one_live_per_booking/);
+  });
 });
