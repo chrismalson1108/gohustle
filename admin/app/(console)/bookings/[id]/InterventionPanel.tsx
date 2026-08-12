@@ -5,6 +5,7 @@ import {
   forceComplete, reopenBooking, clearStartedAt, forceCancel, releaseHold, refundPayment,
   recordReversal, type ActionResult,
 } from "../actions";
+import ReauthPrompt from "../../ReauthPrompt";
 
 type Action = (fd: FormData) => Promise<ActionResult>;
 
@@ -28,6 +29,10 @@ export default function InterventionPanel({
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
+  // The submitted form and the action it was for, held across re-authentication so the
+  // operator does not retype a reason they already wrote.
+  const [pendingFd, setPendingFd] = useState<FormData | null>(null);
+  const [pendingAction, setPendingAction] = useState<((fd: FormData) => Promise<ActionResult>) | null>(null);
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -51,6 +56,11 @@ export default function InterventionPanel({
     for (const [k, v] of Object.entries(extra)) fd.set(k, v);
     start(async () => {
       const r = await action(fd);
+      // admin-payment-action demands a second factor satisfied in the last 300s before
+      // it will refund or void a hold. Hold the form and show a code prompt rather than
+      // printing "stale_mfa" at an operator — a denial nobody can act on reads as "the
+      // refund button is broken", which is worse than having no step-up at all.
+      if (!r.ok && r.message === "stale_mfa") { setPendingFd(fd); setPendingAction(() => action); setResult(null); return; }
       setResult(r);
       if (r.ok) { setReason(""); setAmount(""); }
     });
@@ -154,6 +164,20 @@ export default function InterventionPanel({
         </div>
       </div>
 
+      {pendingFd && pendingAction && (
+        <ReauthPrompt
+          onCancel={() => { setPendingFd(null); setPendingAction(null); }}
+          onVerified={() =>
+            start(async () => {
+              const again = await pendingAction(pendingFd);
+              setPendingFd(null);
+              setPendingAction(null);
+              setResult(again);
+              if (again.ok) { setReason(""); setAmount(""); }
+            })
+          }
+        />
+      )}
       {result && (
         <p className={`text-sm ${result.ok ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}>
           {result.message}

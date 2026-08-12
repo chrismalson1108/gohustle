@@ -30,7 +30,12 @@ Deno.serve(async (req: Request) => {
   let op: string | null = null;
 
   try {
-    const auth = await requireAdminCaller(req, 'admin');
+    // 300s step-up. This function issues Stripe refunds and voids escrow holds — the
+    // single most damaging thing an admin token can do — and until now it accepted any
+    // AAL2 token of any age, so the console's step-up gating did not apply to the one
+    // place money actually leaves. A 'stale_mfa' denial is recoverable: the console
+    // prompts for a code and retries.
+    const auth = await requireAdminCaller(req, 'admin', 300);
     if (!auth.ok) return json({ error: auth.denial.error }, auth.denial.status);
     const { service, user } = auth.caller;
 

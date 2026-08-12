@@ -28,7 +28,7 @@ export interface AdminDenial {
   /** HTTP status to return. */
   status: number;
   /** Stable machine-readable code; the console maps these to operator-facing copy. */
-  error: 'unauthenticated' | 'mfa_required' | 'forbidden' | 'admin_check_unavailable';
+  error: 'unauthenticated' | 'mfa_required' | 'stale_mfa' | 'forbidden' | 'admin_check_unavailable';
 }
 
 // Read the AAL claim straight from the (already-authenticated) access-token JWT.
@@ -36,6 +36,37 @@ export interface AdminDenial {
 // after mfa.verify, so this claim is authoritative for "did this session pass
 // MFA". Signature verification is not needed here because getUser() below already
 // proved the token authentic against the auth server.
+// How long ago the second factor was actually satisfied, from the `amr`
+// (authentication methods reference) array in the token — one entry per method with
+// the unix timestamp it was met.
+//
+// AAL2 alone only proves MFA happened at SOME point in the session. It does not prove
+// the person at the keyboard now is the one who passed it: a stolen laptop, a hijacked
+// cookie or a borrowed unlocked screen all satisfy it. admin-payment-action ISSUES
+// REFUNDS AND VOIDS HOLDS — real money leaving on a token that could be hours old and
+// in someone else's hands.
+//
+// FAILS CLOSED: absent, malformed or MFA-free amr returns null, which callers treat as
+// stale. Worst case is being asked for a code; never a silent pass.
+const MFA_METHODS = new Set(['totp', 'mfa/totp', 'webauthn', 'mfa/webauthn']);
+
+function mfaAgeSeconds(token: string): number | null {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    const amr = JSON.parse(atob(b64 + pad)).amr as { method?: string; timestamp?: number }[] | undefined;
+    if (!Array.isArray(amr)) return null;
+    const stamps = amr
+      .filter((a) => a?.method && MFA_METHODS.has(String(a.method)))
+      .map((a) => Number(a.timestamp))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!stamps.length) return null;
+    return Math.max(0, Math.floor(Date.now() / 1000) - Math.max(...stamps));
+  } catch {
+    return null;
+  }
+}
+
 function aalFromToken(token: string): string | null {
   try {
     const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -60,6 +91,14 @@ function aalFromToken(token: string): string | null {
 export async function requireAdminCaller(
   req: Request,
   minRole: AdminRole = 'admin',
+  /**
+   * Seconds. When set, the second factor must ALSO have been satisfied within this
+   * window — step-up authentication. Pass it from anything that moves money;
+   * admin-payment-action issues refunds and voids holds and previously accepted any
+   * AAL2 token of any age, which made the console's step-up gating decorative for the
+   * one function where it mattered most.
+   */
+  maxMfaAgeSeconds?: number,
 ): Promise<{ ok: true; caller: AdminCaller } | { ok: false; denial: AdminDenial }> {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '').trim() ?? '';
   if (!token) return { ok: false, denial: { status: 401, error: 'unauthenticated' } };
@@ -75,6 +114,15 @@ export async function requireAdminCaller(
 
   if (aalFromToken(token) !== 'aal2') {
     return { ok: false, denial: { status: 403, error: 'mfa_required' } };
+  }
+
+  if (typeof maxMfaAgeSeconds === 'number') {
+    const age = mfaAgeSeconds(token);
+    if (age === null || age > maxMfaAgeSeconds) {
+      // A DISTINCT code from mfa_required: the console must show a code prompt and
+      // retry, not tell a fully-enrolled admin to go set up MFA they already have.
+      return { ok: false, denial: { status: 403, error: 'stale_mfa' } };
+    }
   }
 
   const { data: row, error: lookupErr } = await service

@@ -73,6 +73,16 @@ async function callPaymentAction(payload: Record<string, unknown>): Promise<{ ok
   return { ok: res.ok, body };
 }
 
+// admin-payment-action requires the second factor to have been satisfied in the last
+// 300s (it issues refunds and voids holds). Surface that as the SAME machine-readable
+// string the console's own step-up actions return, so InterventionPanel can show a code
+// prompt and retry instead of printing an error nobody can act on. Creating a
+// dead-ended denial would be worse than no step-up at all: the operator would conclude
+// refunds are broken.
+function asStaleMfa(body: Record<string, unknown>): boolean {
+  return body?.error === "stale_mfa";
+}
+
 // ── Booking lifecycle intervention ──────────────────────────────────────────
 // Mutual completion (earner_done AND poster_done) is deliberate and correct, but it
 // means a one-sided booking sits forever with nobody at fault while the ~7-day Stripe
@@ -194,6 +204,7 @@ export async function forceCancel(formData: FormData): Promise<ActionResult> {
     }
     if (pay?.status === "authorized") {
       const { ok, body } = await callPaymentAction({ bookingId, op: "release_hold", reason });
+      if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
       if (!ok) throw new Error(`Could not release the escrow hold: ${body.message ?? body.error}. Booking NOT cancelled.`);
       holdNote = "escrow hold released";
     }
@@ -214,6 +225,7 @@ export async function releaseHold(formData: FormData): Promise<ActionResult> {
 
   return run("payment.release_hold", bookingId, { reason }, async () => {
     const { ok, body } = await callPaymentAction({ bookingId, op: "release_hold", reason });
+      if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
     if (!ok) throw new Error(String(body.message ?? body.error ?? "Release failed."));
     return { released_cents: body.released_cents, __message: "Hold released. The poster was never charged." };
   });
@@ -229,6 +241,7 @@ export async function recordReversal(formData: FormData): Promise<ActionResult> 
 
   return run("payment.record_reversal", bookingId, { reason }, async () => {
     const { ok, body } = await callPaymentAction({ bookingId, op: "record_reversal", reason });
+      if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
     if (!ok) throw new Error(String(body.message ?? body.error ?? "Failed."));
     const cents = Number(body.refunded_cents ?? 0);
     return {
@@ -255,6 +268,7 @@ export async function refundPayment(formData: FormData): Promise<ActionResult> {
 
   return run("payment.refund", bookingId, { reason, amount_cents: amountCents }, async () => {
     const { ok, body } = await callPaymentAction({ bookingId, op: "refund", reason, amountCents });
+      if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
     if (!ok) throw new Error(String(body.message ?? body.error ?? "Refund failed."));
     const cents = Number(body.refunded_cents ?? 0);
     return {
