@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     // verify step requires the poster's own mark-done, so the worker earned at least
     // half; a genuine no-show should be cancelled (full refund), not verified at ~0%.
     // This prevents a poster from capturing completed work at a trivial amount.
-    const { bookingId, pct, disputeReason } = await req.json();
+    const { bookingId, pct, disputeReason, disputePhotos } = await req.json();
     errBookingId = typeof bookingId === 'string' ? bookingId : null;
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
 
@@ -256,11 +256,23 @@ Deno.serve(async (req: Request) => {
       const { data: existingDispute } = await supabase
         .from('disputes').select('id').eq('booking_id', bookingId).maybeSingle();
       if (!existingDispute) {
+        // Evidence the poster attached when reporting the problem. Only the caller's
+        // OWN storage paths are accepted: the client supplies these, and a poster who
+        // could name any path would be able to pull another user's private photos into
+        // a record the earner and support both read. completion-photos is written
+        // owner-scoped under <userId>/, so that prefix is the check.
+        const photos = Array.isArray(disputePhotos)
+          ? disputePhotos
+              .filter((p: unknown): p is string => typeof p === 'string')
+              .filter((p) => p.startsWith(`${user.id}/`))
+              .slice(0, 6)
+          : [];
         await supabase.from('disputes').insert({
           booking_id: bookingId,
           raised_by: user.id,
           reason: String(disputeReason).trim().slice(0, 500),
           pct_paid: Math.round(capturePctFinal * 100),
+          photos,
         });
       }
     }

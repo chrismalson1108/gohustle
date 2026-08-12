@@ -92,3 +92,78 @@ export async function submitSupportRequest({ subject, message, category, email, 
   if (data?.error) throw new SupportError(data.message || 'Could not send your message.', data.error);
   return data?.ticketId ?? null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reading the conversation.
+//
+// Until 20260806360000 these tables had RLS enabled with NO policies and no grants,
+// so support was write-only: a user filed a ticket and could never see the answer
+// in the app. The reply arrived by email, outside the product, with no thread and no
+// history. That is what makes support feel absent even when someone is answering.
+//
+// Everything below reads the user's OWN tickets only — enforced by RLS, not by these
+// queries. A client-side filter is a convenience; the policy is the guarantee.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Every ticket this user has, newest activity first. */
+export async function fetchMyTickets() {
+  const { data, error } = await supabase
+    .from('support_tickets')
+    .select('id, subject, category, status, priority, booking_id, job_id, created_at, last_message_at, user_read_at')
+    .order('last_message_at', { ascending: false });
+  if (error) throw new SupportError('Could not load your support messages.', 'load_failed');
+  return data ?? [];
+}
+
+/** The messages on one ticket, oldest first (chat order). */
+export async function fetchTicketMessages(ticketId) {
+  const { data, error } = await supabase
+    .from('support_ticket_messages')
+    .select('id, author, body, images, created_at')
+    .eq('ticket_id', ticketId)
+    .order('created_at', { ascending: true });
+  if (error) throw new SupportError('Could not load this conversation.', 'load_failed');
+  return data ?? [];
+}
+
+/**
+ * Reply on an existing ticket. `author` is pinned to 'user' server-side by
+ * guard_support_message_write — a client can never post as staff, which is the whole
+ * trust boundary: a message rendered with a GoHustlr badge must have come from GoHustlr.
+ */
+export async function replyToTicket(ticketId, { body, images = [] } = {}) {
+  const text = String(body ?? '').trim();
+  if (!text && images.length === 0) throw new SupportError('Write a message first.', 'empty');
+  if (text.length > 5000) throw new SupportError('That message is too long.', 'too_long');
+  const { error } = await supabase
+    .from('support_ticket_messages')
+    .insert({ ticket_id: ticketId, body: text || null, images });
+  if (error) {
+    // The RLS insert policy refuses a closed ticket, which is a real state the user
+    // can hit by replying to something an agent just resolved — say so plainly.
+    throw new SupportError(
+      /closed|policy/i.test(error.message)
+        ? 'This conversation was closed. Start a new one and we’ll pick it up.'
+        : 'Could not send your message. Please try again.',
+      'send_failed',
+    );
+  }
+}
+
+/** Mark the thread read so the Messages badge clears. */
+export async function markTicketRead(ticketId) {
+  await supabase
+    .from('support_tickets')
+    .update({ user_read_at: new Date().toISOString() })
+    .eq('id', ticketId);
+}
+
+/**
+ * Unread iff support has said something the user has not seen. Deliberately ignores
+ * the user's own messages — your own reply arriving should never light up your inbox.
+ */
+export function ticketHasUnread(t) {
+  if (!t?.last_message_at) return false;
+  if (!t.user_read_at) return true;
+  return Date.parse(t.last_message_at) > Date.parse(t.user_read_at);
+}

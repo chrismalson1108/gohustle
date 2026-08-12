@@ -50,8 +50,8 @@ export const stripeEdge = {
   acceptBooking: (bookingId) =>
     callEdgeFunction('accept-booking', { bookingId }),
 
-  capturePayment: (bookingId, pct, disputeReason) =>
-    callEdgeFunction('stripe-capture-payment', { bookingId, pct, disputeReason }),
+  capturePayment: (bookingId, pct, disputeReason, disputePhotos) =>
+    callEdgeFunction('stripe-capture-payment', { bookingId, pct, disputeReason, disputePhotos }),
 
   // H3: earner claims settlement of their own completed work after the poster ghosts.
   claimEarnerPayment: (bookingId) =>

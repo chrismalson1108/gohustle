@@ -806,7 +806,7 @@ export function JobsProvider({ children }) {
     return true;
   };
 
-  const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason }) => {
+  const verifyAndRate = async (bookingId, { rating, reviewText, paymentMethod, pct, tipCents, disputeReason, disputePhotos }) => {
     const partial = typeof pct === 'number' && pct > 0 && pct < 1;
 
     // Block a prohibited review BEFORE moving any money — the review publishes to the
@@ -838,7 +838,7 @@ export function JobsProvider({ children }) {
     // no error) and the booking would sit in 'completed' after we reported success.
     // Surface an honest failure instead of a fake verify.
     try {
-      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined);
+      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined, partial ? disputePhotos : undefined);
     } catch (err) {
       if (err.message?.includes('Payment not found')) {
         captureError(err, { op: 'verifyAndRate.capture', bookingId });

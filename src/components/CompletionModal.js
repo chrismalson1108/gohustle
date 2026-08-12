@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity,
+  Modal, View, Text, TextInput, TouchableOpacity, Image,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,8 @@ import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
 import SignedImage from './SignedImage';
 import { effectiveFeeLabel } from '../../shared/pricing';
+import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
+import { useAuth } from '../context/AuthContext';
 
 const RATING_LABELS = {
   5: { ion: 'star',           text: 'Excellent' },
@@ -54,12 +56,18 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const [disputed, setDisputed] = useState(false);
   const [pct, setPct] = useState(0.75);
   const [disputeReason, setDisputeReason] = useState('');
+  // Evidence for a reduced payout. Only the EARNER could attach photos to a booking,
+  // so a poster's case was prose against the other side's photographs. These ride to
+  // the dispute row, where the earner and support both read them.
+  const [disputePhotos, setDisputePhotos] = useState([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setRating(5); setReviewText('');
-      setTipCents(0); setDisputed(false); setPct(0.75); setDisputeReason('');
+      setTipCents(0); setDisputed(false); setPct(0.75); setDisputeReason(''); setDisputePhotos([]);
     }
   }, [visible]);
 
@@ -78,11 +86,25 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
     haptic.success();
     setLoading(true);
     try {
+      // Uploaded at confirm rather than at pick time: a poster who changes their mind
+      // and unticks "there was a problem" should leave nothing behind in storage.
+      let photoPaths = [];
+      if (disputed && disputePhotos.length && user?.id) {
+        setUploadingPhotos(true);
+        try {
+          photoPaths = await uploadPrivateImages({
+            uris: disputePhotos, bucket: 'completion-photos', userId: user.id,
+          });
+        } finally {
+          setUploadingPhotos(false);
+        }
+      }
       const ok = await onConfirm({
         rating, reviewText, paymentMethod: 'card', // escrow — funds authorized to the card at accept
         tipCents: tipCents || 0,
         pct: disputed ? pct : 1,
         disputeReason: disputed ? (disputeReason || null) : null,
+        disputePhotos: disputed ? photoPaths : undefined,
       });
       // Only close on success. An explicit `false` means the verify aborted (e.g. a
       // blocked review) — stay open so the poster can edit and retry rather than
@@ -248,10 +270,36 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   textAlignVertical="top"
                   inputAccessoryViewID={KEYBOARD_DONE_ID}
                 />
+                <View style={styles.disputePhotoRow}>
+                  {disputePhotos.map((u, i) => (
+                    <View key={i} style={styles.disputeThumbWrap}>
+                      <Image source={{ uri: u }} style={styles.disputeThumb} />
+                      <TouchableOpacity
+                        style={styles.disputeThumbRemove}
+                        onPress={() => setDisputePhotos(prev => prev.filter((_, idx) => idx !== i))}
+                      >
+                        <Ionicons name="close" size={12} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {disputePhotos.length < 6 && (
+                    <TouchableOpacity
+                      style={styles.disputeAddPhoto}
+                      onPress={async () => {
+                        haptic.selection();
+                        const res = await pickImages({ multiple: true });
+                        if (res?.length) setDisputePhotos(prev => [...prev, ...res].slice(0, 6));
+                      }}
+                    >
+                      <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
+                      <Text style={styles.disputeAddPhotoText} numberOfLines={1}>Add photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <Text style={styles.tipNote}>
                   The rest of the hold is released back to you. Your reason and any photos
-                  attached to this job are kept as the record of what happened, and are what
-                  support reviews if this is escalated.
+                  you add are kept as the record of what happened, are visible to
+                  {' '}{earnerName}, and are what support reviews if this is escalated.
                 </Text>
               </>
             )}
@@ -341,6 +389,18 @@ const styles = StyleSheet.create({
   payChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   payLabel: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   payLabelActive: { color: '#fff' },
+  disputePhotoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 4 },
+  disputeThumbWrap: { position: 'relative' },
+  disputeThumb: { width: 56, height: 56, borderRadius: radii.sm, backgroundColor: colors.background },
+  disputeThumbRemove: {
+    position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.textPrimary, alignItems: 'center', justifyContent: 'center',
+  },
+  disputeAddPhoto: {
+    width: 56, height: 56, borderRadius: radii.sm, borderWidth: 1, borderStyle: 'dashed',
+    borderColor: colors.divider, alignItems: 'center', justifyContent: 'center',
+  },
+  disputeAddPhotoText: { fontSize: 9, color: colors.textSecondary, marginTop: 2 },
   tipNote: { fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 17 },
   problemToggle: { flexDirection: 'row', alignItems: 'center', marginTop: 20, paddingVertical: 8 },
   problemText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, flex: 1, lineHeight: 19 },
