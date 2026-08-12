@@ -26,7 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import {
-  fetchLedger, byMonth, ledgerCsv, paymentState,
+  fetchLedger, byMonth, ledgerCsv, paymentState, fetchPayouts,
   RANGES, STATUS_FILTERS, filterEntries, stats, monthlyTotals,
 } from '../lib/payments';
 import { stripeEdge } from '../lib/stripeClient';
@@ -59,6 +59,8 @@ export default function PaymentsScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [payouts, setPayouts] = useState(null);
+  const [payoutsOpen, setPayoutsOpen] = useState(false);
   const [range, setRange] = useState('ytd');
   const [statusKey, setStatusKey] = useState('all');
   const [query, setQuery] = useState('');
@@ -70,6 +72,9 @@ export default function PaymentsScreen({ navigation, route }) {
       setError(null);
       const rows = await fetchLedger(user.id);
       setEntries(rows);
+      // Best-effort: the ledger is the screen's job, and a payouts hiccup must not
+      // make it look like the transactions failed to load.
+      fetchPayouts(user.id).then(setPayouts).catch(() => setPayouts([]));
       if (!chosenRef.current) {
         chosenRef.current = true;
         const earner = rows.filter((r) => r.side === 'earner').length;
@@ -110,7 +115,13 @@ export default function PaymentsScreen({ navigation, route }) {
     } catch (_) {}
   };
 
-  const openPayoutAccount = async () => {
+  // Opens OUR record first. It used to jump straight to Stripe's hosted dashboard,
+  // which meant leaving the app and signing in again to answer "did it land yet".
+  // Stripe stays one tap deeper for the things only it can show (bank details,
+  // full history).
+  const openPayoutAccount = () => { haptic.light?.(); setPayoutsOpen(true); };
+
+  const openStripeDashboard = async () => {
     haptic.light?.();
     try {
       const { url } = await stripeEdge.getPayoutLoginLink();
@@ -387,6 +398,64 @@ export default function PaymentsScreen({ navigation, route }) {
           }
         />
       )}
+
+      {/* ── Bank deposits ────────────────────────────────────────────────────
+          The last leg of the money, and the one people are actually asking about
+          when they ask where their payout is. Dates come from Stripe's payout
+          events — estimated while in transit, actual once paid — not from a guess. */}
+      <Modal visible={payoutsOpen} transparent animationType="slide" onRequestClose={() => setPayoutsOpen(false)}>
+        <View style={styles.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setPayoutsOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grabber} />
+            <Text style={styles.sheetTitle}>Bank deposits</Text>
+            <Text style={styles.sheetNote}>
+              Money released from a gig reaches your Stripe account right away, then
+              lands in your bank on your payout schedule.
+            </Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 14 }}>
+              {payouts === null ? (
+                <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+              ) : payouts.length === 0 ? (
+                <Text style={styles.disclaimer}>
+                  No bank deposits yet. Once a gig is verified and released, your first
+                  deposit will appear here with its arrival date.
+                </Text>
+              ) : (
+                payouts.map((p) => {
+                  const tone = TONE[p.tone] ?? TONE.muted;
+                  return (
+                    <View key={p.id} style={styles.line}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={styles.lineLabel}>
+                          {p.verb} {p.arrivalAt ? shortDate(p.arrivalAt) : '—'}
+                        </Text>
+                        <View style={[styles.chip, { backgroundColor: tone.bg, alignSelf: 'flex-start', marginTop: 4 }]}>
+                          <Text style={[styles.chipText, { color: tone.fg }]}>{p.label}</Text>
+                        </View>
+                        {p.failureMessage ? (
+                          <Text style={styles.rowSub}>{p.failureMessage}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.lineValue}>{fmt(p.amountCents)}</Text>
+                    </View>
+                  );
+                })
+              )}
+
+              <TouchableOpacity style={styles.actionBtn} onPress={openStripeDashboard}>
+                <Ionicons name="open-outline" size={15} color={colors.primary} />
+                <Text style={styles.actionText}>Bank details & full history</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setPayoutsOpen(false)}>
+              <Text style={styles.closeText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <DetailSheet
         entry={detail}

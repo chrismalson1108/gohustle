@@ -12,13 +12,18 @@
 // gets, and the honest fix is not a better reply macro — it is a screen that
 // already answers it.
 //
-// ── WHAT WE DO NOT CLAIM ────────────────────────────────────────────────────
+// ── BANK ARRIVAL: now known, and still not over-claimed ─────────────────────
 //
-// We do NOT know when money lands in an earner's bank. Capture transfers to their
-// Stripe Connect account; Stripe then pays out on that account's own schedule, and
-// we store no transfer or payout record. Inventing "arrives Tuesday" would be a
-// lie that costs trust exactly when trust matters. So a released payment says it
-// was released and points at the payout account, which does know.
+// This used to say we could not tell an earner when money reached their bank, and
+// that was true: capture is a destination charge, so funds land in their Stripe
+// Connect account immediately and Stripe pays out on that account's own schedule,
+// which we did not record. stripe_payouts now stores those payout.* events, so
+// arrival dates are real Stripe data rather than a guess.
+//
+// What is still NOT claimed is which gig sits in which deposit. Stripe batches many
+// transfers into one payout, so a payment says "released on <date>" and a deposit
+// says "$X arrived <date>" — both true — instead of a per-gig bank date that would
+// be invented.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 import { DEFAULT_FEE_BPS, feeLabel } from '../../shared/pricing';
@@ -34,7 +39,7 @@ export const LEDGER_CACHE_KEY = 'ledger:v1';
 const STATE = {
   earner: {
     authorized: { label: 'In escrow', tone: 'hold', note: 'Held by the poster. Released to you when they verify the work.' },
-    captured:   { label: 'Released',  tone: 'good', note: 'Sent to your payout account. Your bank deposit follows Stripe\'s payout schedule.' },
+    captured:   { label: 'Released',  tone: 'good', note: 'Sent to your payout account. It reaches your bank in the next deposit — see Bank deposits for the date.' },
     failed:     { label: 'Payment failed', tone: 'bad', note: 'The poster\'s card was declined. Nothing was transferred.' },
     cancelled:  { label: 'Hold released', tone: 'muted', note: 'The booking ended before the work started, so nothing was charged.' },
   },
@@ -160,6 +165,46 @@ export async function fetchLedger(userId) {
     .map((r) => toEntry(r, sideOf[r.booking_id], jobsById, bookingsById))
     .filter((e) => e.side)
     .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')));
+}
+
+// ── Bank deposits ───────────────────────────────────────────────────────────
+// The last leg. Capture is a destination charge, so money reaches the earner's
+// Stripe account immediately and Stripe pays out to their bank on its own schedule.
+// stripe_payouts is filled by the payout.* webhook events; this reads OUR table
+// rather than calling Stripe, so a screen people open when they are anxious about
+// money never waits on a third party or shows nothing during an outage.
+export const PAYOUT_STATE = {
+  paid:       { label: 'In your bank',  tone: 'good',  verb: 'Arrived' },
+  in_transit: { label: 'On its way',    tone: 'hold',  verb: 'Expected' },
+  pending:    { label: 'Scheduled',     tone: 'hold',  verb: 'Expected' },
+  failed:     { label: 'Failed',        tone: 'bad',   verb: 'Failed' },
+  canceled:   { label: 'Cancelled',     tone: 'muted', verb: 'Cancelled' },
+};
+
+export function payoutState(status) {
+  return PAYOUT_STATE[status] ?? { label: status || 'unknown', tone: 'muted', verb: '' };
+}
+
+/** This user's bank deposits, newest first. */
+export async function fetchPayouts(userId, limit = 20) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('stripe_payouts')
+    .select('id, payout_id, amount_cents, currency, status, arrival_date, failure_message, created_at')
+    .eq('user_id', userId)
+    .order('arrival_date', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((p) => ({
+    id: p.id,
+    amountCents: p.amount_cents,
+    status: p.status,
+    // Estimated while pending, actual once paid — Stripe overwrites it on payout.paid.
+    arrivalAt: p.arrival_date,
+    createdAt: p.created_at,
+    failureMessage: p.failure_message,
+    ...payoutState(p.status),
+  }));
 }
 
 /** Year-to-date rollup for one side. `held` is the number people actually chase. */

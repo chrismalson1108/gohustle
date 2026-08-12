@@ -278,6 +278,76 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      // ── Payouts to the earner's bank (CONNECTED-ACCOUNT events) ────────────
+      // The last leg of the money, and the only one the app could not describe.
+      // Capture is a destination charge, so funds reach the earner's Connect account
+      // at capture; Stripe then pays out to their bank on that account's schedule.
+      // Without these events "when does it hit my bank" had no answer but a shrug.
+      //
+      // These arrive on the CONNECTED-ACCOUNT webhook destination, so `event.account`
+      // is the acct_… they belong to — never the platform. That field is what maps a
+      // payout to a user; the payout object itself carries no user identity.
+      case 'payout.created':
+      case 'payout.updated':
+      case 'payout.paid':
+      case 'payout.failed':
+      case 'payout.canceled': {
+        const payout = event.data.object as Stripe.Payout;
+        const acct = event.account;
+        if (!acct) {
+          // A payout on the PLATFORM account is our own settlement, not an earner's.
+          console.log('stripe-webhook: platform payout, ignoring', payout.id);
+          break;
+        }
+
+        // Resolve the earner from the connected account. Best-effort: an unmapped
+        // account still gets its payout recorded (user_id null) rather than dropped,
+        // so the row is there to reconcile instead of the event being lost.
+        const { data: acctRow } = await supabase
+          .from('stripe_accounts').select('user_id').eq('account_id', acct).maybeSingle();
+
+        // arrival_date is a UNIX SECONDS field: estimated on created, actual on paid.
+        const arrival = typeof payout.arrival_date === 'number'
+          ? new Date(payout.arrival_date * 1000).toISOString()
+          : null;
+
+        const { error: poErr } = await supabase.from('stripe_payouts').upsert({
+          payout_id: payout.id,
+          account_id: acct,
+          user_id: acctRow?.user_id ?? null,
+          amount_cents: payout.amount,
+          currency: payout.currency ?? 'usd',
+          status: payout.status,
+          method: payout.method ?? null,
+          arrival_date: arrival,
+          failure_code: payout.failure_code ?? null,
+          failure_message: payout.failure_message ?? null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'payout_id' });
+        if (poErr) console.error('stripe-webhook: payout upsert failed', poErr);
+
+        // Tell them when it actually lands, and when it does not. These are the two
+        // moments an earner wants to hear from us; everything between is noise, so
+        // pending/in_transit updates are recorded silently.
+        if (acctRow?.user_id && (event.type === 'payout.paid' || event.type === 'payout.failed')) {
+          const paid = event.type === 'payout.paid';
+          try {
+            await supabase.from('notifications').insert({
+              user_id: acctRow.user_id,
+              type: 'payment',
+              title: paid ? 'Money landed in your bank' : 'A payout to your bank failed',
+              body: paid
+                ? `$${(payout.amount / 100).toFixed(2)} has arrived.`
+                : `$${(payout.amount / 100).toFixed(2)} could not be deposited. Check your payout account details.`,
+              data: { type: 'payment', tab: 'ProfileTab' },
+            });
+          } catch (e) {
+            console.error('stripe-webhook: payout notification failed', e);
+          }
+        }
+        break;
+      }
+
       case 'charge.dispute.created': {
         // H12: a (possibly stolen-card) chargeback. Money is being clawed back from
         // the platform while the earner may already be paid out. Record it as an open

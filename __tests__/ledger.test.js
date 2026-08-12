@@ -252,3 +252,36 @@ describe('monthlyTotals', () => {
     expect(t[5].cents).toBe(0);
   });
 });
+
+const { payoutState, PAYOUT_STATE } = require('../src/lib/payments');
+
+describe('payoutState', () => {
+  // The bank leg. These are the words an anxious person reads, so they have to be
+  // unambiguous about whether the money is THERE or merely COMING.
+  it('distinguishes arrived from on-its-way', () => {
+    expect(payoutState('paid').label).toBe('In your bank');
+    expect(payoutState('paid').verb).toBe('Arrived');
+    expect(payoutState('in_transit').verb).toBe('Expected');
+    expect(payoutState('pending').verb).toBe('Expected');
+  });
+
+  it('never presents a failed payout as neutral', () => {
+    // An earner told "paid" whose money never lands needs to see that plainly —
+    // ctl_payout_failed pages on the same condition.
+    expect(payoutState('failed').tone).toBe('bad');
+    expect(payoutState('failed').label).toBe('Failed');
+  });
+
+  it('degrades readably for a status Stripe adds later', () => {
+    expect(payoutState('some_new_status').label).toBe('some_new_status');
+    expect(payoutState(undefined).label).toBe('unknown');
+  });
+
+  it('covers every status the webhook can write', () => {
+    // The handler upserts payout.status verbatim from Stripe; these are the values
+    // Stripe documents for Payout.status.
+    ['paid', 'pending', 'in_transit', 'failed', 'canceled'].forEach((s) => {
+      expect(PAYOUT_STATE[s]).toBeDefined();
+    });
+  });
+});
