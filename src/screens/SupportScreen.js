@@ -1,0 +1,318 @@
+import React, { useState, useCallback, useRef } from 'react';
+import {
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform, Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import SignedImage from '../components/SignedImage';
+import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
+import { useAuth } from '../context/AuthContext';
+import { useHaptic } from '../hooks/useHaptic';
+import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
+import {
+  fetchMyTickets, fetchTicketMessages, replyToTicket, markTicketRead,
+  submitSupportRequest, SUPPORT_CATEGORIES,
+} from '../lib/support';
+import { colors, radii, shadows } from '../theme';
+
+// The support conversation.
+//
+// Until now support was one-way: you filed a request and the reply arrived by email,
+// outside the app. The tables had RLS enabled with no policies, so the client could not
+// read its own ticket even if it tried. This is the other half.
+//
+// Deliberately ONE thread rather than a ticket list. Someone contacting support has a
+// problem, not a filing system; making them pick which of their tickets to open is
+// admin work at the worst possible moment. The newest open ticket IS the conversation,
+// and starting a new topic closes nothing — it just appends.
+
+function timeLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+export default function SupportScreen({ navigation, route }) {
+  const { user } = useAuth();
+  const haptic = useHaptic();
+  const scrollRef = useRef(null);
+
+  const [ticket, setTicket] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [photos, setPhotos] = useState([]);
+  // Only asked when there is no open thread — an existing conversation already has one.
+  const [category, setCategory] = useState(route?.params?.category ?? 'other');
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    try {
+      const tickets = await fetchMyTickets();
+      const open = tickets.find(t => t.status !== 'closed') ?? tickets[0] ?? null;
+      setTicket(open);
+      if (open) {
+        const msgs = await fetchTicketMessages(open.id);
+        setMessages(msgs);
+        // Opening the thread IS reading it; the Messages badge should clear now, not
+        // after some later action.
+        markTicketRead(open.id).catch(() => {});
+      } else {
+        setMessages([]);
+      }
+    } catch (_) {
+      // A load failure must not present as "you have no support history" — that would
+      // tell someone their open problem had vanished.
+      setTicket(undefined);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const addPhotos = async () => {
+    haptic.selection();
+    const res = await pickImages({ multiple: true });
+    if (res?.length) setPhotos(prev => [...prev, ...res].slice(0, 6));
+  };
+
+  const send = async () => {
+    const body = draft.trim();
+    if ((!body && photos.length === 0) || sending) return;
+    setSending(true);
+    try {
+      let paths = [];
+      if (photos.length && user?.id) {
+        paths = await uploadPrivateImages({ uris: photos, bucket: 'support-photos', userId: user.id });
+      }
+      if (ticket) {
+        await replyToTicket(ticket.id, { body, images: paths });
+      } else {
+        // No open thread — this first message opens one. submitSupportRequest goes
+        // through the support-submit edge function, which is what attributes the ticket
+        // and rate-limits intake.
+        await submitSupportRequest({
+          subject: body.slice(0, 60) || 'Support request',
+          message: body || 'See attached photos.',
+          category,
+        });
+      }
+      setDraft(''); setPhotos([]);
+      await load();
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      Alert.alert('Could not send', e?.message ?? 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <View style={styles.banner}>
+        <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
+        <Text style={styles.bannerText} numberOfLines={2}>
+          A real person reads this. For anything urgent about your safety, contact your
+          local emergency number first.
+        </Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        >
+          {ticket === undefined && (
+            <Text style={styles.loadError}>
+              Couldn’t load your messages. Check your connection and pull back in a moment —
+              nothing you’ve sent has been lost.
+            </Text>
+          )}
+
+          {ticket === null && (
+            <>
+              <Text style={styles.emptyTitle}>How can we help?</Text>
+              <Text style={styles.emptyText}>
+                Payments, a gig that went wrong, your account, or anything else. Add photos
+                if they help explain it.
+              </Text>
+              <View style={styles.catRow}>
+                {SUPPORT_CATEGORIES.map(c => (
+                  <TouchableOpacity
+                    key={c.key}
+                    style={[styles.catChip, category === c.key && styles.catChipActive]}
+                    onPress={() => { haptic.selection(); setCategory(c.key); }}
+                  >
+                    <Text style={[styles.catText, category === c.key && styles.catTextActive]} numberOfLines={1}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {!!ticket && (
+            <View style={styles.ticketHead}>
+              <Text style={styles.ticketSubject} numberOfLines={2}>{ticket.subject || 'Support request'}</Text>
+              <Text style={styles.ticketMeta}>
+                {ticket.status === 'closed' ? 'Closed' : ticket.status === 'pending' ? 'We replied' : 'We’re on it'}
+                {ticket.priority === 'urgent' ? ' · urgent' : ''}
+              </Text>
+            </View>
+          )}
+
+          {messages.map(m => {
+            const mine = m.author === 'user';
+            return (
+              <View key={m.id} style={[styles.bubbleWrap, mine ? styles.bubbleRight : styles.bubbleLeft]}>
+                {!mine && (
+                  <View style={styles.agentTag}>
+                    <Ionicons name="shield-checkmark" size={11} color={colors.primary} />
+                    <Text style={styles.agentTagText}>GoHustlr Support</Text>
+                  </View>
+                )}
+                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                  {!!m.body && (
+                    <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{m.body}</Text>
+                  )}
+                  {(m.images ?? []).map((p, i) => (
+                    <SignedImage key={i} value={p} bucket="support-photos" style={styles.msgImage} />
+                  ))}
+                </View>
+                <Text style={styles.bubbleTime}>{timeLabel(m.created_at)}</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {ticket?.status === 'closed' ? (
+        <View style={styles.closedBar}>
+          <Text style={styles.closedText} numberOfLines={2}>
+            This conversation is closed. Send a message to open a new one.
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.composer}>
+        {photos.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoStrip}>
+            {photos.map((u, i) => (
+              <View key={i} style={styles.thumbWrap}>
+                <Image source={{ uri: u }} style={styles.thumb} />
+                <TouchableOpacity
+                  style={styles.thumbRemove}
+                  onPress={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                >
+                  <Ionicons name="close" size={11} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+        <View style={styles.composerRow}>
+          <TouchableOpacity onPress={addPhotos} style={styles.attachBtn} accessibilityLabel="Add a photo">
+            <Ionicons name="image-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            placeholder={ticket ? 'Write a message…' : 'Describe what’s going on…'}
+            placeholderTextColor={colors.textMuted}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            inputAccessoryViewID={KEYBOARD_DONE_ID}
+          />
+          <TouchableOpacity
+            onPress={send}
+            disabled={sending || (!draft.trim() && photos.length === 0)}
+            style={[styles.sendBtn, (sending || (!draft.trim() && photos.length === 0)) && styles.sendBtnOff]}
+            accessibilityLabel="Send"
+          >
+            {sending
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="arrow-up" size={18} color="#fff" />}
+          </TouchableOpacity>
+        </View>
+      </View>
+      <KeyboardDoneBar />
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  banner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.primaryLight, paddingHorizontal: 16, paddingVertical: 10,
+  },
+  bannerText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 16 },
+  scroll: { padding: 16, paddingBottom: 24 },
+  loadError: { fontSize: 13, color: colors.urgent, lineHeight: 18, marginBottom: 12 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  emptyText: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: 14 },
+  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  catChip: {
+    paddingVertical: 7, paddingHorizontal: 12, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.divider, backgroundColor: colors.surface,
+  },
+  catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  catText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  catTextActive: { color: '#fff' },
+  ticketHead: { marginBottom: 14 },
+  ticketSubject: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  ticketMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  bubbleWrap: { marginBottom: 14, maxWidth: '85%' },
+  bubbleLeft: { alignSelf: 'flex-start' },
+  bubbleRight: { alignSelf: 'flex-end' },
+  agentTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginLeft: 2 },
+  agentTagText: { fontSize: 11, fontWeight: '700', color: colors.primary },
+  bubble: { borderRadius: radii.lg, paddingVertical: 10, paddingHorizontal: 13, ...shadows.sm },
+  bubbleMine: { backgroundColor: colors.primary },
+  bubbleTheirs: { backgroundColor: colors.surface },
+  bubbleText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
+  bubbleTextMine: { color: '#fff' },
+  msgImage: { width: 180, height: 135, borderRadius: radii.md, marginTop: 8, backgroundColor: colors.background },
+  bubbleTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, marginHorizontal: 2 },
+  closedBar: { paddingHorizontal: 16, paddingBottom: 6 },
+  closedText: { fontSize: 12, color: colors.textMuted },
+  composer: {
+    borderTopWidth: 1, borderTopColor: colors.divider, backgroundColor: colors.surface,
+    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12,
+  },
+  photoStrip: { marginBottom: 8 },
+  thumbWrap: { position: 'relative', marginRight: 8 },
+  thumb: { width: 52, height: 52, borderRadius: radii.sm, backgroundColor: colors.background },
+  thumbRemove: {
+    position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.textPrimary, alignItems: 'center', justifyContent: 'center',
+  },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  attachBtn: { paddingBottom: 8, paddingHorizontal: 2 },
+  input: {
+    flex: 1, maxHeight: 120, fontSize: 14, color: colors.textPrimary,
+    backgroundColor: colors.background, borderRadius: radii.lg,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  sendBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sendBtnOff: { opacity: 0.4 },
+});

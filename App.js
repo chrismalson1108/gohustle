@@ -44,6 +44,7 @@ import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen
 import MessagesScreen       from './src/screens/MessagesScreen';
 import ChatScreen           from './src/screens/ChatScreen';
 import FindPeopleScreen     from './src/screens/FindPeopleScreen';
+import SupportScreen from './src/screens/SupportScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
@@ -144,6 +145,8 @@ function MessagesStack() {
       <Stack.Screen name="FindPeople" component={FindPeopleScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'Find people' }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
+      {/* The pinned "GoHustlr Support" row in Messages opens this. */}
+      <Stack.Screen name="Support" component={SupportScreen} options={{ ...DETAIL_OPTS, headerShown: true, title: 'GoHustlr Support' }} />
     </Stack.Navigator>
   );
 }

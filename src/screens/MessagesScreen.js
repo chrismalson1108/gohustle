@@ -12,6 +12,7 @@ import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText, notBlocked,
 } from '../lib/messages';
+import { fetchMyTickets, ticketHasUnread } from '../lib/support';
 import { useTabBarScrollHandler } from '../lib/tabBarScroll';
 import { colors, radii, shadows } from '../theme';
 
@@ -35,11 +36,22 @@ export default function MessagesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState('inbox'); // 'inbox' | 'archived'
+  // Support is pinned above gig conversations rather than sorted among them: it is the
+  // thread you look for when something has already gone wrong, and it must not slide
+  // down the list behind chatter about other gigs.
+  const [supportTickets, setSupportTickets] = useState([]);
 
   const load = useCallback(async () => {
     if (!user) return;
     const ids = [...new Set([...bookings.map(b => b.id), ...posterBookings.map(b => b.id)])];
-    const [last, st] = await Promise.all([fetchLastMessages(ids), fetchConversationState(user.id, ids)]);
+    const [last, st, tickets] = await Promise.all([
+      fetchLastMessages(ids),
+      fetchConversationState(user.id, ids),
+      // Never let a support failure blank the whole inbox — gig conversations are the
+      // more common need and must render regardless.
+      fetchMyTickets().catch(() => []),
+    ]);
+    setSupportTickets(tickets);
     const list = ids.map(id => {
       const pb = posterBookings.find(b => b.id === id);
       const eb = bookings.find(b => b.id === id);
@@ -130,6 +142,37 @@ export default function MessagesScreen({ navigation }) {
           scrollEventThrottle={32}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >
+          {tab === 'inbox' && (() => {
+            const open = supportTickets.filter(t => t.status !== 'closed');
+            const unread = open.some(ticketHasUnread);
+            const newest = open[0] ?? null;
+            return (
+              <TouchableOpacity
+                style={[styles.row, styles.supportRow]}
+                activeOpacity={0.85}
+                onPress={() => { haptic.light(); navigation.navigate('Support'); }}
+              >
+                <View style={styles.supportAvatar}>
+                  <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={styles.rowTop}>
+                    <Text style={styles.name} numberOfLines={1}>GoHustlr Support</Text>
+                    {!!newest?.last_message_at && (
+                      <Text style={styles.time}>{timeLabel(newest.last_message_at)}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.preview, unread && styles.previewUnread]} numberOfLines={1}>
+                    {newest
+                      ? (unread ? 'Support replied — tap to read' : `${newest.subject || 'Your request'} · ${newest.status === 'pending' ? 'we replied' : 'we’re on it'}`)
+                      : 'Questions, payments, safety — talk to a human'}
+                  </Text>
+                </View>
+                {unread && <View style={styles.unreadDot} />}
+              </TouchableOpacity>
+            );
+          })()}
+
           {shown.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIconWrap}>
@@ -214,6 +257,11 @@ const styles = StyleSheet.create({
   segTextActive: { color: '#fff' },
   segCount: { fontWeight: '500' },
 
+  supportRow: { backgroundColor: colors.primaryLight },
+  supportAvatar: {
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56 },
   emptyIconWrap: {
     width: 72, height: 72, borderRadius: radii.pill, backgroundColor: colors.surface,
