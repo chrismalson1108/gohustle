@@ -56,11 +56,97 @@ export default async function DashboardPage() {
   ]);
   const openReports = metrics.reports_open ?? 0;
 
+  // CONTROL STATE. The 23 scheduled checks are the only thing watching the parts of
+  // this platform no dashboard tile covers — a captured payment never credited, a
+  // ledger that disagrees with Stripe, an alert channel that has gone dark. Their
+  // findings had no route to this page at all, which meant the dashboard could show
+  // an entirely green attention row while a critical money finding sat unread.
+  const [{ data: controlState }, { data: topFindings }, { data: liveCampaigns }] = await Promise.all([
+    ctx.service.rpc("control_status"),
+    ctx.service
+      .from("control_findings")
+      .select("id, control_key, entity_id, severity, first_seen_at")
+      .is("resolved_at", null)
+      .in("severity", ["critical", "high"])
+      .order("first_seen_at", { ascending: false })
+      .limit(5),
+    ctx.role === "admin"
+      ? ctx.service
+          .from("promotions")
+          .select("id, name, status, spent_cents, budget_cents, ends_at")
+          .eq("status", "active")
+      : Promise.resolve({ data: [] as { id: string; name: string; status: string; spent_cents: number; budget_cents: number; ends_at: string | null }[] }),
+  ]);
+
+  const cs = (controlState ?? {}) as {
+    open?: Record<string, number>;
+    errored?: { key: string; error: string }[];
+    stale?: string[];
+    enabled_count?: number;
+  };
+  const criticalOpen = cs.open?.critical ?? 0;
+  const highOpen = cs.open?.high ?? 0;
+  const erroring = cs.errored ?? [];
+  const stale = cs.stale ?? [];
+  const detectionDegraded = erroring.length > 0 || stale.length > 0;
+  const campaignSpend = (liveCampaigns ?? []).reduce((n, c) => n + (c.spent_cents ?? 0), 0);
+  const campaignBudget = (liveCampaigns ?? []).reduce((n, c) => n + (c.budget_cents ?? 0), 0);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
       {error && <p className="text-sm text-[var(--danger)]">Metrics failed: {error.message}</p>}
+
+      {/* DETECTION HEALTH FIRST. If the checks are not running, nothing below this line
+          means anything — an empty attention row is only reassuring when something is
+          actually looking. This is deliberately above the metrics. */}
+      {detectionDegraded && (
+        <Link
+          href="/controls"
+          className="block rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 hover:border-red-500"
+        >
+          <strong>Monitoring is degraded — the numbers below may not be trustworthy.</strong>
+          {erroring.length > 0 && (
+            <div className="mt-1">
+              {erroring.length} control{erroring.length === 1 ? "" : "s"} erroring:{" "}
+              {erroring.slice(0, 3).map((c) => c.key).join(", ")}
+            </div>
+          )}
+          {stale.length > 0 && (
+            <div className="mt-1">
+              {stale.length} control{stale.length === 1 ? "" : "s"} have not run in 6h:{" "}
+              {stale.slice(0, 3).join(", ")}
+            </div>
+          )}
+        </Link>
+      )}
+
+      {criticalOpen > 0 && (
+        <Link
+          href="/controls?sev=critical"
+          className="block rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 hover:border-red-500"
+        >
+          <strong>
+            {criticalOpen} critical finding{criticalOpen === 1 ? "" : "s"} open
+          </strong>
+          {highOpen > 0 && <> · {highOpen} high</>}
+          <ul className="mt-1 list-disc pl-5">
+            {(topFindings ?? []).slice(0, 4).map((f) => (
+              <li key={f.id}>
+                <span className="font-mono text-xs">{f.control_key}</span>
+                {f.entity_id ? <span className="opacity-70"> · {f.entity_id.slice(0, 20)}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </Link>
+      )}
+
+      {!detectionDegraded && criticalOpen === 0 && (
+        <p className="rounded-xl border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-900">
+          All {cs.enabled_count ?? 0} controls ran recently with no errors and no critical findings.
+        </p>
+      )}
 
       {/* Attention row — things that may need action */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -104,6 +190,20 @@ export default async function DashboardPage() {
         <StatCard label="New (7d)" value={metrics.signups_7d ?? 0} />
         <StatCard label="New (30d)" value={metrics.signups_30d ?? 0} />
       </div>
+
+      {/* Live campaign spend — margin leaving the business right now, which nothing on
+          this page used to show. Admin-only, matching /promotions. */}
+      {ctx.role === "admin" && (liveCampaigns ?? []).length > 0 && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label="Live campaigns"
+            value={(liveCampaigns ?? []).length}
+            sub={`${fmtCents(campaignSpend)} of ${fmtCents(campaignBudget)} spent`}
+            href="/promotions"
+            tone={campaignBudget > 0 && campaignSpend / campaignBudget > 0.8 ? "amber" : undefined}
+          />
+        </div>
+      )}
 
       {/* Second attention row — state worth seeing, but not time-critical. */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

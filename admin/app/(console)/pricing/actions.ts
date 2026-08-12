@@ -135,3 +135,85 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
     return { ok: false, message: "Could not issue those grants." };
   }
 }
+
+// ── Tier CRUD ────────────────────────────────────────────────────────────────
+// Tiers shipped with only an on/off toggle, which meant changing a threshold or a rate
+// required hand-written SQL — the exact thing this page exists to prevent.
+//
+// Editing a tier is safe for the same reason editing a campaign is: every booking PINS
+// its rate at INSERT, so a change reaches future bookings only and can never re-price
+// work already agreed.
+
+const BPS_MIN = 0;
+const BPS_MAX = 3000;
+
+export async function saveTier(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const minCompleted = Number(formData.get("min_completed"));
+  const pct = Number(formData.get("fee_pct"));
+  const note = String(formData.get("note") ?? "").trim();
+
+  if (!name) return { ok: false, message: "Name it." };
+  if (!Number.isFinite(minCompleted) || minCompleted < 0 || minCompleted > 10000) {
+    return { ok: false, message: "Threshold must be 0–10000 completed gigs." };
+  }
+  if (!Number.isFinite(pct) || pct * 100 < BPS_MIN || pct * 100 > BPS_MAX) {
+    return { ok: false, message: "Fee must be 0–30%." };
+  }
+
+  try {
+    const ctx = await requireAdmin("admin");
+    const row = {
+      name,
+      min_completed: Math.round(minCompleted),
+      fee_bps: Math.round(pct * 100),
+      note: note || null,
+    };
+    const { error } = id
+      ? await ctx.service.from("fee_tiers").update(row).eq("id", id)
+      : await ctx.service.from("fee_tiers").insert({ ...row, enabled: false, created_by: ctx.user.id });
+    if (error) {
+      // The unique index on min_completed is the likely cause, and the raw message is
+      // unreadable. tier_fee_bps picks by highest threshold, so two rungs at the same
+      // number means one silently never applies.
+      if (error.message.includes("fee_tiers_threshold_uniq")) {
+        return { ok: false, message: "Another tier already uses that threshold — each rung needs its own." };
+      }
+      return { ok: false, message: error.message };
+    }
+    await audit(ctx, id ? "pricing.tier_update" : "pricing.tier_create", "fee_tier", id || name, row);
+    revalidatePath("/pricing");
+    return {
+      ok: true,
+      message: id
+        ? "Saved. Bookings already made keep the rate they were pinned at."
+        : "Created, switched OFF. Enable it when you mean it.",
+    };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    return { ok: false, message: "Could not save that tier." };
+  }
+}
+
+export async function deleteTier(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, message: "Missing tier." };
+  try {
+    const ctx = await requireAdmin("admin");
+    const { data: t } = await ctx.service.from("fee_tiers").select("name, enabled").eq("id", id).maybeSingle();
+    if (t?.enabled) {
+      // Deleting a live rung silently raises the fee for everyone standing on it.
+      // Make that a two-step decision rather than one click.
+      return { ok: false, message: "Switch it off first — deleting a live rung raises the fee for everyone on it." };
+    }
+    const { error } = await ctx.service.from("fee_tiers").delete().eq("id", id);
+    if (error) return { ok: false, message: error.message };
+    await audit(ctx, "pricing.tier_delete", "fee_tier", id, { name: t?.name });
+    revalidatePath("/pricing");
+    return { ok: true, message: "Deleted." };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    return { ok: false, message: "Could not delete that tier." };
+  }
+}

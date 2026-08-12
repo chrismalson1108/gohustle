@@ -132,3 +132,123 @@ export async function mintCodes(formData: FormData): Promise<ActionResult> {
     return { ok: false, message: "Could not mint codes." };
   }
 }
+
+// ── Editing a live campaign ──────────────────────────────────────────────────
+// Safe because a grant SNAPSHOTS its benefit and a booking PINS it: an edit reaches
+// future claims only and can never re-price what someone already holds. So the guards
+// here are arithmetic (never let spent exceed budget) rather than record-freezing.
+
+export async function editPromotion(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const budgetDollars = Number(formData.get("budget_dollars"));
+  const maxRedemptions = Number(formData.get("max_redemptions"));
+  const extendDays = Number(formData.get("extend_days") ?? 0);
+  if (!id) return { ok: false, message: "Missing promotion." };
+
+  try {
+    const ctx = await requireAdmin("admin");
+    const { data: cur } = await ctx.service
+      .from("promotions")
+      .select("spent_cents, redemptions_used, ends_at, name")
+      .eq("id", id).maybeSingle();
+    if (!cur) return { ok: false, message: "Not found." };
+
+    const patch: Record<string, unknown> = {};
+    if (name) patch.name = name;
+
+    if (Number.isFinite(budgetDollars) && budgetDollars > 0) {
+      const cents = Math.round(budgetDollars * 100);
+      // Refused rather than clamped: lowering the ceiling below what is already
+      // committed would make the spend check pass again and let an overspent campaign
+      // keep spending. The DB CHECK also blocks it; this is the readable message.
+      if (cents < cur.spent_cents) {
+        return {
+          ok: false,
+          message: `Budget can't go below the $${(cur.spent_cents / 100).toFixed(2)} already committed.`,
+        };
+      }
+      patch.budget_cents = cents;
+    }
+
+    if (Number.isFinite(maxRedemptions) && maxRedemptions > 0) {
+      const n = Math.round(maxRedemptions);
+      if (n < cur.redemptions_used) {
+        return { ok: false, message: `Max uses can't go below the ${cur.redemptions_used} already claimed.` };
+      }
+      patch.max_redemptions = n;
+    }
+
+    if (Number.isFinite(extendDays) && extendDays !== 0) {
+      const base = cur.ends_at ? new Date(cur.ends_at).getTime() : Date.now();
+      const next = new Date(Math.max(Date.now(), base + extendDays * 86400_000));
+      patch.ends_at = next.toISOString();
+    }
+
+    if (!Object.keys(patch).length) return { ok: false, message: "Nothing to change." };
+
+    const { error } = await ctx.service.from("promotions").update(patch).eq("id", id);
+    if (error) return { ok: false, message: error.message };
+    await audit(ctx, "promotion.edit", "promotion", id, patch);
+    revalidatePath("/promotions");
+    return { ok: true, message: "Updated. Grants already held keep the benefit they were given." };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    return { ok: false, message: "Could not update that promotion." };
+  }
+}
+
+// Clone: rerunning last term's winner is the single most common campaign operation and
+// there was no way to do it without retyping every field.
+export async function clonePromotion(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, message: "Missing promotion." };
+  try {
+    const ctx = await requireAdmin("admin");
+    const { data: src } = await ctx.service.from("promotions").select("*").eq("id", id).maybeSingle();
+    if (!src) return { ok: false, message: "Not found." };
+    const { id: _drop, created_at: _c, spent_cents: _s, redemptions_used: _r, ...rest } = src;
+    const { data: made, error } = await ctx.service.from("promotions").insert({
+      ...rest,
+      name: `${src.name} (copy)`,
+      status: "draft",
+      spent_cents: 0,
+      redemptions_used: 0,
+      starts_at: new Date().toISOString(),
+      ends_at: new Date(Date.now() + 30 * 86400_000).toISOString(),
+      created_by: ctx.user.id,
+    }).select("id").single();
+    if (error) return { ok: false, message: error.message };
+    await audit(ctx, "promotion.clone", "promotion", made.id, { from: id });
+    revalidatePath("/promotions");
+    return { ok: true, message: "Cloned as a fresh draft with a clean budget and a 30-day window." };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    return { ok: false, message: "Could not clone that promotion." };
+  }
+}
+
+// Revoking one person's grant. Pausing a campaign stops NEW claims and does nothing
+// about someone already holding one — this is the per-person lever, for abuse or for an
+// offer sent to the wrong list.
+export async function revokeGrant(formData: FormData): Promise<ActionResult> {
+  const grantId = String(formData.get("grantId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!grantId) return { ok: false, message: "Missing grant." };
+  if (!reason) return { ok: false, message: "Say why — this takes something away from a named person." };
+  try {
+    const ctx = await requireAdmin("admin");
+    const { error } = await ctx.service
+      .from("promo_grants")
+      .update({ revoked_at: new Date().toISOString(), revoked_reason: reason })
+      .eq("id", grantId)
+      .is("revoked_at", null);
+    if (error) return { ok: false, message: error.message };
+    await audit(ctx, "promotion.revoke_grant", "promo_grant", grantId, { reason });
+    revalidatePath("/promotions");
+    return { ok: true, message: "Revoked. Bookings already made with it are untouched." };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    return { ok: false, message: "Could not revoke that grant." };
+  }
+}
