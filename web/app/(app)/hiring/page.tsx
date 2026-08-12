@@ -62,11 +62,20 @@ export default function HiringPage() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelFee = cancelTarget ? cancellationFeeFor(cancelTarget.id) : 0;
 
-  // The amount held on the poster's card for the booking being verified — mirrors the
-  // server's escrow math (counter-offer ?? listed pay, × hours for hourly). Shown in the
-  // verify modal so the poster sees exactly what's released to the earner.
+  // The amount held on the poster's card for the booking being verified.
+  //
+  // THE PIN IS AUTHORITATIVE. bookings.amount_cents_quoted is what
+  // stripe-create-payment-intent actually authorized (20260806000000). This used to
+  // recompute from the CURRENT job row and call the result "the amount you already
+  // authorized" — which stopped being true the moment the pin landed, and was already
+  // wrong before it: a poster who edited jobs.pay after the earner applied would be
+  // shown a number that was never charged to anyone.
+  //
+  // The recompute survives only as the fallback for bookings predating the migration,
+  // which is exactly what the server does too.
   const verifyHeldCents = (() => {
     if (!verifyBooking) return 0;
+    if (verifyBooking.amountCentsQuoted != null) return verifyBooking.amountCentsQuoted;
     const fullJob = postedJobs.find((j) => j.id === verifyBooking.jobId);
     const baseRate = verifyBooking.counterOffer ?? Number(fullJob?.pay ?? verifyBooking.job?.pay ?? 0);
     const isHourly = (fullJob?.payType ?? verifyBooking.job?.payType) === "hourly";

@@ -75,3 +75,25 @@ export function bookingNetDollars(grossDollars, feeBps) {
   const cents = Math.round((Number(grossDollars) || 0) * 100);
   return earnerNetCents(cents, feeBps) / 100;
 }
+
+/**
+ * The rate to SHOW next to a computed fee, or null when no honest percentage exists.
+ *
+ * feeLabel(bps) renders the nominal rate and knows nothing about the processing floor
+ * that platformFeeCents applies. Whenever the floor binds they contradict each other on
+ * the same line: at 500 bps a $10 gig is charged 84c (8.4%) and a $25 gig 128c (5.12%),
+ * both under a label reading "5%". The crossover at that rate is $26.19 — most of the
+ * gig catalogue — so this is the common case, not an edge case.
+ *
+ * Returns null when the floor is what set the fee, because at that point the charge is
+ * a MINIMUM rather than a percentage and any percentage printed beside it is wrong.
+ * Callers render the label with no parenthetical, and the amount on the next line
+ * carries the real information.
+ */
+export function effectiveFeeLabel(amountCents, feeBps = DEFAULT_FEE_BPS) {
+  const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;
+  const bps = coerceBps(feeBps);
+  if (amt <= 0) return feeLabel(bps);
+  const nominal = Math.trunc((amt * bps + 5000) / 10000);
+  return platformFeeCents(amt, bps) === nominal ? feeLabel(bps) : null;
+}

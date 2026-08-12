@@ -13,9 +13,9 @@
 // So: quote screens call getFeeBps(); anything rendering an existing booking passes
 // that booking's pinned rate straight to the shared math.
 import { supabase } from './supabase';
-import { DEFAULT_FEE_BPS, platformFeeCents, earnerNetCents, feeLabel } from '../../shared/pricing';
+import { DEFAULT_FEE_BPS, platformFeeCents, earnerNetCents, feeLabel, effectiveFeeLabel } from '../../shared/pricing';
 
-export { DEFAULT_FEE_BPS, platformFeeCents, earnerNetCents, feeLabel };
+export { DEFAULT_FEE_BPS, platformFeeCents, earnerNetCents, feeLabel, effectiveFeeLabel };
 
 // Cached because every job card and detail screen wants it, and it changes about
 // never. Deliberately NOT persisted to AsyncStorage: a stale rate surviving an app

@@ -225,8 +225,17 @@ Deno.serve(async (req: Request) => {
 
     // Reconcile the row to Stripe's ACTUAL captured amount (source of truth) so
     // credit_earnings settles exactly what was collected — never more than captured.
-    const settled = await stripe.paymentIntents.retrieve(payment.payment_intent_id);
+    // expand latest_charge: stripe@15's default API version does not populate
+    // `pi.charges` (replaced by latest_charge in 2022-11-15), and the charge is where
+    // application_fee_amount lives.
+    const settled = await stripe.paymentIntents.retrieve(payment.payment_intent_id, {
+      expand: ['latest_charge'],
+    });
     const capturedCents = settled.amount_received ?? 0;
+    const settledCharge = (settled.latest_charge ?? null) as { application_fee_amount?: number | null } | null;
+    const stripeFeeCents = typeof settledCharge?.application_fee_amount === 'number'
+      ? settledCharge.application_fee_amount
+      : null;
     if (capturedCents <= 0) {
       return json({ error: 'CAPTURE_FAILED', message: 'Could not release the payment. Please try again.' }, 502);
     }
@@ -236,11 +245,27 @@ Deno.serve(async (req: Request) => {
     // is charged the rate their booking was struck at, not whatever is current.
     // Computed by public.platform_fee_cents so this path cannot drift from the other
     // three — one definition of the fee, everywhere.
+    // PREFER THE FEE STRIPE ACTUALLY APPLIED.
+    //
+    // Recomputing platform_fee_cents(capturedCents, bps) re-applies the WHOLE 30c+25c
+    // processing floor to an already-reduced amount, so on a partial capture the ledger
+    // records more fee than Stripe took. stripe-capture-payment scales one immutable
+    // number instead — min(captureCents, round(fullFee * pct)) — and that is what
+    // becomes application_fee_amount. Reading it back is the only way to be certain the
+    // two agree, and on a partial capture they otherwise do not: at 500 bps a $20 gig
+    // has fee 113c (floor-dominant), a 50% capture takes round(113*0.5)=57c at Stripe,
+    // while recomputing from $10 gives the full 84c floor again — a 27c over-collection
+    // taken from the earner.
+    //
+    // The recompute remains the fallback for the self-settle path, where WE performed
+    // the capture and no application fee was ever set by anyone else.
     const claimBps = safeBps(payment.fee_bps);
-    const { data: claimFee, error: claimFeeErr } = await supabase.rpc('platform_fee_cents', {
-      p_amount_cents: capturedCents,
-      p_fee_bps: claimBps,
-    });
+    const { data: claimFee, error: claimFeeErr } = stripeFeeCents !== null
+      ? { data: stripeFeeCents, error: null }
+      : await supabase.rpc('platform_fee_cents', {
+          p_amount_cents: capturedCents,
+          p_fee_bps: claimBps,
+        });
     if (claimFeeErr || !Number.isFinite(Number(claimFee))) {
       // FAIL CLOSED. Stripe has already captured at this point, so we must not write
       // a guessed split — leave the row for remediation and surface it as fatal.

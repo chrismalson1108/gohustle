@@ -45,3 +45,15 @@ verify_jwt = false
 #   gateway JWT check must be off; the function verifies the secret itself.
 [functions.safety-alert]
 verify_jwt = false
+
+# controls-alert — invoked by pg_cron via pg_net with the x-controls-secret shared
+# secret from app_flags.controls_alert, never a user JWT. Without this line the next
+# plain `supabase functions deploy` re-enables JWT verification and silently kills the
+# alerting channel — and the control below would be the only thing that ever noticed.
+[functions.controls-alert]
+verify_jwt = false
+
+# reconcile-stripe — same dispatch path, same shared secret, same reason.
+[functions.reconcile-stripe]
+verify_jwt = false
+

@@ -22,7 +22,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { categoryLabel, sameCategory } from '../../shared/categories.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
-import { getFeeBps, feeBpsSync, platformFeeCents, feeLabel } from '../lib/pricing';
+import { getFeeBps, feeBpsSync, platformFeeCents, effectiveFeeLabel } from '../lib/pricing';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const STATUS_CONTENT = {
@@ -440,7 +440,7 @@ export default function JobDetailScreen({ route, navigation }) {
                       <Text style={styles.feeVal} numberOfLines={1}>${gross.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeRow}>
-                      <Text style={styles.feeLabel} numberOfLines={2}>GoHustlr service fee ({feeLabel(feeBps)})</Text>
+                      <Text style={styles.feeLabel} numberOfLines={2}>GoHustlr service fee{effectiveFeeLabel(grossCents, feeBps) ? ` (${effectiveFeeLabel(grossCents, feeBps)})` : ''}</Text>
                       <Text style={styles.feeVal} numberOfLines={1}>−${fee.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeDivider} />

@@ -9,7 +9,7 @@ import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
 import SignedImage from './SignedImage';
-import { feeLabel } from '../../shared/pricing';
+import { effectiveFeeLabel } from '../../shared/pricing';
 
 const RATING_LABELS = {
   5: { ion: 'star',           text: 'Excellent' },
@@ -147,7 +147,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             <View style={styles.escrowBox}>
               <Ionicons name="shield-checkmark" size={16} color={colors.success} style={{ marginRight: 8, marginTop: 1 }} />
               <Text style={styles.escrowText}>
-                The payment you authorized is held securely on your card. Confirming releases it to {earnerName} (we keep a {feeLabel(booking.feeBpsQuoted)} platform fee) — no new charge.
+                The payment you authorized is held securely on your card. Confirming releases it to {earnerName}{effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted) ? ` (we keep a ${effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted)} platform fee)` : ' (minus the platform fee shown when you accepted)'} — no new charge.
               </Text>
             </View>
 

@@ -311,6 +311,11 @@ Deno.serve(async (req: Request) => {
       fee_cents: feeCents,
       earner_amount_cents: earnerAmountCents,
       status: 'authorized',
+      // When THIS hold was placed. created_at keeps recording the first one, which
+      // other controls and the payments list read — so a recovery re-hold updates this
+      // and leaves that history intact. Without it the escrow-age controls date a
+      // fresh hold to the lapsed one and fire CRITICAL the moment it is created.
+      authorized_at: new Date().toISOString(),
     }, { onConflict: 'booking_id' });
 
     if (payErr) {

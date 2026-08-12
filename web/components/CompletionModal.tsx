@@ -10,7 +10,7 @@ import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
-import { earnerNetCents, feeLabel } from "@gohustlr/shared";
+import { earnerNetCents, effectiveFeeLabel } from "@gohustlr/shared";
 
 export interface VerifyArgs {
   rating: number;
@@ -136,7 +136,7 @@ export default function CompletionModal({
           </p>
           {!disputed && (
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-              Confirming releases <b className="text-ink">{money(earnerNetCents(heldCents, booking.feeBpsQuoted), { cents: true })}</b> to {earnerName} (we keep a {feeLabel(booking.feeBpsQuoted)} platform fee). No new charge — this is the amount you already authorized when you accepted.
+              Confirming releases <b className="text-ink">{money(earnerNetCents(heldCents, booking.feeBpsQuoted), { cents: true })}</b> to {earnerName} {effectiveFeeLabel(heldCents, booking.feeBpsQuoted) ? `(we keep a ${effectiveFeeLabel(heldCents, booking.feeBpsQuoted)} platform fee)` : "(minus the platform fee shown when you accepted)"}. No new charge — this is the amount you already authorized when you accepted.
             </p>
           )}
         </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay, platformFeeCents, feeLabel } from "@gohustlr/shared";
+import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay, platformFeeCents, effectiveFeeLabel } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
@@ -503,7 +503,7 @@ export default function JobDetailPage() {
               <div>
                 <PanelLabel>Payment</PanelLabel>
                 <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
-                <Row label={`GoHustlr service fee (${feeLabel(feeBps)})`} value={`−${money(fee)}`} />
+                <Row label={`GoHustlr service fee${effectiveFeeLabel(grossCents, feeBps) ? ` (${effectiveFeeLabel(grossCents, feeBps)})` : ""}`} value={`−${money(fee)}`} />
                 <div className="my-2 h-px bg-divider" />
                 <Row label="You receive" value={money(net)} bold />
                 <p className="mt-3 text-xs leading-[17px] text-ink-muted">
