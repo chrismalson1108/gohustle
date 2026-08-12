@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/config";
@@ -24,7 +24,7 @@ async function run(
 ): Promise<ActionResult> {
   let ctx;
   try {
-    ctx = await requireAdmin("finance");
+    ctx = await requireFreshAdmin("finance");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;

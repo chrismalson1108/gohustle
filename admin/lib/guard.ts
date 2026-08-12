@@ -40,7 +40,7 @@ export interface AdminContext {
   service: SupabaseClient;
 }
 
-export type DenyReason = "unauthenticated" | "mfa" | "forbidden";
+export type DenyReason = "unauthenticated" | "mfa" | "forbidden" | "stale_mfa";
 
 export class AdminAuthError extends Error {
   constructor(public readonly reason: DenyReason) {
@@ -60,6 +60,62 @@ function aalFromToken(token: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+// ── Step-up authentication ───────────────────────────────────────────────────
+//
+// AAL2 proves MFA happened at SOME point in this session. It does not prove the person
+// at the keyboard right now is the one who passed it — a stolen laptop, a hijacked
+// cookie, or a borrowed unlocked screen all satisfy it. For actions that move money or
+// grant privilege, that is not enough: the whole point of a second factor is defeated
+// if it is only ever demanded once a day.
+//
+// So sensitive actions additionally require a RECENT factor. Supabase puts an `amr`
+// (authentication methods reference) array in the access token, one entry per method
+// with the unix timestamp it was satisfied. We read the newest MFA-ish entry.
+//
+// FAILS CLOSED. If amr is absent, malformed, or carries no MFA method, this returns
+// stale — so the worst case is being asked to re-enter a code, never being let through
+// unverified.
+const MFA_METHODS = new Set(["totp", "mfa/totp", "webauthn", "mfa/webauthn"]);
+
+export function mfaAgeSeconds(token: string | undefined): number | null {
+  if (!token) return null;
+  try {
+    const part = token.split(".")[1];
+    const json = Buffer.from(part.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    const amr = JSON.parse(json).amr as { method?: string; timestamp?: number }[] | undefined;
+    if (!Array.isArray(amr)) return null;
+    const stamps = amr
+      .filter((a) => a?.method && MFA_METHODS.has(String(a.method)))
+      .map((a) => Number(a.timestamp))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!stamps.length) return null;
+    return Math.max(0, Math.floor(Date.now() / 1000) - Math.max(...stamps));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like requireAdmin, but ALSO demands the second factor was satisfied recently.
+ *
+ * Use for anything that moves money, changes pricing, or grants access. The caller
+ * catches AdminAuthError("stale_mfa") and asks for a code; verifying it mints a token
+ * with a fresh amr timestamp and the retry passes.
+ */
+export async function requireFreshAdmin(
+  minRole: AdminRole = "admin",
+  maxAgeSeconds = 300,
+): Promise<AdminContext> {
+  const ctx = await requireAdmin(minRole);
+  const supa = await getServerSupabase();
+  const { data: { session } } = await supa.auth.getSession();
+  const age = mfaAgeSeconds(session?.access_token);
+  if (age === null || age > maxAgeSeconds) {
+    throw new AdminAuthError("stale_mfa");
+  }
+  return ctx;
 }
 
 // THE enforcement point. Every server component page and every server action

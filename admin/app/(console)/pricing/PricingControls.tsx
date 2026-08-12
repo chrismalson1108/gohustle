@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setPlatformRate, setTier, grantToUsers, saveTier, deleteTier, type ActionResult } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
 
 function Result({ r }: { r: ActionResult | null }) {
   if (!r) return null;
@@ -11,11 +12,20 @@ function Result({ r }: { r: ActionResult | null }) {
 export function SetRate({ current }: { current: number }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
+  // Holds the submitted form so the retry after re-auth does not make the operator
+  // retype a confirmation phrase they already typed.
+  const [pendingFd, setPendingFd] = useState<FormData | null>(null);
   const input = "rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-sm";
   return (
     <form
       className="mt-3 flex flex-wrap items-end gap-2"
-      action={(fd) => start(async () => setResult(await setPlatformRate(fd)))}
+      action={(fd) =>
+        start(async () => {
+          const r = await setPlatformRate(fd);
+          if (!r.ok && r.message === "stale_mfa") { setPendingFd(fd); setResult(null); return; }
+          setResult(r);
+        })
+      }
     >
       <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
         New rate %
@@ -37,6 +47,18 @@ export function SetRate({ current }: { current: number }) {
         {pending ? "Setting…" : "Set rate"}
       </button>
       <Result r={result} />
+      {pendingFd && (
+        <ReauthPrompt
+          onCancel={() => setPendingFd(null)}
+          onVerified={() =>
+            start(async () => {
+              const r = await setPlatformRate(pendingFd);
+              setPendingFd(null);
+              setResult(r);
+            })
+          }
+        />
+      )}
     </form>
   );
 }

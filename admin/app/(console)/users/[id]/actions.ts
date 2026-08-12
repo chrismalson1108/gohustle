@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 import { deleteUserCascade } from "@/lib/deleteUser";
 import { getServerSupabase } from "@/lib/supabaseServer";
@@ -65,7 +65,7 @@ async function run(
 ): Promise<ActionResult> {
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireFreshAdmin("admin");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;
@@ -441,7 +441,7 @@ export async function deleteAccount(formData: FormData): Promise<ActionResult> {
 
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireFreshAdmin("admin");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;

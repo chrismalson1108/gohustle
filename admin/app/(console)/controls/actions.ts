@@ -44,7 +44,7 @@ export async function resolveFinding(formData: FormData): Promise<ActionResult> 
     revalidatePath("/controls");
     return { ok: true, message: "Closed. It will re-open on the next sweep if the condition still holds." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not close that finding." };
   }
 }
@@ -66,7 +66,7 @@ export async function setControlEnabled(formData: FormData): Promise<ActionResul
     revalidatePath("/controls");
     return { ok: true, message: enabled ? `${key} enabled.` : `${key} disabled — you are no longer being told about this.` };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not change that control." };
   }
 }
@@ -82,7 +82,7 @@ export async function runSweepNow(): Promise<ActionResult> {
     revalidatePath("/controls");
     return { ok: true, message: "Sweep complete." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not run the sweep." };
   }
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -42,7 +42,7 @@ export async function setPlatformRate(formData: FormData): Promise<ActionResult>
   }
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const feeBps = Math.round(pct * 100);
     const { error } = await ctx.service.from("platform_rates").insert({
       fee_bps: feeBps,
@@ -63,7 +63,7 @@ export async function setPlatformRate(formData: FormData): Promise<ActionResult>
         `they were struck at — this only affects new ones.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not set the rate." };
   }
 }
@@ -73,7 +73,7 @@ export async function setTier(formData: FormData): Promise<ActionResult> {
   const enabled = String(formData.get("enabled") ?? "") === "1";
   if (!id) return { ok: false, message: "Missing tier." };
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { error } = await ctx.service.from("fee_tiers").update({ enabled }).eq("id", id);
     if (error) return { ok: false, message: error.message };
     await audit(ctx, enabled ? "pricing.tier_enable" : "pricing.tier_disable", "fee_tier", id, { enabled });
@@ -87,7 +87,7 @@ export async function setTier(formData: FormData): Promise<ActionResult> {
         : "Disabled. Bookings already pinned keep the rate they were given.",
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not change that tier." };
   }
 }
@@ -103,7 +103,7 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
   if (emails.length > 500) return { ok: false, message: "500 at a time, max." };
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     // Resolve through auth.users via the admin API surface the console already uses
     // for team management; profiles has no email column.
     const { data: profs, error: pErr } = await ctx.service
@@ -131,7 +131,7 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
       message: `Granted to ${n} of ${emails.length}. Anyone already holding it was skipped.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not issue those grants." };
   }
 }
@@ -163,7 +163,7 @@ export async function saveTier(formData: FormData): Promise<ActionResult> {
   }
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const row = {
       name,
       min_completed: Math.round(minCompleted),
@@ -191,7 +191,7 @@ export async function saveTier(formData: FormData): Promise<ActionResult> {
         : "Created, switched OFF. Enable it when you mean it.",
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not save that tier." };
   }
 }
@@ -200,7 +200,7 @@ export async function deleteTier(formData: FormData): Promise<ActionResult> {
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, message: "Missing tier." };
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { data: t } = await ctx.service.from("fee_tiers").select("name, enabled").eq("id", id).maybeSingle();
     if (t?.enabled) {
       // Deleting a live rung silently raises the fee for everyone standing on it.
@@ -213,7 +213,7 @@ export async function deleteTier(formData: FormData): Promise<ActionResult> {
     revalidatePath("/pricing");
     return { ok: true, message: "Deleted." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.message };
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not delete that tier." };
   }
 }

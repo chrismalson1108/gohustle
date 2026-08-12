@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 
 const ADMIN_ROLES: readonly string[] = ["admin", "finance", "trust", "support"];
@@ -23,7 +23,7 @@ async function run(
 ): Promise<ActionResult> {
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireFreshAdmin("admin");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;
@@ -75,7 +75,7 @@ export async function addTeamMember(formData: FormData): Promise<ActionResult> {
 
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireFreshAdmin("admin");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;
