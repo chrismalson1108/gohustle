@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin, AdminAuthError } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 
+const ADMIN_ROLES: readonly string[] = ["admin", "finance", "trust", "support"];
+
 export interface ActionResult {
   ok: boolean;
   message: string;
@@ -64,7 +66,12 @@ export async function addTeamMember(formData: FormData): Promise<ActionResult> {
   const role = String(formData.get("role") ?? "support");
   const note = String(formData.get("note") ?? "").trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, message: "Enter a valid email." };
-  if (role !== "admin" && role !== "support") return { ok: false, message: "Role must be admin or support." };
+  // Four tiers now (20260806090000). assertNotLastAdmin still guards only the "admin"
+  // tier, which is correct: trust and finance cannot manage the team, so demoting the
+  // last admin to finance would still strand the console.
+  if (!ADMIN_ROLES.includes(role)) {
+    return { ok: false, message: `Role must be one of: ${ADMIN_ROLES.join(", ")}.` };
+  }
 
   let ctx;
   try {
@@ -146,7 +153,12 @@ export async function setTeamRole(formData: FormData): Promise<ActionResult> {
   const userId = String(formData.get("userId") ?? "");
   const role = String(formData.get("role") ?? "");
   if (!userId) return { ok: false, message: "Missing user id." };
-  if (role !== "admin" && role !== "support") return { ok: false, message: "Role must be admin or support." };
+  // Four tiers now (20260806090000). assertNotLastAdmin still guards only the "admin"
+  // tier, which is correct: trust and finance cannot manage the team, so demoting the
+  // last admin to finance would still strand the console.
+  if (!ADMIN_ROLES.includes(role)) {
+    return { ok: false, message: `Role must be one of: ${ADMIN_ROLES.join(", ")}.` };
+  }
 
   return run("team.set_role", userId, { role }, async (ctx) => {
     if (userId === ctx.user.id) {

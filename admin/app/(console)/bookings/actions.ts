@@ -24,7 +24,7 @@ async function run(
 ): Promise<ActionResult> {
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireAdmin("finance");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;

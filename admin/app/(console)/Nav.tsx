@@ -19,8 +19,20 @@ import { usePathname } from "next/navigation";
 // are is most of what makes a console navigable; the server has no cheap way to
 // tell each link whether it is current.
 
-type Item = { href: string; label: string; adminOnly?: boolean };
+type Item = { href: string; label: string; minRole?: "admin" | "finance" | "trust" | "support" };
 type Group = { title: string | null; items: Item[] };
+type Role = "admin" | "finance" | "trust" | "support";
+
+// Mirrors roleSatisfies() in admin/lib/guard.ts. Duplicated deliberately: the guard is
+// server-only and this is a client component, and nav visibility is cosmetic — the
+// guard is the actual enforcement. If they ever disagree, the guard wins and the user
+// sees a 403, which is the safe direction.
+const SATISFIES: Record<Role, ReadonlySet<Role>> = {
+  admin: new Set<Role>(["admin"]),
+  finance: new Set<Role>(["admin", "finance"]),
+  trust: new Set<Role>(["admin", "trust"]),
+  support: new Set<Role>(["admin", "finance", "trust", "support"]),
+};
 
 const GROUPS: Group[] = [
   { title: null, items: [{ href: "/", label: "Dashboard" }] },
@@ -35,14 +47,14 @@ const GROUPS: Group[] = [
   {
     title: "Money",
     items: [
-      { href: "/payments", label: "Payments" },
-      { href: "/disputes", label: "Disputes" },
+      { href: "/payments", label: "Payments", minRole: "finance" },
+      { href: "/disputes", label: "Disputes", minRole: "trust" },
     ],
   },
   {
     title: "Trust & safety",
     items: [
-      { href: "/moderation", label: "Moderation" },
+      { href: "/moderation", label: "Moderation", minRole: "trust" },
       { href: "/support", label: "Support" },
     ],
   },
@@ -51,7 +63,7 @@ const GROUPS: Group[] = [
     items: [
       { href: "/users", label: "Users" },
       { href: "/access", label: "Access" },
-      { href: "/team", label: "Team", adminOnly: true },
+      { href: "/team", label: "Team", minRole: "admin" },
     ],
   },
   {
@@ -59,8 +71,8 @@ const GROUPS: Group[] = [
     items: [
       { href: "/controls", label: "Controls" },
       { href: "/errors", label: "Errors" },
-      { href: "/flags", label: "Flags" },
-      { href: "/audit", label: "Audit", adminOnly: true },
+      { href: "/flags", label: "Flags", minRole: "admin" },
+      { href: "/audit", label: "Audit", minRole: "admin" },
     ],
   },
 ];
@@ -75,7 +87,10 @@ export default function Nav({ role }: { role: string }) {
   const pathname = usePathname() || "/";
   const groups = GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.adminOnly || role === "admin"),
+    // Hide what this role cannot open. A visible link that 403s is worse than an
+    // absent one: it teaches people the console is broken rather than that they
+    // lack access.
+    items: g.items.filter((i) => !i.minRole || SATISFIES[i.minRole].has(role as Role)),
   })).filter((g) => g.items.length > 0);
 
   return (

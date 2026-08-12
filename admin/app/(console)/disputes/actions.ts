@@ -30,7 +30,7 @@ export async function setDisputeStatus(formData: FormData): Promise<ActionResult
 
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireAdmin("trust");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;

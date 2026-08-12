@@ -11,7 +11,7 @@ export default async function ModerationPage({
 }: {
   searchParams: Promise<{ filter?: string }>;
 }) {
-  const ctx = await requireAdminPage("support");
+  const ctx = await requireAdminPage("trust");
   const showResolved = (await searchParams).filter === "resolved";
 
   let q = ctx.service

@@ -12,7 +12,7 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  const ctx = await requireAdminPage("support");
+  const ctx = await requireAdminPage("finance");
   const statusFilter = (await searchParams).status ?? "";
   await auditRead(ctx, "payments.view", "payments", undefined, statusFilter ? { status: statusFilter } : undefined);
 

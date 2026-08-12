@@ -35,8 +35,10 @@ export function AddMemberForm({ isAdmin }: { isAdmin: boolean }) {
           onChange={(e) => setRole(e.target.value)}
           className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
         >
-          <option value="support">support</option>
-          <option value="admin">admin</option>
+          <option value="support">support — tickets only</option>
+          <option value="trust">trust — moderation + disputes</option>
+          <option value="finance">finance — payments + refunds</option>
+          <option value="admin">admin — everything, incl. team</option>
         </select>
         <input
           value={note}

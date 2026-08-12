@@ -18,7 +18,7 @@ export default async function DisputesPage({
 }: {
   searchParams: Promise<{ filter?: string }>;
 }) {
-  const ctx = await requireAdminPage("support");
+  const ctx = await requireAdminPage("trust");
   const showClosed = (await searchParams).filter === "closed";
   await auditRead(ctx, "disputes.view", "disputes", undefined, { closed: showClosed });
 

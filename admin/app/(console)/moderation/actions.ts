@@ -16,7 +16,7 @@ export async function resolveReport(formData: FormData): Promise<ActionResult> {
 
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireAdmin("trust");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;
@@ -40,7 +40,7 @@ export async function reopenReport(formData: FormData): Promise<ActionResult> {
   if (!reportId) return { ok: false, message: "Missing report id." };
   let ctx;
   try {
-    ctx = await requireAdmin("admin");
+    ctx = await requireAdmin("trust");
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
     throw e;

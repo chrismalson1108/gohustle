@@ -24,7 +24,7 @@ interface Member {
 // dependency for an offboarding, and it is what made the MFA enrolment window a
 // recurring exposure rather than a one-time one.
 export default async function TeamPage() {
-  const ctx = await requireAdminPage("support");
+  const ctx = await requireAdminPage("admin");
   await auditRead(ctx, "team.view", "admin_users");
 
   const { data, error } = await ctx.service.rpc("admin_team_list");

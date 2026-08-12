@@ -4,7 +4,35 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getServerSupabase } from "./supabaseServer";
 import { getServiceClient } from "./serviceClient";
 
-export type AdminRole = "admin" | "support";
+// RANKED, not orthogonal: admin ⊃ finance/trust ⊃ support.
+//
+// A flat capability matrix is more precise, but it needs a permissions UI to stay
+// honest and an unmaintained permissions UI drifts into everyone-is-admin. Ranks are
+// checkable in one line and cannot silently rot.
+//
+//   support  tickets, and a user's own context. NOT bulk PII, NOT all payments.
+//   trust    moderation + disputes, WITH resolve authority — that authority is what
+//            unblocks an earner's payout, so withholding it makes one person's
+//            availability a money-harm control.
+//   finance  payments, refunds, payout intervention, escrow.
+//   admin    everything, plus team, flags, pricing and promotions.
+//
+// trust and finance are siblings: neither outranks the other, and both outrank
+// support. requireAdmin("trust") therefore admits trust and admin, not finance.
+export type AdminRole = "admin" | "finance" | "trust" | "support";
+
+// Who satisfies a given minimum. Explicit sets rather than numeric ranks, because
+// trust and finance are peers and a number would force a false ordering between them.
+const SATISFIES: Record<AdminRole, ReadonlySet<AdminRole>> = {
+  admin: new Set<AdminRole>(["admin"]),
+  finance: new Set<AdminRole>(["admin", "finance"]),
+  trust: new Set<AdminRole>(["admin", "trust"]),
+  support: new Set<AdminRole>(["admin", "finance", "trust", "support"]),
+};
+
+export function roleSatisfies(role: AdminRole, minRole: AdminRole): boolean {
+  return SATISFIES[minRole]?.has(role) ?? false;
+}
 
 export interface AdminContext {
   user: User;
@@ -76,7 +104,7 @@ export async function requireAdmin(minRole: AdminRole = "support"): Promise<Admi
   if (row.status !== "active") throw new AdminAuthError("forbidden");
 
   const role = row.role as AdminRole;
-  if (minRole === "admin" && role !== "admin") throw new AdminAuthError("forbidden");
+  if (!roleSatisfies(role, minRole)) throw new AdminAuthError("forbidden");
 
   return { user, role, service };
 }
