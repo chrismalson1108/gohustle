@@ -65,13 +65,36 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const mode: string = body?.mode === 'digest' ? 'digest' : 'page';
 
-    // Open findings, worst first.
-    const { data: findings } = await supabase
-      .from('control_findings')
-      .select('control_key, entity_id, severity, detail, first_seen_at, last_seen_at')
-      .is('resolved_at', null)
-      .order('last_seen_at', { ascending: false })
-      .limit(200);
+    // Open findings — SEVERITY FIRST, in two queries.
+    //
+    // This used to be a single `.order('last_seen_at').limit(200)` under a comment that
+    // claimed "worst first". It was ordered by RECENCY, so once more than 200 findings
+    // were open, the fetch kept the 200 most recently seen and silently dropped
+    // everything else — including criticals. The in-memory severity sort below could not
+    // rescue them because they were never fetched.
+    //
+    // The consequence was the precise failure a pager must not have: `fresh` (which
+    // decides whether to alert at all) is computed from this array, so a flood of
+    // low-severity findings could push a brand-new CRITICAL out of the result set and
+    // the page would simply not fire. A monitoring system that goes quiet under load is
+    // worse than none, because the silence reads as "nothing is wrong".
+    //
+    // Splitting the query means critical/high have their own budget and can never be
+    // crowded out by volume in the lower tiers.
+    const FIND_COLS = 'control_key, entity_id, severity, detail, first_seen_at, last_seen_at';
+    const [urgentRes, restRes, totalRes] = await Promise.all([
+      supabase.from('control_findings').select(FIND_COLS).is('resolved_at', null)
+        .in('severity', ['critical', 'high'])
+        .order('last_seen_at', { ascending: false }).limit(200),
+      supabase.from('control_findings').select(FIND_COLS).is('resolved_at', null)
+        .in('severity', ['medium', 'low'])
+        .order('last_seen_at', { ascending: false }).limit(200),
+      // Exact total, so the summary line stays truthful even when the fetch is capped.
+      supabase.from('control_findings').select('id', { count: 'exact', head: true })
+        .is('resolved_at', null),
+    ]);
+    const findings = [...(urgentRes.data ?? []), ...(restRes.data ?? [])];
+    const totalOpen = totalRes.count ?? findings.length;
 
     const { data: controls } = await supabase
       .from('controls')
@@ -168,14 +191,14 @@ Deno.serve(async (req: Request) => {
     ].join('');
 
     const subject = mode === 'digest'
-      ? `GoHustlr controls — ${open.length} open (${byS.critical ?? 0} critical, ${byS.high ?? 0} high)`
+      ? `GoHustlr controls — ${totalOpen} open (${byS.critical ?? 0} critical, ${byS.high ?? 0} high)`
       : `⚠️ GoHustlr controls: ${fresh.length} new${errored.length ? ` · ${errored.length} erroring` : ''}${stale.length ? ` · ${stale.length} stale` : ''}`;
 
     const to = Deno.env.get('CONTROLS_EMAIL') || DEFAULT_TO;
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
       console.error(`[controls-alert] RESEND_API_KEY unset — cannot email ${to}; ${open.length} open findings`);
-      return json({ ok: true, emailed: false, reason: 'no_transport', open: open.length });
+      return json({ ok: true, emailed: false, reason: 'no_transport', open: totalOpen });
     }
 
     const res = await fetch('https://api.resend.com/emails', {
@@ -196,7 +219,7 @@ Deno.serve(async (req: Request) => {
                      <th align="left" style="padding:6px 10px;border-bottom:2px solid #363636;">Entity</th></tr>
                  ${rows}
                </table>
-               ${open.length > 40 ? `<p style="color:#6B6482;font-size:12px;">…and ${open.length - 40} more.</p>` : ''}`
+               ${totalOpen > 40 ? `<p style="color:#6B6482;font-size:12px;">…and ${totalOpen - 40} more.</p>` : ''}`
             : '<p style="color:#15803D;">No open findings.</p>'}
           <p style="margin-top:18px;"><a href="${ADMIN_URL}/controls" style="color:#5038FF;">Open the controls queue →</a></p>
         </div>`,
@@ -206,7 +229,7 @@ Deno.serve(async (req: Request) => {
       console.error('[controls-alert] resend error:', await res.text().catch(() => res.status));
       return json({ ok: false, emailed: false }, 502);
     }
-    return json({ ok: true, emailed: true, mode, open: open.length, fresh: fresh.length });
+    return json({ ok: true, emailed: true, mode, open: totalOpen, fetched: open.length, fresh: fresh.length });
   } catch (err) {
     console.error('controls-alert:', err);
     return json({ error: 'Something went wrong.' }, 500);
