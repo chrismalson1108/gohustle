@@ -75,11 +75,16 @@ Deno.serve(async (req: Request) => {
     if (pErr) return json({ error: pErr.message }, 500);
 
     const seen: string[] = [];
+    // Every payment this run actually LOOKED AT. Auto-resolution is scoped to these:
+    // a finding on a payment outside the scan window was never re-checked, so closing
+    // it would assert a reconciliation that never happened.
+    const examined: string[] = [];
     let checked = 0;
 
     for (const p of payments ?? []) {
       if (!p.payment_intent_id) continue;
       checked++;
+      examined.push(p.id);
       let pi: Stripe.PaymentIntent;
       try {
         pi = await stripe.paymentIntents.retrieve(p.payment_intent_id, {
@@ -136,11 +141,31 @@ Deno.serve(async (req: Request) => {
       //    every cancelled hold and could never be resolved by fixing anything, which
       //    is the permanent-false-positive shape that teaches people to ignore the
       //    queue. Gate on captured_at, which is null precisely when nothing was taken.
+      //    THE SAME TRAP AGAIN, ONE LEVEL DOWN: a PARTIAL capture.
+      //
+      //    Capturing less than the authorized amount makes Stripe release the remainder,
+      //    and it reports that release in charge.amount_refunded exactly as it does for
+      //    a real refund. Our refunded_cents is correctly 0 — we did not refund
+      //    anything, we captured less — so the naive comparison fired on every partial
+      //    capture and could never be cleared. Partial capture is not an edge case here:
+      //    it is the whole "report a problem" flow in CompletionModal, so this would
+      //    have produced a permanent false finding for every disputed gig.
+      //
+      //    Subtract the amount Stripe released on its own. What remains is a genuine
+      //    refund, and a real one on top of a partial capture is still caught.
+      const authorizedCents = pi.amount ?? 0;
+      const autoReleased = Math.max(0, authorizedCents - receivedCents);
+      const realRefundAtStripe = Math.max(0, refundedAtStripe - autoReleased);
+
       const wasCaptured = Boolean(p.captured_at) || receivedCents > 0;
-      if (wasCaptured && Math.abs(refundedAtStripe - ourRefunded) > TOLERANCE_CENTS) {
+      if (wasCaptured && Math.abs(realRefundAtStripe - ourRefunded) > TOLERANCE_CENTS) {
         problems.push({
           kind: "refund_mismatch",
-          ours: ourRefunded, stripe: refundedAtStripe, diff: refundedAtStripe - ourRefunded,
+          ours: ourRefunded,
+          stripe: realRefundAtStripe,
+          stripe_raw_refunded: refundedAtStripe,
+          auto_released: autoReleased,
+          diff: realRefundAtStripe - ourRefunded,
         });
       }
 
@@ -174,7 +199,16 @@ Deno.serve(async (req: Request) => {
     // finding the check stops producing is closed, so the queue stays honest.
     // Done in SQL because the "not in (…)" form over PostgREST is fragile with an
     // empty set, and an empty set is the healthy case.
-    await supabase.rpc("resolve_reconciliation_findings", { p_still_open: seen });
+    // Pass BOTH: what is still broken, and what was examined at all. Without the
+    // second list the RPC resolved every open finding not in `seen` — including ones
+    // for payments that fell outside the 14-day / 200-row window and were therefore
+    // never checked. Those were closed with the note "reconciles against Stripe",
+    // which was simply untrue: a real money discrepancy could age out of the window
+    // and be silently marked resolved.
+    await supabase.rpc("resolve_reconciliation_findings", {
+      p_still_open: seen,
+      p_examined: examined,
+    });
 
     await supabase.from("controls").update({
       last_run_at: new Date().toISOString(),
