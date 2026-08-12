@@ -73,6 +73,10 @@ export default function SupportScreen({ navigation, route }) {
   // me last month" is a real question and losing it feels like being forgotten.
   const [allTickets, setAllTickets] = useState([]);
   const [showPast, setShowPast] = useState(false);
+  // Several open tickets are allowed — the database never capped them, only this screen
+  // did by always selecting the newest. A payments problem and a safety problem are not
+  // the same conversation, and nobody should have to resolve one to report the other.
+  const [composingNew, setComposingNew] = useState(false);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -95,6 +99,14 @@ export default function SupportScreen({ navigation, route }) {
       // therefore shows that new one, not the resolved one above it.
       const open = tickets.find(t => t.status !== 'closed') ?? tickets[0] ?? null;
       setTicket(open);
+      // Arriving from a pre-scoped entry point (Payout Setup asks for 'payment') while
+      // the open thread is about something else means this is a NEW problem. Dropping
+      // someone into an unrelated conversation is how a report gets lost in a thread
+      // nobody is reading for it.
+      const wanted = route?.params?.category;
+      if (wanted && open && open.status !== 'closed' && open.category !== wanted) {
+        setComposingNew(true);
+      }
       if (open) {
         const msgs = await fetchTicketMessages(open.id);
         setMessages(msgs);
@@ -194,7 +206,7 @@ export default function SupportScreen({ navigation, route }) {
       // tap send and get "this conversation was closed" forever, with no way to start
       // another: the screen would keep selecting that same closed ticket. Opening a new
       // one is the correct behaviour and needs no action from them.
-      if (ticket && ticket.status !== 'closed') {
+      if (ticket && ticket.status !== 'closed' && !composingNew) {
         await replyToTicket(ticket.id, { body, images: paths });
       } else {
         // No open thread — this first message opens one. submitSupportRequest goes
@@ -207,7 +219,7 @@ export default function SupportScreen({ navigation, route }) {
           bookingId: linkedBooking,
         });
       }
-      setDraft(''); setPhotos([]);
+      setDraft(''); setPhotos([]); setComposingNew(false); setLinkedBooking(null);
       await load();
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
       haptic.success();
@@ -248,8 +260,13 @@ export default function SupportScreen({ navigation, route }) {
             </Text>
           )}
 
-          {ticket === null && (
+          {(ticket === null || composingNew) && (
             <>
+              {composingNew && !!ticket && (
+                <TouchableOpacity onPress={() => { haptic.selection(); setComposingNew(false); }}>
+                  <Text style={styles.newRequestLink}>← Back to “{ticket.subject || 'your conversation'}”</Text>
+                </TouchableOpacity>
+              )}
               <Text style={styles.emptyTitle}>How can we help?</Text>
               <Text style={styles.emptyText}>
                 Payments, a gig that went wrong, your account, or anything else. Add photos
@@ -335,10 +352,18 @@ export default function SupportScreen({ navigation, route }) {
                 </View>
               )}
 
+              <TouchableOpacity
+                onPress={() => { haptic.selection(); setComposingNew(true); setLinkedBooking(null); }}
+              >
+                <Text style={styles.newRequestLink}>＋ Start a new request</Text>
+              </TouchableOpacity>
+
               {pastTickets.length > 0 && (
                 <TouchableOpacity onPress={() => { haptic.selection(); setShowPast(v => !v); }}>
                   <Text style={styles.pastToggle}>
-                    {showPast ? 'Hide' : `Past conversations (${pastTickets.length})`}
+                    {showPast
+                      ? 'Hide'
+                      : `Your other conversations (${pastTickets.length})`}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -346,7 +371,9 @@ export default function SupportScreen({ navigation, route }) {
                 <TouchableOpacity key={t.id} style={styles.pastRow} onPress={() => openTicket(t)}>
                   <Text style={styles.pastRowTitle} numberOfLines={1}>{t.subject || 'Support request'}</Text>
                   <Text style={styles.pastRowMeta} numberOfLines={1}>
-                    {CATEGORY_LABEL[t.category] ?? 'Support'} · {t.status === 'closed' ? 'closed' : 'open'}
+                    {CATEGORY_LABEL[t.category] ?? 'Support'}
+                    {' · '}
+                    {t.status === 'closed' ? 'resolved' : t.status === 'pending' ? 'we replied' : 'open'}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -474,6 +501,9 @@ const styles = StyleSheet.create({
   },
   contextTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   contextSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  newRequestLink: {
+    fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 12,
+  },
   pastToggle: { fontSize: 12, fontWeight: '600', color: colors.primary, marginTop: 10 },
   pastRow: {
     marginTop: 8, paddingVertical: 9, paddingHorizontal: 11,
