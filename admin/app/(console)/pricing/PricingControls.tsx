@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { setPlatformRate, setTier, grantToUsers, saveTier, deleteTier, type ActionResult } from "./actions";
+import { setPlatformRate, setTier, grantToUsers, saveTier, deleteTier, cancelScheduledRate, type ActionResult } from "./actions";
 import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 function Result({ r }: { r: ActionResult | null }) {
   if (!r) return null;
@@ -34,6 +35,9 @@ export function SetRate({ current }: { current: number }) {
       <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
         Effective from
         <input name="effective_from" type="datetime-local" className={input} />
+        {/* The blank case already meant "now"; nothing said so, so the field read as
+            required and a rate meant for today got scheduled for a future date. */}
+        <span className="text-[10px] text-[var(--muted)]">leave blank = immediately</span>
       </label>
       <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
         Why
@@ -198,5 +202,38 @@ function DeleteTier({ id }: { id: string }) {
       </button>
       <Result r={result} />
     </>
+  );
+}
+
+// Cancel a scheduled (not-yet-effective) rate change.
+//
+// The rate table showed "scheduled" next to a future row and offered no way to act on
+// it, so a mistyped rate or date could only be corrected by waiting for it to take
+// effect and then setting another. Editing one is cancel-then-set: effective_from is
+// unique, so there is no in-place update that could leave two answers for one instant.
+export function CancelScheduledRate({ id, pct, when }: { id: string; pct: number; when: string }) {
+  const [pending, start] = useTransition();
+  const stepUp = useStepUp();
+
+  const submit = () => {
+    if (!confirm(`Cancel the scheduled ${pct}% change for ${when}?\n\nThe current rate stays as it is.`)) return;
+    const fd = new FormData();
+    fd.set("id", id);
+    start(async () => { await stepUp.run(() => cancelScheduledRate(fd)); });
+  };
+
+  return (
+    <span className="inline-flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={submit}
+        disabled={pending}
+        className="rounded border border-[var(--line)] px-2 py-0.5 text-[11px] font-medium text-[var(--danger)] hover:bg-[var(--surface)] disabled:opacity-50"
+      >
+        {pending ? "…" : "Cancel"}
+      </button>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
+      <Result r={stepUp.result} />
+    </span>
   );
 }

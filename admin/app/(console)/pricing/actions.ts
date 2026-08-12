@@ -217,3 +217,66 @@ export async function deleteTier(formData: FormData): Promise<ActionResult> {
     return { ok: false, message: "Could not delete that tier." };
   }
 }
+
+// Cancel a rate change that has NOT taken effect yet.
+//
+// platform_rates is append-only for a good reason: "what did we charge on the 3rd?"
+// must always have an answer, and bookings pin their rate at insert so rewriting history
+// would make the table lie about what was true when. That reasoning applies to rates
+// that HAVE been in force. It does not apply to one scheduled for next Tuesday that
+// nobody has been charged under — there, append-only just means a typo is permanent.
+//
+// So this deletes strictly future-dated rows and nothing else. The guard is in the
+// query itself (effective_from > now()), not a prior read, so a row that becomes
+// effective between the check and the delete is not removed.
+//
+// Editing a scheduled rate IS cancel-then-set: platform_rates_effective_uniq makes
+// effective_from unique, so there is no in-place update that could quietly supersede a
+// row and leave two plausible answers for the same instant.
+export async function cancelScheduledRate(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, message: "Missing rate id." };
+
+  try {
+    const ctx = await requireFreshAdmin("admin");
+
+    // Read it first so the audit row records WHAT was cancelled, not just an id.
+    const { data: row } = await ctx.service
+      .from("platform_rates")
+      .select("fee_bps, effective_from, note")
+      .eq("id", id)
+      .maybeSingle();
+    if (!row) return { ok: false, message: "That rate no longer exists." };
+    if (Date.parse(row.effective_from) <= Date.now()) {
+      return {
+        ok: false,
+        message: "That rate is already in effect and is part of the record. Set a new rate instead.",
+      };
+    }
+
+    // Audit BEFORE the change, the ordering the whole console follows: if we cannot
+    // record who cancelled a scheduled rate, we do not cancel it.
+    await audit(ctx, "pricing.cancel_scheduled", "platform_rate", id, {
+      fee_bps: row.fee_bps, effective_from: row.effective_from, note: row.note,
+    });
+
+    const { error, count } = await ctx.service
+      .from("platform_rates")
+      .delete({ count: "exact" })
+      .eq("id", id)
+      .gt("effective_from", new Date().toISOString());
+    if (error) return { ok: false, message: error.message };
+    if (!count) {
+      return { ok: false, message: "It just took effect — it is history now. Set a new rate instead." };
+    }
+
+    revalidatePath("/pricing");
+    return {
+      ok: true,
+      message: `Cancelled the scheduled ${row.fee_bps / 100}% change. The current rate is unchanged.`,
+    };
+  } catch (e) {
+    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    return { ok: false, message: "Could not cancel that rate." };
+  }
+}

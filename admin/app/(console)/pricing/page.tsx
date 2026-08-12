@@ -1,6 +1,6 @@
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
-import { SetRate, TierToggle, GrantDirect, TierEditor } from "./PricingControls";
+import { SetRate, CancelScheduledRate, TierToggle, GrantDirect, TierEditor } from "./PricingControls";
 
 export const metadata = { title: "Pricing" };
 
@@ -103,6 +103,7 @@ export default async function PricingPage() {
             <th className="px-3 py-2">Rate</th>
             <th className="px-3 py-2">Effective from</th>
             <th className="px-3 py-2">Why</th>
+            <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
@@ -114,13 +115,26 @@ export default async function PricingPage() {
                 {Date.parse(r.effective_from) > now && <span className="ml-1 text-amber-700">scheduled</span>}
               </td>
               <td className="px-3 py-2 text-xs text-[var(--muted)]">{r.note}</td>
+              <td className="px-3 py-2">
+                {/* Only a rate that has not taken effect can be withdrawn. One that has
+                    been in force is the record of what we charged and stays put. */}
+                {Date.parse(r.effective_from) > now && (
+                  <CancelScheduledRate
+                    id={r.id}
+                    pct={r.fee_bps / 100}
+                    when={fmtDate(r.effective_from)}
+                  />
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="mt-2 text-xs text-[var(--muted)]">
-        Append-only. Rates are never edited or deleted, so &ldquo;what did we charge on
-        the 3rd?&rdquo; always has an answer.
+        Append-only once a rate has taken effect, so &ldquo;what did we charge on the
+        3rd?&rdquo; always has an answer. A change that has not started yet can still be
+        cancelled &mdash; nobody has been charged under it. To edit one, cancel it and
+        set the rate again.
       </p>
     </div>
   );
