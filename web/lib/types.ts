@@ -125,6 +125,13 @@ export interface Booking {
   startedAt: string | null;
   cancellationFee: number | null;
   tipAmount: number;
+  // The rate and total PINNED to this deal at INSERT (20260806000000 /
+  // 20260806050000). Display must use these rather than the current rate — showing
+  // today's rate on a booking struck at a different one misstates what the earner is
+  // owed, and would be visibly wrong after any rate change or promotion.
+  // Null on rows predating the pins; fall back to the founding rate.
+  feeBpsQuoted: number | null;
+  amountCentsQuoted: number | null;
   earner: EarnerMini | null;
   job: BookingJobMini | null;
 }

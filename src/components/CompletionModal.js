@@ -9,6 +9,7 @@ import { colors, radii, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
 import Avatar from './Avatar';
 import SignedImage from './SignedImage';
+import { feeLabel } from '../../shared/pricing';
 
 const RATING_LABELS = {
   5: { ion: 'star',           text: 'Excellent' },
@@ -39,6 +40,8 @@ function StarPicker({ value, onChange }) {
   );
 }
 
+// Rate comes from the booking's PIN, not a literal — a screen that says 10% while
+// the server charges something else is a disclosure bug.
 export default function CompletionModal({ visible, booking, onClose, onConfirm }) {
   const haptic = useHaptic();
   const [rating, setRating] = useState(5);
@@ -144,7 +147,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             <View style={styles.escrowBox}>
               <Ionicons name="shield-checkmark" size={16} color={colors.success} style={{ marginRight: 8, marginTop: 1 }} />
               <Text style={styles.escrowText}>
-                The payment you authorized is held securely on your card. Confirming releases it to {earnerName} (we keep a 10% platform fee) — no new charge.
+                The payment you authorized is held securely on your card. Confirming releases it to {earnerName} (we keep a {feeLabel(booking.feeBpsQuoted)} platform fee) — no new charge.
               </Text>
             </View>
 

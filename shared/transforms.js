@@ -146,6 +146,12 @@ export function transformBooking(b) {
     beforePhotos: b.before_photos || [],
     completionPhotos: b.completion_photos || [],
     startsAt: b.starts_at || null,
+    // The rate and amount PINNED to this deal (20260806000000 / 20260806050000).
+    // Display must use these, not the current rate — showing today's rate on a
+    // booking struck at a different one misstates what the earner is owed.
+    // Null on rows predating the pins; callers fall back to the founding rate.
+    feeBpsQuoted: b.fee_bps_quoted != null ? Number(b.fee_bps_quoted) : null,
+    amountCentsQuoted: b.amount_cents_quoted != null ? Number(b.amount_cents_quoted) : null,
     startedAt: b.started_at || null,
     cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,

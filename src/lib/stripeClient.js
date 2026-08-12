@@ -1,10 +1,17 @@
 import { supabase } from './supabase';
+import { DEFAULT_FEE_BPS } from '../../shared/pricing';
 
 export const STRIPE_PUBLISHABLE_KEY =
   'pk_test_51ThvnME0UZFlVCOpQlxjXv3XFqLV75mP9rcKG8bPTlwTLeRKxsmpZ3HwfOWWi9q9AgCa3VHDSw0inieexGl57iPB00I1A94JvY';
 
-// Platform service fee — keep in sync with the stripe-create-payment-intent fn (10%).
-export const SERVICE_FEE_PCT = 0.10;
+// DEPRECATED — prefer src/lib/pricing.js.
+//
+// The rate is no longer a constant: it lives in public.platform_rates and is PINNED
+// per booking (bookings.fee_bps_quoted). This export survives only so older call
+// sites keep compiling, and it resolves to the FOUNDING rate, not necessarily the
+// current one. Anything quoting a new gig should call getFeeBps(); anything showing
+// an existing booking should use that booking's pinned rate via bookingFeeBps().
+export const SERVICE_FEE_PCT = DEFAULT_FEE_BPS / 10000;
 
 const FUNCTIONS_URL = 'https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1';
 const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';

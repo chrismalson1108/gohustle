@@ -17,6 +17,14 @@ declare module "@gohustlr/shared" {
   export interface Level { level: number; label: string; minXP: number }
   export const LEVELS: Level[];
 
+  // ── pricing ──
+  // Display-only fee math. The SERVER is authoritative — never send a computed fee.
+  // Mirrors public.platform_fee_cents; __tests__/pricing.test.js guards the drift.
+  export const DEFAULT_FEE_BPS: number;
+  export function platformFeeCents(amountCents: number, feeBps?: number | null): number;
+  export function earnerNetCents(amountCents: number, feeBps?: number | null): number;
+  export function feeLabel(feeBps?: number | null): string;
+
   // ── categories ──
   // The gig taxonomy. `slug` is the identity everything filters, groups and
   // compares on; `label` is display only. Every export of shared/categories.js is

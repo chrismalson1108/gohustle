@@ -194,7 +194,7 @@ export default function PayoutSetupScreen({ navigation }) {
               <View style={styles.successRow}>
                 <Ionicons name="shield-checkmark" size={18} color={colors.success} />
                 <Text style={styles.successText}>
-                  Your bank is connected. Earnings (minus the 10% fee) deposit automatically 1–2 business days after a job is verified.
+                  Your bank is connected. Earnings (minus the platform fee shown on each gig) deposit automatically 1–2 business days after a job is verified.
                 </Text>
               </View>
               <TouchableOpacity style={styles.btnOutline} onPress={handleManagePayout} disabled={loadingPayout} activeOpacity={0.8}>

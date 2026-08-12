@@ -10,6 +10,7 @@ import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
+import { earnerNetCents, feeLabel } from "@gohustlr/shared";
 
 export interface VerifyArgs {
   rating: number;
@@ -135,7 +136,7 @@ export default function CompletionModal({
           </p>
           {!disputed && (
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-              Confirming releases <b className="text-ink">{money(Math.round(heldCents * 0.9), { cents: true })}</b> to {earnerName} (we keep a 10% platform fee). No new charge — this is the amount you already authorized when you accepted.
+              Confirming releases <b className="text-ink">{money(earnerNetCents(heldCents, booking.feeBpsQuoted), { cents: true })}</b> to {earnerName} (we keep a {feeLabel(booking.feeBpsQuoted)} platform fee). No new charge — this is the amount you already authorized when you accepted.
             </p>
           )}
         </div>

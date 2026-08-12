@@ -2,6 +2,8 @@
 // (the mobile app ships the same values). Override via NEXT_PUBLIC_* env vars for
 // a different environment without touching code.
 
+import { DEFAULT_FEE_BPS } from "@gohustlr/shared";
+
 export const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://nfioebqsgmmzhbksxozc.supabase.co";
 
@@ -15,8 +17,13 @@ export const STRIPE_PUBLISHABLE_KEY =
 
 export const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
-// Platform service fee — keep in sync with the stripe-create-payment-intent fn (10%).
-export const SERVICE_FEE_PCT = 0.1;
+// DEPRECATED — prefer @gohustlr/shared's platformFeeCents / earnerNetCents.
+//
+// The rate is no longer a constant: it lives in public.platform_rates and is PINNED
+// per booking (bookings.fee_bps_quoted). This export survives only so older call
+// sites keep compiling, and it resolves to the FOUNDING rate, not necessarily the
+// current one.
+export const SERVICE_FEE_PCT = DEFAULT_FEE_BPS / 10000;
 
 // Marketing site URL (used for share links / metadata).
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://gohustlr.com";
