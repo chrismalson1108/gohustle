@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Zap, MapPin, Repeat, DollarSign, Flag, Clock, CheckCircle2, RefreshCw, ShieldCheck, XCircle, MessageCircle, Bookmark, AlertTriangle, Lock } from "lucide-react";
-import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay } from "@gohustlr/shared";
+import { categoryLabel, findProhibited, MIN_JOB_PAY, sameCategory, validateJobPay, platformFeeCents, feeLabel } from "@gohustlr/shared";
 import { maskLocation, canSeeExactAddress } from "@/lib/address";
 import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
 import { REPORT_REASONS, submitReport, logModerationBlock } from "@/lib/moderation";
-import { SERVICE_FEE_PCT } from "@/lib/config";
+import { useFeeBps } from "@/lib/pricing";
 import { PageContainer, EmptyState } from "@/components/PageHeader";
 import PosterTrustCard from "@/components/PosterTrustCard";
 import SlotPicker from "@/components/SlotPicker";
@@ -79,6 +79,12 @@ export default function JobDetailPage() {
   // jobs.location is masked server-side (migration 20260722040000); the exact address
   // lives in job_locations, readable only by the poster/accepted earner via RLS. Fetch
   // it for an authorized viewer so the "address after acceptance" reveal still works.
+  // MUST sit above the `if (!job)` early return below — a hook called after a
+  // conditional return runs on some renders and not others, which React reports as
+  // "Rendered more hooks than during the previous render" and crashes the page.
+  // This is the rate a booking made right now would be pinned at.
+  const feeBps = useFeeBps();
+
   const [exactLocation, setExactLocation] = useState<string | null>(null);
   useEffect(() => {
     const cb = bookings.find((b) => b.jobId === job?.id);
@@ -141,8 +147,13 @@ export default function JobDetailPage() {
 
   const baseRate = counterPrice ? parseFloat(counterPrice) || job.pay : job.pay;
   const gross = job.payType === "hourly" ? baseRate * (job.estimatedHours || 1) : baseRate;
-  const fee = gross * SERVICE_FEE_PCT;
-  const net = gross - fee;
+  // Computed in CENTS through the shared function so this quote equals what
+  // stripe-create-payment-intent will actually charge, floor included. A plain
+  // percentage multiply cannot express the floor and drifts by a cent on odd amounts.
+  const grossCents = Math.round(gross * 100);
+  const feeCents = platformFeeCents(grossCents, feeBps);
+  const fee = feeCents / 100;
+  const net = (grossCents - feeCents) / 100;
 
   const handleBook = async () => {
     // Every gig always carries at least one bookable slot (PostJob/EditJob attach a
@@ -492,7 +503,7 @@ export default function JobDetailPage() {
               <div>
                 <PanelLabel>Payment</PanelLabel>
                 <Row label={`Gig pay${job.payType === "hourly" ? " (est.)" : ""}`} value={money(gross)} />
-                <Row label={`GoHustlr service fee (${Math.round(SERVICE_FEE_PCT * 100)}%)`} value={`−${money(fee)}`} />
+                <Row label={`GoHustlr service fee (${feeLabel(feeBps)})`} value={`−${money(fee)}`} />
                 <div className="my-2 h-px bg-divider" />
                 <Row label="You receive" value={money(net)} bold />
                 <p className="mt-3 text-xs leading-[17px] text-ink-muted">

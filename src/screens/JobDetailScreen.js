@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, TextInput, Image, Modal, ActivityIndicator,
@@ -22,7 +22,7 @@ import { findProhibited } from '../lib/contentFilter';
 import { categoryLabel, sameCategory } from '../../shared/categories.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
-import { SERVICE_FEE_PCT } from '../lib/stripeClient';
+import { getFeeBps, feeBpsSync, platformFeeCents, feeLabel } from '../lib/pricing';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
 const STATUS_CONTENT = {
@@ -52,6 +52,12 @@ export default function JobDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
+
+  // The rate a booking made RIGHT NOW would be pinned at. Seeded from the cached
+  // value so the first paint is never blank, then refreshed. Falls back to the
+  // founding rate on any failure — never to zero, which would advertise a free gig.
+  const [feeBps, setFeeBps] = useState(feeBpsSync());
+  useEffect(() => { let alive = true; getFeeBps().then((b) => { if (alive) setFeeBps(b); }); return () => { alive = false; }; }, []);
 
   // Not every viewable job is in the browse list — conversation links can point
   // at past (soft-cancelled) listings, so fall back to a direct fetch.
@@ -420,8 +426,13 @@ export default function JobDetailScreen({ route, navigation }) {
               {(() => {
                 const baseRate = counterPrice ? (parseFloat(counterPrice) || job.pay) : job.pay;
                 const gross = job.payType === 'hourly' ? baseRate * (job.estimatedHours || 1) : baseRate;
-                const fee = gross * SERVICE_FEE_PCT;
-                const net = gross - fee;
+                // Compute in CENTS through the shared function so this quote equals
+                // what stripe-create-payment-intent will actually charge — including
+                // the processing floor, which a plain percentage multiply misses.
+                const grossCents = Math.round(gross * 100);
+                const feeCents = platformFeeCents(grossCents, feeBps);
+                const fee = feeCents / 100;
+                const net = (grossCents - feeCents) / 100;
                 return (
                   <>
                     <View style={styles.feeRow}>
@@ -429,7 +440,7 @@ export default function JobDetailScreen({ route, navigation }) {
                       <Text style={styles.feeVal} numberOfLines={1}>${gross.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeRow}>
-                      <Text style={styles.feeLabel} numberOfLines={2}>GoHustlr service fee ({Math.round(SERVICE_FEE_PCT * 100)}%)</Text>
+                      <Text style={styles.feeLabel} numberOfLines={2}>GoHustlr service fee ({feeLabel(feeBps)})</Text>
                       <Text style={styles.feeVal} numberOfLines={1}>−${fee.toFixed(2)}</Text>
                     </View>
                     <View style={styles.feeDivider} />
