@@ -117,6 +117,13 @@
         "webClientId": "735847623182-0su26ifu38ncsvu82ogc7l5ka2v2cads.apps.googleusercontent.com"
       }
     },
-    "owner": "gohustlr"
+    "owner": "gohustlr",
+    "updates": {
+      "url": "https://u.expo.dev/96a690b5-098f-4d44-a900-9a641249acda",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    }
   }
 }

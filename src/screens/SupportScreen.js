@@ -16,6 +16,29 @@ import {
 } from '../lib/support';
 import { colors, radii, shadows } from '../theme';
 
+// What each category lets you attach.
+//
+// Every marketplace that does support well asks you to point at the THING first — Uber
+// a trip, DoorDash an order, Airbnb a reservation, Tesla a vehicle and service visit —
+// because the person asking for help is the one least able to describe it. They are
+// upset, they do not know your vocabulary, and "the dog walking one from Tuesday" costs
+// an agent a round trip to resolve.
+//
+// So the picker is driven by the category rather than shown generically:
+//   payment  a gig with its MONEY state, because "where is my $20" is answered by
+//            knowing which $20 and whether it is held, paid or released
+//   booking  a gig with its DATE and the other party
+//   safety   the same, because the thing that matters is which gig it happened on
+//   account  nothing — there is no object, and an empty picker is noise
+//   bug      nothing — the screen they were on is better captured in their own words
+//   other    optional gig, since "something else" often turns out to be about one
+const CONTEXT_FOR = {
+  payment: { mode: 'money', label: 'Which payment is this about? (optional)' },
+  booking: { mode: 'gig',   label: 'Which gig is this about? (optional)' },
+  safety:  { mode: 'gig',   label: 'Which gig did this happen on? (optional)' },
+  other:   { mode: 'gig',   label: 'Is this about a specific gig? (optional)' },
+};
+
 // The support conversation.
 //
 // Until now support was one-way: you filed a request and the reply arrived by email,
@@ -83,15 +106,39 @@ export default function SupportScreen({ navigation, route }) {
 
   // Both sides of the marketplace: gigs you worked and gigs you posted. Newest first,
   // capped — this is a shortcut, not a browser, and a long list would bury the composer.
+  const ctx = CONTEXT_FOR[category] ?? null;
+
   const recentGigs = React.useMemo(() => {
     const seen = new Set();
+    // Says what happened to the money, in the words someone would use to recognise it.
+    // "$20.00 · held in escrow" is what turns a list of gigs into a list of payments.
+    const money = (b) => {
+      const amt = b.amountCentsQuoted != null ? `$${(b.amountCentsQuoted / 100).toFixed(2)}` : null;
+      const state = {
+        pending:   'not accepted yet',
+        confirmed: 'held in escrow',
+        completed: 'awaiting verification',
+        verified:  'paid out',
+        declined:  'released back',
+        cancelled: 'released back',
+      }[b.status] ?? b.status;
+      return [amt, state].filter(Boolean).join(' · ');
+    };
+    const when = (b) => (b.slotLabel || (b.startsAt
+      ? new Date(b.startsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : ''));
+
     return [...(bookings ?? []), ...(posterBookings ?? [])]
       .filter(b => b?.id && b?.job?.title)
       .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
       .filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)))
       .slice(0, 6)
-      .map(b => ({ bookingId: b.id, title: b.job.title }));
-  }, [bookings, posterBookings]);
+      .map(b => ({
+        bookingId: b.id,
+        title: b.job.title,
+        sub: ctx?.mode === 'money' ? money(b) : when(b),
+      }));
+  }, [bookings, posterBookings, ctx?.mode]);
 
   const addPhotos = async () => {
     haptic.selection();
@@ -179,7 +226,14 @@ export default function SupportScreen({ navigation, route }) {
                   <TouchableOpacity
                     key={c.key}
                     style={[styles.catChip, category === c.key && styles.catChipActive]}
-                    onPress={() => { haptic.selection(); setCategory(c.key); }}
+                    onPress={() => {
+                      haptic.selection();
+                      setCategory(c.key);
+                      // Dropping to a category with no picker must not silently keep a
+                      // gig attached from the previous one — the agent would read
+                      // context the user believes they removed.
+                      if (!CONTEXT_FOR[c.key]) setLinkedBooking(null);
+                    }}
                   >
                     <Text style={[styles.catText, category === c.key && styles.catTextActive]} numberOfLines={1}>
                       {c.label}
@@ -188,9 +242,9 @@ export default function SupportScreen({ navigation, route }) {
                 ))}
               </View>
 
-              {recentGigs.length > 0 && (
+              {!!ctx && recentGigs.length > 0 && (
                 <>
-                  <Text style={styles.pickerLabel}>Is this about a specific gig? (optional)</Text>
+                  <Text style={styles.pickerLabel}>{ctx.label}</Text>
                   <View style={styles.catRow}>
                     {recentGigs.map(g => {
                       const on = linkedBooking === g.bookingId;
@@ -205,9 +259,16 @@ export default function SupportScreen({ navigation, route }) {
                             size={13}
                             color={on ? '#fff' : colors.textMuted}
                           />
-                          <Text style={[styles.gigChipText, on && styles.gigChipTextActive]} numberOfLines={1}>
-                            {g.title}
-                          </Text>
+                          <View style={{ flexShrink: 1 }}>
+                            <Text style={[styles.gigChipText, on && styles.gigChipTextActive]} numberOfLines={1}>
+                              {g.title}
+                            </Text>
+                            {!!g.sub && (
+                              <Text style={[styles.gigChipSub, on && styles.gigChipSubActive]} numberOfLines={1}>
+                                {g.sub}
+                              </Text>
+                            )}
+                          </View>
                         </TouchableOpacity>
                       );
                     })}
@@ -337,6 +398,8 @@ const styles = StyleSheet.create({
   },
   gigChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   gigChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', flexShrink: 1 },
+  gigChipSub: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
+  gigChipSubActive: { color: 'rgba(255,255,255,0.85)' },
   gigChipTextActive: { color: '#fff' },
   ticketHead: { marginBottom: 14 },
   ticketSubject: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
