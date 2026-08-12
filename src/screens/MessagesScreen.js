@@ -106,7 +106,11 @@ export default function MessagesScreen({ navigation }) {
   };
 
   const shown = convos.filter(c => (tab === 'archived' ? c.archived : !c.archived));
-  const inboxCount = convos.filter(c => !c.archived).length;
+  // The pinned support thread is a row in the inbox, so it counts as one. Showing
+  // "Inbox 1" above two visible conversations makes the number look broken, which is
+  // worse than having no number at all.
+  const openSupport = supportTickets.filter(t => t.status !== 'closed');
+  const inboxCount = convos.filter(c => !c.archived).length + (openSupport.length > 0 ? 1 : 0);
   const archivedCount = convos.filter(c => c.archived).length;
 
   return (
@@ -143,9 +147,10 @@ export default function MessagesScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >
           {tab === 'inbox' && (() => {
-            const open = supportTickets.filter(t => t.status !== 'closed');
-            const unread = open.some(ticketHasUnread);
-            const newest = open[0] ?? null;
+            // Reuses openSupport rather than filtering again — two copies of the same
+            // predicate is how the count and the row drift apart.
+            const unread = openSupport.some(ticketHasUnread);
+            const newest = openSupport[0] ?? null;
             return (
               <TouchableOpacity
                 style={[styles.row, styles.supportRow]}
@@ -157,7 +162,15 @@ export default function MessagesScreen({ navigation }) {
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <View style={styles.rowTop}>
-                    <Text style={styles.name} numberOfLines={1}>GoHustlr Support</Text>
+                    <View style={styles.supportNameRow}>
+                      <Text style={styles.name} numberOfLines={1}>GoHustlr Support</Text>
+                      {/* Says what this row IS. Without it the only difference from a gig
+                          conversation is a background tint, which is easy to scroll past
+                          when you are looking for a way to reach a human. */}
+                      <View style={styles.supportTag}>
+                        <Text style={styles.supportTagText}>SUPPORT</Text>
+                      </View>
+                    </View>
                     {!!newest?.last_message_at && (
                       <Text style={styles.time}>{timeLabel(newest.last_message_at)}</Text>
                     )}
@@ -258,6 +271,12 @@ const styles = StyleSheet.create({
   segCount: { fontWeight: '500' },
 
   supportRow: { backgroundColor: colors.primaryLight },
+  supportNameRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 },
+  supportTag: {
+    marginLeft: 6, paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: radii.sm, backgroundColor: colors.primary,
+  },
+  supportTagText: { fontSize: 9, fontWeight: '800', color: '#fff', letterSpacing: 0.4 },
   supportAvatar: {
     width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#fff',
