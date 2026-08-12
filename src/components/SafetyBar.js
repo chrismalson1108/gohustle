@@ -33,8 +33,16 @@ export default function SafetyBar({ booking, siteUrl = 'https://gohustlr.com' })
 
   const share = async () => {
     setBusy('share');
-    haptic('light');
     try {
+      // INSIDE the try, and called as a method.
+      //
+      // This was `haptic('light')` sitting ABOVE the try. useHaptic returns an OBJECT
+      // ({ light, medium, ... }) — every other caller in the app uses haptic.light() —
+      // so calling it as a function threw TypeError synchronously, outside the try,
+      // before the RPC ever ran. The result was a button that spun forever, minted no
+      // link, and never surfaced an error. A cosmetic buzz must never be able to break
+      // the action it decorates, least of all this one.
+      haptic.light?.();
       // One call does everything the client used to do by hand: it authorises the
       // caller, hands back an existing live link if there is one, and otherwise mints
       // a fresh token and expiry. Reusing a live link matters — someone who sends it to
@@ -61,7 +69,11 @@ export default function SafetyBar({ booking, siteUrl = 'https://gohustlr.com' })
   };
 
   const emergency = () => {
-    haptic('warning');
+    // Same bug, worse consequence: this was `haptic('warning')` as the first statement,
+    // so the TypeError meant the confirmation dialog never opened and the SOS button did
+    // nothing whatsoever. ('warning' was not even a valid key — the object exposes
+    // `error`.) Optional-call so a haptics failure can never swallow the alarm.
+    haptic.error?.();
     Alert.alert(
       'Get help now?',
       'This alerts the GoHustlr safety team immediately with your gig details. ' +
