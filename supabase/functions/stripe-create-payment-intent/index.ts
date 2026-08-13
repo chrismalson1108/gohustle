@@ -3,6 +3,7 @@
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
+import { one } from '../_shared/pgrest.ts';
 
 // Number(null) is 0 and Number.isFinite(0) is true, so a bare
 // `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
@@ -81,7 +82,7 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
-    if (booking.job.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    if (one(booking.job)?.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
     // Payment state on this booking, if any — drives both the status gate and the
     // reconcile-vs-recreate logic further down.
@@ -127,12 +128,22 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'EARNER_NO_PAYOUT', message: "The earner hasn't set up their payout account yet." }, 400);
     }
 
+    // TS cannot connect earnerOnboarded back to earnerAcct — they are separate
+    // variables — and it is right not to. The early return above already makes a null
+    // account unreachable here, so this narrows rather than changes behaviour; but if
+    // that return is ever refactored, this fails as a clean 400 instead of a TypeError
+    // thrown midway through building a PaymentIntent.
+    const destinationAcct = earnerAcct?.account_id;
+    if (!destinationAcct) {
+      return json({ error: 'EARNER_NO_PAYOUT', message: "The earner hasn't set up their payout account yet." }, 400);
+    }
+
     // Amount — use counter_offer if set, else listed pay; multiply for hourly.
     // This is the LIVE recomputation. It is still needed for the MIN_JOB_PAY rate
     // check below and as the fallback for bookings created before 20260806000000,
     // but it is NOT what gets charged when a pin exists — see the next block.
-    const rate = booking.counter_offer ? Number(booking.counter_offer) : Number(booking.job.pay);
-    const hours = booking.job.pay_type === 'hourly' ? Number(booking.job.estimated_hours) : 1;
+    const rate = booking.counter_offer ? Number(booking.counter_offer) : Number(one(booking.job)?.pay);
+    const hours = one(booking.job)?.pay_type === 'hourly' ? Number(one(booking.job)?.estimated_hours) : 1;
     const liveAmountCents = Math.round(rate * hours * 100);
 
     // AUTHORIZE THE AGREED AMOUNT, NOT THE CURRENT ONE.
@@ -374,8 +385,8 @@ Deno.serve(async (req: Request) => {
       customer: customerId,
       capture_method: 'manual',
       application_fee_amount: feeCents,
-      transfer_data: { destination: earnerAcct.account_id },
-      description: `GoHustlr: ${booking.job.title}`,
+      transfer_data: { destination: destinationAcct },
+      description: `GoHustlr: ${one(booking.job)?.title}`,
       metadata: {
         booking_id: bookingId,
         job_id: booking.job_id,

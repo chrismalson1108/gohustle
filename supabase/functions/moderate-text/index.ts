@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
         const since = new Date(Date.now() - 30 * 60_000).toISOString();
         // Escape LIKE wildcards — the snippet is user text, and a stray % would match
         // unrelated reports and silently suppress a genuine one.
-        const needle = snippet.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`);
+        const needle = snippet.slice(0, 60).replace(/[\\%_]/g, (c: string) => `\\${c}`);
         const { count } = await supabase
           .from('reports')
           .select('id', { count: 'exact', head: true })

@@ -7,7 +7,7 @@
 //   identity.verification_session.verified, identity.verification_session.requires_input,
 //   identity.verification_session.canceled
 import Stripe from 'npm:stripe@15';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -48,7 +48,7 @@ async function emailAdmin(subject: string, html: string): Promise<void> {
 // auto-capture on the booking. Idempotent: keyed on the Stripe object id embedded in
 // the reason, so Stripe redeliveries don't duplicate. Returns the booking_id if found.
 async function recordReversal(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   paymentIntentId: string | null,
   externalId: string,
   reason: string,
@@ -322,6 +322,13 @@ Deno.serve(async (req: Request) => {
           arrival_date: arrival,
           failure_code: payout.failure_code ?? null,
           failure_message: payout.failure_message ?? null,
+          // The ordering key. Stripe does NOT guarantee delivery order and redelivers
+          // on any non-2xx, so a replayed payout.created can arrive after payout.paid.
+          // Without this the upsert would revert the row to pending and swap the real
+          // arrival date back to the estimate — after the earner was already told it
+          // landed. guard_stripe_payout_ordering drops the stale write, but only
+          // because this field tells it which write is stale.
+          last_event_at: new Date(event.created * 1000).toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'payout_id' });
         if (poErr) console.error('stripe-webhook: payout upsert failed', poErr);

@@ -9,6 +9,7 @@
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
+import { one } from '../_shared/pgrest.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,7 +48,7 @@ Deno.serve(async (req: Request) => {
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
-    if (booking.job?.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    if (one(booking.job)?.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
     if (booking.status === 'confirmed') return json({ ok: true, alreadyConfirmed: true });
     if (booking.status !== 'pending') {
       return json({ error: 'This booking can no longer be accepted.' }, 409);

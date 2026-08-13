@@ -54,3 +54,4 @@ scripts/.seed/
 # Next.js build output (web/ has its own ignore; this catches a stray build
 # run from the repo root, which is how two trace files once got committed).
 .next/
+deno.lock

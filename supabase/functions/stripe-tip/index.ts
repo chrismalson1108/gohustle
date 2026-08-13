@@ -3,6 +3,7 @@
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
+import { one } from '../_shared/pgrest.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,7 +46,7 @@ Deno.serve(async (req: Request) => {
       .eq('id', bookingId)
       .single();
     if (!booking) return json({ error: 'Booking not found' }, 404);
-    if (booking.job.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    if (one(booking.job)?.poster_id !== user.id) return json({ error: 'Forbidden' }, 403);
     // Tips are only for finished work — gate to completed/verified bookings.
     if (!['completed', 'verified'].includes(booking.status)) {
       return json({ error: 'You can tip once the job is complete.' }, 409);
@@ -120,7 +121,7 @@ Deno.serve(async (req: Request) => {
       off_session: true,
       confirm: true,
       transfer_data: { destination: earnerAcct.account_id },
-      description: `GoHustlr tip: ${booking.job.title}`,
+      description: `GoHustlr tip: ${one(booking.job)?.title}`,
       metadata: { booking_id: bookingId, type: 'tip', earner_id: booking.earner_id, poster_id: user.id },
     }, { idempotencyKey: `tip_${bookingId}_${Math.round(tipCents)}` });
 

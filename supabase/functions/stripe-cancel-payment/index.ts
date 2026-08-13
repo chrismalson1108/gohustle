@@ -1,6 +1,7 @@
 // Cancels a PaymentIntent when a booking is declined or cancelled, releasing the card hold.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { one } from '../_shared/pgrest.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,7 +36,7 @@ Deno.serve(async (req: Request) => {
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
-    if (booking.job?.poster_id !== user.id && booking.earner_id !== user.id) {
+    if (one(booking.job)?.poster_id !== user.id && booking.earner_id !== user.id) {
       return json({ error: 'Forbidden' }, 403);
     }
     // A hold may only be released while the booking is still open. Once work is

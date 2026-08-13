@@ -16,7 +16,7 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (22)
+## Open (25)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
@@ -43,6 +43,9 @@ _Last reconciled: 2026-08-13._
 | low | regressions | Redeeming a recovery code leaves the local session's factor list stale, so a relaunch inside the hour re-prompts and burns a second code | After a successful redemption, call supabase.auth.refreshSession() before clearing the gate so the stored user object comes back without the factor; the fresh token also makes the access-token-keyed effect sett |
 | low | regressions | The assistant's confirm turn is never written to the thread, so History shows a booking that reads as never made | Before returning from the confirm path, append the outcome to assistant_messages for body.thread_id (after the same ownership check the model path does at index.ts:443-452) — one assistant row with the reply is |
 
+| high | web-parity | gohustlr.com has NO assurance-level check anywhere: a user who enrolled TOTP on mobile signs into the website with the password alone and gets a full aal1 session (browse, book, message, poster payments, PII). `grep -riE 'mfa|aal[12]|totp|listFactors' web/app web/lib web/components` returns zero hits; `web/app/(app)/layout.tsx:13-15` enumerates three gates (session, onboarding, consent) and omits the MFA challenge mobile holds FIRST. Web also offers no enrolment and no recovery-code redemption. Payout redirection IS still blocked server-side by `_shared/stepUp.ts`, so this is account access, not money movement. | Port the mobile gate: check `getAuthenticatorAssuranceLevel()` in `web/lib/auth.tsx` after `signInWithPassword` and hold a challenge route ahead of the app shell, mirroring `src/context/AuthContext.js:191-211` + `MfaChallengeScreen`. Add a `parity.test.js` assertion that both clients gate on AAL, the same way it now asserts both speak the assistant confirm protocol. KNOWN_RISKS.md:71-73 is stale — it still claims there is no user 2FA at all. |
+| medium | promotions | Promo CODES are unredeemable: `redeem_promo_code(text)` is defined and granted to `authenticated` (20260806070000_promotions.sql:252,334) but has ZERO callers in src/, web/ or supabase/functions/, and there is no "have a code?" field on any screen. Codes minted by the console's promotions page are dead strings. NOTE the narrower truth: incentives are NOT blocked — `grantToUsers` (admin/app/(console)/pricing/actions.ts:95 → `grant_promotion_to_users`) is fully wired and delivers a campaign directly to a pasted list of users today. | Either add a redemption entry point (Profile → "Have a code?" → `redeem_promo_code`, plus the web equivalent) or stop minting codes in the console until there is one. Minting a code no user can type is worse than not offering codes. |
+| medium | stripe-config | THREE Stripe API versions are live across the money paths: 16 functions construct `new Stripe(key)` with no pin (SDK default), 3 pin `2024-06-20`, and `reconcile-stripe` alone imports `npm:stripe@14` whose types only accept `2023-10-16` while being told `2024-06-20`. Webhook payloads are rendered at a fourth (`2026-05-27.dahlia`). Reconciliation compares Stripe against our DB, which is exactly where a response-shape difference misreads. This is why `reconcile-stripe` is the one `deno check` exemption in `.githooks/pre-push`. | Pick one API version, pin it explicitly in every function, and align reconcile-stripe to `npm:stripe@15`. Needs a tested pass over each money path, not a blind bump — then delete the EXEMPT entry in the pre-push hook. |
 ## Closed (16)
 
 | Sev | Area | Finding | Closed by |

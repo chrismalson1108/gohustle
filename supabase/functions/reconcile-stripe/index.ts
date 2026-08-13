@@ -23,7 +23,7 @@
 //
 // Secrets: STRIPE_SECRET_KEY, plus the shared secret in app_flags.controls_alert.
 import Stripe from "npm:stripe@14";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -242,7 +242,7 @@ Deno.serve(async (req: Request) => {
 // over PostgREST. The RPC performs the same upsert-then-refresh contract run_control
 // uses, so an externally-checked control behaves exactly like a SQL one.
 async function writeFinding(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   entityId: string,
   detail: Record<string, unknown>,
 ): Promise<string | null> {
