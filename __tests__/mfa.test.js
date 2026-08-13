@@ -152,3 +152,21 @@ describe('the challenge cannot be bypassed by breaking the network', () => {
     expect(between).toMatch(/return;/);
   });
 });
+
+describe('the gate does not unmount the app on every token refresh', () => {
+  const ctx = read('src/context/AuthContext.js');
+
+  it('only blanks the gate when the USER changes, not on any auth event', () => {
+    // `else setMfaResolved(false)` fired on TOKEN_REFRESHED and on the aal2 upgrade a
+    // correct code produces. An unresolved gate renders the loading spinner, which
+    // unmounts MainApp — so enrolling 2FA destroyed the screen holding the recovery
+    // codes before they could be saved, and every hourly refresh reset navigation.
+    expect(ctx).toMatch(/else if \(\(session\.user\.id \?\? null\) !== prevUserId\) setMfaResolved\(false\)/);
+    expect(ctx).not.toMatch(/\n\s*else setMfaResolved\(false\);/);
+  });
+
+  it('still gates a genuinely new sign-in', () => {
+    // prevUserId is null before the first session, so a real sign-in still closes it.
+    expect(ctx).toMatch(/const prevUserId = lastUserId\.current/);
+  });
+});

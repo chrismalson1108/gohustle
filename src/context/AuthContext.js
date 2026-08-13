@@ -100,8 +100,22 @@ export function AuthProvider({ children }) {
       setSession(session);
       // Not awaited, for the reason in the comment above: supabase-js awaits every
       // subscriber inside its own event emission. Resolved in the keyed effect below.
+      //
+      // ONLY blank the gate when the USER changes. This fired on every auth event —
+      // including TOKEN_REFRESHED (hourly) and the aal2 upgrade that a correct 2FA
+      // code produces — and an unresolved gate makes RootNavigator render the loading
+      // spinner, which UNMOUNTS MainApp and destroys every screen's state.
+      //
+      // Two live consequences, both mine: enrolling 2FA verified the code, the app
+      // remounted, and the recovery codes were gone before the user could save them —
+      // leaving 2FA on with zero codes, which is the lockout state ctl_mfa_without_
+      // recovery exists to shout about. And every hourly refresh reset navigation,
+      // dropped drafts and closed open sheets.
+      //
+      // The AAL effect below is keyed on access_token, so a refreshed token is still
+      // re-checked — it just no longer blanks the screen while doing it.
       if (!session?.user) { setMfaPending(false); setMfaResolved(true); }
-      else setMfaResolved(false);
+      else if ((session.user.id ?? null) !== prevUserId) setMfaResolved(false);
       if (!session?.user) {
         setOnbDone(true); setNeedsTerms(false); setOnbResolved(true); setLoading(false); // signed out → reset gates
         // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going

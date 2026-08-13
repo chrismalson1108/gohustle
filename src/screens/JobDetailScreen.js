@@ -30,13 +30,13 @@ const STATUS_CONTENT = {
                desc: "The poster hasn't reviewed your booking yet. Hang tight!",
                bg: colors.warningLight, color: colors.warningDeep },
   confirmed: { ion: 'checkmark-circle', title: "Confirmed — you're in",
-               desc: 'Accepted! Head to My Jobs to mark it done when you finish.',
+               desc: 'Mark it done from My Jobs when you finish.',
                bg: colors.successLight, color: colors.success },
   completed: { ion: 'sync', title: 'Awaiting verification',
                desc: 'You marked done. The poster needs to verify your work.',
                bg: colors.background, color: colors.textPrimary },
   verified:  { ion: 'shield-checkmark', title: 'Completed & verified',
-               desc: 'All done! Go to My Jobs to rate the poster.',
+               desc: 'This gig is finished and paid.',
                bg: colors.successLight, color: colors.success },
   declined:  { ion: 'close-circle', title: 'Application declined',
                desc: "The poster didn't accept your booking.",
@@ -47,10 +47,17 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob, fetchJobById } = useJobs();
+  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob, fetchJobById, ratePoster } = useJobs();
   const { addXP, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
+  // Rating the poster is the one thing still outstanding on a verified gig — and only
+  // until it is done. posterRating is set by ratePoster, so this flips off the moment
+  // they rate and the screen stops asking.
+  const [rateVisible, setRateVisible] = useState(false);
+  const [rateStars, setRateStars] = useState(0);
+  const [rateText, setRateText] = useState('');
+  const [rateBusy, setRateBusy] = useState(false);
   const insets = useSafeAreaInsets();
 
   // The rate a booking made RIGHT NOW would be pinned at. Seeded from the cached
@@ -144,6 +151,22 @@ export default function JobDetailScreen({ route, navigation }) {
   }
 
   const statusContent = STATUS_CONTENT[currentBooking?.status] || STATUS_CONTENT.pending;
+  const submitPosterRating = async () => {
+    if (!rateStars || rateBusy) return;
+    setRateBusy(true);
+    const ok = await ratePoster(currentBooking.id, { rating: rateStars, reviewText: rateText.trim() });
+    setRateBusy(false);
+    if (ok) {
+      setRateVisible(false); setRateStars(0); setRateText('');
+      haptic.success();
+      showToast({ icon: '⭐', title: 'Thanks!', message: 'Your rating helps other hustlers.' });
+    } else {
+      haptic.error();
+      showToast({ icon: '⚠️', title: "Couldn't save that", message: 'Please try again.' });
+    }
+  };
+
+  const needsPosterRating = currentBooking?.status === 'verified' && currentBooking?.posterRating == null;
   const canMessage = !!currentBooking && ['pending','confirmed','completed'].includes(currentBooking.status);
 
   // Address privacy: exact street address only for the poster or an accepted
@@ -241,6 +264,49 @@ export default function JobDetailScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Rating happens HERE rather than bouncing to another tab to find the row
+          again. The stars are the whole requirement; the note is optional. */}
+      <Modal visible={rateVisible} transparent animationType="slide" onRequestClose={() => setRateVisible(false)}>
+        <View style={styles.rateBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setRateVisible(false)} />
+          <View style={[styles.rateSheet, { paddingBottom: insets.bottom + 18 }]}>
+            <Text style={styles.rateTitle}>How was {job?.posterName || 'the poster'}?</Text>
+            <Text style={styles.rateSub}>Your rating is public on their profile.</Text>
+            <View style={styles.rateStars}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity key={n} onPress={() => { haptic.selection(); setRateStars(n); }} hitSlop={6}>
+                  <Ionicons
+                    name={n <= rateStars ? 'star' : 'star-outline'}
+                    size={36}
+                    color={n <= rateStars ? colors.rating : colors.border}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.rateInput}
+              value={rateText}
+              onChangeText={setRateText}
+              placeholder="Anything worth saying? (optional)"
+              placeholderTextColor={colors.textMuted}
+              multiline
+              maxLength={500}
+              inputAccessoryViewID={KEYBOARD_DONE_ID}
+            />
+            <TouchableOpacity
+              style={[styles.ratePrimary, !rateStars && styles.rateDisabled]}
+              onPress={submitPosterRating}
+              disabled={!rateStars || rateBusy}
+            >
+              <Text style={styles.ratePrimaryText}>{rateBusy ? 'Saving…' : 'Submit rating'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setRateVisible(false)}>
+              <Text style={styles.rateCancel}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <KeyboardDoneBar />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}
         automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
@@ -545,18 +611,33 @@ export default function JobDetailScreen({ route, navigation }) {
                 <Text style={styles.statusBannerDesc}>{statusContent.desc}</Text>
               </View>
             </View>
-            {(canMessage || currentBooking?.status === 'verified') && (
+            {currentBooking?.status === 'verified' && currentBooking?.posterRating != null && (
+              <View style={styles.ratedRow}>
+                <Ionicons name="star" size={15} color={colors.rating} />
+                <Text style={styles.ratedText}>
+                  You rated this poster {currentBooking.posterRating}/5
+                </Text>
+              </View>
+            )}
+
+            {(canMessage || needsPosterRating) && (
               <View style={styles.statusActions}>
                 {canMessage && (
                   <TouchableOpacity style={styles.msgActionBtn} onPress={() => setMsgVisible(true)}>
                     <Text style={styles.msgActionBtnText} numberOfLines={1}>Message poster</Text>
                   </TouchableOpacity>
                 )}
+                {/* "Go to My Jobs" was a loop: this screen is reached FROM My Jobs,
+                    so it sent people back where they already were — and the back
+                    arrow already does that. On a verified gig the only thing actually
+                    left is rating the poster, so offer THAT, here, and only while it
+                    is still outstanding. Once rated there is nothing to do and the
+                    button is replaced by what they gave. */}
                 <TouchableOpacity
                   style={[styles.earnActionBtn, canMessage && styles.earnActionBtnSmall]}
-                  onPress={() => navigation.navigate('EarnTab')}
+                  onPress={() => { haptic.medium(); setRateVisible(true); }}
                 >
-                  <Text style={styles.earnActionBtnText} numberOfLines={1}>Go to My Jobs →</Text>
+                  <Text style={styles.earnActionBtnText} numberOfLines={1}>Rate the poster</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -790,6 +871,27 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   msgActionBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  ratedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  ratedText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  rateBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  rateSheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    padding: 22,
+  },
+  rateTitle: { fontSize: 19, fontWeight: '800', color: colors.textPrimary },
+  rateSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  rateStars: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginVertical: 20 },
+  rateInput: {
+    backgroundColor: colors.background, borderRadius: radii.md, padding: 12,
+    fontSize: 14, color: colors.textPrimary, minHeight: 76, textAlignVertical: 'top',
+  },
+  ratePrimary: {
+    backgroundColor: colors.primary, borderRadius: radii.pill, paddingVertical: 15,
+    alignItems: 'center', marginTop: 16,
+  },
+  rateDisabled: { opacity: 0.45 },
+  ratePrimaryText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  rateCancel: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 14, fontWeight: '600' },
   earnActionBtn: {
     flex: 1, backgroundColor: colors.primary,
     borderRadius: radii.md, paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center',

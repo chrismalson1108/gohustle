@@ -57,6 +57,16 @@ export function paymentState(status, side) {
 
 const cents = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+// bookings.tip_amount is numeric(_,2) — DOLLARS, not cents — and PostgREST returns
+// numerics as STRINGS ('3.00'). Running it through cents() therefore did not merely
+// misplace the decimal point, it returned 0 on the typeof check: every tip an earner
+// received rendered as $0.00 on their own statement. tip_ledger.amount_cents is the
+// integer-cents column; this one is not.
+const dollarsToCents = (v) => {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+};
+
 /**
  * One ledger entry, normalized so the UI never re-derives money.
  *
@@ -71,7 +81,7 @@ function toEntry(row, side, jobsById, bookingsById) {
   const gross = cents(row.amount_cents);
   const fee = cents(row.fee_cents);
   const refunded = cents(row.refunded_cents);
-  const tip = cents(b.tip_amount);
+  const tip = dollarsToCents(b.tip_amount);
   const feeBps = typeof row.fee_bps === 'number' ? row.fee_bps : DEFAULT_FEE_BPS;
 
   // What actually moved, after any partial refund. A dispute that pays 60% leaves

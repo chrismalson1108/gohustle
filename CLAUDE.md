@@ -245,6 +245,32 @@ rate limiting and staging.
   Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
   pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
 
+## A feature is not finished when the mobile screen works
+
+Everything this platform does eventually needs a **person** to see it. Before calling any
+user-facing feature done, ask what the other three surfaces need — this is not a
+checklist to be polite about, it is where the actual failures have come from.
+
+| Surface | Ask |
+|---|---|
+| **Admin console** (`admin/`) | Can a human see and act on this? A new object usually needs a page or a column on an existing one. **It does NOT auto-deploy** — `cd admin && npx vercel --prod`. |
+| **Controls** | What silent wrong state can this create? Write a `ctl_*` function AND register it in `controls` — `run_all_controls` iterates the REGISTRY, so an unregistered check never runs and the board still shows green. `__tests__/adminSurface.test.js` fails on an unregistered control and on a console page missing from `Nav.tsx`. |
+| **Errors** | Client crashes reach `captureError` → `log-client-error` → `client_errors` → console **`/errors`**. New edge functions should `console.error` on failure; nothing else surfaces them. |
+| **Web** (`web/`) | Does the same flow exist there? `shared/` is the single source for pricing, categories, lifecycle and transforms — put logic there, not in one client. |
+| **Hustlr AI** | If users will ask about it, add the destination to `MUST_KNOW` in `__tests__/parity.test.js`; that test fails until the assistant's prompt knows it. |
+
+**Money features carry an extra obligation.** Anything touching payments, refunds,
+tips, payouts, promotions or referrals needs: the amount **pinned** at booking (never
+re-derived from the current rate card), a control asserting the invariant **against
+data** rather than against the formula, and a rolled-back simulation proving the fix
+discriminates — broken vs fixed on the same staged row. Every money bug found this week
+was a formula that looked right and a number nobody asserted.
+
+⚠️ **After ANY fix, ask what else touched that code path.** Adding step-up to payouts
+broke payout setup for every user, because the new check queried a schema PostgREST
+cannot see and failed closed. The fix was correct; the blast radius was not checked. Run
+the gate, then exercise the actual screen.
+
 ## Unfinished work — read `OPEN_WORK.md` FIRST, and work it
 
 **`OPEN_WORK.md` is the backlog that outlives a session, and it is not optional reading.**

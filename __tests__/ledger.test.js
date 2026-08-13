@@ -285,3 +285,36 @@ describe('payoutState', () => {
     });
   });
 });
+
+const payments = require('../src/lib/payments');
+
+describe('tips are read in the unit they are stored in', () => {
+  // bookings.tip_amount is numeric(_,2) — DOLLARS — and PostgREST hands numerics back
+  // as STRINGS. The ledger ran it through a cents() helper that returns 0 for anything
+  // that is not already a number, so every tip an earner received showed as $0.00 on
+  // their own statement. tip_ledger.amount_cents is the integer-cents column; this one
+  // is not, and the two are easy to confuse.
+  const toCents = (v) => {
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return Number.isFinite(n) ? Math.round(n * 100) : 0;
+  };
+
+  it('a $3.00 tip is 300 cents, not 0 and not 3', () => {
+    expect(toCents('3.00')).toBe(300);
+    expect(toCents(3)).toBe(300);
+  });
+
+  it('handles the string form PostgREST actually returns', () => {
+    expect(toCents('12.50')).toBe(1250);
+    expect(toCents('0.05')).toBe(5);
+  });
+
+  it('treats missing or malformed values as no tip rather than NaN', () => {
+    [null, undefined, '', 'abc'].forEach((v) => expect(toCents(v)).toBe(0));
+  });
+
+  it('the module uses this conversion, not the raw cents() helper', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src/lib/payments.js'), 'utf8');
+    expect(src).toMatch(/const tip = dollarsToCents\(b\.tip_amount\)/);
+  });
+});

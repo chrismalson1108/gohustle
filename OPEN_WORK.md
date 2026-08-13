@@ -16,7 +16,7 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (30)
+## Open (27)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
@@ -25,7 +25,6 @@ _Last reconciled: 2026-08-13._
 | high | money-paths | A partial capture (dispute payout) bills the poster's receipt for the full authorized hold, not what Stripe actually charged | Derive the settled total the way the console does: for a captured row, capturedTotal = earner_amount_cents + fee_cents, and use that (minus refunded_cents) as the poster's charge and as the earner's 'Gig total' |
 | high | support-abuse | Any authenticated user can shut down the entire support intake channel for an hour with 60 direct PostgREST inserts | Support intake should have one writer. Revoke INSERT on public.support_tickets from `authenticated` and drop support_tickets_open_own so every new ticket goes through support-submit, which already rate-limits,  |
 | high | regressions | Hustlr AI "Post it" throws a ReferenceError after the gig has already been inserted — the user sees a failure for a gig that is live | Derive requirements from the staged payload inside executeCreateGig, the same way title/category/pay are re-derived at lines 927-934 — the payload already carries them (staged at index.ts:910). Add `deno check  |
-| high | regressions | Turning on two-factor never shows the recovery codes — the whole app unmounts the instant the code verifies | The gate must only close when the identity being gated changes. Key the reset on the user id rather than on every auth event: leave mfaResolved alone when session.user.id is unchanged (a token refresh or an MFA |
 | medium | assistant-gate | The web app cannot confirm a staged action at all — Hustlr AI can no longer post or book on gohustlr.com | Port the mobile confirm flow to web: add `confirm_action_id` to web/lib/assistant.ts, capture the confirm_action in runActions, render a confirmation card, and post the id back. Until that ships, the alternativ |
 | medium | assistant-gate | The per-turn caps on bookings and gigs are dead code after the gate, so one request can stage unbounded actions and the client renders only the first  | Count staged actions, not executed ones — cap on `actions.filter(a => a.type === 'confirm_action')` (and/or a per-user count of unconsumed rows in assistant_pending_actions) inside createGig/bookGig. On the cli |
 | medium | assistant-gate | `remember` writes unmoderated model-authored text into every future system prompt, with no gate and no way for the user to see or delete it | Run the same two moderation layers on `fact` that create_gig/update_profile run, and surface memory to the user — a list in Settings with per-item delete, plus a line in the reply naming what was stored. Consid |
@@ -37,8 +36,6 @@ _Last reconciled: 2026-08-13._
 | medium | support-abuse | A photo-only support reply can never be sent — support.js writes body: null into a NOT NULL column | Send an empty string instead of null (`body: text`) — the column is NOT NULL, not NOT-EMPTY — or make body nullable in a migration and keep the null. Both the admin console renderer (`{m.body ? <p …>` at [id]/p |
 | medium | support-abuse | Photos attached to a FIRST support message are uploaded and then silently discarded | Thread images through: add `images` to submitSupportRequest and to support-submit's request body, and include it on the `support_ticket_messages` insert there. Failing that, have the app create the ticket via s |
 | medium | support-abuse | Attachments an agent sends are unreadable by the user they were sent to — the object path can never satisfy the storage read policy | Add a ticket-scoped read policy alongside the owner one: allow SELECT on support-photos when the path's first segment is `ticket-<id>` and that ticket's user_id = auth.uid() — e.g. `(storage.foldername(name))[1 |
-| medium | regressions | Every hourly token refresh unmounts and remounts the whole app — navigation resets, drafts and open sheets are lost | Same fix as the enrollment finding — reset the MFA gate on user-id change only, and let the token-keyed effect refresh mfaPending without ever blanking mfaResolved. If a hard gate on a brand-new session is want |
-| medium | regressions | The assistant confirmation card carries no server-derived detail, and survives "new chat" and thread switches — the property the gate was built for do | Return the staged summary alongside the id and render the card from it — gig title, pay, whether it is a counter-offer, and the slot for book_gig; title, category, pay and location for create_gig — so the human |
 | low | mfa-lockout | Generating recovery codes destroys the previous set before the new one is delivered — a dropped response silently leaves the user with no valid codes  | Make delivery, not generation, the point of no return. Insert the new set alongside the old one marked inactive, return the plaintext, and have the client call a second tiny RPC ('I received and saved these') t |
 | low | mfa-lockout | Enrollment can finish with 2FA switched ON, zero recovery codes, and a screen still reading 'Off' | Reload status in a `finally`, not only on the success path, so the card cannot claim 'Off' once the factor is verified. When code generation fails after a successful verify, say what is actually true — 'Two-fac |
 | low | mfa-lockout | The recovery-code rate limiter is self-extending, so a user who mistypes can hold themselves out of their own account indefinitely | Check the limit before recording the attempt, or exclude attempts made while already over the threshold, so the window drains on a fixed schedule instead of ratcheting. Separately, this is the one place where t |
@@ -51,7 +48,7 @@ _Last reconciled: 2026-08-13._
 | low | regressions | Redeeming a recovery code leaves the local session's factor list stale, so a relaunch inside the hour re-prompts and burns a second code | After a successful redemption, call supabase.auth.refreshSession() before clearing the gate so the stored user object comes back without the factor; the fresh token also makes the access-token-keyed effect sett |
 | low | regressions | The assistant's confirm turn is never written to the thread, so History shows a booking that reads as never made | Before returning from the confirm path, append the outcome to assistant_messages for body.thread_id (after the same ownership check the model path does at index.ts:443-452) — one assistant row with the reply is |
 
-## Closed (6)
+## Closed (9)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
@@ -61,6 +58,9 @@ _Last reconciled: 2026-08-13._
 | high | assistant-gate | The confirmation card shows no details | 2026-08-13 |
 | critical | stepup-bypass | requireStepUp fails closed on EVERY call | 2026-08-13 |
 | critical | regressions | Payout setup and "Manage payout details" now fail for EVERY user | 2026-08-13 |
+| high | regressions | Turning on two-factor never shows the recovery codes | 2026-08-13 |
+| medium | regressions | Every hourly token refresh unmounts and remounts the whole app | 2026-08-13 |
+| medium | regressions | The assistant confirmation card carries no server-derived detail | 2026-08-13 |
 
 ## Other registers that feed this one
 
