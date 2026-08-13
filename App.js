@@ -49,6 +49,8 @@ import SupportScreen from './src/screens/SupportScreen';
 import AuthScreen           from './src/screens/auth/AuthScreen';
 import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
+import MfaChallengeScreen   from './src/screens/MfaChallengeScreen';
+import SecurityScreen       from './src/screens/SecurityScreen';
 
 import { colors } from './src/theme';
 
@@ -167,6 +169,7 @@ function ProfileStack() {
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ ...DETAIL_OPTS, title: 'Notifications' }} />
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Payments"       component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
+      <Stack.Screen name="Security"       component={SecurityScreen} options={{ ...DETAIL_OPTS, title: 'Security' }} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />
@@ -241,11 +244,16 @@ function MainApp() {
 }
 
 function RootNavigator() {
-  const { session, loading, onboardingResolved, onboardingDone, needsTermsAcceptance, markOnboardingDone } = useAuth();
+  const {
+    session, loading, onboardingResolved, onboardingDone, needsTermsAcceptance,
+    markOnboardingDone, needsMfaChallenge, mfaResolved,
+  } = useAuth();
   // With a session present, wait for onboarding/terms state to actually load before
   // routing — otherwise a fresh sign-in flashes MainApp on the optimistic
   // onboardingDone=true default before bouncing to onboarding/consent.
-  const gateResolving = loading || (!!session && !onboardingResolved);
+  // Wait for the AAL check too, or a 2FA account flashes MainApp for a frame before
+  // the challenge appears — which is exactly the frame an attacker would want.
+  const gateResolving = loading || (!!session && (!onboardingResolved || !mfaResolved));
   if (gateResolving) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
@@ -254,6 +262,10 @@ function RootNavigator() {
     );
   }
   if (!session) return <AuthScreen />;
+  // BEFORE onboarding and terms: proving it is you comes before anything else the
+  // app asks. A password sign-in on a 2FA account is a real session at aal1, so
+  // without this gate the second factor would never be requested at all.
+  if (needsMfaChallenge) return <MfaChallengeScreen />;
   if (!onboardingDone) return <OnboardingScreen onComplete={markOnboardingDone} />;
   if (needsTermsAcceptance) return <ConsentScreen />;
   return <MainApp />;

@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
 import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
+import { fetchMfaStatus } from '../lib/mfa';
 import { colors, radii } from '../theme';
 
 // The settings HUB. Everything a user can change lives here or one tap away, and the
@@ -48,6 +49,20 @@ export default function SettingsScreen({ navigation }) {
     ]);
   };
 
+  // Whether two-factor is on belongs in the row itself: "Security" alone tells you
+  // nothing, and the whole reason to surface it is so someone notices it is OFF.
+  const [mfaOn, setMfaOn] = useState(null);
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    fetchMfaStatus()
+      .then((st) => { if (alive) setMfaOn(st.enabled); })
+      .catch(() => { if (alive) setMfaOn(null); });
+    return () => { alive = false; };
+  }, []));
+  const mfaSub = mfaOn === null
+    ? 'Two-factor authentication'
+    : mfaOn ? 'Two-factor is on' : 'Two-factor is off — recommended';
+
   // Payments subtitle mirrors the You tab's banner so the two never disagree.
   const paymentsSub = !payReady
     ? 'Payout account & card on file'
@@ -69,6 +84,10 @@ export default function SettingsScreen({ navigation }) {
           sub: 'Photo, name, bio, skills, college, availability radius',
           keywords: 'avatar picture username role location skills major graduation certifications date of birth',
           onPress: () => go('ProfileSettings') },
+        { icon: 'shield-checkmark-outline', title: 'Security',
+          sub: mfaSub,
+          keywords: 'two factor 2fa mfa authenticator totp password security login recovery codes',
+          onPress: () => go('Security') },
         { icon: 'time-outline', title: 'Availability & schedule',
           sub: 'Work status, hours & classes',
           keywords: 'busy hours calendar classes schedule status',
@@ -163,7 +182,7 @@ export default function SettingsScreen({ navigation }) {
           `${r.title} ${r.sub || ''} ${r.keywords || ''} ${g.title}`.toLowerCase().includes(needle)),
       }))
       .filter(g => g.rows.length > 0);
-  }, [q, paymentsSub]);
+  }, [q, paymentsSub, mfaSub]);
 
   const nothing = filtered.length === 0;
 

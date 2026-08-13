@@ -50,6 +50,11 @@ export function AuthProvider({ children }) {
   const [onbResolved, setOnbResolved] = useState(false);
   const [needsTerms, setNeedsTerms]   = useState(false); // re-accept current legal docs
   const [pendingEmail, setPendingEmail] = useState(null); // email awaiting confirmation
+  // Two-factor. A password sign-in on an account with a verified factor returns an
+  // AAL1 session — a REAL session, which every gate below would happily let through.
+  // So 2FA is only actually enforced because this is checked and the app is held.
+  const [mfaPending, setMfaPending] = useState(false);
+  const [mfaResolved, setMfaResolved] = useState(false);
   const purgeTimer = useRef(null); // pending post-sign-out storage purge
   const lastUserId = useRef(null); // previous session's user, to clean up on expiry
 
@@ -93,6 +98,10 @@ export function AuthProvider({ children }) {
       const prevUserId = lastUserId.current;
       lastUserId.current = session?.user?.id ?? null;
       setSession(session);
+      // Not awaited, for the reason in the comment above: supabase-js awaits every
+      // subscriber inside its own event emission. Resolved in the keyed effect below.
+      if (!session?.user) { setMfaPending(false); setMfaResolved(true); }
+      else setMfaResolved(false);
       if (!session?.user) {
         setOnbDone(true); setNeedsTerms(false); setOnbResolved(true); setLoading(false); // signed out → reset gates
         // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going
@@ -161,6 +170,32 @@ export function AuthProvider({ children }) {
   };
 
   const markTermsAccepted = () => setNeedsTerms(false);
+
+  // Resolve the two-factor gate whenever the signed-in user changes. Outside the
+  // auth callback on purpose (see onAuthStateChange above).
+  useEffect(() => {
+    let alive = true;
+    if (!session?.user) return undefined;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        // nextLevel aal2 while currentLevel is aal1 means: this account HAS a factor
+        // and this session has not satisfied it.
+        if (alive) setMfaPending(!!data && data.nextLevel === 'aal2' && data.currentLevel === 'aal1');
+      } catch (_) {
+        // FAIL OPEN, deliberately. A network blip on this check must not lock a user
+        // out of their own account — the server still refuses anything that needs
+        // aal2, so the worst case is a session that can browse but not act.
+        if (alive) setMfaPending(false);
+      } finally {
+        if (alive) setMfaResolved(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, [session?.user?.id]);
+
+  // Called by the challenge screen once a code has verified.
+  const clearMfaPending = () => setMfaPending(false);
 
   const signIn = async (email, password) => {
     setAuthError(null);
@@ -438,6 +473,11 @@ export function AuthProvider({ children }) {
       onboardingDone,
       pendingEmail,
       needsTermsAcceptance: !!session && onboardingDone && needsTerms,
+      // Held BEFORE onboarding and terms: proving who you are comes before anything
+      // else the app asks of you.
+      needsMfaChallenge: !!session && mfaPending,
+      mfaResolved,
+      clearMfaPending,
       markTermsAccepted,
       signIn,
       signInWithGoogle,
