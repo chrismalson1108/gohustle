@@ -1,0 +1,157 @@
+const fs = require('fs');
+const path = require('path');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE THINGS THAT SILENTLY GO OUT OF SYNC.
+//
+// Chris asked how to stop having to remember "and update the web app, and update
+// Hustlr AI" every time we change something. The answer is not a document — CLAUDE.md
+// already carried the amendment direction BACKWARDS for months and survived several
+// audit rounds — and it is not an agent rewriting things unattended, which is how
+// today's dropped WHERE clause and missing import would happen at 3am with nobody
+// watching.
+//
+// It is this: the obligation becomes a test that fails. Every guard already in this
+// suite replaced something somebody had to remember —
+//
+//   categories.test.js   JS categorySlug()  ↔  SQL category_slug()
+//   pricing.test.js      shared/pricing.js  ↔  the fee migration
+//   supportGuardDrift    the reopen exemption surviving a guard rewrite
+//   importIntegrity      a JSX identifier that was never imported
+//   headerDuplication    a screen printing its nav title twice
+//
+// — and each was added the day something broke. This file is the same idea applied to
+// the three cross-cutting obligations nobody remembers unprompted.
+//
+// WHEN ONE OF THESE FAILS, IT IS NOT THE TEST BEING FUSSY. It is the second half of a
+// change that has not been done yet.
+// ─────────────────────────────────────────────────────────────────────────────
+const ROOT = path.join(__dirname, '..');
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+// ── 1. Push deep-links ──────────────────────────────────────────────────────
+// CLAUDE.md: tab route names are "a wire protocol, not just internal" — every push
+// notification carries data.tab, and send-push validates it against KNOWN_TABS.
+// Renaming a route breaks every notification deep-link, silently, on devices only.
+describe('push deep-links still point at real tabs', () => {
+  const app = read('App.js');
+  const push = read('supabase/functions/send-push/index.ts');
+
+  const routes = [...app.matchAll(/<Tab\.Screen\s+name="([A-Za-z]+)"/g)].map((m) => m[1]);
+  const known = (push.match(/KNOWN_TABS = new Set\(\[([^\]]*)\]/) || [, ''])[1]
+    .split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+
+  it('finds both sides', () => {
+    expect(routes.length).toBe(5);
+    expect(known.length).toBe(5);
+  });
+
+  it('every tab route is a tab send-push will accept', () => {
+    // A route missing here means notifications for that tab are dropped on the floor:
+    // send-push strips an unknown data.tab, so the push arrives and goes nowhere.
+    const missing = routes.filter((r) => !known.includes(r));
+    expect(`unroutable: ${missing.join(', ') || 'none'}`).toBe('unroutable: none');
+  });
+
+  it('send-push does not accept a tab that no longer exists', () => {
+    const stale = known.filter((k) => !routes.includes(k));
+    expect(`stale: ${stale.join(', ') || 'none'}`).toBe('stale: none');
+  });
+});
+
+// ── 2. Hustlr AI's picture of the app ───────────────────────────────────────
+// The assistant's system prompt described tabs called "Hiring" and "Profile" months
+// after they became Hire and You, and knew nothing about Transactions, the Tax
+// Center, in-app Support or two-factor. Users asking "where do I see what I got
+// paid?" got a guess. Nobody noticed because nothing could notice.
+describe('Hustlr AI knows what the app actually looks like', () => {
+  const app = read('App.js');
+  const assistant = read('supabase/functions/assistant/index.ts');
+  const prompt = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+
+  const labels = [...app.matchAll(/<Tab\.Screen\s+name="[A-Za-z]+"\s+component=\{\w+\}\s+options=\{\{ title: '([^']+)'/g)]
+    .map((m) => m[1]);
+
+  it('finds the tab labels', () => {
+    expect(labels).toEqual(expect.arrayContaining(['Browse', 'My Jobs', 'Hire', 'Messages', 'You']));
+  });
+
+  labels.forEach((label) => {
+    it(`names the "${label}" tab as the app names it`, () => {
+      // Catches the exact drift that happened: a renamed tab the prompt never heard
+      // about, so the assistant sends people to a tab that is not called that.
+      expect(`${label}: ${prompt.includes(label) ? 'known' : 'MISSING FROM PROMPT'}`)
+        .toBe(`${label}: known`);
+    });
+  });
+
+  // Curated on purpose. Not every screen belongs in the prompt — internal and
+  // one-off screens would be noise — but a user-facing destination people ASK for
+  // does. Adding a feature here is the cheapest possible reminder to teach the
+  // assistant about it, and the test fails until you do.
+  const MUST_KNOW = [
+    ['Transactions', /Transactions/],
+    ['bank deposit timing', /Bank deposits|reaches their bank/i],
+    ['Tax Center', /Tax Center/],
+    ['human support', /GoHustlr Support|Contact support/],
+    ['two-factor', /two-factor|Security/i],
+    ['escrow', /escrow/i],
+    ['who pays the fee', /comes out of the EARNER|earner's payout/i],
+  ];
+
+  MUST_KNOW.forEach(([what, re]) => {
+    it(`can point someone at ${what}`, () => {
+      expect(`${what}: ${re.test(prompt) ? 'known' : 'MISSING FROM PROMPT'}`)
+        .toBe(`${what}: known`);
+    });
+  });
+
+  it('is told not to invent screens or policies', () => {
+    // The failure mode a stale prompt produces is not silence, it is confident
+    // invention — the worst possible answer about someone's money.
+    expect(prompt).toMatch(/[Nn]ever invent a screen/);
+  });
+});
+
+// ── 3. Brand tokens, mobile ↔ web ───────────────────────────────────────────
+// CLAUDE.md: "The web app mirrors the same values BY HAND as Tailwind @theme custom
+// properties in web/app/globals.css; keep the two in lockstep." Nothing enforced it,
+// and Tailwind v4 emits NO utility for an undefined token — so a drifted colour does
+// not error, it silently renders as currentColor.
+describe('brand colours match between the app and the website', () => {
+  const theme = require('../shared/theme.js');
+  const css = read('web/app/globals.css');
+
+  const cssVar = (name) => {
+    const m = css.match(new RegExp(`--color-${name}:\\s*(#[0-9A-Fa-f]{6})`));
+    return m ? m[1].toLowerCase() : null;
+  };
+
+  // Only the tokens the website actually mirrors. Asserting every mobile token would
+  // fail on ones the web has no use for, which is noise, and a noisy guard is a
+  // deleted guard.
+  const MIRRORED = [
+    ['primary', 'primary'],
+    ['primary-dark', 'primaryDark'],
+    ['primary-light', 'primaryLight'],
+    ['secondary', 'secondary'],
+    ['urgent', 'urgent'],
+  ];
+
+  MIRRORED.forEach(([cssName, themeKey]) => {
+    it(`--color-${cssName} matches theme.colors.${themeKey}`, () => {
+      const web = cssVar(cssName);
+      const mobile = String(theme.colors[themeKey] ?? '').toLowerCase();
+      expect(`${cssName}: web=${web} mobile=${mobile}`)
+        .toBe(`${cssName}: web=${mobile} mobile=${mobile}`);
+    });
+  });
+
+  it('the retired accent/gold tokens have not crept back', () => {
+    // CLAUDE.md: these were deliberately removed and split into warning/wash/rating/
+    // primary. Tailwind emits nothing for an undefined token, so a stale accent-*
+    // class fails silently as currentColor rather than erroring.
+    expect(theme.colors.accent).toBeUndefined();
+    expect(theme.colors.gold).toBeUndefined();
+  });
+});

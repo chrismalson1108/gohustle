@@ -169,6 +169,49 @@ All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadI
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
+## Definition of done (this is enforced, not aspirational)
+
+**The obligations nobody remembers are tests, not prose.** This file itself carried the
+amendment direction BACKWARDS for months and survived several audit rounds — a document
+cannot be trusted to stay true, so anything that must stay true is asserted in
+`__tests__/` and fails loudly. When one of these fails it is not the test being fussy;
+it is the second half of a change that has not been done yet.
+
+| Guard | Stops |
+|---|---|
+| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point at Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow, and who pays the fee · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
+| `categories.test.js` | JS `categorySlug()` ≠ SQL `category_slug()` |
+| `pricing.test.js` | `shared/pricing.js` ≠ the fee migration |
+| `supportGuardDrift.test.js` | a guard rewrite dropping the `app.support_reopen` exemption (has happened twice; makes customer replies invisible to the support queue) |
+| `importIntegrity.test.js` | a JSX component used but never imported — Metro does not resolve free identifiers, so this passes `expo export` and crashes on open |
+| `headerDuplication.test.js` | a screen printing its nav-bar title a second time in its own header |
+| `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
+| `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
+
+**Adding a user-facing feature? The parity suite will tell you what else it touches.**
+Add the destination to `MUST_KNOW` in `parity.test.js` and it fails until Hustlr AI
+knows about it — that is the cheapest reminder available, and it is why the assistant
+prompt is no longer months behind the app.
+
+### Pre-push hook (`.githooks/pre-push`, `core.hooksPath` is set)
+Runs the suite and then prints the reminders that no test can produce, because they are
+about deployment rather than code:
+- `admin/` changed → **does not auto-deploy**, `cd admin && npx vercel --prod`
+- `supabase/functions/` changed → deploy each one by hand
+- `supabase/migrations/` changed → `db push` BEFORE shipping app builds that read new columns
+- native config changed → an OTA will **not** carry it; it needs a new build
+- otherwise → JS-only, ships over the air
+
+A fresh clone needs `git config core.hooksPath .githooks` once.
+
+### What is deliberately NOT automated
+No agent rewrites code, prompts or migrations unattended. In a single day of supervised
+work this session dropped a `WHERE` clause from a control, shipped a screen missing an
+import, and broke the MFA gate so a correct code hung the app — each caught because a
+person or an assertion was in the loop. Unsupervised, those land at 3am. Production
+monitoring is already continuous and does not need an agent: 47 `controls` run hourly
+via pg_cron with a daily digest.
+
 ## Monitoring & analytics
 
 `src/lib/analytics.js` — pluggable `track(event, props)`, `captureError(error, ctx)`, `identify(userId)`. Currently logs in dev + keeps a ring buffer; set `SENTRY_DSN` / `ANALYTICS_KEY` and forward in the marked spots to enable real Sentry/PostHog (native SDKs need a dev-client rebuild). A root `ErrorBoundary` (`src/components/ErrorBoundary.js`, wrapping the app in `App.js`) catches render crashes and reports via `captureError`. Funnel events fire from AuthContext (`sign_in`/`sign_up`) and JobsContext (`gig_posted`, `booking_created`, `booking_accepted`, `job_verified`); `identify` runs on login in `PushManager`.

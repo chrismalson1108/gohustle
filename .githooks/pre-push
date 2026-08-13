@@ -1,0 +1,47 @@
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────────────────────
+# The gate, at the moment things would actually ship.
+#
+# Everything in __tests__ is cheap (~1s for 640+) and several of those tests exist
+# BECAUSE something shipped broken: an undefined JSX identifier that crashed a screen,
+# a dropped WHERE clause that made a control report cancelled bookings, a guard
+# rewrite that silently stopped the support queue seeing customer replies. None of
+# those were caught by a bundle or a typecheck.
+#
+# Bypass with --no-verify when you genuinely need to. It is a seatbelt, not a lock.
+# ─────────────────────────────────────────────────────────────────────────────
+set -e
+
+printf '\033[1m→ pre-push: running the suite\033[0m\n'
+if ! npx jest --silent 2>&1 | tail -5; then
+  printf '\033[31m✗ tests failed — push blocked. Use --no-verify to override.\033[0m\n'
+  exit 1
+fi
+
+# ── Reminders for the things that do not fail a test ────────────────────────
+# The admin console has NO git integration: pushing does nothing and it keeps serving
+# whatever was last deployed by hand. It has silently sat a week stale before.
+RANGE="origin/master..HEAD"
+if git diff --name-only $RANGE 2>/dev/null | grep -q '^admin/'; then
+  printf '\033[33m⚠ admin/ changed — it does NOT auto-deploy:  cd admin && npx vercel --prod\033[0m\n'
+fi
+
+# Edge functions deploy by hand too.
+CHANGED_FN=$(git diff --name-only $RANGE 2>/dev/null | grep '^supabase/functions/' | cut -d/ -f3 | sort -u | tr '\n' ' ')
+if [ -n "$CHANGED_FN" ]; then
+  printf '\033[33m⚠ edge functions changed (%s) — deploy each:  npx supabase functions deploy <name>\033[0m\n' "$CHANGED_FN"
+fi
+
+# Migrations are the one thing that must land BEFORE app builds that read the columns.
+if git diff --name-only $RANGE 2>/dev/null | grep -q '^supabase/migrations/'; then
+  printf '\033[33m⚠ migrations changed — push them first:  npx supabase db push --linked\033[0m\n'
+fi
+
+# JS-only changes reach TestFlight over the air; native ones need a build.
+if git diff --name-only $RANGE 2>/dev/null | grep -qE '^(app\.json|package\.json|ios/|android/|plugins/)'; then
+  printf '\033[33m⚠ native config changed — an OTA will NOT carry this; it needs a new build\033[0m\n'
+else
+  printf '\033[32m✓ JS-only — ships over the air:  npx eas-cli update --branch production\033[0m\n'
+fi
+
+printf '\033[32m✓ pre-push checks done\033[0m\n'
