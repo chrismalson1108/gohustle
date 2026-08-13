@@ -16,11 +16,10 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (21)
+## Open (20)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
-| medium | assistant-gate | The web app cannot confirm a staged action at all — Hustlr AI can no longer post or book on gohustlr.com | Port the mobile confirm flow to web: add `confirm_action_id` to web/lib/assistant.ts, capture the confirm_action in runActions, render a confirmation card, and post the id back. Until that ships, the alternativ |
 | medium | assistant-gate | The per-turn caps on bookings and gigs are dead code after the gate, so one request can stage unbounded actions and the client renders only the first  | Count staged actions, not executed ones — cap on `actions.filter(a => a.type === 'confirm_action')` (and/or a per-user count of unconsumed rows in assistant_pending_actions) inside createGig/bookGig. On the cli |
 | medium | assistant-gate | `remember` writes unmoderated model-authored text into every future system prompt, with no gate and no way for the user to see or delete it | Run the same two moderation layers on `fact` that create_gig/update_profile run, and surface memory to the user — a list in Settings with per-item delete, plus a line in the reply naming what was stored. Consid |
 | medium | money-paths | A partial refund overstates the earner's loss by the platform-fee share, so Transactions disagrees with the earnings dashboard | Mirror record_refund: earnerRefundShare = round(refunded_cents * earner_amount_cents / (earner_amount_cents + fee_cents)), and use net = earner_amount_cents − earnerRefundShare. Show the fee portion of the refu |
@@ -42,7 +41,7 @@ _Last reconciled: 2026-08-13._
 | low | regressions | Redeeming a recovery code leaves the local session's factor list stale, so a relaunch inside the hour re-prompts and burns a second code | After a successful redemption, call supabase.auth.refreshSession() before clearing the gate so the stored user object comes back without the factor; the fresh token also makes the access-token-keyed effect sett |
 | low | regressions | The assistant's confirm turn is never written to the thread, so History shows a booking that reads as never made | Before returning from the confirm path, append the outcome to assistant_messages for body.thread_id (after the same ownership check the model path does at index.ts:443-452) — one assistant row with the reply is |
 
-## Closed (15)
+## Closed (16)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
@@ -61,6 +60,7 @@ _Last reconciled: 2026-08-13._
 | high | money-paths | A partial capture (dispute payout) bills the poster's receipt for the full authorized hold, not what Stripe actually charged | Derive the settled total the way the console does: for a captured row, capturedTotal = earner_amount_cents + fee_cents, and use that (minus refunded_cents) as the poster's charge and as the earner's 'Gig total' |
 | high | regressions | Hustlr AI "Post it" throws a ReferenceError after the gig has already been inserted — the user sees a failure for a gig that is live | Derive requirements from the staged payload inside executeCreateGig, the same way title/category/pay are re-derived at lines 927-934 — the payload already carries them (staged at index.ts:910). Add `deno check  |
 | high | support-abuse | Any authenticated user can shut down the entire support intake channel for an hour with 60 direct PostgREST inserts | Support intake should have one writer. Revoke INSERT on public.support_tickets from `authenticated` and drop support_tickets_open_own so every new ticket goes through support-submit, which already rate-limits,  |
+| medium | assistant-gate | The web app cannot confirm a staged action at all — Hustlr AI can no longer post or book on gohustlr.com | Port the mobile confirm flow to web: add `confirm_action_id` to web/lib/assistant.ts, capture the confirm_action in runActions, render a confirmation card, and post the id back. Until that ships, the alternativ |
 
 ## Other registers that feed this one
 

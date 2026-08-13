@@ -155,3 +155,49 @@ describe('brand colours match between the app and the website', () => {
     expect(theme.colors.gold).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Both surfaces must be able to CONFIRM a staged action.
+//
+// The assistant gate stages anything hard to undo — posting a gig, booking work —
+// and returns a `confirm_action` instead of doing it. The mobile sheet was taught to
+// render that card and send the id back. The web widget was not, so for the life of
+// that gate Hustlr AI on gohustlr.com received the staged action, dropped it on the
+// floor, and quietly could not post or book at all. It still SAID it had.
+//
+// That is the shape of every cross-surface regression in this repo: a server contract
+// changes, one client is updated, and the other keeps compiling perfectly. Nothing
+// typed or bundled catches it, because nothing is broken — it is just absent. So the
+// check has to be an explicit assertion that both clients speak the whole protocol.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the assistant confirmation gate is wired on BOTH clients', () => {
+  const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '..', p), 'utf8');
+  const server = read('supabase/functions/assistant/index.ts');
+  const surfaces = {
+    mobile: read('src/components/AssistantButton.js') + read('src/lib/assistantClient.js'),
+    web: read('web/components/AssistantWidget.tsx') + read('web/lib/assistant.ts'),
+  };
+
+  it('the server actually stages actions (otherwise this whole suite is moot)', () => {
+    expect(server).toMatch(/type:\s*'confirm_action'/);
+    expect(server).toMatch(/confirm_action_id/);
+  });
+
+  for (const [name, src] of Object.entries(surfaces)) {
+    describe(name, () => {
+      it('recognises a staged action instead of ignoring it', () => {
+        expect(src).toMatch(/confirm_action/);
+      });
+
+      it('can send the id back to execute it', () => {
+        // Without this the card is a dead end: the user clicks and nothing happens.
+        expect(src).toMatch(/confirm_action_id|confirmActionId/);
+      });
+
+      it('offers a way to decline', () => {
+        // A confirmation with no "no" is not a confirmation.
+        expect(src).toMatch(/decline/i);
+      });
+    });
+  }
+});

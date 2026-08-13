@@ -19,6 +19,23 @@ const SUGGESTIONS = [
   "How am I doing?",
 ];
 
+// The server's staged-action envelope. `summary` is the server's OWN description of
+// what it will do — deliberately not the model's, so the confirmation card cannot be
+// made to describe something other than what executes.
+type StagedAction = AssistantAction & {
+  id: string;
+  kind?: "create_gig" | "book_gig" | string;
+  summary?: {
+    title?: string;
+    pay?: number;
+    pay_type?: string;
+    category?: string;
+    location?: string;
+    slot?: string;
+    is_counter_offer?: boolean;
+  };
+};
+
 // Minimal Web Speech API typing (not in lib.dom for all targets).
 type SpeechRecognitionLike = {
   lang: string;
@@ -43,6 +60,7 @@ export default function AssistantWidget() {
   const [view, setView] = useState<"chat" | "history">("chat");
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<StagedAction | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -83,6 +101,41 @@ export default function AssistantWidget() {
       showToast({ icon: "✅", title: "Booked!", message: "Hustlr AI sent your request." });
     }
     if (kinds.has("profile_updated")) refreshProfile();
+
+    // A hard-to-undo action is waiting on a human. Without this branch the web widget
+    // received the staged action, dropped it, and Hustlr AI silently could not post or
+    // book at all on gohustlr.com — it said it would and then nothing happened.
+    //
+    // The card renders from the SERVER's staged summary, never from the model's prose:
+    // an injected model can ask for a confirmation but cannot control what the
+    // confirmation says it is confirming.
+    const confirm = actions.find((a) => a.type === "confirm_action") as StagedAction | undefined;
+    if (confirm) setPendingConfirm(confirm);
+  };
+
+  // Execute a staged action. Goes back to the server with just the id; the model is
+  // not involved in this round trip, and the id is single-use server-side.
+  const confirmPending = async () => {
+    if (!pendingConfirm || busy) return;
+    const id = pendingConfirm.id;
+    setPendingConfirm(null);
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await askAssistant([], { threadId, confirmActionId: id });
+      setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
+      runActions(res.actions);
+    } catch (err) {
+      setError((err as Error).message || "That didn't go through. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const declinePending = () => {
+    setPendingConfirm(null);
+    // Staged actions expire on their own; declining just drops the card.
+    setMessages((prev) => [...prev, { role: "assistant", content: "No problem — I haven't done anything." }]);
   };
 
   const send = async (text: string) => {
@@ -271,7 +324,49 @@ export default function AssistantWidget() {
                 <Loader2 className="size-4 animate-spin" /> Thinking…
               </div>
             )}
-            {messages.length <= 1 && !busy && (
+            {pendingConfirm && !busy && (
+              <div className="rounded-2xl border border-primary/30 bg-white p-3 shadow-sm">
+                <p className="text-sm font-extrabold text-ink">
+                  {pendingConfirm.kind === "create_gig" ? "Post this gig?" : "Send this booking request?"}
+                </p>
+                {pendingConfirm.summary ? (
+                  <div className="mt-2 rounded-xl bg-canvas px-3 py-2">
+                    <p className="text-sm font-bold text-ink">{pendingConfirm.summary.title}</p>
+                    <p className="mt-0.5 text-xs text-ink-soft">
+                      {typeof pendingConfirm.summary.pay === "number"
+                        ? `$${pendingConfirm.summary.pay}${pendingConfirm.summary.pay_type === "hourly" ? "/hr" : " flat"}`
+                        : ""}
+                      {pendingConfirm.summary.is_counter_offer ? " · your counter-offer" : ""}
+                      {pendingConfirm.summary.slot ? ` · ${pendingConfirm.summary.slot}` : ""}
+                      {pendingConfirm.summary.category ? ` · ${pendingConfirm.summary.category}` : ""}
+                    </p>
+                    {pendingConfirm.summary.location && (
+                      <p className="mt-0.5 text-xs text-ink-muted">{pendingConfirm.summary.location}</p>
+                    )}
+                  </div>
+                ) : null}
+                <p className="mt-2 text-xs text-ink-muted">
+                  {pendingConfirm.kind === "create_gig"
+                    ? "Nothing is posted until you say so."
+                    : "Nothing is sent until you say so."}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={confirmPending}
+                    className="flex-1 cursor-pointer rounded-full bg-primary px-3 py-2 text-sm font-extrabold text-white transition hover:opacity-90"
+                  >
+                    {pendingConfirm.kind === "create_gig" ? "Post it" : "Send it"}
+                  </button>
+                  <button
+                    onClick={declinePending}
+                    className="cursor-pointer rounded-full border border-line px-3 py-2 text-sm font-bold text-ink-soft transition hover:border-ink-soft"
+                  >
+                    Not yet
+                  </button>
+                </div>
+              </div>
+            )}
+            {messages.length <= 1 && !busy && !pendingConfirm && (
               <div className="flex flex-wrap gap-2 px-1 pt-1">
                 {SUGGESTIONS.map((s) => (
                   <button

@@ -20,13 +20,18 @@ export interface AssistantReply {
 // transcript and returns the assistant's reply plus any actions it performed
 // (so the UI can refresh the affected slices of state). Pass a threadId to
 // continue (and persist to) a saved conversation, or newThread to start one.
+// Pass confirmActionId to EXECUTE a staged action. The gate stages anything
+// hard to undo (posting a gig, booking work) instead of doing it, and hands back a
+// confirm_action; nothing happens until this second round trip carries the id. The
+// model is not involved in that trip — it never sees the id and cannot mint one.
 export async function askAssistant(
   messages: AssistantMsg[],
-  opts: { threadId?: string | null; newThread?: boolean } = {},
+  opts: { threadId?: string | null; newThread?: boolean; confirmActionId?: string } = {},
 ): Promise<AssistantReply> {
   return callEdgeFunction<AssistantReply>("assistant", {
     messages,
     ...(opts.threadId ? { thread_id: opts.threadId } : {}),
     ...(opts.newThread ? { new_thread: true } : {}),
+    ...(opts.confirmActionId ? { confirm_action_id: opts.confirmActionId } : {}),
   });
 }
