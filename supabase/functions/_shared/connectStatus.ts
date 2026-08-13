@@ -10,7 +10,7 @@
 // Worse in live mode: real identity checks land in `pending_verification` for hours
 // or days. That user has NOTHING to do — but an "incomplete" UI would send them back
 // into onboarding forever. `pending` and `incomplete` must be told apart.
-import type Stripe from 'npm:stripe@15';
+import type Stripe from 'npm:stripe@22';
 
 export type ConnectState =
   | 'none'        // no Connect account yet

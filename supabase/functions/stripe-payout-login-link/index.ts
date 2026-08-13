@@ -1,7 +1,7 @@
 // Returns a single-use Stripe Express dashboard login link so an onboarded earner
 // can manage/update their payout (bank) details inside a browser. Requires the
 // connected account to have completed onboarding.
-import Stripe from 'npm:stripe@15';
+import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { requireStepUp } from '../_shared/stepUp.ts';
 
@@ -16,7 +16,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2024-04-10' });
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,

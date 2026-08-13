@@ -11,7 +11,7 @@
 // ghosted poster forfeits the dispute path) and credits exactly once via the same
 // credit_earnings RPC. All money movement is initiated by a human (the earner), never
 // on a timer.
-import Stripe from 'npm:stripe@15';
+import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
   let errUserId: string | null = null;
 
   try {
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2024-04-10' });
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,

@@ -29,10 +29,14 @@ const path = require('path');
 
 const FN_DIR = path.join(__dirname, '..', 'supabase', 'functions');
 
-// stripe@15.12.0's generated apiVersion.js reads '2024-04-10'. Pinned explicitly so the
-// value we send equals the value the SDK was built for.
-const SDK_MAJOR = 15;
-const API_VERSION = '2024-04-10';
+// stripe@22.5.0's generated apiVersion.js reads '2026-07-29.dahlia'. Pinned explicitly so
+// the value we send equals the value the SDK was built for.
+//
+// Upgraded from stripe@15 / 2024-04-10 on 2026-08-13. The account (and therefore every
+// webhook payload) was already on the dahlia train at 2026-05-27.dahlia, so the SERVER was
+// two years behind the events it was receiving. Same train now.
+const SDK_MAJOR = 22;
+const API_VERSION = '2026-07-29.dahlia';
 
 // The mobile SDK negotiates its own version for ephemeral keys. @stripe/stripe-react-native
 // 0.50.3 expects this, and it is a per-CALL option, not the client's version — changing it
@@ -53,7 +57,14 @@ describe('Stripe API version', () => {
   });
 
   it('uses exactly one SDK major across every function', () => {
-    const majors = [...new Set(files.flatMap((f) => [...f.src.matchAll(/npm:stripe@(\d+)/g)].map((m) => m[1])))];
+    // _shared modules count too: a type-only `import type Stripe from 'npm:stripe@15'`
+    // in connectStatus.ts made every consumer fail with a type-IDENTITY error that
+    // reads like a breaking change and is not one. Catch the specifier, not the symptom.
+    const shared = fs.readdirSync(path.join(FN_DIR, '_shared'))
+      .filter((n) => n.endsWith('.ts'))
+      .map((n) => fs.readFileSync(path.join(FN_DIR, '_shared', n), 'utf8'));
+    const majors = [...new Set([...files.map((f) => f.src), ...shared]
+      .flatMap((src) => [...src.matchAll(/npm:stripe@(\d+)/g)].map((m) => m[1])))];
     expect(majors).toEqual([String(SDK_MAJOR)]);
   });
 

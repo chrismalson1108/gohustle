@@ -14,7 +14,7 @@
 // so the UI can tell "you skipped a step, go finish it" apart from "Stripe is
 // reviewing your ID, just wait" — states that look identical through `onboarded`
 // alone but call for opposite user action.
-import Stripe from 'npm:stripe@15';
+import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { deriveConnectStatus, NO_ACCOUNT_STATUS } from '../_shared/connectStatus.ts';
 
@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2024-04-10' });
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,

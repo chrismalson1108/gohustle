@@ -2,7 +2,7 @@
 // OWN account: validate the JWT, remove their storage objects (buckets don't
 // cascade), then auth.admin.deleteUser → cascades the profile and all user data.
 // Financial records of record remain in Stripe.
-import Stripe from 'npm:stripe@15';
+import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -166,7 +166,7 @@ Deno.serve(async (req: Request) => {
     try {
       const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
       if (stripeKey) {
-        const stripe = new Stripe(stripeKey, { apiVersion: '2024-04-10' });
+        const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
         const [{ data: asEarner }, { data: myJobs }] = await Promise.all([
           admin.from('bookings').select('id').eq('earner_id', user.id).in('status', CANCELLABLE_STATUSES),
           admin.from('jobs').select('id').eq('poster_id', user.id),

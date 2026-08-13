@@ -14,7 +14,7 @@
 // ADMIN TIER ONLY. Support may read the money pages; only an admin may move money.
 // The console writes its admin_audit_log row BEFORE calling this, so an action that
 // reaches Stripe is always already on the record.
-import Stripe from 'npm:stripe@15';
+import Stripe from 'npm:stripe@22';
 import { requireAdminCaller } from '../_shared/adminAuth.ts';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
     if (payErr) return json({ error: 'lookup_failed', message: payErr.message }, 503);
     if (!pay) return json({ error: 'no_payment', message: 'No payment record for this booking.' }, 404);
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2024-04-10' });
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
 
     // ── Release an uncaptured authorization ──────────────────────────────────
     if (op === 'release_hold') {
