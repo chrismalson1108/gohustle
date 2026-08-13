@@ -16,7 +16,7 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (27)
+## Open (29)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
@@ -48,6 +48,8 @@ _Last reconciled: 2026-08-13._
 | high | docs | CLAUDE.md asserts things that are FALSE, which is worse than omission — a wrong claim makes a session confident. Measured 2026-08-13: 33 wrong assertions across 7 surfaces, including `adminSurface.test.js` catching unregistered controls (it appears not to), MessageSheet/CompletionModal/FilterSheet/RatingStars prop signatures, the `recurrence` column description, and "migrations are the source of truth for the ENTIRE live schema". Full detail in CLAUDE_MD_DRIFT.md. | Verify each claim against code before correcting — several were rediscovered wrong by earlier audits and re-asserted. Fix the doc, then encode whatever is mechanically checkable as `__tests__/claudeMdInventory.test.js` so it cannot silently drift again. |
 | high | docs | The entire in-person SAFETY subsystem is undocumented: `gig_shares` and `safety_checkins` tables, and `jobs.location` being MASKED server-side with the exact address in `job_locations`. A session that does not know the address is masked can trivially expose it. Also undocumented: `tip_ledger` (the tip idempotency ledger), `stripe_accounts`, `stripe_customers`. | Add a Safety section to CLAUDE.md and document the location-masking contract beside the schema notes. Cross-check against RUNBOOK_SAFETY.md, which may already describe it. |
 | medium | docs | 79 code surfaces exist that CLAUDE.md never names — 23 edge functions (incl. every Stripe money function), 19 test suites (37 of 49 are unnamed, while the "Definition of done" table presents 9 as if that were the set), 12 tables, 7 screens (incl. PayoutSetupScreen, the money hub), 7 components, 7 admin pages (incl. /access, /flags, /bookings), 4 controls. All 7 surfaces are mechanically enumerable. See CLAUDE_MD_DRIFT.md. | Build `__tests__/claudeMdInventory.test.js` from the per-surface enumeration recipes in that file. Use an explicit, documented allowlist rather than lowering the bar — a guard that cries wolf gets deleted. |
+| medium | mobile-ux | Connect onboarding opens with `WebBrowser.openBrowserAsync` (PayoutSetupScreen.js:91), so when Stripe redirects to the return_url the in-app browser does NOT auto-dismiss — the user taps Done by hand and only then does `refresh()` run. AuthContext.js:320 already uses `openAuthSessionAsync` for Google, so the pattern exists. | Not a one-line swap: `stripe-connect-onboard` sets `return_url` to an https landing page (`<web>/stripe/connect-return`) because the same function serves the website, and `openAuthSessionAsync` detects completion by app SCHEME. Branch the return_url on caller platform (gohustlr:// for mobile) then switch the call. Test on device — it is the payout path. |
+| low | stripe-config | The `stripe_webhook_config` control is proven to EXECUTE (ran live on stripe@22, reported 0) but its DETECTION branch is unproven — removing an event to test it was blocked by the permission classifier, correctly. | Prove it once by hand: remove one payout event from the Connect endpoint, run `select public.controls_sweep_and_page();`, confirm a finding appears, then restore all six. Or accept that live cutover proves it: the control checks the mode the CURRENT KEY belongs to, so it will assert live-mode config the moment live keys are in use. |
 ## Closed (17)
 
 | Sev | Area | Finding | Closed by |

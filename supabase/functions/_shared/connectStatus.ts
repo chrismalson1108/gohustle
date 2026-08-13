@@ -66,7 +66,53 @@ const REQUIREMENT_LABELS: Array<[RegExp, string]> = [
   [/relationship\.|owners|directors|executives/, 'confirmation of who owns the account'],
 ];
 
+// ── Risk-intervention requirements (Stripe "acacia" 2024-09-30 and later) ────
+//
+// These do NOT look like field paths. Their shape is
+//   interv_<id>.<description>.<resolution_path>
+// e.g. interv_def789.legal_hold.notice
+//
+// The generic parser below strips a person_/individual/company prefix (there is none
+// here) and then falls back to `.split('.').pop()` — the RESOLUTION PATH — so a user
+// under a legal hold was told, verbatim:
+//
+//   "You skipped a step. Stripe still needs notice."
+//
+// which is meaningless, and worse, actively wrong: a `notice` resolution path means
+// Stripe is informing the account, and NO user action clears it. The state machine then
+// classified the non-empty currently_due as `incomplete` and sent them back into
+// onboarding they cannot complete — the exact failure this file's own header warns
+// about. Live since the account moved to acacia; met on 2026-08-13 with the SDK upgrade.
+const INTERVENTION = /^interv_[A-Za-z0-9]+\.(.+)\.([a-z_]+)$/;
+
+const INTERVENTION_LABELS: Array<[RegExp, string]> = [
+  [/legal_hold/, 'a legal hold Stripe has placed on the account'],
+  [/sanctions_review/, 'a sanctions review by Stripe'],
+  [/pep_review/, 'a politically-exposed-person review by Stripe'],
+  [/restricted_or_prohibited_industry/, 'a review of the type of work on the account'],
+  [/external_hold/, 'a hold placed by the bank'],
+];
+
+/** True when Stripe, not the user, owns the next move. */
+export function isStripeSideRequirement(key: string): boolean {
+  const m = key.match(INTERVENTION);
+  if (!m) return false;
+  // `form` and `support` are things a person can actually go and do. `notice` and
+  // anything else is Stripe telling us it is working on it.
+  return !['form', 'support'].includes(m[2]);
+}
+
 function humanizeRequirement(key: string): string {
+  const interv = key.match(INTERVENTION);
+  if (interv) {
+    const description = interv[1];
+    for (const [pattern, label] of INTERVENTION_LABELS) {
+      if (pattern.test(description)) return label;
+    }
+    // Unknown intervention: use the DESCRIPTION, never the resolution path.
+    return `a review by Stripe (${description.replace(/[._]/g, ' ').trim()})`;
+  }
+
   // Drop a leading "person_xxx." / "company." scope so the suffix matches cleanly.
   const bare = key.replace(/^(person_[A-Za-z0-9]+|individual|company)\./, '');
   for (const [pattern, label] of REQUIREMENT_LABELS) {
@@ -135,14 +181,30 @@ export function deriveConnectStatus(account: Stripe.Account): ConnectStatus {
       disabledReason === 'platform_paused' ||
       disabledReason === 'listed');
 
+  // Split what is outstanding by WHO has to move next. Stripe-side interventions still
+  // appear in the requirement list (the user should know why they are waiting) but they
+  // must not drive the account into "you skipped a step".
+  const allDue = [...pastDue, ...currentlyDue];
+  const actionableDue = allDue.filter((k) => !isStripeSideRequirement(k));
+  const stripeSideDue = allDue.filter((k) => isStripeSideRequirement(k));
+
   let state: ConnectState;
   if (onboarded) state = 'active';
   else if (isRestricted) state = 'restricted';
   // Anything the USER still owes wins over "pending" — an unreadable document shows
   // up as an error plus a re-requested currently_due, and that needs them to act.
-  else if (currentlyDue.length > 0 || pastDue.length > 0 || errors.length > 0) state = 'incomplete';
+  //
+  // But only what they can ACT on. A risk intervention (interv_….legal_hold.notice) sits
+  // in currently_due while Stripe reviews it, and there is nothing for the user to
+  // submit. Counting it as `incomplete` pushed them into an onboarding flow that cannot
+  // clear it, forever. Those belong in `pending`, which is what the account genuinely is.
+  else if (
+    actionableDue.length > 0 ||
+    errors.length > 0
+  ) state = 'incomplete';
   else if (
     pendingVer.length > 0 ||
+    stripeSideDue.length > 0 ||
     disabledReason === 'requirements.pending_verification' ||
     disabledReason === 'under_review'
   ) state = 'pending';

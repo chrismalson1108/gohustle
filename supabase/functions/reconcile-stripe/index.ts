@@ -163,11 +163,38 @@ Deno.serve(async (req: Request) => {
       //    it is the whole "report a problem" flow in CompletionModal, so this would
       //    have produced a permanent false finding for every disputed gig.
       //
-      //    Subtract the amount Stripe released on its own. What remains is a genuine
-      //    refund, and a real one on top of a partial capture is still caught.
+      //    ── AND THEN STRIPE CHANGED IT UNDER US (2026-08-13) ─────────────────
+      //
+      //    Everything above describes pre-Basil behaviour. Stripe's 2025-03-31.basil
+      //    release removed the Refund from the partial-capture and cancellation flows:
+      //    "amount_refunded will no longer be updated by these actions", and
+      //    charge.refunded is no longer sent for them. We only met that change on
+      //    2026-08-13 when the SDK moved 2024-04-10 → 2026-07-29.dahlia; the old pin had
+      //    been preserving the old behaviour, which is exactly what API versions are for.
+      //
+      //    So the compensation below is now WRONG, and wrong in the dangerous direction.
+      //    autoReleased is still > 0 on every partial capture, but refundedAtStripe no
+      //    longer contains it, so subtracting over-subtracts:
+      //
+      //      false fire — a genuine refund R after a partial capture reports R − released
+      //      false PASS — an unledgered external refund R ≤ released collapses to 0,
+      //                   compares equal to our 0, and produces NO FINDING
+      //
+      //    The second one silently blinds the reconciler to the precise leak it exists
+      //    to catch: a refund issued from the Stripe Dashboard that never reached our
+      //    ledger. A money control that has quietly stopped looking is worse than no
+      //    control, because the board still shows green.
+      //
+      //    Under the version we now pin, amount_refunded means genuine refunds and
+      //    nothing else, so no compensation is correct. That is a DEPENDENCY ON THE PIN,
+      //    which is why __tests__/stripeApiVersion.test.js fails if anyone moves it.
+      //
+      //    Safe to switch outright rather than straddle both behaviours: production has
+      //    zero partial captures (verified), so there is no historical charge carrying
+      //    a pre-Basil amount_refunded to misread.
       const authorizedCents = pi.amount ?? 0;
       const autoReleased = Math.max(0, authorizedCents - receivedCents);
-      const realRefundAtStripe = Math.max(0, refundedAtStripe - autoReleased);
+      const realRefundAtStripe = refundedAtStripe;
 
       const wasCaptured = Boolean(p.captured_at) || receivedCents > 0;
       if (wasCaptured && Math.abs(realRefundAtStripe - ourRefunded) > TOLERANCE_CENTS) {
