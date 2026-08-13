@@ -11,7 +11,7 @@ npm run ios                     # expo run:ios — build & launch the dev client
 npm run android                 # expo run:android — build & launch the dev client
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
-deno check supabase/functions/<fn>/index.ts   # type-check an edge function — NEVER pass --node-modules-dir
+deno check --node-modules-dir=none supabase/functions/<fn>/index.ts   # type-check an edge fn (see below)
 npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
 npm test                        # Jest — the pure-logic + drift-guard suite in __tests__/ (~1s)
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
@@ -24,8 +24,10 @@ Expo/npm in the same tree. `deno check --node-modules-dir=auto` writes `node_mod
 and REPLACES real package directories with symlinks into it — on 2026-08-13 it swapped
 `expo-updates` for a symlink and Metro died with `Unable to resolve module
 @react-navigation/native`, naming a completely innocent package. Plain `deno check` is safe.
-`__tests__/workspaceIntegrity.test.js` fails on the residue so the next person is not
-debugging a phantom import error.
+Use `--node-modules-dir=none`: it resolves npm through Deno's GLOBAL cache and cannot write
+here. Plain `deno check` is safe but fails to resolve npm specifiers at all, so it is not the
+answer either. `__tests__/workspaceIntegrity.test.js` fails on the residue so the next person
+is not debugging a phantom import error. All 32 functions type-check clean as of 2026-08-13.
 
 ⚠️ **The two Vercel projects behave differently, and it will bite you.**
 `gohustle` (the **web** app) has git integration — every push to `master` ships it

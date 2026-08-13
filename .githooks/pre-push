@@ -40,26 +40,22 @@ fi
 if command -v deno >/dev/null 2>&1; then
   CHANGED_TS=$(git diff --name-only $RANGE 2>/dev/null | grep -E '^supabase/functions/.*\.ts$' || true)
   if [ -n "$CHANGED_TS" ]; then
-    # KNOWN-RED, and deliberately so. An exemption must be LOUD: a silent skip is how a
-    # permanently-failing check gets normalised and then ignored everywhere. Each entry
-    # names the reason and is tracked in OPEN_WORK.md — remove it when that row closes.
-    #   reconcile-stripe: pins npm:stripe@14 (every other function is on @15) and asks it
-    #     for apiVersion 2024-06-20, which that SDK's types do not know. Unifying the
-    #     Stripe API version across the money paths is a tested change, not a blind one.
-    EXEMPT="reconcile-stripe"
+    # --node-modules-dir=none is LOAD-BEARING, not a tuning flag. Without it Deno tries
+    # to resolve npm specifiers through the Expo project's node_modules, and with
+    # =auto it REPLACES real packages with symlinks into its own cache — which broke
+    # the running app on 2026-08-13 with an error naming a package it never touched.
+    # `none` uses Deno's global cache and cannot write here at all.
     BAD=""
     for f in $CHANGED_TS; do
       [ -f "$f" ] || continue
-      FN=$(echo "$f" | cut -d/ -f3)
-      if echo "$EXEMPT" | grep -qw "$FN"; then
-        printf '\033[33m  ↷ deno check skipped for %s (known-red, see OPEN_WORK.md)\033[0m\n' "$FN"
-        continue
-      fi
-      deno check "$f" >/dev/null 2>&1 || BAD="$BAD $f"
+      deno check --node-modules-dir=none "$f" >/dev/null 2>&1 || BAD="$BAD $f"
     done
     if [ -n "$BAD" ]; then
       printf '\033[31m✗ deno check failed:%s\033[0m\n' "$BAD"
-      printf '\033[31m  Run: deno check <file>   (--no-verify to override)\033[0m\n'
+      # The flag must be in the remediation too. Bare `deno check` fails to resolve npm
+      # specifiers, and the obvious next guess (=auto) is the one that corrupts
+      # node_modules — that is exactly the path that broke the app on 2026-08-13.
+      printf '\033[31m  Run: deno check --node-modules-dir=none <file>   (--no-verify to override)\033[0m\n'
       exit 1
     fi
     printf '\033[32m✓ changed edge functions type-check\033[0m\n'

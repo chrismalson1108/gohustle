@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
     if (payErr) return json({ error: 'lookup_failed', message: payErr.message }, 503);
     if (!pay) return json({ error: 'no_payment', message: 'No payment record for this booking.' }, 404);
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2024-04-10' });
 
     // ── Release an uncaptured authorization ──────────────────────────────────
     if (op === 'release_hold') {

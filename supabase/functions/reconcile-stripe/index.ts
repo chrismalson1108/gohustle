@@ -22,7 +22,7 @@
 // matter are recent, because that is when they are still fixable.
 //
 // Secrets: STRIPE_SECRET_KEY, plus the shared secret in app_flags.controls_alert.
-import Stripe from "npm:stripe@14";
+import Stripe from "npm:stripe@15";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
       });
       return json({ ok: false, reason: "no_stripe_key" }, 503);
     }
-    const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
+    const stripe = new Stripe(stripeKey, { apiVersion: '2024-04-10' });
 
     const body = await req.json().catch(() => ({}));
     const days = Number.isFinite(Number(body?.days)) ? Number(body.days) : 14;

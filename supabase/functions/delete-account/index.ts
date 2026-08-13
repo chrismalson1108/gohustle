@@ -166,7 +166,7 @@ Deno.serve(async (req: Request) => {
     try {
       const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
       if (stripeKey) {
-        const stripe = new Stripe(stripeKey);
+        const stripe = new Stripe(stripeKey, { apiVersion: '2024-04-10' });
         const [{ data: asEarner }, { data: myJobs }] = await Promise.all([
           admin.from('bookings').select('id').eq('earner_id', user.id).in('status', CANCELLABLE_STATUSES),
           admin.from('jobs').select('id').eq('poster_id', user.id),
