@@ -181,6 +181,68 @@ delete from stripe_customers;
 
 Everyone then re-runs payout onboarding and re-adds a card against live Stripe.
 
+### 🚫 BLOCKING GATE — live mode has NO webhook endpoints
+
+Verified 2026-08-13 on `acct_1ThvnME0UZFlVCOp`: `stripe webhook_endpoints list --live`
+returns an **empty array**. Test mode has two endpoints; live mode has none.
+
+Flip the keys without creating them and every handler in `stripe-webhook` goes dark, with
+**no error anywhere**, because nothing is being delivered to fail:
+
+- captures never mark `payments.status = 'captured'` and never credit earnings,
+- Connect onboarding never flips `stripe_accounts.onboarded`, so payouts stay off,
+- identity verification never resolves (`profiles.id_verification_status` stuck `pending`),
+- refunds and chargebacks never record a `disputes` row,
+- and no `payout.*` ever reaches `stripe_payouts`, so Bank deposits stays empty forever.
+
+Both endpoints point at the same URL and are told apart only by their signing secret.
+
+```bash
+# 1. "Your account" destination — payments, refunds, identity.
+stripe webhook_endpoints create --live \
+  --url https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook \
+  --enabled-events payment_intent.succeeded \
+  --enabled-events payment_intent.payment_failed \
+  --enabled-events payment_intent.canceled \
+  --enabled-events account.updated \
+  --enabled-events charge.dispute.created \
+  --enabled-events charge.refunded \
+  --enabled-events identity.verification_session.verified \
+  --enabled-events identity.verification_session.requires_input \
+  --enabled-events identity.verification_session.canceled
+```
+
+```bash
+# 2. "Connected accounts" destination — same URL, different secret. Without the payout
+#    events, bank-deposit arrival dates never populate (this was the test-mode bug).
+stripe webhook_endpoints create --live --connect \
+  --url https://nfioebqsgmmzhbksxozc.supabase.co/functions/v1/stripe-webhook \
+  --enabled-events account.updated \
+  --enabled-events payout.created \
+  --enabled-events payout.updated \
+  --enabled-events payout.paid \
+  --enabled-events payout.failed \
+  --enabled-events payout.canceled
+```
+
+Each `create` returns a `secret` (`whsec_…`) **once**. Store them — the account one as
+`STRIPE_WEBHOOK_SECRET`, the Connect one as `STRIPE_WEBHOOK_SECRET_CONNECT`:
+
+```bash
+npx supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_... --project-ref nfioebqsgmmzhbksxozc
+npx supabase secrets set STRIPE_WEBHOOK_SECRET_CONNECT=whsec_... --project-ref nfioebqsgmmzhbksxozc
+```
+
+**Do this BEFORE the key switch, not after.** A live charge that arrives while the secret
+is missing fails signature verification, Stripe retries for ~3 days and then gives up —
+and the booking is left authorized-but-never-captured with real money held on a real card.
+
+Verify before proceeding:
+
+```bash
+stripe webhook_endpoints list --live   # expect 2, both enabled, one with "application" set
+```
+
 ### ⚠️ The key switch is not a single server-side toggle
 
 The two Stripe keys live in **different places**, and Stripe requires both to be from the
