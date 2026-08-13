@@ -131,3 +131,24 @@ describe('the gate clears after a correct code', () => {
     expect(ctx).toMatch(/clearMfaPending = \(\) => \{ setMfaPending\(false\); setMfaResolved\(true\); \}/);
   });
 });
+
+describe('the challenge cannot be bypassed by breaking the network', () => {
+  const challenge = read('src/screens/MfaChallengeScreen.js');
+
+  it('checks the error from listFactors instead of discarding it', () => {
+    // listFactors() is a network call that returns { data: null, error } on failure.
+    // Discarding the error made `factor` undefined, which took the "no factor after
+    // all" branch and cleared the gate — so airplane mode let a password-only session
+    // straight into the app.
+    expect(challenge).toMatch(/const \{ data: factors, error: listErr \}/);
+    expect(challenge).toMatch(/if \(listErr\)/);
+  });
+
+  it('leaves the gate CLOSED when the lookup fails', () => {
+    // The failure branch must return before reaching clearMfaPending().
+    const i = challenge.indexOf('if (listErr)');
+    const j = challenge.indexOf('clearMfaPending()', i);
+    const between = challenge.slice(i, j);
+    expect(between).toMatch(/return;/);
+  });
+});

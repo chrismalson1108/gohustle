@@ -36,7 +36,21 @@ export default function MfaChallengeScreen() {
   const submitCode = async () => {
     setBusy(true); setErr(null);
     try {
-      const { data: factors } = await supabase.auth.mfa.listFactors();
+      // The `error` here is load-bearing and was being discarded. listFactors() is a
+      // NETWORK call (auth-js delegates to getUser()), and on a failed fetch it
+      // returns { data: null, error } rather than throwing. With the error dropped,
+      // `factors` was null, `factor` undefined, and the next line took the
+      // "this account has no factor after all" branch — clearing the gate and letting
+      // the session into the app WITHOUT a code. Airplane mode was a 2FA bypass.
+      //
+      // A lookup that FAILED tells us nothing about whether a factor exists, so it
+      // must leave the gate closed. Only a successful lookup returning none is
+      // grounds for opening it.
+      const { data: factors, error: listErr } = await supabase.auth.mfa.listFactors();
+      if (listErr) {
+        setErr("Couldn't reach the server. Check your connection and try again.");
+        return;
+      }
       const factor = (factors?.totp ?? []).find((f) => f.status === 'verified');
       if (!factor) { clearMfaPending(); return; }
       await verifyChallenge(factor.id, code);

@@ -16,7 +16,7 @@ const DEBOUNCE_MS = 350;
 const MIN_QUERY = 2;
 
 // Search people by name or @username → tap through to their public profile
-// (message / invite / favorite live there). Reachable from the Profile tab
+// (message / invite / favorite live there). Reachable from the You tab
 // ("Find People") and the Messages header search icon.
 export default function FindPeopleScreen({ navigation }) {
   const { user } = useAuth();

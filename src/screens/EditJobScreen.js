@@ -325,7 +325,7 @@ export default function EditJobScreen({ route, navigation }) {
             <View style={styles.bannerBody}>
               <Text style={styles.lockTitle} numberOfLines={2}>Core terms locked</Text>
               <Text style={styles.lockDesc}>
-                Pay, location, and time slots are locked — an earner has committed to this gig. Use "Request Change" in the Gigs tab to propose an update. Both parties must agree before core terms can change.
+                Pay, location, and time slots are locked — an earner has committed to this gig. Use "Request Change" in Hire to propose an update. Both parties must agree before core terms can change.
               </Text>
             </View>
           </View>

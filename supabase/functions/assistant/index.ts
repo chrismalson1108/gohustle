@@ -1042,7 +1042,14 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
   if ((job as Json).status !== 'open') return JSON.stringify({ error: 'not_open', message: 'That gig is no longer open.' });
 
   const allSlots = (((job as Json).job_slots as Json[] | null) ?? []);
-  const open = allSlots.filter((s) => !s.taken);
+  // A slot that has already happened is not "open", however the taken flag reads.
+  // SlotPicker hides past slots in the app, but this function never goes near
+  // SlotPicker — which is how Hustlr AI came to offer seven expired Jul 28 times on a
+  // gig the user had already worked. guard_booking_slot_not_past now refuses the
+  // insert; this stops us proposing it in the first place.
+  // NULL starts_at is "Flexible — Contact to Schedule" and is always available.
+  const notPast = (s: Json) => !s.starts_at || new Date(String(s.starts_at)).getTime() > Date.now();
+  const open = allSlots.filter((s) => !s.taken && notPast(s));
   let slot: Json | undefined;
   if (input.slot_label) {
     const want = String(input.slot_label).toLowerCase();
@@ -1050,10 +1057,18 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     if (!slot) {
       // Requested label didn't match an OPEN slot — say why instead of silently
       // booking a different ("Flexible") slot the user didn't ask for.
-      const existsButTaken = allSlots.some((s) => {
+      const match = allSlots.find((s) => {
         const l = String(s.label).toLowerCase();
         return l === want || l.includes(want);
       });
+      if (match && !notPast(match)) {
+        return JSON.stringify({
+          error: 'slot_in_past',
+          message: `"${input.slot_label}" has already passed — that gig's times are in the past.`,
+          open_slots: open.map((s) => s.label),
+        });
+      }
+      const existsButTaken = Boolean(match && match.taken);
       return JSON.stringify({
         error: existsButTaken ? 'slot_taken' : 'slot_not_found',
         message: existsButTaken
@@ -1065,7 +1080,15 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
   } else {
     slot = open[0];
     if (!slot && allSlots.length > 0) {
-      return JSON.stringify({ error: 'no_open_slots', message: 'All time slots on that gig are taken.' });
+      // Distinguish "someone else got there first" from "this listing is finished" —
+      // they lead to completely different next steps for the user.
+      const anyFuture = allSlots.some(notPast);
+      return JSON.stringify({
+        error: anyFuture ? 'no_open_slots' : 'listing_expired',
+        message: anyFuture
+          ? 'All remaining time slots on that gig are taken.'
+          : "That gig's times have all passed — it isn't bookable any more. Want me to find something similar?",
+      });
     }
   }
   // `slot` is now undefined only when the gig has no slots at all → book as Flexible.
@@ -1157,7 +1180,23 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
 
   if (error) {
     if (String(error.message).toLowerCase().includes('duplicate') || (error as Json).code === '23505') {
-      return JSON.stringify({ error: 'already_booked', message: "You've already requested this gig." });
+      // "You've already requested this gig" is wrong — and confusing — when the user
+      // has actually WORKED it. Read the existing booking and say what really happened.
+      const { data: prior } = await sb
+        .from('bookings')
+        .select('status')
+        .eq('job_id', gigId)
+        .eq('earner_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const st = (prior as Json | null)?.status as string | undefined;
+      const msg = st === 'verified' || st === 'completed'
+        ? "You've already done this gig — it's in your completed work."
+        : st === 'confirmed'
+          ? "You're already booked on this gig."
+          : "You've already requested this gig.";
+      return JSON.stringify({ error: 'already_booked', booking_status: st ?? null, message: msg });
     }
     return JSON.stringify({ error: error.message });
   }

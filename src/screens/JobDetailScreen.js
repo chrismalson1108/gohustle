@@ -30,13 +30,13 @@ const STATUS_CONTENT = {
                desc: "The poster hasn't reviewed your booking yet. Hang tight!",
                bg: colors.warningLight, color: colors.warningDeep },
   confirmed: { ion: 'checkmark-circle', title: "Confirmed — you're in",
-               desc: 'Accepted! Head to the Earn tab to mark done when finished.',
+               desc: 'Accepted! Head to My Jobs to mark it done when you finish.',
                bg: colors.successLight, color: colors.success },
   completed: { ion: 'sync', title: 'Awaiting verification',
                desc: 'You marked done. The poster needs to verify your work.',
                bg: colors.background, color: colors.textPrimary },
   verified:  { ion: 'shield-checkmark', title: 'Completed & verified',
-               desc: 'All done! Go to the Earn tab to rate the poster.',
+               desc: 'All done! Go to My Jobs to rate the poster.',
                bg: colors.successLight, color: colors.success },
   declined:  { ion: 'close-circle', title: 'Application declined',
                desc: "The poster didn't accept your booking.",
@@ -556,7 +556,7 @@ export default function JobDetailScreen({ route, navigation }) {
                   style={[styles.earnActionBtn, canMessage && styles.earnActionBtnSmall]}
                   onPress={() => navigation.navigate('EarnTab')}
                 >
-                  <Text style={styles.earnActionBtnText} numberOfLines={1}>Earn tab →</Text>
+                  <Text style={styles.earnActionBtnText} numberOfLines={1}>Go to My Jobs →</Text>
                 </TouchableOpacity>
               </View>
             )}
