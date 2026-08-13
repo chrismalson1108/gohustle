@@ -11,6 +11,10 @@ export async function askAssistant(messages, opts = {}) {
   const body = { messages };
   if (opts.threadId) body.thread_id = opts.threadId;
   if (opts.newThread) body.new_thread = true;
+  // Set when the user taps a confirmation card. The server executes the action it
+  // staged earlier without calling the model at all — see the confirm path in the
+  // assistant function.
+  if (opts.confirmActionId) body.confirm_action_id = opts.confirmActionId;
   const res = await fetch(`${FUNCTIONS_URL}/assistant`, {
     method: 'POST',
     headers: {

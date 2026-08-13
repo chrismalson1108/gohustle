@@ -244,7 +244,52 @@ Deno.serve(async (req: Request) => {
       messages?: Array<{ role: string; content: string }>;
       thread_id?: string;
       new_thread?: boolean;
+      // Set by the CLIENT when the user taps a confirmation card. Handled below,
+      // before any model call.
+      confirm_action_id?: string;
     };
+    // ── CONFIRM PATH ──────────────────────────────────────────────────────────
+    // A human tapped a confirmation card. This runs BEFORE the model is involved and
+    // never calls it: the action executes from the payload stored at stage time, so
+    // there is no turn in which anything could re-interpret, re-describe or re-target
+    // it. The model is not in this loop at all — which is the property that makes the
+    // gate worth having.
+    if (typeof body.confirm_action_id === 'string' && body.confirm_action_id) {
+      const { data: payload, error: consumeErr } = await admin.rpc('consume_assistant_action', {
+        p_id: body.confirm_action_id,
+        p_user: user.id,
+      });
+      // One undistinguished refusal for expired, already-used, unknown and not-yours.
+      if (consumeErr || !payload) {
+        return json({
+          reply: "That confirmation has expired or was already used. Ask me again and I'll set it up fresh.",
+          actions: [],
+        });
+      }
+
+      const confirmActions: Action[] = [];
+      const sbUser = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+
+      // Execute under the USER's own token, so RLS still bounds everything exactly as
+      // it did when the tool ran inline.
+      // book_gig payloads carry gig_id; create_gig payloads carry title. The staged
+      // payload is the only thing consulted — never a field the model supplied now.
+      let raw: string;
+      if ((payload as Json).gig_id) {
+        raw = await executeBooking(sbUser, user.id, payload as Json, confirmActions);
+      } else {
+        raw = await executeCreateGig(sbUser, user.id, payload as Json, confirmActions);
+      }
+
+      const parsed = JSON.parse(raw) as Json;
+      const reply = parsed.ok
+        ? (parsed.note as string) || 'Done.'
+        : (parsed.message as string) || "That didn't go through — try asking me again.";
+      return json({ reply, actions: confirmActions, thread_id: body.thread_id ?? null });
+    }
+
     const incoming = Array.isArray(body.messages) ? body.messages : [];
     // Keep the transcript bounded — only the most recent turns are needed for context.
     const history = incoming
@@ -853,6 +898,41 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
     return JSON.stringify({ error: 'limit_reached', message: "That's a few gigs already — let's review them before posting more." });
   }
 
+  // THE GATE, same shape as book_gig. Posting a gig commits the user publicly and
+  // starts a hiring flow strangers respond to; it is not something a sentence in
+  // someone else's gig description should be able to trigger. All validation above
+  // has already run, so the card only ever appears for a listing that would succeed.
+  const pendingId = await stageAction(userId, 'create_gig', {
+    title, category, pay, pay_type: payType, location, description,
+    urgent: input.urgent === true,
+    estimated_hours: typeof input.estimated_hours === 'number' ? input.estimated_hours : 2,
+    slots: Array.isArray(input.slots) ? input.slots : [],
+    requirements: Array.isArray(input.requirements) ? input.requirements : [],
+  }, { kind: 'create_gig', title, category, pay, pay_type: payType, location });
+
+  if (!pendingId) {
+    return JSON.stringify({ error: 'stage_failed', message: 'Could not prepare that listing. Try again.' });
+  }
+  actions.push({ type: 'confirm_action', id: pendingId, kind: 'create_gig' });
+  return JSON.stringify({
+    ok: false,
+    status: 'confirmation_required',
+    title,
+    note: 'NOT posted. A confirmation card with the listing details has been shown to '
+        + 'the user; they must tap it themselves. Do not claim the gig was posted.',
+  });
+}
+
+/** Post a gig a human has confirmed. Runs from the staged payload, not the model. */
+async function executeCreateGig(sb: SupabaseClient, userId: string, payload: Json, actions: Action[]): Promise<string> {
+  const title = String(payload.title ?? '');
+  const category = payload.category as string;
+  const pay = Number(payload.pay);
+  const payType = payload.pay_type === 'hourly' ? 'hourly' : 'flat';
+  const location = String(payload.location ?? '');
+  const description = String(payload.description ?? '');
+  const input = payload;
+
   const { data: job, error } = await sb
     .from('jobs')
     .insert({
@@ -916,6 +996,33 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
       ? {}
       : { note: `"${category}" isn't a usable category, so this gig isn't filed under one. Offer to change it to something specific.` }),
   });
+}
+
+/**
+ * Park a validated, hard-to-undo action for a human to confirm.
+ *
+ * Written with the SERVICE ROLE on purpose: assistant_pending_actions has no client
+ * policies, so neither the app nor anyone holding a user token can read, forge or
+ * pre-consume a staged action. The only thing that ever leaves the server is the id,
+ * and it leaves through `actions` — the channel the model cannot see.
+ */
+async function stageAction(userId: string, kind: string, payload: Json, summary: Json): Promise<string | null> {
+  try {
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+    const { data, error } = await admin
+      .from('assistant_pending_actions')
+      .insert({ user_id: userId, kind, payload, summary })
+      .select('id')
+      .single();
+    if (error) { console.error('stageAction failed:', error); return null; }
+    return (data as Json).id as string;
+  } catch (e) {
+    console.error('stageAction threw:', e);
+    return null;
+  }
 }
 
 async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
@@ -982,17 +1089,68 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
       message: `Counter-offers can't be more than $${MAX_JOB_PAY.toLocaleString()}.`,
     });
   }
-  const status = 'pending';
+  // ── THE GATE ──────────────────────────────────────────────────────────────
+  // Everything above is validation and it all still runs — the user is never shown a
+  // confirmation for a gig that is closed, taken, their own, or under the pay floor.
+  // What changed is that this function no longer BOOKS. It stages the exact
+  // parameters and hands the client a one-shot id through `actions`, which is
+  // returned alongside the reply and never enters the model transcript.
+  //
+  // So injected gig text can still talk the model into staging a booking. It cannot
+  // produce the tap that consumes it, and the card the human sees is rendered from
+  // the server-computed summary below rather than from anything the model wrote —
+  // which is what stops an injected model describing one gig while staging another.
+  const pendingId = await stageAction(userId, 'book_gig', {
+    gig_id: gigId,
+    slot_id: slot?.id ?? null,
+    slot_label: slot ? slot.label : 'Flexible',
+    counter_offer: counter,
+  }, {
+    kind: 'book_gig',
+    title: (job as Json).title,
+    pay: counter ?? (job as Json).pay,
+    is_counter_offer: counter !== null,
+    slot: slot ? slot.label : 'Flexible',
+  });
+
+  if (!pendingId) {
+    return JSON.stringify({ error: 'stage_failed', message: 'Could not prepare that booking. Try again.' });
+  }
+
+  actions.push({ type: 'confirm_action', id: pendingId, kind: 'book_gig' });
+
+  // What the MODEL is told. Deliberately carries no id and states plainly that
+  // nothing has happened yet, so it cannot report a booking that does not exist.
+  return JSON.stringify({
+    ok: false,
+    status: 'confirmation_required',
+    gig: (job as Json).title,
+    slot: slot ? slot.label : 'Flexible',
+    note: 'NOT booked. A confirmation card has been shown to the user with the exact '
+        + 'details; they must tap it themselves. Tell them to check it — do not claim '
+        + 'the booking happened, and do not ask them to confirm again in chat.',
+  });
+}
+
+/**
+ * Perform a booking that a human has confirmed.
+ *
+ * Runs from the payload stored at stage time, NOT from anything the model said on the
+ * way back — the model is not involved in the confirm path at all.
+ */
+async function executeBooking(sb: SupabaseClient, userId: string, payload: Json, actions: Action[]): Promise<string> {
+  const gigId = String(payload.gig_id ?? '');
+  const slotId = payload.slot_id ? String(payload.slot_id) : null;
 
   const { data: booking, error } = await sb
     .from('bookings')
     .insert({
       job_id: gigId,
       earner_id: userId,
-      slot_id: slot?.id ?? null,
-      slot_label: slot ? slot.label : 'Flexible',
-      counter_offer: counter,
-      status,
+      slot_id: slotId,
+      slot_label: String(payload.slot_label ?? 'Flexible'),
+      counter_offer: payload.counter_offer ?? null,
+      status: 'pending',
     })
     .select('id')
     .single();
@@ -1004,15 +1162,13 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     return JSON.stringify({ error: error.message });
   }
 
-  if (slot?.id) await sb.from('job_slots').update({ taken: true }).eq('id', slot.id);
+  if (slotId) await sb.from('job_slots').update({ taken: true }).eq('id', slotId);
 
   actions.push({ type: 'gig_booked', gigId, bookingId: (booking as Json).id });
   return JSON.stringify({
     ok: true,
     booking_id: (booking as Json).id,
-    gig: (job as Json).title,
-    slot: slot ? slot.label : 'Flexible',
-    status,
+    status: 'pending',
     note: 'Request sent — the poster will review and accept it.',
   });
 }
@@ -1525,7 +1681,16 @@ How GoHustlr works:
 - People earn money by doing local gigs ("earners"), and people hire help by posting gigs ("posters"). A user can be both.
 - Categories are open-ended — hundreds exist and users can create new ones. A representative sample: ${CATEGORY_EXAMPLES.join(', ')}. This is NOT the full list and NOT a set of options to choose between: use whatever short, plain service name actually describes the work ("Gutter Cleaning", "Wedding Help", "Mobile Mechanic"). Don't force a gig into a nearby category, and don't tell a user their category doesn't exist. Casing and common synonyms are resolved server-side.
 - An earner books a gig (or sends a counter-offer) → the poster accepts → both mark it done → the poster verifies & rates. Payment is held in escrow and released on completion.
-- The app has Browse (find gigs), My Jobs (work you booked), Hiring (gigs you posted), Messages, and Profile (stats, XP levels, badges).
+- The platform fee comes out of the EARNER's payout — it is not added to what the poster pays — and the rate is fixed per booking when it is made, so an older booking keeps the rate it was struck at. Never quote a fee percentage from memory; the tools that report money already use the right one.
+- Tips, and partial refunds when something goes wrong, both exist and are settled through the same escrow.
+- The tabs are Browse (find gigs), My Jobs (work you booked), Hire (gigs you posted), Messages, and You (stats, XP levels, badges). They are named exactly that — do not call them "Hiring" or "Profile".
+- Places people ask about, so you can point them straight there:
+  · Money in and out — You → Payments & payouts → Transactions. Every charge, fee, refund, tip and escrow hold, filterable by date and status, exportable as CSV.
+  · When money reaches their bank — the Bank deposits list on that same screen, with real arrival dates. Releasing a gig moves money to their payout account; their bank deposit follows on Stripe's schedule, so "released" and "in my bank" are different moments and it is worth saying so.
+  · Taxes — You → Tax Center: expenses, mileage, cash income, and a year-end summary.
+  · A human — Messages → GoHustlr Support, or Settings → Contact support. Real people answer, they can attach photos, and a reply reopens a resolved conversation. If someone is upset, out of pocket, or describing something unsafe, offer this early rather than trying to solve it yourself.
+  · Two-factor authentication — Settings → Security. Worth mentioning if they ask about account safety or have just connected a bank; it also produces recovery codes they should save.
+- Never invent a screen, a setting or a policy. If you are not certain the app does something, say you are not sure and point them at Support rather than guessing — a confident wrong answer about money is worse than no answer.
 
 The signed-in user:
 - Name: ${name}
@@ -1554,7 +1719,7 @@ Security — read carefully:
 How to behave:
 - Be warm, encouraging, and concise — you're talking to busy students. Short paragraphs and bullet points. Money in USD.
 - Take initiative. If the user clearly wants something, use the right tool rather than just describing it. You can chain tools (e.g. recommend a gig, then book it once they say yes).
-- For the two actions that are hard to undo — **create_gig** and **book_gig** — first give a one-line summary of the key details and get a clear yes before calling the tool. For minor missing details, pick a sensible default and mention it instead of interrogating.
+- For the two actions that are hard to undo — **create_gig** and **book_gig** — summarise the key details in one line first. Calling the tool no longer performs the action: it shows the user a confirmation card built from the server's own record of what would happen, and they tap it. So when a tool comes back saying confirmation_required, tell them to check the card — do NOT say it is booked or posted, and do NOT ask them to confirm again in chat, because the card is the confirmation. For minor missing details, pick a sensible default and mention it instead of interrogating.
 - After you take an action, confirm what happened in plain language and suggest a natural next step. Refer to gigs by their title, never by raw id.
 - When recommending or listing gigs, show title, pay, location, and why it fits — keep it skimmable.
 - If asked something outside GoHustlr, answer briefly if helpful, then steer back to how you can help on the app.

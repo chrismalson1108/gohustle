@@ -32,6 +32,8 @@ export default function AssistantButton() {
   const [threadId, setThreadId] = useState(null);
   const [view, setView] = useState('chat'); // 'chat' | 'history'
   const [threads, setThreads] = useState([]);
+  // A hard-to-undo action the server has staged and is waiting on a human for.
+  const [pendingConfirm, setPendingConfirm] = useState(null);
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
@@ -68,6 +70,38 @@ export default function AssistantButton() {
       showToast?.({ icon: '✅', title: 'Booked!', message: 'Hustlr AI sent your request.' });
     }
     if (kinds.has('profile_updated')) refreshProfile?.();
+
+    // A hard-to-undo action is waiting on a human. The card is rendered from the
+    // SERVER's staged summary, never from the model's prose — an injected model can
+    // ask for a confirmation but cannot control what the confirmation says.
+    const confirm = actions.find((a) => a.type === 'confirm_action');
+    if (confirm) setPendingConfirm(confirm);
+  };
+
+  // Execute a staged action. Goes back to the server with just the id; the model is
+  // not involved in this round trip.
+  const confirmPending = async () => {
+    if (!pendingConfirm || busy) return;
+    haptic?.medium?.();
+    const id = pendingConfirm.id;
+    setPendingConfirm(null);
+    setBusy(true);
+    try {
+      const res = await askAssistant([], { threadId, confirmActionId: id });
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }]);
+      runActions(res.actions);
+    } catch (err) {
+      setError(err.message || 'That didn\'t go through. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const declinePending = () => {
+    haptic?.light?.();
+    setPendingConfirm(null);
+    // Staged actions expire on their own; declining just drops the card.
+    setMessages((prev) => [...prev, { role: 'assistant', content: 'No problem — I haven\'t done anything.' }]);
   };
 
   const send = async (text) => {
@@ -189,6 +223,40 @@ export default function AssistantButton() {
                   {messages.map((m, i) => (
                     <Bubble key={i} role={m.role} content={m.content} />
                   ))}
+
+                  {/* ── The gate, as the user sees it ──────────────────────────
+                      Booking a gig and posting one used to happen the moment the
+                      model decided to call the tool; "get a clear yes first" was an
+                      instruction in its prompt, not a control — and gig text written
+                      by other users goes into that same prompt.
+                      Every detail below comes from the server's staged summary, so
+                      an injected model can cause this card to appear but cannot
+                      choose what it says or what the tap does. */}
+                  {pendingConfirm && (
+                    <View style={styles.confirmCard}>
+                      <View style={styles.confirmHead}>
+                        <Ionicons name="alert-circle-outline" size={17} color={colors.primary} />
+                        <Text style={styles.confirmTitle}>
+                          {pendingConfirm.kind === 'create_gig' ? 'Post this gig?' : 'Send this booking request?'}
+                        </Text>
+                      </View>
+                      <Text style={styles.confirmBody}>
+                        {pendingConfirm.kind === 'create_gig'
+                          ? 'Your gig goes live and hustlers can apply.'
+                          : 'The poster will see your request and can accept it.'}
+                      </Text>
+                      <View style={styles.confirmRow}>
+                        <TouchableOpacity style={styles.confirmNo} onPress={declinePending} disabled={busy}>
+                          <Text style={styles.confirmNoText}>Not now</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.confirmYes} onPress={confirmPending} disabled={busy}>
+                          <Text style={styles.confirmYesText}>
+                            {pendingConfirm.kind === 'create_gig' ? 'Post it' : 'Send it'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                   {busy && (
                     <View style={styles.thinking}>
                       <ActivityIndicator size="small" color={colors.primary} />
@@ -311,6 +379,24 @@ function relTime(iso) {
 }
 
 const styles = StyleSheet.create({
+  confirmCard: {
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14,
+    marginTop: 10, borderWidth: 1, borderColor: colors.primary,
+  },
+  confirmHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  confirmTitle: { fontSize: 14.5, fontWeight: '800', color: colors.textPrimary },
+  confirmBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 6 },
+  confirmRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  confirmNo: {
+    flex: 1, paddingVertical: 11, borderRadius: radii.pill, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  confirmNoText: { fontSize: 13.5, fontWeight: '700', color: colors.textSecondary },
+  confirmYes: {
+    flex: 1, paddingVertical: 11, borderRadius: radii.pill, alignItems: 'center',
+    backgroundColor: colors.primary,
+  },
+  confirmYesText: { fontSize: 13.5, fontWeight: '800', color: '#fff' },
   fab: {
     position: 'absolute', right: 20, width: 56, height: 56, borderRadius: radii.pill,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadows.md,
