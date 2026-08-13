@@ -171,8 +171,17 @@ export function AuthProvider({ children }) {
 
   const markTermsAccepted = () => setNeedsTerms(false);
 
-  // Resolve the two-factor gate whenever the signed-in user changes. Outside the
-  // auth callback on purpose (see onAuthStateChange above).
+  // Resolve the two-factor gate whenever the SESSION changes — keyed on the access
+  // token, not the user id.
+  //
+  // Verifying a code issues a NEW session upgraded to aal2 for the SAME user. Keyed
+  // on user id, this effect never re-ran: onAuthStateChange had already set
+  // mfaResolved=false, nothing set it back, and gateResolving stayed true forever —
+  // an infinite spinner immediately after entering a correct code. The one path the
+  // whole feature depends on.
+  //
+  // Re-running per token is cheap: getAuthenticatorAssuranceLevel() decodes the JWT
+  // locally and makes no network call.
   useEffect(() => {
     let alive = true;
     if (!session?.user) return undefined;
@@ -192,10 +201,13 @@ export function AuthProvider({ children }) {
       }
     })();
     return () => { alive = false; };
-  }, [session?.user?.id]);
+  }, [session?.access_token]);
 
   // Called by the challenge screen once a code has verified.
-  const clearMfaPending = () => setMfaPending(false);
+  // Optimistic clear so the gate lifts on the same frame as the successful verify,
+  // rather than waiting for the new token to land. mfaResolved is set too: without it
+  // the app would sit on the loading gate until the effect re-runs.
+  const clearMfaPending = () => { setMfaPending(false); setMfaResolved(true); };
 
   const signIn = async (email, password) => {
     setAuthError(null);

@@ -2,6 +2,7 @@
 // Called from PayoutSetupScreen. Idempotent — resumable if onboarding was interrupted.
 import Stripe from 'npm:stripe@15';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { requireStepUp } from '../_shared/stepUp.ts';
 import { deriveConnectStatus } from '../_shared/connectStatus.ts';
 
 const corsHeaders = {
@@ -95,6 +96,12 @@ Deno.serve(async (req: Request) => {
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+
+    // STEP-UP, for first-time setup as well as re-onboarding. Attaching a NEW bank to
+    // an account that has none is the same attack as changing an existing one — the
+    // attacker simply gets there first. Only bites if the account has a factor.
+    const step = await requireStepUp(supabase, user.id, token);
+    if (!step.ok) return json(step.body!, step.status!);
 
     const { data: existing } = await supabase
       .from('stripe_accounts')

@@ -112,3 +112,22 @@ describe('the lost-phone path exists', () => {
     expect(challenge).toMatch(/signOut/);
   });
 });
+
+describe('the gate clears after a correct code', () => {
+  const ctx = read('src/context/AuthContext.js');
+
+  it('re-resolves on the SESSION, not the user id', () => {
+    // Verifying issues a NEW session at aal2 for the SAME user. Keyed on user id the
+    // effect never re-ran, mfaResolved stayed false, and the app hung on the loading
+    // gate forever — immediately after entering a correct code.
+    const i = ctx.indexOf('getAuthenticatorAssuranceLevel');
+    const after = ctx.slice(i, i + 1400);
+    expect(after).toMatch(/\}, \[session\?\.access_token\]\)/);
+    expect(after).not.toMatch(/\}, \[session\?\.user\?\.id\]\)/);
+  });
+
+  it('clears the loading gate as well as the challenge', () => {
+    // Clearing mfaPending alone leaves gateResolving true if mfaResolved is false.
+    expect(ctx).toMatch(/clearMfaPending = \(\) => \{ setMfaPending\(false\); setMfaResolved\(true\); \}/);
+  });
+});
