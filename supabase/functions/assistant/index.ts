@@ -913,7 +913,12 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
   if (!pendingId) {
     return JSON.stringify({ error: 'stage_failed', message: 'Could not prepare that listing. Try again.' });
   }
-  actions.push({ type: 'confirm_action', id: pendingId, kind: 'create_gig' });
+  actions.push({
+    type: 'confirm_action',
+    id: pendingId,
+    kind: 'create_gig',
+    summary: { title, category, pay, pay_type: payType, location },
+  });
   return JSON.stringify({
     ok: false,
     status: 'confirmation_required',
@@ -1034,7 +1039,7 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
 
   const { data: job } = await sb
     .from('jobs')
-    .select('id, title, status, poster_id, pay, job_slots(id, label, taken)')
+    .select('id, title, status, poster_id, pay, pay_type, location, job_slots(id, label, taken, starts_at)')
     .eq('id', gigId)
     .maybeSingle();
   if (!job) return JSON.stringify({ error: 'gig_not_found' });
@@ -1140,7 +1145,23 @@ async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions:
     return JSON.stringify({ error: 'stage_failed', message: 'Could not prepare that booking. Try again.' });
   }
 
-  actions.push({ type: 'confirm_action', id: pendingId, kind: 'book_gig' });
+  // The SUMMARY travels with the id. Without it the card could only show generic
+  // wording and the user would be authorising whatever the MODEL said in the chat
+  // above — the exact substitution the gate exists to prevent. These values come from
+  // the job row and the slot, not from anything the model wrote.
+  actions.push({
+    type: 'confirm_action',
+    id: pendingId,
+    kind: 'book_gig',
+    summary: {
+      title: (job as Json).title,
+      pay: counter ?? (job as Json).pay,
+      pay_type: (job as Json).pay_type ?? 'flat',
+      is_counter_offer: counter !== null,
+      slot: slot ? slot.label : 'Flexible — Contact to Schedule',
+      location: (job as Json).location ?? null,
+    },
+  });
 
   // What the MODEL is told. Deliberately carries no id and states plainly that
   // nothing has happened yet, so it cannot report a booking that does not exist.

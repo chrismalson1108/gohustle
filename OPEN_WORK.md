@@ -16,12 +16,11 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (31)
+## Open (30)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
 | high | assistant-gate | executeCreateGig references an undeclared `requirements` — every AI-posted gig is created, then reported to the user as a server error | Declare the list inside executeCreateGig from the staged payload — the same normalization createGig does (`Array.isArray(payload.requirements) ? payload.requirements.map(String-trim).filter(Boolean) : []`) — an |
-| high | assistant-gate | The confirmation card shows no details of what is being confirmed — the server never sends the staged summary, so the human authorizes an action they  | Return the staged `summary` alongside the id in the confirm_action entry, and render its fields on the card — gig title, pay (flagged when it is a counter-offer), slot, and for create_gig the title/category/pay |
 | high | money-paths | Tips are stored in dollars but the ledger reads them as cents — every tip shows as 1/100th of its value | Convert at the boundary: `const tip = Math.round((Number(b.tip_amount) \|\| 0) * 100)` in toEntry. Number() also hardens against PostgREST ever emitting numeric as a string, which today's `typeof v === 'number' |
 | high | money-paths | A partial capture (dispute payout) bills the poster's receipt for the full authorized hold, not what Stripe actually charged | Derive the settled total the way the console does: for a captured row, capturedTotal = earner_amount_cents + fee_cents, and use that (minus refunded_cents) as the poster's charge and as the earner's 'Gig total' |
 | high | support-abuse | Any authenticated user can shut down the entire support intake channel for an hour with 60 direct PostgREST inserts | Support intake should have one writer. Revoke INSERT on public.support_tickets from `authenticated` and drop support_tickets_open_own so every new ticket goes through support-submit, which already rate-limits,  |
@@ -52,15 +51,16 @@ _Last reconciled: 2026-08-13._
 | low | regressions | Redeeming a recovery code leaves the local session's factor list stale, so a relaunch inside the hour re-prompts and burns a second code | After a successful redemption, call supabase.auth.refreshSession() before clearing the gate so the stored user object comes back without the factor; the fresh token also makes the access-token-keyed effect sett |
 | low | regressions | The assistant's confirm turn is never written to the thread, so History shows a booking that reads as never made | Before returning from the confirm path, append the outcome to assistant_messages for body.thread_id (after the same ownership check the model path does at index.ts:443-452) — one assistant row with the reply is |
 
-## Closed (5)
+## Closed (6)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
 | critical | mfa-lockout | Any AAL1 session can mint its own recovery codes and redeem one — deleting every MFA factor on the account. Password alone defeats 2FA, the payout ste | 2026-08-13 |
-| critical | stepup-bypass | requireStepUp fails closed on EVERY call — auth.mfa_factors is unreachable via PostgREST — so stripe-connect-onboard and stripe-payout-login-link are  | 2026-08-13 |
-| critical | regressions | Payout setup and "Manage payout details" now fail for EVERY user — the step-up check queries a schema PostgREST does not expose, and fails closed | 2026-08-13 |
 | high | mfa-lockout | The 2FA challenge screen lets you into the app with no code at all when the factor lookup fails — put the phone in airplane mode and press Continue | 2026-08-13 |
 | high | stepup-bypass | An AAL1 (non-stepped-up) session can self-neutralize MFA: generate_mfa_recovery_codes and redeem_mfa_recovery_code are granted to `authenticated` with | 2026-08-13 |
+| high | assistant-gate | The confirmation card shows no details | 2026-08-13 |
+| critical | stepup-bypass | requireStepUp fails closed on EVERY call | 2026-08-13 |
+| critical | regressions | Payout setup and "Manage payout details" now fail for EVERY user | 2026-08-13 |
 
 ## Other registers that feed this one
 
@@ -73,4 +73,3 @@ _Last reconciled: 2026-08-13._
   transcript.**
 - `KNOWN_RISKS.md` — accepted risks and beta-readiness. Different purpose: that file is
   what we have DECIDED to live with; this one is what has not been done yet.
-

@@ -37,12 +37,24 @@ describe('the model cannot reach the token', () => {
     // it and the gate would be decorative.
     const i = fn.indexOf('async function bookGig');
     const body = fn.slice(i, fn.indexOf('async function executeBooking'));
-    expect(body).toMatch(/actions\.push\(\{ type: 'confirm_action', id: pendingId/);
+    expect(body).toMatch(/actions\.push\(\{[\s\S]{0,80}type: 'confirm_action'/);
+    expect(body).toMatch(/id: pendingId/);
     // The LAST return is the one handed to the model on the success path; the first
     // is the stage-failure guard, which sits above the actions.push line.
     const returned = body.slice(body.lastIndexOf('return JSON.stringify'));
     expect(returned).toMatch(/confirmation_required/);
     expect(returned).not.toMatch(/pendingId/);
+  });
+
+  it('sends the SERVER\'s summary with the id, so the card is not the model\'s prose', () => {
+    // Shipped without this: the action carried only { id, kind }, so the card showed
+    // generic wording and the user authorised whatever the MODEL had claimed in the
+    // chat above — the exact substitution the gate exists to prevent. The commit
+    // message claimed the card rendered from server data; it did not.
+    const i = fn.indexOf('async function bookGig');
+    const body = fn.slice(i, fn.indexOf('async function executeBooking'));
+    expect(body).toMatch(/summary: \{[\s\S]{0,400}title: \(job as Json\)\.title/);
+    expect(btn).toMatch(/pendingConfirm\.summary/);
   });
 
   it('tells the model plainly that nothing happened yet', () => {

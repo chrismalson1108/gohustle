@@ -240,6 +240,28 @@ export default function AssistantButton() {
                           {pendingConfirm.kind === 'create_gig' ? 'Post this gig?' : 'Send this booking request?'}
                         </Text>
                       </View>
+                      {/* THE DETAILS COME FROM THE SERVER'S STAGED RECORD, never from
+                          the model's prose. Without them the user would be authorising
+                          whatever the chat above claimed — the exact substitution this
+                          gate exists to prevent. */}
+                      {pendingConfirm.summary ? (
+                        <View style={styles.confirmFacts}>
+                          <Text style={styles.confirmFactTitle} numberOfLines={2}>
+                            {pendingConfirm.summary.title}
+                          </Text>
+                          <Text style={styles.confirmFactLine}>
+                            {typeof pendingConfirm.summary.pay === 'number'
+                              ? `$${pendingConfirm.summary.pay}${pendingConfirm.summary.pay_type === 'hourly' ? '/hr' : ' flat'}`
+                              : ''}
+                            {pendingConfirm.summary.is_counter_offer ? ' · your counter-offer' : ''}
+                            {pendingConfirm.summary.slot ? ` · ${pendingConfirm.summary.slot}` : ''}
+                            {pendingConfirm.summary.category ? ` · ${pendingConfirm.summary.category}` : ''}
+                          </Text>
+                          {pendingConfirm.summary.location ? (
+                            <Text style={styles.confirmFactLine}>{pendingConfirm.summary.location}</Text>
+                          ) : null}
+                        </View>
+                      ) : null}
                       <Text style={styles.confirmBody}>
                         {pendingConfirm.kind === 'create_gig'
                           ? 'Your gig goes live and hustlers can apply.'
@@ -385,6 +407,12 @@ const styles = StyleSheet.create({
   },
   confirmHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   confirmTitle: { fontSize: 14.5, fontWeight: '800', color: colors.textPrimary },
+  confirmFacts: {
+    backgroundColor: colors.background, borderRadius: radii.md,
+    paddingVertical: 10, paddingHorizontal: 12, marginTop: 10,
+  },
+  confirmFactTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  confirmFactLine: { fontSize: 12.5, color: colors.textSecondary, marginTop: 3 },
   confirmBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 6 },
   confirmRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   confirmNo: {
