@@ -16,11 +16,10 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (27)
+## Open (25)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
-| high | assistant-gate | executeCreateGig references an undeclared `requirements` — every AI-posted gig is created, then reported to the user as a server error | Declare the list inside executeCreateGig from the staged payload — the same normalization createGig does (`Array.isArray(payload.requirements) ? payload.requirements.map(String-trim).filter(Boolean) : []`) — an |
 | high | money-paths | Tips are stored in dollars but the ledger reads them as cents — every tip shows as 1/100th of its value | Convert at the boundary: `const tip = Math.round((Number(b.tip_amount) \|\| 0) * 100)` in toEntry. Number() also hardens against PostgREST ever emitting numeric as a string, which today's `typeof v === 'number' |
 | high | money-paths | A partial capture (dispute payout) bills the poster's receipt for the full authorized hold, not what Stripe actually charged | Derive the settled total the way the console does: for a captured row, capturedTotal = earner_amount_cents + fee_cents, and use that (minus refunded_cents) as the poster's charge and as the earner's 'Gig total' |
 | high | support-abuse | Any authenticated user can shut down the entire support intake channel for an hour with 60 direct PostgREST inserts | Support intake should have one writer. Revoke INSERT on public.support_tickets from `authenticated` and drop support_tickets_open_own so every new ticket goes through support-submit, which already rate-limits,  |
@@ -29,7 +28,6 @@ _Last reconciled: 2026-08-13._
 | medium | assistant-gate | The per-turn caps on bookings and gigs are dead code after the gate, so one request can stage unbounded actions and the client renders only the first  | Count staged actions, not executed ones — cap on `actions.filter(a => a.type === 'confirm_action')` (and/or a per-user count of unconsumed rows in assistant_pending_actions) inside createGig/bookGig. On the cli |
 | medium | assistant-gate | `remember` writes unmoderated model-authored text into every future system prompt, with no gate and no way for the user to see or delete it | Run the same two moderation layers on `fact` that create_gig/update_profile run, and surface memory to the user — a list in Settings with per-item delete, plus a line in the reply naming what was stored. Consid |
 | medium | money-paths | A partial refund overstates the earner's loss by the platform-fee share, so Transactions disagrees with the earnings dashboard | Mirror record_refund: earnerRefundShare = round(refunded_cents * earner_amount_cents / (earner_amount_cents + fee_cents)), and use net = earner_amount_cents − earnerRefundShare. Show the fee portion of the refu |
-| medium | money-paths | Export CSV ignores every on-screen filter and exports the entire ledger | Pass `mine` instead of `entries`, and put the active range/status in the share title (or a leading comment row) so an exported statement is self-describing. |
 | medium | money-paths | The payout upsert has no ordering guard, so a redelivered or out-of-order payout event reverts 'paid' to 'pending' | Store the event's `created` timestamp on the row and make the upsert conditional — skip the write when the incoming event is older than the stored one — or gate status transitions so a terminal state (paid/fail |
 | medium | money-paths | Load failures render as authoritative empty states — the exact failure mode the screen's own comments forbid | Check `asEarner.error` / `asPoster.error` in fetchLedger and throw so the existing error card fires. Give payouts a third state (null = loading, [] = confirmed empty, 'error') instead of collapsing a failure in |
 | medium | support-abuse | last_message_at is unpinned on INSERT — a self-created ticket can be made permanently invisible to the SLA control and can evict every real ticket fro | Pin `new.last_message_at := now()` (and `new.created_at := now()`, also unpinned) in guard_support_ticket_write's INSERT branch for non-service_role callers, matching how the UPDATE branch already pins them. Se |
@@ -48,7 +46,7 @@ _Last reconciled: 2026-08-13._
 | low | regressions | Redeeming a recovery code leaves the local session's factor list stale, so a relaunch inside the hour re-prompts and burns a second code | After a successful redemption, call supabase.auth.refreshSession() before clearing the gate so the stored user object comes back without the factor; the fresh token also makes the access-token-keyed effect sett |
 | low | regressions | The assistant's confirm turn is never written to the thread, so History shows a booking that reads as never made | Before returning from the confirm path, append the outcome to assistant_messages for body.thread_id (after the same ownership check the model path does at index.ts:443-452) — one assistant row with the reply is |
 
-## Closed (9)
+## Closed (11)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
@@ -61,6 +59,8 @@ _Last reconciled: 2026-08-13._
 | high | regressions | Turning on two-factor never shows the recovery codes | 2026-08-13 |
 | medium | regressions | Every hourly token refresh unmounts and remounts the whole app | 2026-08-13 |
 | medium | regressions | The assistant confirmation card carries no server-derived detail | 2026-08-13 |
+| high | assistant-gate | executeCreateGig references an undeclared… | 2026-08-13 |
+| medium | money-paths | Export CSV ignores every on-screen filter… | 2026-08-13 |
 
 ## Other registers that feed this one
 

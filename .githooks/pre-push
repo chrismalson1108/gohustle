@@ -32,6 +32,28 @@ if [ -n "$CHANGED_FN" ]; then
   printf '\033[33m⚠ edge functions changed (%s) — deploy each:  npx supabase functions deploy <name>\033[0m\n' "$CHANGED_FN"
 fi
 
+# Edge functions are TypeScript and Deno will type-check them — which would have caught
+# a ReferenceError that shipped live today (an undeclared `requirements` in the
+# assistant, thrown AFTER the gig was already inserted, so the user was told a live gig
+# had failed). `supabase functions deploy` bundles without checking, so nothing else
+# does this.
+if command -v deno >/dev/null 2>&1; then
+  CHANGED_TS=$(git diff --name-only $RANGE 2>/dev/null | grep -E '^supabase/functions/.*\.ts$' || true)
+  if [ -n "$CHANGED_TS" ]; then
+    BAD=""
+    for f in $CHANGED_TS; do
+      [ -f "$f" ] || continue
+      deno check "$f" >/dev/null 2>&1 || BAD="$BAD $f"
+    done
+    if [ -n "$BAD" ]; then
+      printf '\033[31m✗ deno check failed:%s\033[0m\n' "$BAD"
+      printf '\033[31m  Run: deno check <file>   (--no-verify to override)\033[0m\n'
+      exit 1
+    fi
+    printf '\033[32m✓ changed edge functions type-check\033[0m\n'
+  fi
+fi
+
 # Migrations are the one thing that must land BEFORE app builds that read the columns.
 if git diff --name-only $RANGE 2>/dev/null | grep -q '^supabase/migrations/'; then
   printf '\033[33m⚠ migrations changed — push them first:  npx supabase db push --linked\033[0m\n'

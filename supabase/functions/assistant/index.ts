@@ -415,7 +415,7 @@ Deno.serve(async (req: Request) => {
           try {
             result = await runTool(sb, user.id, name, input, actions, token);
           } catch (err) {
-            result = JSON.stringify({ error: 'Something went wrong. Please try again.' || 'tool_failed' });
+            result = JSON.stringify({ error: 'tool_failed', message: 'Something went wrong. Please try again.' });
           }
           toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
         }
@@ -936,6 +936,14 @@ async function executeCreateGig(sb: SupabaseClient, userId: string, payload: Jso
   const payType = payload.pay_type === 'hourly' ? 'hourly' : 'flat';
   const location = String(payload.location ?? '');
   const description = String(payload.description ?? '');
+  // Declared from the STAGED payload. Splitting createGig into stage/execute left this
+  // referring to a local that only existed in the original function, so line ~977 threw
+  // a ReferenceError — AFTER the job and its slots were already inserted. The gig went
+  // live and the user was told it had failed, which is the worst pairing available:
+  // they retry and post it twice.
+  const requirements = Array.isArray(payload.requirements)
+    ? (payload.requirements as unknown[]).map((r) => String(r).trim()).filter(Boolean)
+    : [];
   const input = payload;
 
   const { data: job, error } = await sb
@@ -1200,7 +1208,7 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
     .single();
 
   if (error) {
-    if (String(error.message).toLowerCase().includes('duplicate') || (error as Json).code === '23505') {
+    if (String(error.message).toLowerCase().includes('duplicate') || (error as { code?: string }).code === '23505') {
       // "You've already requested this gig" is wrong — and confusing — when the user
       // has actually WORKED it. Read the existing booking and say what really happened.
       const { data: prior } = await sb
@@ -1319,7 +1327,7 @@ async function updateProfile(sb: SupabaseClient, userId: string, input: Json, ac
   const first = await sb.from('profiles').update(all).eq('id', userId);
   let finalError = first.error;
   let migrationNeeded = false;
-  if (first.error && (first.error as Json).code === '42703') {
+  if (first.error && (first.error as { code?: string }).code === '42703') {
     migrationNeeded = true;
     if (Object.keys(legacy).length) {
       const retry = await sb.from('profiles').update(legacy).eq('id', userId);
@@ -1544,7 +1552,7 @@ async function remember(sb: SupabaseClient, userId: string, input: Json, actions
   mem = [...mem, fact].slice(-25); // keep the 25 most recent facts
   const { error } = await sb.from('profiles').update({ assistant_memory: mem }).eq('id', userId);
   if (error) {
-    if ((error as Json).code === '42703') {
+    if ((error as { code?: string }).code === '42703') {
       return JSON.stringify({ ok: false, note: "memory isn't enabled yet — the owner needs to run the latest database update" });
     }
     return JSON.stringify({ error: error.message });

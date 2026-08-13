@@ -110,7 +110,10 @@ export default function PaymentsScreen({ navigation, route }) {
     try {
       await Share.share({
         title: `GoHustlr ${side === 'earner' ? 'earnings' : 'spending'} statement`,
-        message: ledgerCsv(entries, side),
+        // `mine`, not `entries`. Exporting the WHOLE ledger while the screen shows
+        // "This year · In escrow" hands someone a file that does not match what they
+        // are looking at — and they will reconcile against it.
+        message: ledgerCsv(mine, side),
       });
     } catch (_) {}
   };

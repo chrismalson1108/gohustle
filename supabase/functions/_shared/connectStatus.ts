@@ -200,7 +200,10 @@ export function deriveConnectStatus(account: Stripe.Account): ConnectStatus {
     detailsSubmitted,
     chargesEnabled,
     payoutsEnabled,
-    needsAction: state === 'incomplete' || state === 'none',
+    // 'none' is unreachable here — this function only runs once an account exists, and
+    // the no-account case is answered by the caller (src/lib/connectStatus.js). Left as
+    // a comment rather than a comparison so `deno check` stays clean.
+    needsAction: state === 'incomplete',
     pendingVerification: state === 'pending',
     requirements,
     disabledReason,
