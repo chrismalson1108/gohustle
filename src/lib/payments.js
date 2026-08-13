@@ -26,7 +26,7 @@
 // be invented.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
-import { DEFAULT_FEE_BPS, feeLabel } from '../../shared/pricing';
+import { DEFAULT_FEE_BPS, feeLabel, platformFeeCents, effectiveFeeLabel } from '../../shared/pricing';
 
 export const LEDGER_CACHE_KEY = 'ledger:v1';
 
@@ -388,4 +388,76 @@ export function ledgerCsv(entries, side) {
     lines.push(row.map(csvCell).join(','));
   });
   return lines.join('\n');
+}
+
+
+/**
+ * The receipt line items for one ledger entry.
+ *
+ * Lives here, not in the screen, because it is arithmetic about money and it must be
+ * assertable: __tests__/ledger.test.js requires the signed line values to SUM to the
+ * printed total for every shape.
+ *
+ * ── WHY IT IS DERIVED RATHER THAN READ ──────────────────────────────────────
+ *
+ * Every promotion benefit is already baked into the persisted columns:
+ *   amount_cents is net of the poster discount, fee_cents is net of the fee credit.
+ * The screen used to render those columns AND a separate "Discount −$X" / "Fee credit
+ * +$Y" line, applying each benefit twice — so the items disagreed with the total on the
+ * one screen where a user checks whether their incentive worked.
+ *
+ * Deriving the fee from (gig value − payout) makes the lines sum by construction instead
+ * of by three stored columns happening to agree.
+ */
+export function receiptLines(entry) {
+  if (!entry) return { lines: [], totalCents: 0, totalLabel: '' };
+  const isEarner = entry.side === 'earner';
+  const c = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+  const gross = c(entry.grossCents);
+  const discount = c(entry.discountCents);
+  const tip = c(entry.tipCents);
+  const refunded = c(entry.refundedCents);
+  const net = c(entry.netCents);
+  const bps = typeof entry.feeBps === 'number' ? entry.feeBps : DEFAULT_FEE_BPS;
+
+  // What the work was worth, before any poster-side discount.
+  const gigTotal = gross + discount;
+
+  if (!isEarner) {
+    return {
+      totalLabel: 'Total charged',
+      totalCents: net,
+      lines: [
+        { key: 'gross', label: 'Gig total', cents: gigTotal },
+        discount > 0 && { key: 'discount', label: 'Discount', cents: -discount, good: true },
+        tip > 0 && { key: 'tip', label: 'Tip', cents: tip, dim: true },
+        refunded > 0 && { key: 'refund', label: 'Refunded to you', cents: -refunded, good: true },
+      ].filter(Boolean),
+    };
+  }
+
+  // The fee is whatever separates the gig's value from the payout.
+  const payoutBeforeExtras = net - tip + refunded;
+  const earnerFee = Math.max(0, gigTotal - payoutBeforeExtras);
+  // Split it back so the credit stays VISIBLE without being counted twice.
+  const grossFee = Math.max(earnerFee, platformFeeCents(gigTotal, bps));
+  const creditApplied = Math.max(0, grossFee - earnerFee);
+  // null when the Stripe-cost floor set the fee rather than the percentage. Printing
+  // "0%" beside a $3.45 charge is wrong, and a 0-bps promotion makes that reachable.
+  const rate = effectiveFeeLabel(gigTotal, bps);
+
+  return {
+    totalLabel: 'Your payout',
+    totalCents: net,
+    lines: [
+      { key: 'gross', label: 'Gig total', cents: gigTotal },
+      grossFee > 0 && {
+        key: 'fee', label: rate ? `Platform fee (${rate})` : 'Platform fee', cents: -grossFee, dim: true,
+      },
+      creditApplied > 0 && { key: 'credit', label: 'Fee credit applied', cents: creditApplied, good: true },
+      tip > 0 && { key: 'tip', label: 'Tip', cents: tip, good: true },
+      refunded > 0 && { key: 'refund', label: 'Refunded to poster', cents: -refunded, dim: true },
+    ].filter(Boolean),
+  };
 }

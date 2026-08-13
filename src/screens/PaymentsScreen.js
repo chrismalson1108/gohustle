@@ -27,7 +27,7 @@ import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchLedger, byMonth, ledgerCsv, paymentState, fetchPayouts,
-  RANGES, STATUS_FILTERS, filterEntries, stats, monthlyTotals,
+  RANGES, STATUS_FILTERS, filterEntries, stats, monthlyTotals, receiptLines,
 } from '../lib/payments';
 import { stripeEdge } from '../lib/stripeClient';
 import { colors, radii, shadows } from '../theme';
@@ -482,20 +482,13 @@ function DetailSheet({ entry, onClose, onOpenGig }) {
   const tone = TONE[st.tone] ?? TONE.muted;
   const isEarner = entry.side === 'earner';
 
-  const lines = isEarner
-    ? [
-        { label: 'Gig total', value: fmt(entry.grossCents) },
-        entry.feeCents > 0 && { label: `Platform fee (${entry.feeLabel})`, value: `− ${fmt(entry.feeCents)}`, dim: true },
-        entry.feeCreditCents > 0 && { label: 'Fee credit applied', value: `+ ${fmt(entry.feeCreditCents)}`, good: true },
-        entry.tipCents > 0 && { label: 'Tip', value: `+ ${fmt(entry.tipCents)}`, good: true },
-        entry.refundedCents > 0 && { label: 'Refunded to poster', value: `− ${fmt(entry.refundedCents)}`, dim: true },
-      ]
-    : [
-        { label: 'Gig total', value: fmt(entry.grossCents) },
-        entry.discountCents > 0 && { label: 'Discount', value: `− ${fmt(entry.discountCents)}`, good: true },
-        entry.tipCents > 0 && { label: 'Tip', value: `+ ${fmt(entry.tipCents)}`, dim: true },
-        entry.refundedCents > 0 && { label: 'Refunded to you', value: `− ${fmt(entry.refundedCents)}`, good: true },
-      ];
+  // Derived in src/lib/payments.js so the arithmetic is testable — the lines MUST sum
+  // to the total, and __tests__/ledger.test.js asserts exactly that.
+  const receipt = receiptLines(entry);
+  const lines = receipt.lines.map((l) => ({
+    ...l,
+    value: `${l.cents < 0 ? '− ' : l.key === 'gross' ? '' : '+ '}${fmt(Math.abs(l.cents))}`,
+  }));
 
   const timeline = [
     entry.authorizedAt && { label: isEarner ? 'Poster authorized payment' : 'Card authorized', at: entry.authorizedAt },
@@ -518,8 +511,8 @@ function DetailSheet({ entry, onClose, onOpenGig }) {
             {st.note ? <Text style={styles.sheetNote}>{st.note}</Text> : null}
 
             <View style={styles.lines}>
-              {lines.filter(Boolean).map((l) => (
-                <View key={l.label} style={styles.line}>
+              {lines.map((l) => (
+                <View key={l.key} style={styles.line}>
                   <Text style={[styles.lineLabel, l.dim && { color: colors.textSecondary }]}>{l.label}</Text>
                   <Text style={[styles.lineValue, l.good && { color: colors.success }, l.dim && { color: colors.textSecondary }]}>
                     {l.value}
@@ -527,8 +520,8 @@ function DetailSheet({ entry, onClose, onOpenGig }) {
                 </View>
               ))}
               <View style={styles.totalLine}>
-                <Text style={styles.totalLabel}>{isEarner ? 'Your payout' : 'Total charged'}</Text>
-                <Text style={styles.totalValue}>{fmt(entry.netCents)}</Text>
+                <Text style={styles.totalLabel}>{receipt.totalLabel}</Text>
+                <Text style={styles.totalValue}>{fmt(receipt.totalCents)}</Text>
               </View>
             </View>
 

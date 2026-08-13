@@ -387,3 +387,67 @@ it('stripe-capture-payment still treats amount_cents as immutable', () => {
   // writes on purpose — a guard that fires on the correct code gets deleted.
   expect(fn).not.toMatch(/update\(\{[^}]*(?<![_a-zA-Z])amount_cents:/s);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A receipt's line items must SUM to the total it prints.
+//
+// They did not. Every promotion benefit is already baked into the persisted columns —
+// amount_cents is net of the poster discount, fee_cents is net of the fee credit — and
+// the receipt rendered those columns AND a separate "Discount −$X" / "Fee credit +$Y"
+// line, applying each benefit a second time.
+//
+// A poster with a $3.55 discount saw "Gig total $96.45 / Discount − $3.55 / Total
+// charged $96.45": the items said the discount came off, the total said it did not. An
+// earner with a $3 referral credit saw items summing to $99 above a $96 payout.
+//
+// That is the disclosure class CLAUDE.md singles out, on the one screen where a person
+// checks whether their incentive actually worked — so every incentive the platform ships
+// was misreported at the exact moment it mattered.
+//
+// The old test fixture pinned feeCreditCents to 0 and never exercised the line
+// composition at all, which is why it shipped.
+// ─────────────────────────────────────────────────────────────────────────────
+const { receiptLines } = require('../src/lib/payments');
+
+describe('receipt line items sum to the printed total', () => {
+  const sum = (r) => r.lines.reduce((n, l) => n + l.cents, 0);
+
+  const cases = [
+    ['earner, plain', { side: 'earner', grossCents: 10000, feeCents: 700, feeBps: 700, netCents: 9300 }],
+    ['earner, referral fee credit', { side: 'earner', grossCents: 10000, feeCents: 400, feeCreditCents: 300, feeBps: 700, netCents: 9600 }],
+    ['earner, tip', { side: 'earner', grossCents: 10000, feeCents: 700, feeBps: 700, tipCents: 500, netCents: 9800 }],
+    ['earner, partial refund', { side: 'earner', grossCents: 10000, feeCents: 700, feeBps: 700, refundedCents: 2000, netCents: 7300 }],
+    ['earner, 0-bps promo (fee is the floor)', { side: 'earner', grossCents: 10000, feeCents: 345, feeBps: 0, netCents: 9655 }],
+    ['poster, plain', { side: 'poster', grossCents: 10000, feeBps: 700, netCents: 10000 }],
+    ['poster, discount', { side: 'poster', grossCents: 9645, discountCents: 355, feeBps: 700, netCents: 9645 }],
+    ['poster, discount + tip', { side: 'poster', grossCents: 9645, discountCents: 355, tipCents: 500, feeBps: 700, netCents: 10145 }],
+    ['poster, refund', { side: 'poster', grossCents: 10000, feeBps: 700, refundedCents: 2500, netCents: 7500 }],
+  ];
+
+  for (const [name, entry] of cases) {
+    it(`${name}: items add up`, () => {
+      const r = receiptLines(entry);
+      expect(`${name}: ${sum(r)}`).toBe(`${name}: ${r.totalCents}`);
+    });
+  }
+
+  it('states the gig at its full value, not net of the poster discount', () => {
+    // "Gig total $96.45" on a $100 gig understates the work — and for the EARNER it is
+    // simply wrong, since a poster-side discount never touches their side.
+    const r = receiptLines({ side: 'poster', grossCents: 9645, discountCents: 355, feeBps: 700, netCents: 9645 });
+    expect(r.lines.find((l) => l.key === 'gross').cents).toBe(10000);
+  });
+
+  it('never prints a percentage beside a fee the floor set', () => {
+    // The active 0-bps promotion makes this reachable TODAY: platform_fee_cents floors
+    // at Stripe cost, so the old code rendered "Platform fee (0%) − $3.45".
+    const r = receiptLines({ side: 'earner', grossCents: 10000, feeCents: 345, feeBps: 0, netCents: 9655 });
+    expect(r.lines.find((l) => l.key === 'fee').label).toBe('Platform fee');
+  });
+
+  it('still shows the fee credit rather than hiding it', () => {
+    // Correctness must not cost the earner the evidence their referral worked.
+    const r = receiptLines({ side: 'earner', grossCents: 10000, feeCents: 400, feeCreditCents: 300, feeBps: 700, netCents: 9600 });
+    expect(r.lines.find((l) => l.key === 'credit')?.cents).toBe(300);
+  });
+});
