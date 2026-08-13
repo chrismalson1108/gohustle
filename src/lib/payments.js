@@ -68,6 +68,31 @@ const dollarsToCents = (v) => {
 };
 
 /**
+ * What Stripe actually charged for this payment.
+ *
+ * `amount_cents` is the AUTHORIZED hold and is deliberately never overwritten —
+ * stripe-capture-payment keeps it as the audit record precisely so a retry cannot
+ * scale an already-reduced fee a second time. On a partial capture (a dispute
+ * resolved below 100%) it therefore stays at the full hold while Stripe only ever
+ * charges `earner_amount_cents + fee_cents`, and NO refund is recorded, because
+ * nothing was ever taken to refund.
+ *
+ * Reading amount_cents on a captured row consequently bills the poster's receipt
+ * for money that never left their card — on the disputed booking, which is the one
+ * they are most likely to check against their statement. On a full capture the two
+ * agree by construction (earner = amount − fee), so deriving from the split is
+ * correct everywhere and only differs where amount_cents is wrong.
+ */
+export function settledGrossCents(row) {
+  const authorized = cents(row?.amount_cents);
+  // Guard a legacy row that was captured before the split columns were populated:
+  // falling through to `0 + 0` would show a real payment as $0.00.
+  const hasSplit = row?.earner_amount_cents != null && row?.fee_cents != null;
+  if (row?.status !== 'captured' || !hasSplit) return authorized;
+  return cents(row.earner_amount_cents) + cents(row.fee_cents);
+}
+
+/**
  * One ledger entry, normalized so the UI never re-derives money.
  *
  * The amounts come from the payment row, NOT from the current rate card. A
@@ -78,13 +103,13 @@ const dollarsToCents = (v) => {
 function toEntry(row, side, jobsById, bookingsById) {
   const b = bookingsById[row.booking_id] ?? {};
   const job = jobsById[b.job_id] ?? {};
-  const gross = cents(row.amount_cents);
+  const gross = settledGrossCents(row);
   const fee = cents(row.fee_cents);
   const refunded = cents(row.refunded_cents);
   const tip = dollarsToCents(b.tip_amount);
   const feeBps = typeof row.fee_bps === 'number' ? row.fee_bps : DEFAULT_FEE_BPS;
 
-  // What actually moved, after any partial refund. A dispute that pays 60% leaves
+  // What actually moved, after any partial refund. A refund AFTER capture leaves
   // refunded_cents on the row; the ledger must show the settled number, because
   // that is the one the user is reconciling against their bank.
   const settledGross = Math.max(0, gross - refunded);

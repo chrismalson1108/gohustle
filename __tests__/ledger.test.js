@@ -318,3 +318,72 @@ describe('tips are read in the unit they are stored in', () => {
     expect(src).toMatch(/const tip = dollarsToCents\(b\.tip_amount\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A partial capture must not bill the poster for the hold.
+//
+// stripe-capture-payment deliberately never overwrites amount_cents — it is the
+// immutable audit record that makes a capture retry idempotent. So on a dispute
+// resolved below 100% the row reads: amount_cents = the full hold, fee_cents and
+// earner_amount_cents = the reduced split, refunded_cents = 0 (nothing was taken,
+// so nothing is refunded). Reading amount_cents there overstates what the poster
+// actually paid, on the one booking they are guaranteed to scrutinize.
+// ─────────────────────────────────────────────────────────────────────────────
+const { settledGrossCents } = require('../src/lib/payments');
+
+describe('settledGrossCents', () => {
+  // $100 gig at 7%: fee 700, earner 9300. Dispute pays 60% → Stripe charges $60.
+  const partial = {
+    status: 'captured',
+    amount_cents: 10000,      // the hold, untouched by design
+    fee_cents: 420,           // round(700 * 0.6)
+    earner_amount_cents: 5580, // 6000 - 420
+    refunded_cents: 0,
+  };
+
+  it('reports what Stripe charged, not the authorized hold', () => {
+    expect(settledGrossCents(partial)).toBe(6000);
+    // The bug this replaces would have returned the hold.
+    expect(settledGrossCents(partial)).not.toBe(partial.amount_cents);
+  });
+
+  it('is identical to amount_cents on a full capture', () => {
+    // The full branch sets earner = amount - fee, so the split sums back exactly.
+    expect(settledGrossCents({
+      status: 'captured', amount_cents: 10000, fee_cents: 700,
+      earner_amount_cents: 9300, refunded_cents: 0,
+    })).toBe(10000);
+  });
+
+  it('shows the hold while a payment is still only authorized', () => {
+    // Nothing has moved yet; the hold IS the honest number to show.
+    expect(settledGrossCents({
+      status: 'authorized', amount_cents: 10000,
+      fee_cents: null, earner_amount_cents: null,
+    })).toBe(10000);
+  });
+
+  it('falls back to the hold rather than showing $0 for a legacy split-less row', () => {
+    expect(settledGrossCents({
+      status: 'captured', amount_cents: 10000,
+      fee_cents: null, earner_amount_cents: null,
+    })).toBe(10000);
+  });
+
+  it('survives a null row without throwing', () => {
+    expect(settledGrossCents(null)).toBe(0);
+  });
+});
+
+// The invariant lives in the edge function too — if someone ever makes the capture
+// path overwrite amount_cents, deriving from the split silently becomes wrong in the
+// other direction. Pin the comment that documents the contract.
+it('stripe-capture-payment still treats amount_cents as immutable', () => {
+  const fn = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/stripe-capture-payment/index.ts'), 'utf8');
+  expect(fn).toMatch(/amount_cents is never overwritten/);
+  // No update statement may set it. The lookbehind is load-bearing: a bare
+  // /amount_cents:/ also matches `earner_amount_cents:`, which the capture path
+  // writes on purpose — a guard that fires on the correct code gets deleted.
+  expect(fn).not.toMatch(/update\(\{[^}]*(?<![_a-zA-Z])amount_cents:/s);
+});
