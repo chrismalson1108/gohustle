@@ -61,6 +61,18 @@ Deno.serve(async (req: Request) => {
     }
     const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
 
+    // Assert the WIRING before reconciling the data. Every stripe-webhook handler
+    // depends on a subscription nothing asserts, and on 2026-08-13 two were wrong:
+    // the Connect endpoint carried account.updated only (so the payout handler had
+    // been live and receiving nothing), and live mode had no endpoint at all. Neither
+    // errors — nothing is delivered, so nothing fails. Non-fatal on purpose: a webhook
+    // misconfiguration must not stop the money reconciliation that follows it.
+    try {
+      await checkWebhookConfig(supabase, stripe, stripeKey);
+    } catch (e) {
+      console.error("[reconcile-stripe] webhook config check failed:", e);
+    }
+
     const body = await req.json().catch(() => ({}));
     const days = Number.isFinite(Number(body?.days)) ? Number(body.days) : 14;
     const limit = Math.min(500, Number(body?.limit) || 200);
@@ -262,5 +274,134 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Does Stripe's configuration allow it to deliver what stripe-webhook handles?
+//
+// Two destinations point at the same URL and are told apart only by signing secret:
+//   ACCOUNT — payments, refunds, disputes, identity  (application === null)
+//   CONNECT — connected-account events: account.updated and payout.*
+//
+// A `case` in the handler with no matching subscription is dead code that looks alive.
+// That is exactly how the payout feature shipped, was correct, and received nothing.
+//
+// The two lists below MUST stay in step with the handler's switch. They are not
+// documentation: __tests__/webhookEventCoverage.test.js parses stripe-webhook's real
+// `case` labels and fails if either list drifts.
+// ─────────────────────────────────────────────────────────────────────────────
+const REQUIRED_ACCOUNT_EVENTS = [
+  "payment_intent.succeeded",
+  "payment_intent.payment_failed",
+  "payment_intent.canceled",
+  "charge.refunded",
+  "charge.dispute.created",
+  "identity.verification_session.verified",
+  "identity.verification_session.requires_input",
+  "identity.verification_session.canceled",
+];
+
+const REQUIRED_CONNECT_EVENTS = [
+  "account.updated",
+  "payout.created",
+  "payout.updated",
+  "payout.paid",
+  "payout.failed",
+  "payout.canceled",
+];
+
+const CONTROL_WEBHOOK = "stripe_webhook_config";
+
+async function checkWebhookConfig(
+  supabase: SupabaseClient,
+  stripe: Stripe,
+  stripeKey: string,
+): Promise<void> {
+  // The key decides which mode Stripe answers for, so this check always describes the
+  // mode we are actually operating in — which is the whole point: live mode having no
+  // endpoints is invisible from test mode.
+  const mode = stripeKey.startsWith("sk_live_") ? "live" : "test";
+  const open: string[] = [];
+
+  const list = await stripe.webhookEndpoints.list({ limit: 100 });
+  const ours = list.data.filter((w) => (w.url ?? "").includes("/functions/v1/stripe-webhook"));
+  const enabled = ours.filter((w) => w.status === "enabled");
+
+  if (enabled.length === 0) {
+    open.push(`${mode}:no_endpoint`);
+    await supabase.rpc("record_external_finding", {
+      p_control_key: CONTROL_WEBHOOK,
+      p_entity: `${mode}:no_endpoint`,
+      p_detail: {
+        mode,
+        endpoints_found: ours.length,
+        note:
+          `No ENABLED webhook endpoint for stripe-webhook in ${mode} mode. Every handler ` +
+          `is dark: captures never mark paid, Connect onboarding never completes, ` +
+          `identity never resolves, refunds never record. Nothing errors, because ` +
+          `nothing is delivered.`,
+      },
+      p_severity: "critical",
+    });
+  } else {
+    for (const [kind, required] of [
+      ["account", REQUIRED_ACCOUNT_EVENTS],
+      ["connect", REQUIRED_CONNECT_EVENTS],
+    ] as const) {
+      const eps = enabled.filter((w) => (kind === "connect" ? !!w.application : !w.application));
+      const entity = `${mode}:${kind}`;
+
+      if (eps.length === 0) {
+        open.push(`${entity}:missing`);
+        await supabase.rpc("record_external_finding", {
+          p_control_key: CONTROL_WEBHOOK,
+          p_entity: `${entity}:missing`,
+          p_detail: {
+            mode,
+            destination: kind,
+            note: kind === "connect"
+              ? `No CONNECTED-ACCOUNT destination in ${mode} mode. payout.* never arrives, so ` +
+                `stripe_payouts stays empty and Bank deposits shows nothing — which reads to ` +
+                `an earner as "no deposits yet", not as "we are not listening".`
+              : `No account destination in ${mode} mode. Payments, refunds and identity are dark.`,
+          },
+          p_severity: "critical",
+        });
+        continue;
+      }
+
+      // Union across endpoints of this kind: more than one is unusual but legal, and
+      // between them they must cover the handler.
+      const subscribed = new Set(eps.flatMap((w) => w.enabled_events ?? []));
+      const missing = subscribed.has("*")
+        ? []
+        : required.filter((e) => !subscribed.has(e));
+
+      if (missing.length > 0) {
+        open.push(entity);
+        await supabase.rpc("record_external_finding", {
+          p_control_key: CONTROL_WEBHOOK,
+          p_entity: entity,
+          p_detail: {
+            mode,
+            destination: kind,
+            endpoint_ids: eps.map((w) => w.id),
+            missing_events: missing,
+            note:
+              `stripe-webhook handles these events but ${kind} destination(s) in ${mode} ` +
+              `mode are not subscribed to them. The handler runs, receives nothing, and ` +
+              `reports no error.`,
+          },
+          p_severity: "high",
+        });
+      }
+    }
+  }
+
+  // Auto-resolve whatever is no longer reported, same contract as every other control.
+  await supabase.rpc("resolve_external_findings", {
+    p_control_key: CONTROL_WEBHOOK,
+    p_still_open: open,
   });
 }
