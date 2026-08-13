@@ -340,6 +340,7 @@ root is not listed here, which is what stops that happening again.
 | `NOTIFICATIONS_SETUP.md` | Push/email provider steps that need a human (accounts, secrets). |
 | `APP_STORE_LISTING.md` | App Store Connect copy. Apple ID `6790460957`. |
 | `CLAUDE_MD_DRIFT.md` | **When editing CLAUDE.md, or wondering why a new session got something wrong.** The measured diff between this file's claims and the code: 79 undocumented surfaces, 33 assertions that are false. Every surface is mechanically enumerable, so it is the spec for a drift test, not a cleanup list. |
+| `ATTACK_FINDINGS.md` | **Before trusting any money path.** 23 UNVERIFIED candidates from an adversarial attack on promotions, referrals, refunds, capture and the admin console after the stripe@22 upgrade. The refutation pass did not finish — verify before acting. One is confirmed and fixed. |
 | `OPEN_WORK.md` | **Every session, first.** Confirmed-but-unfixed findings, worked highest-severity-first without being asked. |
 | `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
 | `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
