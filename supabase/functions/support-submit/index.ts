@@ -60,10 +60,26 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error('rate_check_failed');
       return (count ?? 0) >= max;
     }
+    //
+    // The per-caller limits REFUSE, because they describe the caller's own conduct.
+    // The global one DEGRADES, because it describes everyone else's.
+    //
+    // Refusing on the global cap meant a flood — from anyone, for any reason — took
+    // the support channel away from every other user for an hour. That is the wrong
+    // failure for the one channel a person reaches for when something has gone badly
+    // wrong: "someone showed up at my door" and "I cannot get to my money" were both
+    // answered with 429. Denial of support is a real harm, and it was a cheaper attack
+    // than the thing the cap was protecting against.
+    //
+    // So above the global cap we still SAVE the ticket (nothing is lost, the console
+    // shows it) and only stop sending the notification email — which is what the cap
+    // was actually protecting: the ops inbox and the Resend quota. Abuse now degrades
+    // our notification volume instead of someone else's ability to ask for help.
+    let globalFlood = false;
     try {
       if (await overLimit('email', email.trim().toLowerCase(), 5)) return rateLimited();
       if (ip && (await overLimit('ip', ip, 8))) return rateLimited();
-      if (await overLimit(null, null, 60)) return rateLimited();
+      globalFlood = await overLimit(null, null, 60);
     } catch {
       return json({ error: 'unavailable', message: 'Support is briefly unavailable. Please try again shortly.' }, 503);
     }
@@ -115,8 +131,19 @@ Deno.serve(async (req: Request) => {
     });
 
     // Notify the support inbox (best-effort — the ticket is already saved).
+    //
+    // Suppressed while the global cap is exceeded: the ticket is safely recorded and
+    // visible in the console, and mailing during a flood is how the inbox gets buried
+    // and the real ones get missed. One line to the logs so the burst is diagnosable
+    // rather than silent.
+    if (globalFlood) {
+      console.warn(
+        `support-submit: global hourly cap exceeded — ticket ${ticket.id} saved, ` +
+        `notification email suppressed. Check /support in the console for a burst.`,
+      );
+    }
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    if (RESEND_API_KEY) {
+    if (RESEND_API_KEY && !globalFlood) {
       try {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
