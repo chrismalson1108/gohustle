@@ -169,6 +169,42 @@ All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadI
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
+## The other documents in this repo (read the relevant one BEFORE working)
+
+Every one of these was orphaned until 2026-08-13: nothing in CLAUDE.md pointed at them,
+so a new session never learned they existed and rediscovered — or re-broke — what they
+already record. `__tests__/docIndex.test.js` now fails if a markdown file at the repo
+root is not listed here, which is what stops that happening again.
+
+| Read this | When |
+|---|---|
+| `KNOWN_RISKS.md` | **Before any beta/launch judgement.** The risk register — what is accepted, what is outstanding, and why. Cited elsewhere as e.g. "KNOWN_RISKS §5.6". |
+| `LIFECYCLE_STATE_MACHINES.md` | Before changing booking, payment or dispute transitions. Every claim cited to `path:line`. |
+| `PRE_LAUNCH_DATA_RESET.md` | **Before going live.** The runbook for wiping accumulated test activity from production so beta users start clean. |
+| `BETA_QA_PLAN.md` | Before a TestFlight push — the manual QA passes that automated tests do not cover. |
+| `ADMIN_AUDIT_2026-08-04.md` | Before touching the admin console; also records residual risks deliberately left open. |
+| `DEPLOY.md` | Deploying the **website** + the gohustlr.com domain. |
+| `DEPLOYMENT.md` | The broader launch runbook (its own status snapshot is older than the file's git date — trust the code). |
+| `LAUNCH_PLAN.md` | Sequencing for launch. Self-reported date is stale; verify before relying on it. |
+| `NOTIFICATIONS_SETUP.md` | Push/email provider steps that need a human (accounts, secrets). |
+| `APP_STORE_LISTING.md` | App Store Connect copy. Apple ID `6790460957`. |
+| `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
+| `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
+| `RUNBOOK_SAFETY.md` | What to do when a person is at risk, or a person *is* the risk. |
+| `ROLE_PERMISSION_MATRIX.md` | Who may do what to which object — check before changing any policy, guard or admin tier. |
+| `PRODUCT_FLOW_MAP.md` | End-to-end user flows, cited to `path:line`. Read before changing a flow you have not personally walked. |
+| `ROADMAP.md` | Where the product is heading and what blocks a customer-ready trial. |
+| `TESTFLIGHT.md` | The shipping + security checklist for a TestFlight build. |
+
+⚠️ **Several of these carry a self-reported "Verified <date>" line that is older than
+their last edit.** Where a doc and the code disagree, the code wins — and fix the doc.
+
+⚠️ **Not every finding lives on disk.** A read-only payments security audit on
+2026-08-12 produced ~72 findings clustered into 6 root causes and **nothing was fixed**;
+that report exists only inside its own Claude session transcript. Other sessions can be
+searched from a new session — this is worth doing before a payments change. Anything
+worth keeping should be written into `KNOWN_RISKS.md` rather than left in a transcript.
+
 ## Definition of done (this is enforced, not aspirational)
 
 **The obligations nobody remembers are tests, not prose.** This file itself carried the
