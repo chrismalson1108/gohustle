@@ -8,6 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm start                       # Start Expo dev server (LAN mode, requires same WiFi as phone)
 npx expo start --tunnel         # Start with ngrok tunnel (cross-network); kill all node/ngrok processes first
 npm run ios                     # expo run:ios — build & launch the dev client on a simulator/device
+# ⚠️ A native iOS build needs BOTH of these or it fails in ways that name the wrong thing:
+#   LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8   — CocoaPods aborts on ASCII-8BIT
+#   ios/build + ios/build-release removed — see the note below
 npm run android                 # expo run:android — build & launch the dev client
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
@@ -18,6 +21,19 @@ npm run brand:sync              # Distribute shared/assets/brand → the paths w
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
 cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
 ```
+
+⚠️ **Stale `ios/build*` artifacts break `pod install`, and the error blames CocoaPods.**
+React Native's post-install hook (`new_architecture.rb`) scans every Info.plist in the tree
+for git conflict markers. Compiled BINARY plists inside `ios/build/` and `ios/build-release/`
+are not valid UTF-8, so the regex dies with `invalid byte sequence in UTF-8` and the visible
+message is only "Command `pod install` failed". Both dirs are gitignored build output —
+`rm -rf ios/build ios/build-release` and rebuild. This had been broken for some time; nobody
+noticed because OTA updates do not run `pod install`. Also export `LANG`/`LC_ALL` as UTF-8
+first, or CocoaPods aborts before it gets that far.
+
+⚠️ **`expo run:ios --device <name-or-udid>` may misread a SIMULATOR as a physical device**
+("No code signing certificates are available"), because `devicectl` returns JSON Expo cannot
+parse. Build with xcodebuild against the simulator udid instead.
 
 ⚠️ **Never let Deno manage `node_modules`.** The edge functions are Deno and the app is
 Expo/npm in the same tree. `deno check --node-modules-dir=auto` writes `node_modules/.deno/`

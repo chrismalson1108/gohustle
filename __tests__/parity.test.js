@@ -201,3 +201,77 @@ describe('the assistant confirmation gate is wired on BOTH clients', () => {
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Both clients must hold the 2FA gate, and hold it FIRST.
+//
+// Two-factor shipped mobile-only. gohustlr.com had no assurance-level check anywhere,
+// so a user who enrolled TOTP on their phone signed into the website with the password
+// alone and got a full session — browse, book, message, PII. The feature was bypassable
+// by opening a browser, which is the same as not having it.
+//
+// It survived because nothing was broken: web compiled, tested and shipped perfectly
+// while simply not having the check. Absence compiles. Same shape as the assistant
+// confirm-gate regression below — a capability lands on one surface and the other keeps
+// building fine.
+//
+// ORDER is asserted too. A password sign-in on an account with a factor returns a REAL
+// session at aal1, so the onboarding and terms gates would each let it through. The MFA
+// branch has to come before them or holding it achieves nothing.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the two-factor gate is wired on BOTH clients', () => {
+  const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '..', p), 'utf8');
+
+  const surfaces = {
+    mobile: { auth: read('src/context/AuthContext.js'), shell: read('App.js') },
+    web: { auth: read('web/lib/auth.tsx'), shell: read('web/app/(app)/layout.tsx') },
+  };
+
+  for (const [name, src] of Object.entries(surfaces)) {
+    describe(name, () => {
+      it('checks the assurance level after sign-in', () => {
+        expect(src.auth).toMatch(/getAuthenticatorAssuranceLevel/);
+      });
+
+      it("treats nextLevel aal2 + currentLevel aal1 as 'owes a code'", () => {
+        expect(src.auth).toMatch(/nextLevel\s*===\s*['"]aal2['"]/);
+        expect(src.auth).toMatch(/currentLevel\s*===\s*['"]aal1['"]/);
+      });
+
+      it('keys the check on the ACCESS TOKEN, not the user id', () => {
+        // Verifying a code issues a NEW session for the SAME user. Keyed on user id the
+        // effect never re-runs and a correct code hangs the app forever — that bug
+        // shipped on mobile and was hit immediately.
+        expect(src.auth).toMatch(/session\?\.access_token/);
+      });
+
+      it('exposes the gate to the app shell', () => {
+        expect(src.shell).toMatch(/needsMfaChallenge/);
+      });
+
+      it('holds the code prompt BEFORE onboarding and terms', () => {
+        // Measure the DECISION lines, not the first mention. A naive search matches the
+        // import and destructuring lines, where the order is alphabetical noise — the
+        // first draft of this test failed on correct code for exactly that reason.
+        const decisions = src.shell
+          .split('\n')
+          .filter((l) => /router\.replace\(|return <\w+Screen/.test(l));
+        const idx = (re) => decisions.findIndex((l) => re.test(l));
+        const mfa = idx(/needsMfaChallenge|MfaChallengeScreen/);
+        const onboarding = idx(/\/onboarding|OnboardingScreen/);
+        const terms = idx(/\/consent|ConsentScreen/);
+        expect(`${name} has an mfa decision`).toBe(mfa > -1 ? `${name} has an mfa decision` : 'MISSING');
+        if (onboarding > -1) expect(mfa).toBeLessThan(onboarding);
+        if (terms > -1) expect(mfa).toBeLessThan(terms);
+      });
+    });
+  }
+
+  it('web offers the lost-phone recovery path', () => {
+    // A 2FA screen with no exit turns a lost phone into a lost account, and fills a
+    // support queue with cases nobody can verify.
+    const page = read('web/app/mfa/page.tsx');
+    expect(page).toMatch(/redeem_mfa_recovery_code/);
+    expect(page).toMatch(/lost my phone/i);
+  });
+});

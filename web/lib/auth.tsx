@@ -49,6 +49,12 @@ interface AuthValue {
   onboardingDone: boolean;
   pendingEmail: string | null;
   needsTermsAcceptance: boolean;
+  /** Password sign-in succeeded but this account has an unsatisfied TOTP factor. */
+  needsMfaChallenge: boolean;
+  /** False until the AAL check has resolved for the current session. */
+  mfaResolved: boolean;
+  /** Called by the challenge UI once a code has verified. */
+  clearMfaPending: () => void;
   markTermsAccepted: () => void;
   signIn: (email: string, password: string) => Promise<boolean>;
   signInWithGoogle: () => Promise<boolean>;
@@ -68,6 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [onboardingDone, setOnbDone] = useState(true);
+  const [mfaPending, setMfaPending] = useState(false);
+  const [mfaResolved, setMfaResolved] = useState(false);
   // Has the onboarding/terms state been LOADED for the current session yet? The
   // (app) gate must not trust the optimistic onboardingDone=true default for a
   // freshly-set session — otherwise a not-onboarded / terms-owing user flashes the
@@ -263,6 +271,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const markTermsAccepted = () => setNeedsTerms(false);
+
+  // ── The two-factor gate. Mirrors src/context/AuthContext.js:191-217. ────────
+  //
+  // gohustlr.com had NO assurance-level check anywhere, so 2FA was bypassable by
+  // opening a browser: signInWithPassword returns a REAL session at aal1, and every
+  // gate in (app)/layout.tsx — session, onboarding, terms — let it straight through
+  // to full account access. Enrolling on the phone protected the phone only.
+  //
+  // Keyed on the ACCESS TOKEN, not the user id. Verifying a code issues a NEW session
+  // at aal2 for the SAME user; keyed on user id this never re-runs and the gate hangs
+  // forever on a correct code. That exact bug shipped on mobile and Chris hit it.
+  useEffect(() => {
+    let alive = true;
+    if (!session?.user) {
+      setMfaPending(false);
+      setMfaResolved(true);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        // nextLevel aal2 while currentLevel is aal1 = this account HAS a verified
+        // factor and this session has not satisfied it.
+        if (alive) setMfaPending(!!data && data.nextLevel === "aal2" && data.currentLevel === "aal1");
+      } catch {
+        // FAIL OPEN, deliberately and identically to mobile: a network blip must not
+        // lock someone out of their own account, and the server still refuses
+        // anything requiring aal2 (see _shared/stepUp.ts), so the worst case is a
+        // session that can browse but cannot move money.
+        if (alive) setMfaPending(false);
+      } finally {
+        if (alive) setMfaResolved(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, [session?.access_token]);
+
+  // Optimistic clear so the gate lifts on the same frame as a successful verify
+  // rather than waiting for the new token to land. mfaResolved too, or the app sits
+  // on the loading gate until the effect re-runs.
+  const clearMfaPending = () => { setMfaPending(false); setMfaResolved(true); };
 
   const signIn: AuthValue["signIn"] = async (email, password) => {
     setAuthError(null);
@@ -471,6 +520,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         onboardingDone,
         pendingEmail,
         needsTermsAcceptance: !!session && onboardingDone && needsTerms,
+        // Gated on a session existing, same as the terms flag — a signed-out visitor
+        // is never "owing" a code.
+        needsMfaChallenge: !!session && mfaPending,
+        mfaResolved,
+        clearMfaPending,
         markTermsAccepted,
         signIn,
         signInWithGoogle,
