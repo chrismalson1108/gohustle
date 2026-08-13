@@ -245,6 +245,28 @@ rate limiting and staging.
   Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
   pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
 
+## Unfinished work — read `OPEN_WORK.md` FIRST, and work it
+
+**`OPEN_WORK.md` is the backlog that outlives a session, and it is not optional reading.**
+
+Two audits this week produced 108 confirmed findings. One set lived only inside a Claude
+session transcript; the other in a file under `/tmp`. Both were invisible to the next
+session — which is exactly how "we fixed x and y" becomes "z never got done", and how the
+owner ends up being the only memory the project has.
+
+**A session that finishes what it was asked does not stop. It opens `OPEN_WORK.md`, takes
+the highest-severity open item, and keeps going** — verify against live `pg_proc`/production
+BEFORE believing the description, fix with a migration that asserts its own effect, prove
+the fix discriminates (broken vs fixed on the same staged row, rolled back), run the gate,
+move the row to Closed. Ask only when a fix would change money already owed to a real
+person, or needs a product decision that cannot be inferred.
+
+`__tests__/openWork.test.js` fails if the register drifts out of shape or stops being
+referenced here, so it cannot quietly rot.
+
+⚠️ **Findings do not count until they are in that file.** An audit that ends in a
+transcript, a `/tmp` file or a chat message has not been recorded — transcribe it.
+
 ## The other documents in this repo (read the relevant one BEFORE working)
 
 Every one of these was orphaned until 2026-08-13: nothing in CLAUDE.md pointed at them,
@@ -264,6 +286,7 @@ root is not listed here, which is what stops that happening again.
 | `LAUNCH_PLAN.md` | Sequencing for launch. Self-reported date is stale; verify before relying on it. |
 | `NOTIFICATIONS_SETUP.md` | Push/email provider steps that need a human (accounts, secrets). |
 | `APP_STORE_LISTING.md` | App Store Connect copy. Apple ID `6790460957`. |
+| `OPEN_WORK.md` | **Every session, first.** Confirmed-but-unfixed findings, worked highest-severity-first without being asked. |
 | `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
 | `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
 | `RUNBOOK_SAFETY.md` | What to do when a person is at risk, or a person *is* the risk. |

@@ -62,13 +62,13 @@ export async function requireStepUp(
   userId: string,
   token: string,
 ): Promise<StepUpResult> {
-  const { data: factors, error } = await service
-    .schema('auth')
-    .from('mfa_factors')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('status', 'verified')
-    .limit(1);
+  // Via an RPC, NOT .schema('auth'). PostgREST cannot see the `auth` schema — it is
+  // not in db_schemas and service_role holds no grants on auth.mfa_factors — so the
+  // table read here ALWAYS errored and this function fail-closed on every call,
+  // returning 503 to every payout-setup and dashboard request. Failing closed was the
+  // right instinct (nobody's bank details were exposed; everybody was locked out of
+  // their own settings) but a check that can never succeed is not a check.
+  const { data: hasFactor, error } = await service.rpc('user_has_verified_mfa', { p_user: userId });
 
   if (error) {
     console.error('stepUp: factor lookup failed — refusing (fail-closed):', error);
@@ -81,7 +81,7 @@ export async function requireStepUp(
 
   // No factor: proceed. See the header — refusing here would lock someone out of
   // their own payout details for a choice we told them was optional.
-  if (!factors || factors.length === 0) return { ok: true };
+  if (hasFactor !== true) return { ok: true };
 
   if (aalFromToken(token) !== 'aal2') {
     return {
