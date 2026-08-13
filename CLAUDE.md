@@ -321,6 +321,7 @@ root is not listed here, which is what stops that happening again.
 | `LAUNCH_PLAN.md` | Sequencing for launch. Self-reported date is stale; verify before relying on it. |
 | `NOTIFICATIONS_SETUP.md` | Push/email provider steps that need a human (accounts, secrets). |
 | `APP_STORE_LISTING.md` | App Store Connect copy. Apple ID `6790460957`. |
+| `CLAUDE_MD_DRIFT.md` | **When editing CLAUDE.md, or wondering why a new session got something wrong.** The measured diff between this file's claims and the code: 79 undocumented surfaces, 33 assertions that are false. Every surface is mechanically enumerable, so it is the spec for a drift test, not a cleanup list. |
 | `OPEN_WORK.md` | **Every session, first.** Confirmed-but-unfixed findings, worked highest-severity-first without being asked. |
 | `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
 | `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
