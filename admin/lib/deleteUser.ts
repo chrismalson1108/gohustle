@@ -86,7 +86,11 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
   try {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
-      const stripe = new Stripe(stripeKey);
+      // Pinned, and pinned to the SAME version as the edge functions. It was
+      // `new Stripe(stripeKey)` on `stripe: ^18.0.0`, so the console spoke Basil while
+      // the money paths spoke Dahlia — and the caret meant the next `npm install` could
+      // move it again with no diff to review.
+      const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
       // Status filter is defence in depth behind the step-0 gate: even if that gate is
       // bypassed, never void the hold on work that was actually performed.
       const [{ data: asEarner }, { data: myJobs }] = await Promise.all([

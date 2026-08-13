@@ -27,6 +27,13 @@
 const fs = require('fs');
 const path = require('path');
 
+// Strip comments before scanning. Without this the guard matched `new Stripe(stripeKey)`
+// inside a comment EXPLAINING the old unpinned form, and reported the fixed file as
+// broken — a guard that fires on correct code is a guard someone deletes.
+function code(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
 const FN_DIR = path.join(__dirname, '..', 'supabase', 'functions');
 
 // stripe@22.5.0's generated apiVersion.js reads '2026-07-29.dahlia'. Pinned explicitly so
@@ -38,22 +45,53 @@ const FN_DIR = path.join(__dirname, '..', 'supabase', 'functions');
 const SDK_MAJOR = 22;
 const API_VERSION = '2026-07-29.dahlia';
 
-// The mobile SDK negotiates its own version for ephemeral keys. @stripe/stripe-react-native
-// 0.50.3 expects this, and it is a per-CALL option, not the client's version — changing it
-// to match the client would break saved-card management in the payment sheet.
+// The ephemeral-key version is a per-CALL option, NOT the client's version, and it is
+// deliberately left alone. Two corrections to what this comment used to claim:
+//
+//   1. I wrote that @stripe/stripe-react-native 0.50.3 "expects" 2024-06-20. That is
+//      FALSE. ios/Podfile.lock resolves it to stripe-ios 24.19.0, whose
+//      STPAPIClient.swift:254 hardcodes `APIVersion = "2020-08-27"`. The value here
+//      matches neither the mobile SDK nor the server.
+//   2. It works anyway: stripe-node's EphemeralKeys validator only requires a
+//      Stripe-Version header to be PRESENT — no allowlist, no floor — identical in v15
+//      and v22. So the SDK upgrade cannot break it.
+//
+// The value is therefore pinned as OBSERVED-WORKING, not as justified. Do not "fix" it
+// to match the client on the strength of this comment; changing it is untested and the
+// blast radius is saved-card management in the payment sheet. Tracked in OPEN_WORK.md.
 const EPHEMERAL_KEY_VERSION = '2024-06-20';
+
+// The admin console is a THIRD deploy target with its own package.json, and it was
+// missed: `stripe: ^18.0.0` plus an unpinned `new Stripe(key)` meant the console spoke
+// Basil while every money path spoke Dahlia — and the caret would move it again on any
+// install, with no diff to review. Same rule, same guard.
+const ADMIN_SITES = [path.join(__dirname, '..', 'admin', 'lib', 'deleteUser.ts')]
+  .filter((f) => fs.existsSync(f))
+  .map((f) => ({ name: `admin/${path.basename(f)}`, src: code(fs.readFileSync(f, 'utf8')) }));
 
 const files = fs
   .readdirSync(FN_DIR, { withFileTypes: true })
   .filter((e) => e.isDirectory())
   .map((e) => path.join(FN_DIR, e.name, 'index.ts'))
   .filter((f) => fs.existsSync(f))
-  .map((f) => ({ name: path.basename(path.dirname(f)), src: fs.readFileSync(f, 'utf8') }))
-  .filter((f) => f.src.includes('new Stripe('));
+  .map((f) => ({ name: path.basename(path.dirname(f)), src: code(fs.readFileSync(f, 'utf8')) }))
+  .filter((f) => f.src.includes('new Stripe('))
+  .concat(ADMIN_SITES);
 
 describe('Stripe API version', () => {
   it('found the functions that construct a Stripe client', () => {
     expect(files.length).toBeGreaterThan(10);
+  });
+
+  it('admin/package.json pins the same SDK major, without a caret', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'admin', 'package.json'), 'utf8'));
+    const dep = pkg.dependencies?.stripe ?? '';
+    // An exact version, not ^ or ~: a range re-resolves on every install and moves the
+    // API version silently.
+    expect(`admin stripe dep: ${dep}`).toBe(`admin stripe dep: ${require(
+      path.join(__dirname, '..', 'admin', 'node_modules', 'stripe', 'package.json'),
+    ).version}`);
+    expect(dep.startsWith(String(SDK_MAJOR) + '.')).toBe(true);
   });
 
   it('uses exactly one SDK major across every function', () => {
