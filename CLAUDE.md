@@ -12,7 +12,7 @@ npm run android                 # expo run:android — build & launch the dev cl
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
-npm test                        # Jest — 34 suites / 433 tests of pure logic in __tests__/
+npm test                        # Jest — the pure-logic + drift-guard suite in __tests__/ (~1s)
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
 cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
@@ -46,17 +46,19 @@ Documents live in the **`legal_documents`** table (latest row per `slug` = curre
 
 ## SDK & Backend
 
-- **Expo SDK 54**, React Native 0.81.5, React 19.1.0. Expo Go on device must be the SDK 54 build.
+- **Expo SDK 54**, React Native 0.81.5, React 19.1.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **Incremental security/bug fixes now live in `supabase/migrations/` and are applied with `supabase db push --linked`** (the CLI is linked; this is the canonical path going forward — the timestamped files there are the source of truth for every guard, policy, trigger, and RPC fix from review rounds 2–6).
-- **`migration_fix_lifecycle.sql` is idempotent and now ships the HARDENED policies** (party-scoped `messages_insert`, owner-only `profiles_update_own`) — re-running it no longer reverts later hardening. Run it (or, preferably, `supabase db push`) if a booking action returns a permission error. The guard triggers/functions, slot integrity, atomic earnings/tip credit, and column lockdown are all in the tracked `supabase/migrations/` files — applying those reproduces the hardened state.
+- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the ENTIRE live schema** — every guard, policy, trigger and RPC, including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 166 files as of 2026-08-13, and production's `supabase_migrations.schema_migrations` matches them file-for-file. Never hand-apply SQL in the dashboard; that is how the two drift.
+- ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` from realtime** (added by `migration_stripe.sql`). Neither failure errors; the policy just gets weaker.
+  **If a booking action returns a permission error, run `supabase db push --linked`.** The tracked `supabase/migrations/` files are the only reproducible hardened state.
 
 ## App Flow
 
 On launch `App.js` renders:
 1. **Loading spinner** while session is checked.
 2. **`AuthScreen`** if no session (sign-in / sign-up / forgot password).
+2b. **`MfaChallengeScreen`** if `needsMfaChallenge` — a password sign-in on an account with a verified TOTP factor returns a REAL session at aal1, which every gate below would let through, so the challenge is held FIRST. It fails open on a network error (the server still refuses anything needing aal2).
 3. **`OnboardingScreen`** if session exists but `onboarding_done = false` on the profile — only triggered for fresh sign-ups, not returning logins.
 4. **`ConsentScreen`** if `needsTermsAcceptance` — a required legal doc has a newer version than the user has accepted (see **Legal docs**).
 5. **`MainApp`** otherwise — `UserProvider → JobsProvider → (AppNavigator + AssistantButton + AchievementToast + PushManager)`.
@@ -71,12 +73,13 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
                     └── Tab.Navigator (5 tabs — display labels in parens, route names unchanged)
                           ├── HomeTab   ("Browse")   → HomeStack:  HomeScreen → JobDetail → MarketInsights → UserProfile → Reviews → Chat
-                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnScreen → JobDetail → UserProfile → Reviews → Chat
-                          ├── GigsTab   ("Hire")     → GigsStack:  GigsScreen → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat
-                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews
+                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnScreen → JobDetail → UserProfile → Reviews → Chat → Payments
+                          ├── GigsTab   ("Hire")     → GigsStack:  GigsScreen → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat → Payments
+                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews/Support
                           └── ProfileTab ("You")     → ProfileStack: ProfileScreen → Settings/ProfileSettings/Availability/Notifications/
                                                                     NotificationSettings/PayoutSetup/Expenses/TrophyCase/Reviews/Legal/
-                                                                    UserProfile/Favorites/SavedGigs/JobDetail/EditJob/ManageBookings/FindPeople/Chat
+                                                                    UserProfile/Favorites/SavedGigs/JobDetail/EditJob/ManageBookings/FindPeople/Chat/
+                                                                    Payments/Security/Support
 ```
 
 **Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat pushes the full-screen `ChatScreen` (route `Chat`, registered in every stack); `MessageSheet` is the shared chat body, also hosted as a modal from JobDetail/Earn/Gigs. Opening marks the conversation read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
@@ -90,25 +93,25 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`. Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
+`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`, `needsMfaChallenge`, `mfaResolved`, `clearMfaPending`. Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
 
 **Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
 **Google sign-in is native-first**: `signInWithGoogle` uses `@react-native-google-signin/google-signin` + `supabase.auth.signInWithIdToken` (like the Apple flow — no browser session, so iOS never shows the "wants to use …supabase.co" prompt). It requires (1) the native module in the binary (dev-client rebuild), (2) real client IDs in `app.json` → `extra.googleAuth` (`webClientId` = a Google Cloud **web** OAuth client that must also be listed under Supabase Auth → Providers → Google → "Client IDs"; `iosClientId` = the iOS OAuth client for `com.gohustlr.app`, whose **reversed** ID goes in the plugin's `iosUrlScheme`; Android needs an Android OAuth client with the release SHA-1 registered in the same Google Cloud project — nothing extra in the app config). The module is lazy-`require`d (its import throws when the native side is missing), so **older binaries / Expo Go / web automatically fall back to the browser PKCE OAuth flow** (`signInWithGoogleBrowser`). `REPLACE`-placeholder IDs count as unconfigured → fallback.
 
 ### UserContext (`src/context/UserContext.js`)
-XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync for XP/earnings to avoid flooding DB. Key exports: `addXP`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync. **"Jobs Done" is derived from bookings (`completed`/`verified` statuses), never a counter bumped at apply time** — the old `recordApply`/`weekly_jobs_done` increment-on-booking was removed because it showed unconfirmed applications as done work.
+XP, streak, earnings, goals, challenges, badges, toast queue. Cache-first load from Supabase (AsyncStorage TTL via `src/lib/cache.js`). Debounced 2s sync (`scheduleSyncProfile`) for **xp, role and weekly goals** — earnings are NOT client-writable, `guard_profiles_write` pins `earnings_today/week/total` for owner writes. Branch on `profileStatus` ('loading' | 'ready' | 'error'), never render the DEFAULT_STATE placeholder as real data. Key exports: `addXP`, `updateChallenge`, `unlockBadge`, `setRole`, `setGoals`, `showToast`, `dismissToast`, `refreshProfile`. Call `refreshProfile()` after any external Supabase profile update to keep the UI in sync. **"Jobs Done" is derived from bookings (`completed`/`verified` statuses), never a counter bumped at apply time** — the old `recordApply`/`weekly_jobs_done` increment-on-booking was removed because it showed unconfirmed applications as done work.
 
 ### JobsContext (`src/context/JobsContext.js`)
 Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-first job loading. Key exports:
 - `bookJob(jobId, slotId, slotLabel, counterOffer, applicationNote)` — earner books a slot
 - `addJob(jobData)` — poster creates a listing
-- `updateJob(jobId, patch)` — poster edits a listing; re-inserts slots/requirements
+- `updateJob(jobId, patch)` — poster edits a listing. Slots are **reconciled, never delete-then-reinsert**: re-inserting minted new slot ids and blanked live bookings' `slot_id` via the FK
 - `deleteJob(jobId)` — soft-delete (sets `status: 'cancelled'`)
 - `acceptBooking / declineBooking / cancelBooking / markJobComplete / verifyAndRate` — booking lifecycle (`cancelBooking` releases the escrow hold + notifies)
 - `blockUser(id)` / `blockedIds` (Set) — block a user; blocked posters' gigs are filtered out of Browse. Reports/blocks via `src/lib/moderation.js`
 - `proposeAmendment(bookingId, note)` / `respondToAmendment(bookingId, accept)` / `clearAmendment(bookingId)` — amendment flow
-- `ratePoster(bookingId, rating, reviewText)` — earner rates a poster after completion
+- `ratePoster(bookingId, { rating, reviewText })` — earner rates a poster after completion (OBJECT second arg, same on web)
 - `isBooked(jobId)`, `bookedJobs`, `postedJobs`, `earnBadgeCount`, `profileBadgeCount`
 
 `transformJob(dbJob)` includes `posterId: dbJob.poster_id` — used in `JobDetailScreen` to block self-booking (`job.posterId === user.id`).
@@ -131,6 +134,10 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
 | `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), Payments, Tax Center, Saved gigs/people, identity + student verification, Settings link. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
+| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks. |
+| `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
+| `SecurityScreen` (route `Security`) | Two-factor: enroll (deep-link first), recovery codes, disable (requires a current code). Prompted from PayoutSetup once a bank is connected. |
+| `MfaChallengeScreen` | The sign-in code prompt. Rendered by `RootNavigator` BEFORE onboarding/terms — not a stack route. Carries the "I've lost my phone" recovery path. |
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
 | `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
 | `SettingsScreen` | Settings **hub** — a searchable list of rows grouped Account / Money / Notifications / Saved / Legal & support / Account actions. It only navigates; it edits nothing. **Sign out lives here**, deliberately not on ProfileScreen. |
@@ -156,18 +163,87 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 - **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
 
 ### Images (Supabase Storage buckets)
-**Two are public, three are private — do not assume `getPublicUrl` works.**
+**Three are public, four are private — do not assume `getPublicUrl` works.**
 - `avatars` → `profiles.avatar_url` — **public**, rendered with `getPublicUrl`. SELECT is owner-scoped so anon cannot LIST the bucket (`20260725000000_storage_enumeration_lockdown.sql`).
 - `job-photos` → `jobs.photos text[]` — **public**, same enumeration lockdown.
 - `completion-photos` → `bookings.completion_photos text[]` — **PRIVATE** (`20260707010000`). Render with `<SignedImage bucket="completion-photos" …>`; `getPublicUrl` returns a URL that 400s.
 - `chat-photos` → `messages.image_url` — **PRIVATE** (`20260701000000`). Same signed-URL rule.
 - `receipts` → expense receipts (Tax Center) — **PRIVATE**.
+- `certificates` → `certifications.image_url` — **public**, same enumeration lockdown.
+- `support-photos` → `support_ticket_messages.images[]` and agent attachments — **PRIVATE**. Render with `<SignedImage bucket="support-photos" …>`.
 
 All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadImage.js`.
 
 ⚠️ **`web/public/brand/wordmark-cream.png` looks unused and is not.** 15 Supabase auth email templates and `student-verify-start` hotlink it as `https://gohustlr.com/brand/wordmark-cream.png`. An import grep cannot see it; deleting it 404s the logo in every transactional email.
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
+
+## Support (in-app, two-way) — `src/lib/support.js`
+
+Tickets live in **`support_tickets`** + **`support_ticket_messages`** (owner RLS, both
+guarded). `SupportScreen` is the conversation; the admin console queue is `/support`.
+
+- **Threads are PER TOPIC, and that is forced by the schema** — `priority` and
+  `booking_id` are both per-ticket and safety is urgent by definition, so one lifelong
+  thread could not carry a routine question and a safety report without mis-routing one.
+- `pickActiveTicket` / `groupTickets` (in `src/lib/support.js`, unit-tested) decide which
+  thread is shown: **unread wins over status**, because an agent's note on a resolved
+  thread deliberately leaves it `closed`.
+- **A user reply REOPENS a closed ticket** and un-archives it. Archiving is the user's
+  inbox preference; closing is the team's workflow state. Never conflate them.
+- ⚠️ **`guard_support_ticket_write` must keep the `app.support_reopen` exemption.** The
+  message trigger's rollup UPDATE re-enters it; without the exemption every user reply
+  stops moving `last_author`, and the console queue and SLA control go blind. This has
+  been dropped by TWO separate rewrites — `__tests__/supportGuardDrift.test.js` and
+  `ctl_ticket_rollup_stale` both exist because of it.
+- Agents can **open** a thread (`openThreadWithUser`, support tier): recipient resolved
+  server-side, cold contact is in-app + push only (never branded email), never merges
+  into a user's own safety report, rate-limited from the append-only `admin_audit_log`.
+
+## Transactions — `src/lib/payments.js`, `PaymentsScreen` (route `Payments`, title "Transactions")
+
+`payments` rows rendered as a statement for whichever side the reader is on.
+`fetchLedger` runs TWO queries on purpose: RLS exposes a row through either the earner
+or the poster policy and a single select cannot tell which side the reader is on — that
+is the difference between "you earned $54" and "you paid $60".
+
+- Amounts come from the payment row, **never re-derived from the current rate card**.
+  A past transaction shown at today's rate misstates what the person received.
+- **Bank deposits**: capture is a destination charge, so funds reach the earner's Connect
+  account immediately and Stripe pays out on its own schedule. `stripe_payouts` stores
+  `payout.*` webhook events (Connect destination) so arrival dates are real Stripe data.
+  It deliberately does NOT claim which gig is in which deposit — Stripe batches transfers.
+  Requires `payout.created/updated/paid/failed/canceled` enabled on the Connect webhook.
+
+## Two-factor — `src/lib/mfa.js`, `SecurityScreen`, `MfaChallengeScreen`
+
+Optional for users, enforced where it protects money.
+
+- **Enrollment is deep-link-first, not QR.** A phone has one screen and cannot
+  photograph itself; `otpauth://` handed to the OS is the only route that works.
+- **Recovery codes are generated AT enrollment, not offered later** — 2FA without a way
+  back in turns a lost phone into a lost account. Redeeming one REMOVES the factor
+  (a code cannot mint aal2), dropping the account to password-only.
+- **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link or starting
+  Connect onboarding requires aal2 **if the account has a factor**; no factor ⇒ allowed,
+  because locking someone out of their own bank details for not enrolling is the same
+  "our posture, their cost" mistake. Opening payout settings emails the account holder.
+
+## Hustlr AI — `supabase/functions/assistant`
+
+A Claude tool-use loop behind the floating `AssistantButton`. Tools run under the
+**user's own token**, so RLS bounds everything; service role is used only for auth,
+rate limiting and staging.
+
+- ⚠️ **`create_gig` and `book_gig` do NOT perform the action.** They validate, stage the
+  parameters in `assistant_pending_actions`, and return a one-shot id through the
+  `actions` side-channel — which the model never sees. The user taps a card rendered
+  from the SERVER's summary. Injected gig text can make the model stage something; it
+  cannot produce the tap. Do not "simplify" this back into a prompt instruction.
+- **Its system prompt is a parity-tested artifact.** `__tests__/parity.test.js` fails if
+  the prompt does not name every tab as the app names it, or cannot point at
+  Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
+  pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
 
 ## The other documents in this repo (read the relevant one BEFORE working)
 
@@ -296,6 +372,15 @@ Always use `src/hooks/useHaptic.js` — guards against web (`Platform.OS === 'we
 **The take rate is data, not a constant, and it is PINNED per booking.** It used to be
 a `0.10` literal in seven places across three deploy targets.
 
+⚠️ **The standing rate has been 700 bps (7%) since 2026-08-12** ("expedited beta
+testing"). 1000 bps is the FOUNDING rate and remains the fallback everywhere, so any
+degraded path quotes 10% while live bookings pin 7% — never infer the current rate from
+a code default.
+
+⚠️ **The pinned rate is LOWEST-WINS across three sources**, not just the rate card:
+`fee_bps_at()` (standing rate) · `tier_fee_bps(earner)` (`fee_tiers`, a loyalty ladder
+keyed on verified-booking count) · an active `fee_override` promotion grant.
+
 - **`platform_rates`** — effective-dated rate card in **basis points** (1000 = 10%).
   Append-only: change the rate by inserting a future-dated row. `fee_bps_at(at)` reads
   it, clamped to `[500, 3000]`, defaulting to 1000.
@@ -304,9 +389,11 @@ a `0.10` literal in seven places across three deploy targets.
   **half up** (`(amount*bps + 5000)/10000`) to match `Math.round` in the JS it replaced —
   plain integer division truncates and disagrees by a cent on odd amounts — and floors
   at Stripe cost (`ceil(amount*0.029) + 30 + 25`), capped at the amount.
-- **Three immutable inputs, pinned at booking INSERT** by `trg_z_pin_booking_amount`:
-  `bookings.amount_cents_quoted`, `fee_bps_quoted`, `fee_credit_cents`. `payments`
-  inherits all three via `trg_z_pin_payment_fee_bps`. **This is why capture is
+- **FOUR immutable inputs, pinned at booking INSERT** by `trg_z_pin_booking_amount`:
+  `bookings.amount_cents_quoted`, `fee_bps_quoted`, `fee_credit_cents`,
+  `poster_discount_cents`. `payments` inherits three of them — `fee_bps`,
+  `fee_credit_cents`, `poster_discount_cents` — via `trg_z_pin_payment_fee_bps`; it has
+  no copy of `amount_cents_quoted` because its own `amount_cents` IS the authorized hold. **This is why capture is
   idempotent** — the fee derives only from values that cannot change, which is the
   property `stripe-capture-payment` depends on (a retry after a partial capture would
   otherwise scale an already-reduced fee again, `fee * pct²`).
@@ -328,7 +415,7 @@ incentive; it does nothing for posters.
 ### Promotions
 `promotions` (campaign) → `promo_codes` (redeemable strings) → `promo_grants` (a user's
 claim, with the benefit **snapshotted**) → `promo_redemptions` (which grant paid for
-which booking). `kind` is `fee_override` or `bonus`.
+which booking). `kind` is `fee_override`, `bonus` or `poster_discount` (the first and last are mutually exclusive shapes, enforced by `promotions_kind_shape`). A **fee** discount is supply-side and does nothing for posters — `poster_discount` is the demand-side lever, and it reduces what the poster is charged.
 
 - **Three ways one ends**: `ends_at` passes (**no action required** — the default and
   the one that matters), `status='paused'`, or `app_flags.promotions_enabled=false`.
@@ -355,8 +442,8 @@ the fee and the floor, splitting the remainder back onto the ledger. We never pa
 Stripe's processing to honour a credit. **`bonus_cash_payout_enabled` is OFF**; cash is
 the classic farming target.
 
-Console: **`/promotions`** (admin only) creates drafts, mints codes, shows budget
-burn-down.
+Console: **`/pricing`** (rate card + loyalty tiers) and **`/promotions`** (campaigns,
+codes, budget burn-down) — both admin only.
 
 ## Controls (scheduled invariant checks)
 
@@ -379,6 +466,14 @@ only runs when a human opens a page.
   superuser (so `db push` cannot set it), and cannot be read back — which is exactly how
   `trg_notify_safety_report` sat dead from 2026-07-10 until 2026-08-06 without one alert
   ever firing. Config in a table can be **asserted on**.
+- **Disabling a control is a MUTE, not a switch.** `enabled = false` requires a
+  `disabled_until` (default 24h) and `reenable_expired_controls()` runs at the top of
+  every sweep, so a control cannot be quietly switched off forever.
+- One registry row is `external = true` (`stripe_reconciliation` → the `reconcile-stripe`
+  edge function, dispatched by the sweep); `run_all_controls` filters it out.
+- The hourly sweep also runs `expire_stale_pending_bookings(14)` — untouched,
+  never-started bookings with no live Stripe authorization become `cancelled` and their
+  slots are freed.
 - Console: **`/controls`**.
 
 ## Admin console roles
@@ -392,7 +487,7 @@ promotions). **`trust` and `finance` are peers**, neither outranks the other.
 `earner-claim-payment` refuses to settle a booking with an open report — one person's
 availability was a money-harm control.
 
-MFA (AAL2) is re-verified **on every request** from the JWT claim. Login throttle:
+MFA (AAL2) is re-verified **on every request** from the JWT claim, and money- or privilege-moving actions additionally require **step-up** (`requireFreshAdmin`, factor satisfied within 5 minutes). Membership lives in `admin_users`; **`status` gates, not just membership** — a row starts `pending` and grants nothing until approved. Login throttle:
 5 failures per account / 15 min, or 20 per IP. Nav hides what a role cannot open, but
 **the guard is the enforcement** — if they disagree the guard wins.
 
@@ -407,7 +502,8 @@ pending → confirmed → completed → verified
                        marks started — releases the escrow hold)
 ```
 - Earner books → `pending`
-- Poster accepts → `confirmed`; poster declines → `declined`
+- Poster accepts → `confirmed` — **not a client write.** `acceptBooking` calls the service-role `accept-booking` edge function, which confirms ONLY if a real Stripe escrow hold exists. Poster declines → `declined`
+- Earner claims a ghosted gig → `verified`. `claimEarnerPayment` → `earner-claim-payment` settles a `completed` booking the poster never verified; it refuses while a report is open (which is why `trust` has resolve authority).
 - Earner marks done → opens the Finish sheet (optional **completion photos** uploaded to the `completion-photos` bucket → `bookings.completion_photos text[]`), then sets `earner_done = true`; if poster already done → status advances to `completed`. Photos are shown to the poster in `CompletionModal` and in both sides' history.
 - Poster marks done → sets `poster_done = true`; if earner already done → status advances to `completed`
 - Poster verifies + rates → `verified` (inserts review, updates earner rolling rating)
