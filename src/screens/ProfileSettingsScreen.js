@@ -402,7 +402,6 @@ export default function ProfileSettingsScreen({ navigation }) {
         {/* Back comes from the native stack header now, like every other screen —
             this used to be the app's only "‹ Back" text button. */}
         <ScreenHeader topInset={false}>
-          <Text style={styles.headerTitle} numberOfLines={2}>Profile settings</Text>
           <Text style={styles.headerSub}>Change your info, role, location, and skills</Text>
         </ScreenHeader>
 

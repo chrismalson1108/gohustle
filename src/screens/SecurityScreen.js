@@ -133,7 +133,6 @@ export default function SecurityScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 48 }}>
       <ScreenHeader topInset={false}>
-        <Text style={styles.h1}>Security</Text>
         <Text style={styles.sub}>Extra protection for your account and your money.</Text>
       </ScreenHeader>
 

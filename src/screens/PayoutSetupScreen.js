@@ -12,6 +12,7 @@ import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { useAuth } from '../context/AuthContext';
 import { fetchLedger, summarize } from '../lib/payments';
+import { fetchMfaStatus } from '../lib/mfa';
 import { colors, radii, shadows } from '../theme';
 
 // Unified "GoHustlr Payments" hub — always reachable from Profile so users can
@@ -31,12 +32,18 @@ export default function PayoutSetupScreen({ navigation }) {
   // rather than making the user open another screen to find out. Best-effort: a
   // failed fetch just hides the numbers — it must never block payout setup, which
   // is the thing on this screen that actually unblocks earning.
+  // Whether two-factor is on, asked HERE because this is the moment the account
+  // becomes worth stealing.
+  const [mfaOn, setMfaOn] = useState(null);
   const [ledger, setLedger] = useState(null);
   useFocusEffect(useCallback(() => {
     let alive = true;
     if (!user?.id) return undefined;
     fetchLedger(user.id)
       .then((rows) => { if (alive) setLedger(rows); })
+      .catch(() => {});
+    fetchMfaStatus()
+      .then((st) => { if (alive) setMfaOn(st.enabled); })
       .catch(() => {});
     return () => { alive = false; };
   }, [user?.id]));
@@ -248,6 +255,30 @@ export default function PayoutSetupScreen({ navigation }) {
                   <Text style={styles.btnOutlineText} numberOfLines={1}>Manage payout details</Text>
                 )}
               </TouchableOpacity>
+
+              {/* THE RIGHT MOMENT TO ASK. Settings → Security was the only place two-
+                  factor was ever offered, which means it was offered to nobody: people
+                  do not browse settings looking for security features. Here they have
+                  just connected a bank, so the account is suddenly worth stealing and
+                  they are already thinking about money — and it pairs with the step-up
+                  that now guards "Manage payout details" above. */}
+              {mfaOn === false && (
+                <TouchableOpacity
+                  style={styles.mfaNudge}
+                  activeOpacity={0.8}
+                  onPress={() => { haptic.medium(); navigation.navigate('Security'); }}
+                >
+                  <Ionicons name="shield-outline" size={18} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.mfaNudgeTitle}>Protect your payouts</Text>
+                    <Text style={styles.mfaNudgeSub}>
+                      Turn on two-factor so a stolen password can't send your earnings
+                      somewhere else.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
             </>
           ) : payoutWaiting ? (
             <>
@@ -405,6 +436,13 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  mfaNudge: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12,
+    paddingVertical: 12, paddingHorizontal: 13,
+    backgroundColor: colors.primaryLight, borderRadius: radii.md,
+  },
+  mfaNudgeTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  mfaNudgeSub: { fontSize: 12, color: colors.textSecondary, lineHeight: 17, marginTop: 2 },
   txnSub: { fontSize: 13, color: colors.textSecondary, marginTop: 6, lineHeight: 18 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, flex: 1, lineHeight: 21 },
   sectionDesc: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
