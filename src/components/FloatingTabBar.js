@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet, Keyboard, Platform, PixelRatio } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, StyleSheet, Keyboard, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, shadows } from '../theme';
 import { useHaptic } from '../hooks/useHaptic';
@@ -66,7 +66,18 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
   const padV = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [8, 11] });
   // Scale the collapsing label row with the OS font size, or Larger Text
   // settings clip the labels against a fixed 15pt window.
-  const labelHeight = Math.ceil(15 * Math.min(PixelRatio.getFontScale(), 1.6));
+  //
+  // SUBSCRIBED, not a one-shot read. This was `PixelRatio.getFontScale()`, which is a
+  // plain function call with no subscription — fine until RN 0.82 turned on
+  // `enableFontScaleChangesUpdatingLayout` by default (verified: false in 0.81.5's
+  // feature flags, true in the installed 0.83.10). Native now re-measures text the
+  // instant the OS text size changes, while this height stayed frozen at the old
+  // snapshot — so the labels grew inside a container that did not, and `overflow:
+  // 'hidden'` clipped them mid-glyph until the next navigation re-rendered the bar.
+  // Both halves used to be stale together, so they agreed; now only one updates.
+  // useWindowDimensions re-renders on a fontScale-only change, so they move together.
+  const { fontScale } = useWindowDimensions();
+  const labelHeight = Math.ceil(15 * Math.min(fontScale, 1.6));
   const labelH = tabBarProgress.interpolate({ inputRange: [0, 1], outputRange: [0, labelHeight] });
 
   return (
