@@ -281,6 +281,10 @@ export default function SupportScreen({ navigation, route }) {
           message: body || 'See attached photos.',
           category,
           bookingId: linkedBooking,
+          // Uploaded to support-photos just above and, until now, dropped on the floor:
+          // nothing carried them past this call. The message body even says "See
+          // attached photos." while the agent received a thread with none.
+          images: paths,
         });
       }
       setDraft(''); setPhotos([]); setComposingNew(false); setLinkedBooking(null);

@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const { email, name, subject, category, message, bookingId, jobId } = await req.json();
+    const { email, name, subject, category, message, bookingId, jobId, images } = await req.json();
     if (!isEmail(email)) return json({ error: 'invalid_email', message: 'Enter a valid email.' }, 400);
     const body = String(message || '').trim();
     const subj = String(subject || '').trim() || 'Support request';
@@ -124,10 +124,28 @@ Deno.serve(async (req: Request) => {
       .single();
     if (tErr) throw new Error(tErr.message);
 
+    // Attachments on the FIRST message used to be uploaded and then silently dropped:
+    // SupportScreen put them in the bucket, this function never accepted the field, and
+    // the insert never carried it. The user saw their photos attach and send, and the
+    // agent opened a thread with no evidence in it.
+    //
+    // Only the CALLER'S OWN storage paths are accepted. support-photos is written
+    // owner-scoped under <userId>/, so that prefix is the check — the same rule
+    // stripe-capture-payment applies to dispute evidence. Without it, a caller naming
+    // any path could pull another user's private photos into a thread staff will read.
+    // An unauthenticated ticket (userId null) can own no paths, so it gets none.
+    const ticketImages = Array.isArray(images) && userId
+      ? images
+          .filter((p: unknown): p is string => typeof p === 'string')
+          .filter((p) => p.startsWith(`${userId}/`))
+          .slice(0, 6)
+      : [];
+
     await supabase.from('support_ticket_messages').insert({
       ticket_id: ticket.id,
       author: 'user',
       body,
+      images: ticketImages,
     });
 
     // Notify the support inbox (best-effort — the ticket is already saved).

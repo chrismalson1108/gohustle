@@ -40,7 +40,9 @@ export class SupportError extends Error {
  * @param {string} [p.email]   defaults to the signed-in user's email
  * @param {string} [p.name]    defaults to the signed-in user's profile name
  */
-export async function submitSupportRequest({ subject, message, category, email, name, bookingId, jobId }) {
+export async function submitSupportRequest({
+  subject, message, category, email, name, bookingId, jobId, images = [],
+}) {
   const body = String(message ?? '').trim();
   if (!body) throw new SupportError('Please describe your issue.', 'empty');
   if (body.length > 5000) throw new SupportError('That message is too long.', 'too_long');
@@ -76,6 +78,11 @@ export async function submitSupportRequest({ subject, message, category, email, 
       // Verified server-side against this user's own bookings — see support-submit.
       bookingId: bookingId ?? null,
       jobId: jobId ?? null,
+      // Attachments on the FIRST message. SupportScreen has always uploaded these to
+      // support-photos, but nothing carried the paths any further, so they were
+      // silently discarded and the agent opened a thread with no evidence in it.
+      // support-submit re-checks that each path is owner-scoped to the caller.
+      images: Array.isArray(images) ? images.slice(0, 6) : [],
     },
   });
 
@@ -145,7 +152,13 @@ export async function replyToTicket(ticketId, { body, images = [] } = {}) {
   if (text.length > 5000) throw new SupportError('That message is too long.', 'too_long');
   const { error } = await supabase
     .from('support_ticket_messages')
-    .insert({ ticket_id: ticketId, body: text || null, images });
+    // `text`, not `text || null`: support_ticket_messages.body is NOT NULL
+    // (20260705040000:32), so a photo-only reply — which the guard above explicitly
+    // permits — inserted null and failed every time, surfacing as the generic "Could not
+    // send your message". The column is NOT NULL, not NOT-EMPTY; an empty body beside a
+    // populated images[] is exactly what a photo-only message is, and the console
+    // renderer already guards on `{m.body ? …}`.
+    .insert({ ticket_id: ticketId, body: text, images });
   if (error) {
     // No longer special-cases "closed": that branch told the user to start a new
     // conversation, which stopped being true — and became actively wrong advice —
