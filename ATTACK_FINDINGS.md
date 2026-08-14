@@ -8,6 +8,42 @@ Survivors were verified against live `pg_proc` bodies and real production rows, 
 this repo's prose — several refuters corrected the original claim's arithmetic or impact
 while confirming the mechanism. Read each verdict, not just the title.
 
+## ⚠️ STATUS — reconciled 2026-08-14. Most of this file is now HISTORY.
+
+**Nine of the eleven confirmed findings are fixed. One was never real by the time it was
+written up. One remains open.** Read this block before acting on anything below: the
+verdicts are preserved verbatim as the record of what was found, not as a current
+description of the code.
+
+| Finding (by its section title) | State |
+|---|---|
+| Pinned fee inputs never rendered in the console | **OPEN** — the only one left. Tracked in `OPEN_WORK.md` under admin-surface. |
+| `ctl_external_reversal_not_ledgered` pre-Basil compensation | Fixed 20260813120000 — **but that fix introduced a worse one**, see below. |
+| `runSweepNow` skips both external controls | Fixed 006a476. |
+| Capture pre-writes the split with no claim | Fixed 070dbbb — `claimForCapture` CAS + reconcile to `amount_received`. |
+| `payment_intent.succeeded` credits off the row | Fixed a3478ff. |
+| Recovery re-hold never asks Stripe | Fixed bb428f9 — the block now enters on the PI id alone. |
+| `refund_source` set once and never cleared | Fixed c8b23fd (chargeback half 95107a0) — `record_refund` clears it; the webhook gained a self-clearing second test. |
+| "Record chargeback" debits the earner | Fixed e45fa8d — policy decision: the platform absorbs chargebacks. |
+| Refund idempotency protects Stripe, not the ledger | Fixed c8b23fd — `refund_ledger`, UNIQUE on Stripe's `refund.id`. |
+| Receipt double-subtracts discount / double-adds credit | **Was already fixed** by 9f404d1 when this was written. `ledger.test.js:437-450` covers the finding's own cases, including the "(0%) − $3.45" label. The write-up is stale, not wrong-in-principle. |
+| Partial capture below Stripe cost + credit destroyed | Fixed 4791d4b and 149ba42. |
+
+**A twelfth defect was found while verifying these, and it was caused by one of the
+fixes.** 20260813120000 dropped the pre-Basil arithmetic correctly and, in the same edit,
+rewrote the CTE that selects the control's INPUT rows to match `'%reversal_cents=%'` — a
+string nothing in this repo writes. The refund arm therefore matched no row that has ever
+existed: the fix for "blind to refunds smaller than the partial-capture gap" shipped as
+"blind to every external refund". It passed its own probe because the probe staged the
+synthetic format the new parser expected. Fixed in b0cfd0f, with
+`__tests__/reversalReasonParity.test.js` asserting the SQL patterns against the reason
+strings `stripe-webhook` actually builds.
+
+The lesson worth carrying: **a probe that writes its own input proves only that the parser
+can read the probe.** Stage what production produces.
+
+---
+
 ⚠️ One is already FIXED: `ctl_external_reversal_not_ledgered` carrying the pre-Basil
 compensation (migration 20260813120000).
 
