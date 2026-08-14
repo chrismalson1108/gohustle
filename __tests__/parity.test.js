@@ -275,3 +275,33 @@ describe('the two-factor gate is wired on BOTH clients', () => {
     expect(page).toMatch(/lost my phone/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Back-swipe stays on the EDGE, not the whole screen.
+//
+// react-native-screens flipped this default under us during the SDK 55 upgrade. 4.16.0
+// (SDK 54) explicitly disabled UIKit's iOS 26 content-pop gesture — it set
+// `interactiveContentPopGestureRecognizer.enabled = NO` and said in a comment that it
+// could not safely own the delegate. 4.23.0 removed that line and now documents the prop
+// as "defaults to false on iOS < 26 and TRUE for iOS >= 26". We build against the iOS 26
+// SDK, so leaving it unset enables full-screen swipe-to-go-back on every pushed screen.
+//
+// A horizontal drag ANYWHERE then pops the screen: mid-form on PostJob or EditJob,
+// mid-message on Chat, across ProfileSettings. Nothing in this app guards removal — there
+// is no usePreventRemove anywhere — so the work is simply gone.
+//
+// This is a one-line opt-out that is easy to drop in a refactor and produces no error
+// when it goes, which is exactly the shape that needs a test rather than a comment.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('pushed screens do not swipe back from the middle of the screen', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'App.js'), 'utf8');
+
+  it('DETAIL_OPTS opts out of the full-screen pop gesture', () => {
+    const block = app.slice(app.indexOf('const DETAIL_OPTS'), app.indexOf('const MANAGE_OPTS'));
+    expect(block).toMatch(/fullScreenGestureEnabled:\s*false/);
+  });
+
+  it('nothing re-enables it elsewhere', () => {
+    expect(app).not.toMatch(/fullScreenGestureEnabled:\s*true/);
+  });
+});

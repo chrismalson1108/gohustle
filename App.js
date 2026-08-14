@@ -81,6 +81,25 @@ const DETAIL_OPTS = {
   headerShadowVisible: false, headerStyle: { backgroundColor: colors.background },
   headerTitleStyle: { color: colors.textPrimary, fontWeight: '700', fontSize: 17 },
   headerBackButtonDisplayMode: 'minimal', // chevron only — no "GigsMain" label (RN-nav v7)
+
+  // ── Keep back-swipe on the EDGE, not the whole screen ─────────────────────
+  //
+  // react-native-screens flipped this default under us. 4.16.0 (SDK 54) explicitly
+  // disabled UIKit's iOS 26 content-pop gesture — `interactiveContentPopGestureRecognizer
+  // .enabled = NO` in RNSScreenStack.mm, with a comment saying they could not safely own
+  // its delegate. 4.23.0 (SDK 55) removed that line and now documents the prop as
+  // "defaults to false on iOS < 26 and TRUE for iOS >= 26" (types.tsx:191). We build
+  // against the iOS 26 SDK, so leaving it unset turns full-screen swipe-to-go-back on
+  // for all ~40 pushed screens at once.
+  //
+  // That is not a cosmetic change. A horizontal drag ANYWHERE — mid-form on PostJob or
+  // EditJob, mid-message on Chat, across ProfileSettings — pops the screen and discards
+  // the work, and nothing in this app guards removal (no usePreventRemove anywhere).
+  //
+  // The comment below is the same lesson from the other direction: this codebase already
+  // learned that the edge-pop strip steals touches from controls inside it. That strip is
+  // now the entire screen unless we say otherwise.
+  fullScreenGestureEnabled: false,
 };
 
 const MANAGE_OPTS = {

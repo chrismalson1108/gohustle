@@ -22,6 +22,25 @@ supabase db push --linked       # Apply supabase/migrations/ to production (the 
 cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
 ```
 
+⚠️ **Native iOS builds on this Mac: use `xcodebuild`, and never a custom `-derivedDataPath`.**
+Two traps, both of which cost real time on 2026-08-13:
+- `expo run:ios` misroutes a BOOTED simulator to the physical-device path ("No code signing
+  certificates are available"), with or without `--device`, by name or UDID. SDK 57's CLI
+  fixed the underlying `devicectl` parse warning but not this. Use `xcodebuild -workspace
+  ios/GoHustlr.xcworkspace -scheme GoHustlr -destination "platform=iOS Simulator,id=<udid>"`.
+- `ios/build/generated/` is NOT disposable. `pod install` runs React Native's codegen and
+  writes `ReactCodegen` sources there, and the Pods project references that exact path. So
+  `rm -rf ios/build` — the fix for the stale-plist problem below — DESTROYS them, and the next
+  build fails with "Build input file cannot be found: …/ReactCodegen/…-generated.mm". After
+  removing `ios/build`, re-run `pod install` (or `npx expo prebuild -p ios`) before building.
+  A custom `-derivedDataPath` is fine; that was my first, wrong diagnosis of this error.
+
+⚠️ **A failed pod build can leave `.DerivedData` INSIDE `node_modules`, and it poisons the
+next build.** `expo-modules-jsi` left 173 MB at `node_modules/expo-modules-jsi/apple/.DerivedData`
+containing a `.swiftinterface` that re-declares symbols from its own source — the compiler then
+reports `type of expression is ambiguous without a type annotation` in Expo's own code, which
+reads exactly like an SDK/Xcode incompatibility and is not one. `rm -rf` it and rebuild.
+
 ⚠️ **Stale `ios/build*` artifacts break `pod install`, and the error blames CocoaPods.**
 React Native's post-install hook (`new_architecture.rb`) scans every Info.plist in the tree
 for git conflict markers. Compiled BINARY plists inside `ios/build/` and `ios/build-release/`
