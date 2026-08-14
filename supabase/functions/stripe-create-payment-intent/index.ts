@@ -315,12 +315,49 @@ Deno.serve(async (req: Request) => {
     // intent that was already created, instead of minting a second, orphaned hold. That
     // crash window is the whole reason a deterministic key exists.
     const replacingPi = existingPay?.payment_intent_id ?? 'new';
-    if (existingPay?.payment_intent_id && existingPay.status === 'authorized') {
+    // ⚠️ Gated on the payment_intent_id ALONE, deliberately — not on our status column.
+    //
+    // This used to require `status === 'authorized'`, which is the exact complement of
+    // isRecovery (`status in ('cancelled','failed')`). So the one branch that declares
+    // the previous hold DEAD was the one branch that never asked Stripe whether it was,
+    // and it fell straight through to paymentIntents.create. Because
+    // payments.payment_intent_id is UNIQUE and the write is an upsert on booking_id,
+    // PI#1's id is then overwritten and gone from the database entirely.
+    //
+    // The route needs no webhook race. A card declines → payment_failed demotes the row
+    // to 'failed' keyed only on the PI id, without consulting the PI's CURRENT status at
+    // Stripe → the poster retries card B on the SAME clientSecret (AcceptPaymentModal
+    // and the mobile PaymentSheet both keep the sheet open) → that PI is now
+    // requires_capture, a LIVE hold. If accept-booking does not land (tab closed,
+    // network drop, 409 BOOKING_CHANGED), the row rests at 'failed' naming a live
+    // authorization. Reopening "Accept & pay" then placed a SECOND simultaneous hold on
+    // the poster's card, and nothing could see the first: every money control is SQL
+    // over our own tables, and reconcile-stripe retrieves only the PI id named on the
+    // row — the overwritten one is unreachable by construction. Stripe voids it at ~7
+    // days; until then the poster's available credit is held twice.
+    //
+    // Our status column is a belief about Stripe. Stripe is the fact. Ask it first.
+    if (existingPay?.payment_intent_id) {
       let existingPI: Stripe.PaymentIntent | null = null;
       try { existingPI = await stripe.paymentIntents.retrieve(existingPay.payment_intent_id); }
       catch (_) { /* not retrievable — fall through and create a fresh one */ }
       const liveStatuses = ['requires_capture', 'requires_confirmation', 'requires_payment_method', 'requires_action', 'processing'];
       if (existingPI && liveStatuses.includes(existingPI.status)) {
+        // The row said the hold was dead and Stripe says otherwise. Heal it before
+        // anything else reads it — but ONLY on requires_capture, which is the one
+        // status that means money is actually held. Writing 'authorized' for a PI still
+        // awaiting a payment method would tell expire_stale_pending_bookings and
+        // ctl_escrow_hold_lapsed_uncancelled that escrow exists when it does not.
+        if (existingPI.status === 'requires_capture' && existingPay.status !== 'authorized') {
+          await supabase.from('payments')
+            .update({ status: 'authorized' })
+            .eq('booking_id', bookingId)
+            .eq('payment_intent_id', existingPay.payment_intent_id);
+          console.log(
+            `stripe-create-payment-intent: healed ${existingPay.payment_intent_id} from ` +
+            `'${existingPay.status}' to 'authorized' — Stripe reports a live hold`,
+          );
+        }
         // COMPARE WHAT IS STORED. payments.amount_cents holds authorizedCents (the
         // DISCOUNTED total that Stripe is actually holding), so comparing it against
         // the pre-discount gig amount made these permanently unequal for any booking

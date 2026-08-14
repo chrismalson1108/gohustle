@@ -76,3 +76,52 @@ describe('escrow hold: one quantity, one name', () => {
     expect(branch.slice(0, 700)).toMatch(/status:\s*'cancelled'/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The RECOVERY re-hold is the branch that most needs the reconcile, and it used to be
+// the one branch that skipped it.
+//
+// The block above was gated on `existingPay.status === 'authorized'` — the exact
+// complement of `isRecovery` (`status in ('cancelled','failed')`). So the path that
+// declares the previous hold dead never asked Stripe whether it was, and fell through
+// to paymentIntents.create with a deliberately different idempotency key. Since
+// payment_intent_id is UNIQUE and the write upserts on booking_id, PI#1's id is
+// overwritten and gone — and every money control is SQL over our own tables, while
+// reconcile-stripe retrieves only the id named on the row, so the orphan is unreachable
+// by construction.
+//
+// It needs no webhook race: card declines → payment_failed demotes the row keyed only
+// on the PI id → the poster retries card B on the same clientSecret, making that PI
+// requires_capture → accept-booking does not land → the row rests at 'failed' naming a
+// LIVE hold → reopening Accept & pay holds the poster's card a second time.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('escrow hold: our status column is a belief, Stripe is the fact', () => {
+  test('the reconcile block is entered on the PI id alone, not on our status', () => {
+    const guard = SRC.match(/if \(existingPay\?\.payment_intent_id[^)]*\) \{/);
+    expect(guard).not.toBeNull();
+    // The regression, named: re-adding any status predicate here re-opens the branch.
+    expect(guard[0]).not.toMatch(/status/);
+  });
+
+  test('nothing re-gates the retrieve on our status between guard and call', () => {
+    // The retrieve must be reachable from the recovery path. Moving the old predicate
+    // one line down would satisfy the test above and re-introduce the bug, so assert
+    // the span between the guard and the Stripe call is clean of status conditions.
+    const at = SRC.indexOf("if (existingPay?.payment_intent_id");
+    const to = SRC.indexOf('stripe.paymentIntents.retrieve(', at);
+    expect(at).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(at);
+    const span = SRC.slice(at, to)
+      .replace(/^[ \t]*\/\/.*$/gm, ''); // the comment block above it explains the bug
+    expect(span).not.toMatch(/existingPay[?.]*\.status/);
+  });
+
+  test('a row Stripe contradicts is healed, but only on requires_capture', () => {
+    // Writing 'authorized' for a PI still awaiting a payment method would tell
+    // expire_stale_pending_bookings and ctl_escrow_hold_lapsed_uncancelled that escrow
+    // exists when nothing is held.
+    const heal = SRC.slice(SRC.indexOf("existingPI.status === 'requires_capture'"));
+    expect(heal.slice(0, 400)).toMatch(/status:\s*'authorized'/);
+    expect(heal.slice(0, 400)).toContain('.eq(\'payment_intent_id\'');
+  });
+});
