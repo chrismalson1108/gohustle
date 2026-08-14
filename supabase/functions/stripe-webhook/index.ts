@@ -53,6 +53,9 @@ async function recordReversal(
   paymentIntentId: string | null,
   externalId: string,
   reason: string,
+  // 'refund'  — Stripe charge.refunded, which an ADMIN refund also fires
+  // 'chargeback' — charge.dispute.created, which only a CARDHOLDER can cause
+  kind: 'refund' | 'chargeback',
 ): Promise<string | null> {
   if (!paymentIntentId) return null;
   const { data: payment } = await supabase
@@ -66,7 +69,22 @@ async function recordReversal(
   // charge.refunded, this records a fresh OPEN dispute, and earner-claim-payment
   // then refuses to settle that booking — so fixing a problem re-blocked it. Still
   // return the booking id so the caller's admin email is sent; only skip the row.
-  if ((payment as { refund_source?: string | null } | null)?.refund_source === 'admin') {
+  //
+  // ⚠️ REFUNDS ONLY. `refund_source` is written once and NEVER cleared — nothing in
+  // supabase/, admin/, src/ or any pg_proc resets it — so this test is permanent, while
+  // the thing it describes was a single action. Because this function is shared by
+  // charge.refunded AND charge.dispute.created, one admin refund used to silence every
+  // later CHARGEBACK on that payment, forever.
+  //
+  // A chargeback is not something an admin can initiate: it is a cardholder going to
+  // their bank. So the exemption cannot apply to it, whatever the flag says.
+  //
+  // What went dark: the /disputes console page reads only this table, so a human never
+  // saw it; ctl_external_reversal_not_ledgered INNER JOINs it; dispute_open_beyond_sla
+  // counts its rows; and earner-claim-payment's DISPUTE_OPEN gate would happily settle a
+  // booking with a live chargeback against it.
+  if (kind === 'refund'
+      && (payment as { refund_source?: string | null } | null)?.refund_source === 'admin') {
     console.log(`recordReversal: skipping dispute row for admin-initiated refund on ${bookingId}`);
     return bookingId;
   }
@@ -434,6 +452,7 @@ Deno.serve(async (req: Request) => {
         const bookingId = await recordReversal(
           supabase, piId, dispute.id,
           `Stripe chargeback ${dispute.id} (${dispute.reason ?? 'unknown'}, ${dispute.currency ?? 'usd'} ${amount})`,
+          'chargeback',
         );
         await emailAdmin(
           `⚠️ Chargeback opened: ${dispute.currency ?? 'usd'} ${amount}`,
@@ -460,6 +479,7 @@ Deno.serve(async (req: Request) => {
         const bookingId = await recordReversal(
           supabase, piId, charge.id,
           `Stripe refund on charge ${charge.id} (${charge.currency ?? 'usd'} ${refunded} refunded)`,
+          'refund',
         );
         await emailAdmin(
           `Refund processed: ${charge.currency ?? 'usd'} ${refunded}`,

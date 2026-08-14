@@ -114,3 +114,45 @@ describe('payment_intent.succeeded settles against what Stripe actually collecte
     expect(body).toMatch(/credit_earnings/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One admin refund must not silence every future chargeback on that payment.
+//
+// `refund_source` is written once (admin-payment-action) and NEVER cleared — nothing in
+// supabase/, admin/, src/, or any pg_proc resets it. recordReversal tested it and
+// early-returned, and that function is shared by charge.refunded AND
+// charge.dispute.created. So after a single admin refund, every later CHARGEBACK on that
+// payment filed no `disputes` row, permanently.
+//
+// What went dark with it: the /disputes console page reads only that table, so no human
+// saw it; ctl_external_reversal_not_ledgered INNER JOINs it; dispute_open_beyond_sla
+// counts its rows; and earner-claim-payment's DISPUTE_OPEN gate would settle a booking
+// with a live chargeback against it.
+//
+// The exemption is legitimate for REFUNDS — an admin refund is a remediation, and filing
+// a dispute for it re-blocked the very booking being fixed. It is incoherent for a
+// chargeback, which only a cardholder can cause.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the admin-refund exemption cannot silence a chargeback', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const fn = strip(src.slice(src.indexOf('async function recordReversal'), src.indexOf('Deno.serve(')));
+
+  it('found recordReversal', () => {
+    expect(fn.length).toBeGreaterThan(200);
+  });
+
+  it('gates the refund_source exemption on the event being a REFUND', () => {
+    const line = fn.split('\n').find((l) => l.includes("refund_source") && l.includes("'admin'"));
+    expect(line).toBeDefined();
+    // The exemption must be conjoined with a refund-only condition, not stand alone.
+    expect(fn).toMatch(/kind === ['"]refund['"]\s*\n?\s*&&[\s\S]{0,120}refund_source/);
+  });
+
+  it('both call sites declare which kind of reversal they are', () => {
+    const body = strip(src);
+    expect(body).toMatch(/['"]chargeback['"],\s*\n?\s*\)/);
+    expect(body).toMatch(/['"]refund['"],\s*\n?\s*\)/);
+  });
+});
