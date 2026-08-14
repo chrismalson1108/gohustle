@@ -305,3 +305,42 @@ describe('pushed screens do not swipe back from the middle of the screen', () =>
     expect(app).not.toMatch(/fullScreenGestureEnabled:\s*true/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A minted promo code must be redeemable by somebody.
+//
+// `redeem_promo_code(text)` was granted to `authenticated` when promotions shipped and
+// had ZERO callers in any client — verified by grep across src/, web/ and
+// supabase/functions/. So the console could mint codes and no user could ever type one:
+// every fee_override or poster_discount campaign distributed by code reached nobody.
+// Direct grants worked, so incentives were not blocked — but a minted code was a dead
+// string, which is worse than not offering codes.
+//
+// The RPC returns a bare boolean on purpose: distinct errors would be an existence oracle
+// for brute-forcing valid codes, and it is rate-limited on ATTEMPTS rather than successes.
+// So the client must show ONE message for every failure — asserted here, because the
+// tempting "improvement" is to tell the user which kind of failure it was.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('promo codes can actually be redeemed', () => {
+  const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '..', p), 'utf8');
+
+  it('a client calls redeem_promo_code', () => {
+    const lib = read('src/lib/promoCodes.js');
+    expect(lib).toMatch(/rpc\(['"]redeem_promo_code['"]/);
+  });
+
+  it('there is a user-reachable entry point', () => {
+    // A helper nothing renders is the same dead end one layer up.
+    const settings = read('src/screens/SettingsScreen.js');
+    expect(settings).toMatch(/redeemPromoCode/);
+    expect(settings).toMatch(/Have a code\?/);
+  });
+
+  it('does not leak which failure occurred', () => {
+    const settings = read('src/screens/SettingsScreen.js');
+    // Exactly one failure message in the redemption path.
+    const branch = settings.slice(settings.indexOf('redeemPromoCode(code)'), settings.indexOf('finally { setCodeBusy(false); }'));
+    const messages = branch.match(/setCodeErr\((['"`])/g) ?? [];
+    expect(messages.length).toBe(1);
+  });
+});

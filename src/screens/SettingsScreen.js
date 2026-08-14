@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, Platform,
+  Modal, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
+import { redeemPromoCode, normalizePromoCode } from '../lib/promoCodes';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
@@ -52,6 +54,10 @@ export default function SettingsScreen({ navigation }) {
   // Whether two-factor is on belongs in the row itself: "Security" alone tells you
   // nothing, and the whole reason to surface it is so someone notices it is OFF.
   const [mfaOn, setMfaOn] = useState(null);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeErr, setCodeErr] = useState(null);
   useFocusEffect(useCallback(() => {
     let alive = true;
     fetchMfaStatus()
@@ -112,6 +118,13 @@ export default function SettingsScreen({ navigation }) {
           sub: 'Track expenses & export for taxes',
           keywords: 'tax 1099 expenses mileage receipts income export csv',
           onPress: () => go('Expenses') },
+        // The redemption entry point. redeem_promo_code has been granted to
+        // `authenticated` since promotions shipped and had zero callers, so every code
+        // the console minted was a dead string.
+        { icon: 'pricetag-outline', title: 'Have a code?',
+          sub: 'Redeem a promo or referral code',
+          keywords: 'promo code coupon referral discount voucher offer redeem claim',
+          onPress: () => setCodeOpen(true) },
       ],
     },
     {
@@ -237,6 +250,49 @@ export default function SettingsScreen({ navigation }) {
         ))}
       </ScrollView>
       <KeyboardDoneBar />
+      <Modal visible={codeOpen} transparent animationType="slide" onRequestClose={() => setCodeOpen(false)}>
+        <View style={styles.codeBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setCodeOpen(false)} />
+          <View style={styles.codeSheet}>
+            <Text style={styles.codeTitle}>Have a code?</Text>
+            <Text style={styles.codeSub}>
+              Promo and referral codes are claimed once and apply automatically to your next
+              eligible gig.
+            </Text>
+            <TextInput
+              value={code}
+              onChangeText={(t) => { setCode(normalizePromoCode(t)); setCodeErr(null); }}
+              placeholder="ENTER CODE"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              style={styles.codeInput}
+            />
+            {codeErr ? <Text style={styles.codeErr}>{codeErr}</Text> : null}
+            <TouchableOpacity
+              style={[styles.codeBtn, (!code || codeBusy) && { opacity: 0.45 }]}
+              disabled={!code || codeBusy}
+              onPress={async () => {
+                setCodeBusy(true); setCodeErr(null);
+                try {
+                  const ok = await redeemPromoCode(code);
+                  if (ok) {
+                    setCodeOpen(false); setCode('');
+                    showToast?.({ icon: '🎁', title: 'Code applied!', message: 'It will apply to your next eligible gig.' });
+                  } else {
+                    // ONE message for every failure. The RPC returns a bare boolean on
+                    // purpose — distinct errors would tell someone probing which codes
+                    // exist — so the UI must not invent detail the server withheld.
+                    setCodeErr("That code isn't available. Check it and try again.");
+                  }
+                } finally { setCodeBusy(false); }
+              }}
+            >
+              {codeBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.codeBtnText}>Apply code</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -262,6 +318,25 @@ function Row({ icon, title, sub, onPress, danger, last }) {
 }
 
 const styles = StyleSheet.create({
+  codeBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  codeSheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    padding: 22, paddingBottom: 34,
+  },
+  codeTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
+  codeSub: { fontSize: 13.5, color: colors.textSecondary, marginTop: 6, lineHeight: 20 },
+  codeInput: {
+    marginTop: 16, backgroundColor: colors.background, borderRadius: radii.lg,
+    paddingVertical: 14, paddingHorizontal: 16, fontSize: 18, letterSpacing: 2,
+    textAlign: 'center', color: colors.textPrimary, fontWeight: '700',
+  },
+  codeErr: { fontSize: 13, color: colors.urgent, marginTop: 10, textAlign: 'center' },
+  codeBtn: {
+    marginTop: 16, backgroundColor: colors.primary, borderRadius: radii.pill,
+    paddingVertical: 15, alignItems: 'center',
+  },
+  codeBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+
   container: { flex: 1, backgroundColor: colors.background },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
