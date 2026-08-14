@@ -16,7 +16,7 @@
 
 _Last reconciled: 2026-08-13._
 
-## Open (31)
+## Open (32)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
@@ -52,6 +52,7 @@ _Last reconciled: 2026-08-13._
 | high | admin-surface | The admin console is BEHIND everything built today: `stripe_payouts` (bank deposits) has no page or column at all, promo grants are invisible and `revokeGrant()` is a dead server action nothing calls, and `bonus_ledger` is three aggregate tiles with no rows, no owner and no action. A human cannot see or act on any of it. Also: the console's "Run sweep now" silently SKIPS both external controls, so stripe_reconciliation and stripe_webhook_config never run from the only lever the UI offers. | Work ATTACK_FINDINGS.md — verify each against the console source first. This is the cross-surface obligation CLAUDE.md already mandates and it has been skipped for several features in a row. |
 | high | money-paths | 22 attack candidates, 11 CONFIRMED by an independent refutation pass (see ATTACK_FINDINGS.md) on promotions/referrals/refunds/capture — including a poster_discount that can never apply when the earner holds a fee_override, a partial capture consuming a WHOLE fee credit while delivering only pct of its value, and account deletion hard-deleting a booking and destroying the earner's record. See ATTACK_FINDINGS.md. Verified: 11 of 22 survived refutation against live pg_proc and real rows. The receipt double-count is FIXED; the rest are open. | Resume the workflow (resumeFromRunId in that file) or verify each by hand against live pg_proc + real rows BEFORE acting. Several look real; several will be false. |
 | medium | docs | `__tests__/adminSurface.test.js` does NOT enforce the control-registration guarantee CLAUDE.md claims for it — independently flagged by two separate audits today. CLAUDE.md says it "fails on an unregistered control and on a console page missing from Nav.tsx". | Read the test, then either make it true or correct CLAUDE.md. A false claim about a guard is worse than no guard: it stops anyone checking. |
+| high | money-policy | **Needs your decision, not a code fix.** `record_reversal` ("Record chargeback") calls `record_refund`, which unconditionally `debit_earnings(earner_share)` — but unlike the `refund` op it makes NO Stripe call at all. The `refund` op EARNS its debit by passing `reverse_transfer: true`, actually pulling money back from the connected account. A chargeback on a destination charge debits the PLATFORM balance and does not reverse the transfer (RUNBOOK_MONEY:78 already says "the platform eats it"), so the earner keeps the cash while their displayed earnings drop by their share. `debit_earnings` writes no debt row and recovers nothing — it just makes the number smaller. | Decide the policy: (a) the platform absorbs chargebacks — then stop debiting the earner on this path; or (b) the earner shares the loss — then it needs a real clawback (a debt row, or reverse_transfer where the balance allows) instead of a cosmetic decrement. Today it is the worst of both: the earner's ledger says they lost money nobody took back. |
 ## Closed (20)
 
 | Sev | Area | Finding | Closed by |
