@@ -102,7 +102,15 @@ describe('the refund ledger makes a Stripe replay a no-op', () => {
     expect(recordRefund.sql).toMatch(/OVER-CORRECTED/);
     // Seeded balance: debit_earnings floors at 0, so a zero-balance probe passes
     // vacuously — the trap the chargeback probe hit on 2026-08-13.
-    expect(recordRefund.sql).toMatch(/earnings_total = 500/);
+    expect(recordRefund.sql).toMatch(/earnings_total = e0 \+ 500/);
+    // And it must CHECK the seed landed. A tombstoned profile's guard silently refuses
+    // the write, and the probe then failed as "not discriminating" — a true statement
+    // about the wrong cause, which cost two push attempts to work out.
+    expect(recordRefund.sql).toMatch(/could not seed a balance/);
+    expect(recordRefund.sql).toMatch(/deleted_at is null/);
+    // debit_earnings returns false outright unless the capture was credited, so the
+    // staged payment must say so or no debit happens at all.
+    expect(recordRefund.sql).toMatch(/earnings_credited/);
   });
 });
 

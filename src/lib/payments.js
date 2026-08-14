@@ -93,6 +93,32 @@ export function settledGrossCents(row) {
 }
 
 /**
+ * How much of a refund came out of the EARNER's payout.
+ *
+ * Must stay byte-for-byte equivalent to record_refund's own debit, because that is the
+ * figure `debit_earnings` actually takes off profiles.earnings_*:
+ *
+ *   round(p_cents::numeric * earner_amount_cents / (earner_amount_cents + fee_cents))
+ *
+ * The earner never held the platform fee, so a $30 refund on a $60 capture
+ * (earner $55.80 + fee $4.20) costs them $27.90, not $30.00. Subtracting the whole
+ * refund made Transactions disagree with the earnings dashboard on every partial refund
+ * — and the earnings dashboard was the correct one.
+ *
+ * __tests__/ledger.test.js parses the SQL off disk and fails if the two drift, the same
+ * guard pricing.test.js applies to the fee.
+ */
+export function earnerRefundShareCents(refundedCents, earnerAmountCents, feeCents) {
+  const refunded = cents(refundedCents);
+  const earner = cents(earnerAmountCents);
+  const capturedTotal = earner + cents(feeCents);
+  // No captured total to apportion against (a legacy or malformed row): fall back to
+  // the whole refund rather than silently reporting no loss at all.
+  if (capturedTotal <= 0) return refunded;
+  return Math.round((refunded * earner) / capturedTotal);
+}
+
+/**
  * One ledger entry, normalized so the UI never re-derives money.
  *
  * The amounts come from the payment row, NOT from the current rate card. A
@@ -109,12 +135,32 @@ function toEntry(row, side, jobsById, bookingsById) {
   const tip = dollarsToCents(b.tip_amount);
   const feeBps = typeof row.fee_bps === 'number' ? row.fee_bps : DEFAULT_FEE_BPS;
 
+  // A refund is not the same size on both sides of the transaction.
+  //
+  // The poster gets the whole refund back. The earner never held the platform fee, so
+  // only their proportional share of the capture comes off their payout — which is
+  // exactly what record_refund debits:
+  //
+  //   round(refunded * earner_amount_cents / (earner_amount_cents + fee_cents))
+  //
+  // Subtracting the FULL refund from the earner's side overstated their loss by the
+  // fee's share of it, so Transactions and the earnings dashboard disagreed on every
+  // partial refund: a $30 refund on a $60 capture (earner $55.80, fee $4.20) showed the
+  // earner losing $30.00 while debit_earnings took $27.90. The formula is duplicated
+  // here rather than derived from the debit because the debit is not on this row —
+  // __tests__/ledger.test.js pins the two together.
+  const earnerRefundShare = earnerRefundShareCents(refunded, cents(row.earner_amount_cents), fee);
+  // What came off THIS reader's money. Every figure describing the user's own position
+  // uses this; `refundedCents` stays the true refund on the payment, because "was this
+  // refunded at all" is a different question from "how much of it was mine".
+  const refundShare = side === 'earner' ? earnerRefundShare : refunded;
+
   // What actually moved, after any partial refund. A refund AFTER capture leaves
   // refunded_cents on the row; the ledger must show the settled number, because
   // that is the one the user is reconciling against their bank.
   const settledGross = Math.max(0, gross - refunded);
   const net = side === 'earner'
-    ? Math.max(0, cents(row.earner_amount_cents) - refunded) + tip
+    ? Math.max(0, cents(row.earner_amount_cents) - earnerRefundShare) + tip
     : settledGross + tip;
 
   return {
@@ -135,6 +181,7 @@ function toEntry(row, side, jobsById, bookingsById) {
     feeLabel: feeLabel(feeBps),
     tipCents: tip,
     refundedCents: refunded,
+    refundShareCents: refundShare,
     refundedAt: row.refunded_at,
     refundReason: row.refund_reason,
     discountCents: cents(row.poster_discount_cents),
@@ -252,7 +299,7 @@ export function summarize(entries, side, year) {
     settledCents: mine.filter((e) => e.settled).reduce((s, e) => s + e.netCents, 0),
     heldCents: mine.filter((e) => e.pending).reduce((s, e) => s + e.netCents, 0),
     feesCents: side === 'earner' ? mine.filter((e) => e.settled).reduce((s, e) => s + e.feeCents, 0) : 0,
-    refundedCents: mine.reduce((s, e) => s + e.refundedCents, 0),
+    refundedCents: mine.reduce((s, e) => s + (e.refundShareCents ?? e.refundedCents), 0),
   };
 }
 
@@ -327,7 +374,7 @@ export function stats(entries) {
     heldCents: entries.filter((e) => e.pending).reduce((s, e) => s + e.netCents, 0),
     feesCents: settled.reduce((s, e) => s + e.feeCents, 0),
     tipsCents: settled.reduce((s, e) => s + e.tipCents, 0),
-    refundedCents: entries.reduce((s, e) => s + e.refundedCents, 0),
+    refundedCents: entries.reduce((s, e) => s + (e.refundShareCents ?? e.refundedCents), 0),
     discountCents: entries.reduce((s, e) => s + e.discountCents, 0),
     declinedCount: entries.filter((e) => e.status === 'failed').length,
     avgCents: settled.length ? Math.round(netCents / settled.length) : 0,
@@ -383,8 +430,8 @@ export function ledgerCsv(entries, side) {
     const st = paymentState(e.status, side).label;
     const d = e.at ? new Date(e.at).toISOString().slice(0, 10) : '';
     const row = side === 'earner'
-      ? [d, e.title, st, money(e.grossCents), money(e.feeCents), e.feeLabel, money(e.tipCents), money(e.refundedCents), money(e.netCents)]
-      : [d, e.title, st, money(e.grossCents), money(e.tipCents), money(e.discountCents), money(e.refundedCents), money(e.netCents)];
+      ? [d, e.title, st, money(e.grossCents), money(e.feeCents), e.feeLabel, money(e.tipCents), money(e.refundShareCents ?? e.refundedCents), money(e.netCents)]
+      : [d, e.title, st, money(e.grossCents), money(e.tipCents), money(e.discountCents), money(e.refundShareCents ?? e.refundedCents), money(e.netCents)];
     lines.push(row.map(csvCell).join(','));
   });
   return lines.join('\n');
@@ -417,7 +464,9 @@ export function receiptLines(entry) {
   const gross = c(entry.grossCents);
   const discount = c(entry.discountCents);
   const tip = c(entry.tipCents);
-  const refunded = c(entry.refundedCents);
+  // The share that came off THIS side, not the gross refund — see toEntry. Falls back
+  // to refundedCents so an entry built by older code still renders.
+  const refunded = c(entry.refundShareCents ?? entry.refundedCents);
   const net = c(entry.netCents);
   const bps = typeof entry.feeBps === 'number' ? entry.feeBps : DEFAULT_FEE_BPS;
 
@@ -457,7 +506,10 @@ export function receiptLines(entry) {
       },
       creditApplied > 0 && { key: 'credit', label: 'Fee credit applied', cents: creditApplied, good: true },
       tip > 0 && { key: 'tip', label: 'Tip', cents: tip, good: true },
-      refunded > 0 && { key: 'refund', label: 'Refunded to poster', cents: -refunded, dim: true },
+      // "Your share of" is doing real work: the poster was refunded more than this.
+      // The earner never held the platform fee, so only their part of the capture
+      // comes back out of their payout.
+      refunded > 0 && { key: 'refund', label: 'Your share of the refund', cents: -refunded, dim: true },
     ].filter(Boolean),
   };
 }

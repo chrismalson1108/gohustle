@@ -492,3 +492,92 @@ describe('account deletion preserves the counterparty record', () => {
     expect(code).toMatch(/tombErr/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A refund is not the same size on both sides.
+//
+// The poster gets the whole refund back. The earner never held the platform fee, so
+// record_refund debits only their proportional share of the capture:
+//
+//   round(p_cents * earner_amount_cents / (earner_amount_cents + fee_cents))
+//
+// The ledger subtracted the FULL refund from the earner's side, so Transactions said
+// the earner lost $30.00 on a $30 refund while debit_earnings had taken $27.90 — and
+// the earnings dashboard was the correct one. Two surfaces, one event, two numbers.
+//
+// The formula lives in two languages, so this pins them together off disk — the same
+// guard pricing.test.js applies to the fee and categories.test.js to the slug.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a partial refund costs the earner only their share', () => {
+  const { earnerRefundShareCents } = require('../src/lib/payments');
+  const fs = require('fs');
+  const path = require('path');
+
+  const MIG = path.join(__dirname, '..', 'supabase', 'migrations');
+  // The live definition is the last migration to define it.
+  const sql = fs
+    .readdirSync(MIG)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => fs.readFileSync(path.join(MIG, f), 'utf8'))
+    .filter((s) => /create or replace function public\.record_refund\b/i.test(s))
+    .pop();
+
+  it('found record_refund in the migrations', () => {
+    expect(sql).toBeDefined();
+  });
+
+  it('SQL still apportions the debit by the earner share', () => {
+    // If this changes shape, the JS below is no longer a mirror of anything.
+    expect(sql.replace(/\s+/g, ' ')).toMatch(
+      /round\(\s*p_cents::numeric \* coalesce\(earner_amount_cents, 0\) \/ nullif\(v_captured, 0\)\s*\)::integer/,
+    );
+    // v_captured is earner + fee, i.e. what was actually collected.
+    expect(sql.replace(/\s+/g, ' ')).toMatch(
+      /coalesce\(earner_amount_cents, 0\) \+ coalesce\(fee_cents, 0\).{0,40}into v_captured/,
+    );
+  });
+
+  it('JS matches the SQL on the case that shipped wrong', () => {
+    // $60 captured: earner $55.80, fee $4.20. A $30 refund.
+    expect(earnerRefundShareCents(3000, 5580, 420)).toBe(2790);
+    // Not the whole refund, which is what the ledger used to subtract.
+    expect(earnerRefundShareCents(3000, 5580, 420)).not.toBe(3000);
+  });
+
+  it('a full refund still costs the earner their whole payout', () => {
+    expect(earnerRefundShareCents(6000, 5580, 420)).toBe(5580);
+  });
+
+  it('rounds half up, as round() does in Postgres', () => {
+    // 100 * 55 / 110 = 50 exactly; 101 * 55 / 110 = 50.5 → 51.
+    expect(earnerRefundShareCents(100, 55, 55)).toBe(50);
+    expect(earnerRefundShareCents(101, 55, 55)).toBe(51);
+  });
+
+  it('falls back to the whole refund when there is no captured total', () => {
+    // A legacy/malformed row must not report the earner losing nothing.
+    expect(earnerRefundShareCents(3000, 0, 0)).toBe(3000);
+  });
+
+  it('the earner receipt lines still sum to the payout', () => {
+    // earner_amount 5580, $30 refunded → share 2790, payout 2790.
+    const r = receiptLines({
+      side: 'earner', grossCents: 6000, feeCents: 420, feeBps: 700,
+      refundedCents: 3000, refundShareCents: 2790, netCents: 2790,
+    });
+    expect(r.lines.reduce((a, l) => a + l.cents, 0)).toBe(r.totalCents);
+    const refundLine = r.lines.find((l) => l.key === 'refund');
+    expect(refundLine.cents).toBe(-2790);
+    // The poster got more back than this — say so rather than implying otherwise.
+    expect(refundLine.label).toBe('Your share of the refund');
+  });
+
+  it('the poster is still shown the whole refund', () => {
+    const r = receiptLines({
+      side: 'poster', grossCents: 6000, refundedCents: 3000, refundShareCents: 3000, netCents: 3000,
+    });
+    expect(r.lines.find((l) => l.key === 'refund').cents).toBe(-3000);
+    expect(r.lines.reduce((a, l) => a + l.cents, 0)).toBe(r.totalCents);
+  });
+});
