@@ -114,3 +114,60 @@ describe('storage.objects RLS — no bucket is anonymously enumerable', () => {
     expect(live.has('certificates_public_read')).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleting an account must clear every bucket that account can write to.
+//
+// delete-account's BUCKETS list is hand-maintained and drifted: support-photos was
+// missing, so a departing user's own support uploads survived their deletion —
+// screenshots people attach to a ticket, which they attach precisely BECAUSE something
+// went wrong. It was found by writing the CLAUDE.md inventory guard, not by anyone
+// re-reading the list, which is the argument for asserting it instead of listing it.
+//
+// Buckets are read from the migrations that create them, so a NEW user-writable bucket
+// fails this until it is either cleared on deletion or explicitly excused.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('account deletion clears every bucket the user can write to', () => {
+  const fnSrc = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', 'delete-account', 'index.ts'),
+    'utf8',
+  );
+
+  // Buckets deliberately NOT cleared, each with the reason it is someone else's record.
+  const EXCUSED = {
+    // Nothing today. Add with a reason, never to silence a failure.
+  };
+
+  const allSql = [LEGACY_DIR, MIG_DIR]
+    .filter((d) => fs.existsSync(d))
+    .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.sql')).map((f) => path.join(d, f)))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
+
+  // storage.buckets rows created anywhere in the schema.
+  const created = new Set(
+    [...allSql.matchAll(/insert into storage\.buckets[\s\S]{0,200}?values\s*\(\s*'([a-z0-9-]+)'/gi)]
+      .map((m) => m[1]),
+  );
+
+  const cleared = new Set(
+    (fnSrc.match(/const BUCKETS = \[([\s\S]*?)\];/) ?? [, ''])[1]
+      .match(/'([a-z0-9-]+)'/g)?.map((s) => s.replace(/'/g, '')) ?? [],
+  );
+
+  it('found buckets on both sides', () => {
+    expect(created.size).toBeGreaterThan(3);
+    expect(cleared.size).toBeGreaterThan(3);
+  });
+
+  it('every created bucket is cleared on deletion, or excused with a reason', () => {
+    const missing = [...created].filter((b) => !cleared.has(b) && !EXCUSED[b]);
+    // Name the bucket — "coverage drifted" is not actionable.
+    expect(missing).toEqual([]);
+  });
+
+  it('clears no bucket that does not exist', () => {
+    const phantom = [...cleared].filter((b) => !created.has(b));
+    expect(phantom).toEqual([]);
+  });
+});

@@ -127,7 +127,7 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 - **Expo SDK 54**, React Native 0.81.5, React 19.1.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the ENTIRE live schema** — every guard, policy, trigger and RPC, including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 166 files as of 2026-08-13, and production's `supabase_migrations.schema_migrations` matches them file-for-file. Never hand-apply SQL in the dashboard; that is how the two drift.
+- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the ENTIRE live schema** — every guard, policy, trigger and RPC, including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 188 files as of 2026-08-14; production's `supabase_migrations.schema_migrations` was verified to match file-for-file on 2026-08-13 at 166 files, so **the tail is only as applied as your last `db push`** — re-verify rather than trusting this line. Never hand-apply SQL in the dashboard; that is how the two drift.
 - ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` from realtime** (added by `migration_stripe.sql`). Neither failure errors; the policy just gets weaker.
   **If a booking action returns a permission error, run `supabase db push --linked`.** The tracked `supabase/migrations/` files are the only reproducible hardened state.
 
@@ -150,19 +150,20 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
         └── JobsProvider
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
                     └── Tab.Navigator (5 tabs — display labels in parens, route names unchanged)
-                          ├── HomeTab   ("Browse")   → HomeStack:  HomeScreen → JobDetail → MarketInsights → UserProfile → Reviews → Chat
-                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnScreen → JobDetail → UserProfile → Reviews → Chat → Payments
-                          ├── GigsTab   ("Hire")     → GigsStack:  GigsScreen → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat → Payments
-                          ├── MessagesTab ("Messages") → MessagesStack: MessagesScreen → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews/Support
-                          └── ProfileTab ("You")     → ProfileStack: ProfileScreen → Settings/ProfileSettings/Availability/Notifications/
+                          ├── HomeTab   ("Browse")   → HomeStack:  HomeMain (HomeScreen) → JobDetail → MarketInsights → UserProfile → Reviews → Chat
+                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnMain (EarnScreen) → JobDetail → UserProfile → Reviews → Chat → Payments
+                          ├── GigsTab   ("Hire")     → GigsStack:  GigsMain (GigsScreen) → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat → Payments
+                          ├── MessagesTab ("Messages") → MessagesStack: MessagesMain (MessagesScreen) → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews/Support
+                          └── ProfileTab ("You")     → ProfileStack: ProfileMain (ProfileScreen) → Settings/ProfileSettings/Availability/Notifications/
                                                                     NotificationSettings/PayoutSetup/Expenses/TrophyCase/Reviews/Legal/
                                                                     UserProfile/Favorites/SavedGigs/JobDetail/EditJob/ManageBookings/FindPeople/Chat/
-                                                                    Payments/Security/Support
+                                                                    Payments/Security/Support/AssistantMemory
 ```
 
 **Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat pushes the full-screen `ChatScreen` (route `Chat`, registered in every stack); `MessageSheet` is the shared chat body, also hosted as a modal from JobDetail/Earn/Gigs. Opening marks the conversation read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
 
 - **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`MessagesTab`/`ProfileTab`) are intentionally kept even though display labels are Browse / My Jobs / Hire / Messages / You** — the route names are a wire protocol, not just internal: `send-push`'s `KNOWN_TABS` and the `data.tab` field of every push notification depend on them, so renaming a route silently breaks notification deep-links. Many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them too.
+- **The five stack ROOTS are `HomeMain`/`EarnMain`/`GigsMain`/`MessagesMain`/`ProfileMain`, not the component names.** This fence used to write them as `HomeScreen`/`ProfileScreen`/… — the components — and `navigate('ProfileScreen')` matches no route and fails silently. They are load-bearing the same way the tab names are: `FloatingTabBar`'s `HUB_ROUTES` decides whether the tab bar shows by testing the nested route against this exact set, and `PostJobScreen`/`PayoutSetupScreen` both navigate to one by name.
 - Cross-tab navigation from nested stacks: `navigation.navigate('EarnTab')` — React Navigation bubbles up automatically.
 - `AppNavigator` is a component rendered *inside* providers so it can call `useJobs()` for tab badge counts — this is why `NavigationContainer` is not at the root.
 - `AchievementToast` renders outside `NavigationContainer` but inside `SafeAreaProvider`.
@@ -210,11 +211,13 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + `CategoryPicker` (search the catalog, or create your own; your recent categories appear as quick chips). Times are optional: **no slots picked → a bookable "Flexible — Contact to Schedule" slot is attached** (a hint under the picker says so; EditJob applies the same fallback on save), so a gig can never end up slot-less/un-bookable. Nested in GigsStack. |
 | `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
 | `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
-| `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), Payments, Tax Center, Saved gigs/people, identity + student verification, Settings link. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
+| `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), the money hub (→ `PayoutSetup`), Tax Center, TrophyCase, Reviews, Alerts, Notification settings, Availability, Find People, identity + student verification, Settings link. **The Saved gigs/people rows are NOT here** — they were deliberately deleted as duplicates and live only in Settings; and the money row goes to `PayoutSetup`, not to `Payments` (Transactions), which this screen does not link to at all. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
-| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks. |
+| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks — but **only Earn and Profile have an entry point** (`EarnScreen`, `PayoutSetupScreen`, `SettingsScreen`); nothing in GigsStack navigates here, so a poster cannot reach their own ledger from the Hire tab. That is a gap, not a design. |
+| `PayoutSetupScreen` (route `PayoutSetup`) | The **money hub**, and the one screen that carries both sides: "Get paid for work" (connect/manage a Connect bank for earners) and "Pay for gigs" (add/change/remove the card on file for posters). Stripe is surfaced only as a trust line. Entry points: ProfileScreen, GigsScreen, EarnScreen. Connect onboarding from here is step-up gated — see **Two-factor**. |
 | `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
 | `SecurityScreen` (route `Security`) | Two-factor: enroll (deep-link first), recovery codes, disable (requires a current code). Prompted from PayoutSetup once a bank is connected. |
+| `AssistantMemoryScreen` (route `AssistantMemory`, title **Hustlr AI memory**) | Everything the assistant's `remember` tool has stored about you, and a one-tap delete. `profiles.assistant_memory` is a jsonb array capped at the 25 most recent facts, **each replayed into the system prompt of every future conversation** — so before this screen the only way to remove one was to overflow the window. Reads through `my_profile()` (the column is deliberately outside the profiles SELECT grant); helpers in `src/lib/assistantMemory.js`. Reached from Settings. |
 | `MfaChallengeScreen` | The sign-in code prompt. Rendered by `RootNavigator` BEFORE onboarding/terms — not a stack route. Carries the "I've lost my phone" recovery path. |
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
 | `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
@@ -223,6 +226,14 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `OnboardingScreen` | Multi-step: Welcome → Username+DOB → Role → Location → Skills/Radius → Done. DOB uses `DobPicker` (Month/Day/Year dropdowns, `composeDob` → `parseDob`). Saves all fields + `onboarding_done: true`. |
 | `FindPeopleScreen` | Search people by name/@username → tap through to `UserProfile`. Registered as `FindPeople` in Messages + Profile stacks. |
 | `AuthScreen` | Sign-in / Sign-up (with confirm password) / Forgot password tabs. |
+| `NotificationsScreen` (route `Notifications`, nav title **Alerts**) | The alerts **inbox** — list/mark-read/archive, Inbox + Archived tabs. ⚠️ **The two notification screens are cross-wired against their titles** — see the row below before editing either. |
+| `NotificationSettingsScreen` (route `NotificationSettings`, nav title **Notifications**) | The per-category push/email **preference switches**. So the screen titled "Notifications" is the settings one and the route named `Notifications` is the inbox: navigating by the title, or by the route name, lands you in the other screen. ProfileScreen surfaces both. |
+| `MarketInsightsScreen` (route `MarketInsights`) | The Pro area heat-map, off HomeScreen. Calls the read-only `area_market_stats` aggregate RPC and **falls back to `computeAreaInsights()` over the already-loaded jobs feed** on error/empty (no tips/workers in the fallback) — so an empty-looking panel may be the fallback, not missing data. |
+| `AvailabilityScreen` (route `Availability`) | Two editors on one screen with **two different stores**: weekly availability windows go through `UserContext` (`setAvailability` → `profiles.availability`), while the class schedule is a direct table via `src/lib/schedule.js` (`class_schedule`). Classes block the times you can't work; Hustlr AI reads this to match gigs to free time. Logic guarded by `__tests__/availability.test.js`. |
+| `ReviewsScreen` (route `Reviews`) | Full review history **split by the review's `role`** — the two-sided model above, on a screen. Registered in every stack. |
+| `TrophyCaseScreen` (route `TrophyCase`) | Every badge grouped, earned ones lit and locked ones showing live progress ("3 / 10 gigs"). |
+| `SavedGigsScreen` (route `SavedGigs`, title **Saved gigs**) | `saved_jobs` (via `src/lib/savedJobs.js` → `JobsContext`). Deliberately **keeps** booked-out and own gigs in a muted "closed" group instead of filtering them the way Browse does — a bookmark that silently vanishes reads as a lost bookmark, not a full gig. |
+| `FavoritesScreen` (route `Favorites`, title **Saved people**) | Saved people — `favorites`, via `src/lib/favorites.js`. **Both Saved rows are reached from Settings, not ProfileScreen** — the ProfileScreen duplicates were deliberately deleted, so edit `SettingsScreen`. |
 
 ## Key Components
 
@@ -323,6 +334,80 @@ rate limiting and staging.
   Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
   pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
 
+## Edge functions (`supabase/functions/`) — 32, each deployed by hand
+
+The pre-push hook tells you to "deploy each one by hand", and until 2026-08-14 this file
+named 13 of them — so the reminder pointed at an inventory that did not exist. Eight of
+the unnamed ones moved money or gated auth. `__tests__/claudeMdInventory.test.js` now
+fails if a new function is not listed here.
+
+⚠️ **`supabase/config.toml` is the registry of which functions are reachable WITHOUT a
+Supabase JWT**: `stripe-webhook`, `stripe-identity-return`, `stripe-connect-return`,
+`support-submit`, `safety-alert`, `controls-alert`, `reconcile-stripe`. A plain
+`supabase functions deploy` that ignores it re-enables gateway JWT verification, and
+those seven start returning 401 **before their own auth ever runs** — which silently
+kills safety paging and the control digest. The file's comments also record what is
+deliberately *absent* and why (`support-reply`/`support-ai-draft` keep `verify_jwt =
+true` because the console calls them with a real admin JWT); read it before adding a
+function that anything other than the app calls.
+
+⚠️ **Edge failures go to `logServerError` (`_shared/logError.ts`), not `console.error`.**
+It writes into the same `client_errors` table the console renders at `/errors`, tagged
+`platform='edge'` with the function name in `app_version`, and it never throws. Supabase's
+own function logs exist, but nobody watches them and they are not searchable next to the
+rest of the console — which is how "the poster pressed pay and it silently didn't work"
+stayed invisible until someone complained.
+
+**Money & escrow**
+
+| Function | |
+|---|---|
+| `stripe-create-setup-intent` | Saves a poster's card BEFORE they can accept. Mirrors the customer get-or-create in `stripe-create-payment-intent` — two copies to keep in step. |
+| `stripe-payment-method-status` | Does this poster have a card on file? Gates booking acceptance and drives the "add a payment method" prompts. |
+| `stripe-detach-payment-method` | The "Remove card" action in the Payments hub. |
+| `stripe-create-payment-intent` | **Mints the escrow hold** (manual-capture PaymentIntent) when a poster accepts. Its `safeBps()` guard exists because of two shipped money bugs: `Number(null) === 0` resolved a NULL rate to a free gig, and an `n > 0` test mapped a legitimately-pinned 0 bps promotion back to the 1000 fallback. |
+| `accept-booking` | Confirms a booking **only** after re-verifying a real hold exists. This is why accept is not a client write. |
+| `stripe-capture-payment` | Captures on verification, fully or partially (disputes). Idempotent — see the fee-pinning section for why that holds. |
+| `stripe-cancel-payment` | Releases the hold on decline/cancel. Its allowed-status list is pinned to `admin/lib/deleteUser.ts` by `__tests__/cancelPaymentContract.test.js`. |
+| `earner-claim-payment` | Lets an earner settle their own `completed` booking when the poster ghosts. Refuses while a report is open — which is why `trust` has resolve authority. |
+| `stripe-tip` | Off-session tip charge, routed in full to the earner. |
+| `admin-payment-action` | "THE console's only path to moving money" — `release_hold` and `refund`. Gated `requireAdminCaller(req, 'admin', 300)` **inside the function**, independently of the console guard. |
+| `stripe-webhook` | Keeps the ledger in sync with Stripe. `verify_jwt = false`; authenticated by the `stripe-signature` header. |
+| `reconcile-stripe` | Reconciles the ledger against Stripe. Carries BOTH `external = true` controls (`stripe_reconciliation` and `stripe_webhook_config`), dispatched by the sweep. |
+
+**Payouts, identity & student verification**
+
+| Function | |
+|---|---|
+| `stripe-connect-onboard` | Creates the earner's Connect Express account and returns the onboarding URL. Step-up gated (`_shared/stepUp.ts`). |
+| `stripe-payout-login-link` | Single-use Express dashboard link to the earner's bank details. Step-up gated. The highest-value non-money action in the app. |
+| `stripe-connect-status` | Re-retrieves the account LIVE and syncs `stripe_accounts.onboarded`, because `account.updated` is a Connected-accounts-scope event a platform webhook never receives. **A stuck flag makes `stripe-create-payment-intent`, `stripe-capture-payment` and `stripe-tip` all refuse the earner** — each re-checks `stripe_accounts.onboarded` for itself, and only the first reports it as `EARNER_NO_PAYOUT`, so grep the flag rather than the code. First thing to check when "booking is broken". |
+| `stripe-connect-return`, `stripe-identity-return` | 302 backstops for sessions minted before the return URLs moved to the web app. They look deletable and are not. Both exist because the Edge gateway forces `text/plain` + `nosniff`, so HTML served from an edge function renders as raw source. |
+| `stripe-create-identity-session` | The Stripe Identity document+selfie session — see **ID verification**. |
+| `student-verify-start`, `student-verify-confirm` | `.edu` code by email (only a hash is stored); confirm flips `profiles.student_verified`, which a DB trigger forbids clients from setting themselves. |
+
+**Support & assistant**
+
+| Function | |
+|---|---|
+| `support-submit` | **Public** intake, `verify_jwt = false` — the website Contact form and the app both POST here. Tickets are not only direct table writes under owner RLS. |
+| `support-reply` | The agent reply email. **The recipient is resolved SERVER-SIDE, never taken from the request** — it used to read `toEmail` from the body, which made it a phishing relay wearing our own brand. |
+| `support-ai-draft` | Claude-drafted reply, from the console. It ships ticket PII to a third-party LLM, which is why the tier gate matters. |
+| `assistant` | Hustlr AI — see the section above. |
+
+**Safety, moderation & ops**
+
+| Function | |
+|---|---|
+| `safety-alert` | Pages a human when a safety report lands. Invoked by the `reports` AFTER INSERT trigger via pg_net with the `x-safety-secret` shared secret; `verify_jwt = false`. |
+| `moderate-text` | Claude context-aware moderation, called before user text is written. **Fails OPEN by design** so a provider hiccup cannot wedge posting — do not model it as authoritative. On a block it auto-files a report into the Moderation queue. |
+| `moderate-image` | Claude vision on upload; deletes the object on violation. Every path through `src/lib/uploadImage.js` goes through it, so "all writes go through uploadImage.js" also means "all writes are moderated". |
+| `log-moderation` | Records client-detected keyword blocks into the Moderation queue as `reports` with `source='auto'`, rate-limited so probing the filter cannot flood it. |
+| `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
+| `controls-alert` | The hourly sweep's pager and the daily triage digest. `verify_jwt = false`. |
+| `send-push` | Expo push fan-out; owns `KNOWN_TABS` (see the tab-route-name note). |
+| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted TWICE: `certificates` once left public credential scans fetchable after the account was gone, and `support-photos` was missing until 2026-08-14. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is either cleared or excused with a reason, so the next omission fails the gate instead of waiting to be noticed. |
+
 ## A feature is not finished when the mobile screen works
 
 Everything this platform does eventually needs a **person** to see it. Before calling any
@@ -333,7 +418,7 @@ checklist to be polite about, it is where the actual failures have come from.
 |---|---|
 | **Admin console** (`admin/`) | Can a human see and act on this? A new object usually needs a page or a column on an existing one. **It does NOT auto-deploy** — `cd admin && npx vercel --prod --scope go-hustlr`. |
 | **Controls** | What silent wrong state can this create? Write a `ctl_*` function AND register it in `controls` — `run_all_controls` iterates the REGISTRY, so an unregistered check never runs and the board still shows green. `__tests__/adminSurface.test.js` fails on an unregistered control and on a console page missing from `Nav.tsx`. |
-| **Errors** | Client crashes reach `captureError` → `log-client-error` → `client_errors` → console **`/errors`**. New edge functions should `console.error` on failure; nothing else surfaces them. |
+| **Errors** | Client crashes reach `captureError` → `log-client-error` → `client_errors` → console **`/errors`**. Edge functions reach the **same** table via `logServerError` (`_shared/logError.ts`) — this line used to say `console.error` was all there was, which is how a money function's failures end up somewhere nobody reads. |
 | **Web** (`web/`) | Does the same flow exist there? `shared/` is the single source for pricing, categories, lifecycle and transforms — put logic there, not in one client. |
 | **Hustlr AI** | If users will ask about it, add the destination to `MUST_KNOW` in `__tests__/parity.test.js`; that test fails until the assistant's prompt knows it. |
 
@@ -450,8 +535,8 @@ No agent rewrites code, prompts or migrations unattended. In a single day of sup
 work this session dropped a `WHERE` clause from a control, shipped a screen missing an
 import, and broke the MFA gate so a correct code hung the app — each caught because a
 person or an assertion was in the loop. Unsupervised, those land at 3am. Production
-monitoring is already continuous and does not need an agent: 47 `controls` run hourly
-via pg_cron with a daily digest.
+monitoring is already continuous and does not need an agent: 51 `controls` are registered
+(2 are `external`, so 49 run in-database) hourly via pg_cron with a daily digest.
 
 ## Monitoring & analytics
 
@@ -598,8 +683,11 @@ only runs when a human opens a page.
 - **Disabling a control is a MUTE, not a switch.** `enabled = false` requires a
   `disabled_until` (default 24h) and `reenable_expired_controls()` runs at the top of
   every sweep, so a control cannot be quietly switched off forever.
-- One registry row is `external = true` (`stripe_reconciliation` → the `reconcile-stripe`
-  edge function, dispatched by the sweep); `run_all_controls` filters it out.
+- TWO registry rows are `external = true` — `stripe_reconciliation` and `stripe_webhook_config`,
+  both `fn_name = 'external:reconcile-stripe'`. `run_all_controls` filters them out (it iterates
+  `where enabled and not external`), so they run only via `controls_sweep_and_page`'s HTTP dispatch
+  to the `reconcile-stripe` edge function. That single-word difference between the inner and outer
+  function is why the console's "Run sweep now" once skipped both while reporting success.
 - The hourly sweep also runs `expire_stale_pending_bookings(14)` — untouched,
   never-started bookings with no live Stripe authorization become `cancelled` and their
   slots are freed.

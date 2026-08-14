@@ -20,6 +20,15 @@ const corsHeaders = {
 // after the account was gone. That is a straightforward retention/GDPR defect.
 const BUCKETS = [
   'avatars', 'job-photos', 'chat-photos', 'completion-photos', 'receipts', 'certificates',
+  'support-photos',
+  // support-photos was missing until 2026-08-14, so a deleted account's own support
+  // uploads survived it — screenshots people attach to a support ticket, which are
+  // exactly the kind of thing they attach BECAUSE something went wrong. Found by writing
+  // the CLAUDE.md inventory guard, not by anyone reading this list.
+  //
+  // The loop below lists the `<userId>/` prefix only, so this removes what the USER
+  // uploaded and leaves agent attachments under `ticket-<id>/` alone — those are
+  // support's own record of the conversation and are not the departing user's to erase.
 ];
 
 // Booking states where money is committed but not yet settled: the poster's card is

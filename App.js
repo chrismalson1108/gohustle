@@ -51,6 +51,7 @@ import OnboardingScreen     from './src/screens/onboarding/OnboardingScreen';
 import ConsentScreen        from './src/screens/ConsentScreen';
 import MfaChallengeScreen   from './src/screens/MfaChallengeScreen';
 import SecurityScreen       from './src/screens/SecurityScreen';
+import AssistantMemoryScreen from './src/screens/AssistantMemoryScreen';
 
 import { colors } from './src/theme';
 
@@ -189,6 +190,7 @@ function ProfileStack() {
       <Stack.Screen name="PayoutSetup"    component={PayoutSetupScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Payments"       component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="Security"       component={SecurityScreen} options={{ ...DETAIL_OPTS, title: 'Security' }} />
+      <Stack.Screen name="AssistantMemory" component={AssistantMemoryScreen} options={{ ...DETAIL_OPTS, title: 'Hustlr AI memory' }} />
       <Stack.Screen name="Expenses"       component={ExpensesScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="TrophyCase"     component={TrophyCaseScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="Reviews"        component={ReviewsScreen} options={DETAIL_OPTS} />

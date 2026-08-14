@@ -102,6 +102,14 @@ export default function SettingsScreen({ navigation }) {
           sub: 'See exactly how others see you',
           keywords: 'public preview others reviews',
           onPress: () => { if (user) go('UserProfile', { userId: user.id }); } },
+        // Sits next to "View my public profile" because it answers the same
+        // question from the other side: what is held about me, and by whom. Notes
+        // the assistant saves are replayed into every future conversation, so this
+        // is the only place they can be read back or removed.
+        { icon: 'sparkles-outline', title: 'What Hustlr AI remembers',
+          sub: 'See and delete the notes the assistant has saved',
+          keywords: 'assistant ai hustlr memory remember remembers notes forget delete erase privacy data personalisation personalization',
+          onPress: () => go('AssistantMemory') },
       ],
     },
     {

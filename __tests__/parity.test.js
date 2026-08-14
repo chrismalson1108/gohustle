@@ -97,6 +97,11 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     ['two-factor', /two-factor|Security/i],
     ['escrow', /escrow/i],
     ['who pays the fee', /comes out of the EARNER|earner's payout/i],
+    // Added 2026-08-14 with the memory viewer. The single most likely question this
+    // feature generates is "what do you remember about me / forget that" — and until
+    // the screen existed the prompt told the model there was nowhere to send them,
+    // which is now false.
+    ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
   ];
 
   MUST_KNOW.forEach(([what, re]) => {
