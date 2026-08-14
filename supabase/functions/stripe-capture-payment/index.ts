@@ -177,7 +177,40 @@ Deno.serve(async (req: Request) => {
         // over-credited. amount_cents is never overwritten, so round(fullFee * pct)
         // yields the same result on the first call and every retry.
         const fullFeeCents = fullFeeForAuth;
-        const feeCents = Math.min(captureCents, Math.round(fullFeeCents * capturePct));
+
+        // ── Re-floor at the CAPTURED amount ──────────────────────────────────
+        //
+        // Scaling the full fee is right for the percentage part and WRONG for the
+        // floor. platform_fee_cents floors every fee at `ceil(amount*0.029) + 30 + 25`
+        // — Stripe's processing plus a 25c margin — so fullFeeCents may already BE that
+        // floor. Multiplying it by pct scales the fixed 30c+25c down, while Stripe's own
+        // fixed 30c on the captured amount does not scale. The platform then pays to
+        // settle a dispute.
+        //
+        // Verified against live pg_proc, both reachable today:
+        //   $200 gig, 765c credit, 50%  → scaled 318 vs Stripe cost 320  = -2c
+        //   $10 gig,  NO credit,   50%  → scaled  42 vs Stripe cost  45  = -3c
+        //
+        // The second needs no promotion at all: any small gig settled below 100% loses
+        // money, and 0.5 is a one-tap chip in the poster's own Verify sheet
+        // (CompletionModal PCTS = [0.9, 0.75, 0.5]).
+        //
+        // Floor via the RPC with 0 bps — that returns exactly the floor for an amount,
+        // from the ONE definition of the fee, rather than reimplementing it here.
+        // Still idempotent: captureCents derives from the immutable amount_cents, never
+        // from the mutable fee_cents column, so a retry recomputes the same number.
+        const { data: floorCalc, error: floorErr } = await supabase.rpc('platform_fee_cents', {
+          p_amount_cents: captureCents,
+          p_fee_bps: 0,
+        });
+        if (floorErr || !Number.isFinite(Number(floorCalc))) {
+          await logServerError('stripe-capture-payment',
+            `capture floor computation failed for payment ${payment.id}: ${floorErr?.message ?? 'non-numeric'}`,
+            { booking_id: bookingId, payment_id: payment.id }, { fatal: true });
+          return json({ error: 'Could not price this capture. Please try again.' }, 503);
+        }
+        const scaledFee = Math.round(fullFeeCents * capturePct);
+        const feeCents = Math.min(captureCents, Math.max(scaledFee, Number(floorCalc)));
         earnerAmountCents = captureCents - feeCents;
         // Persist the REDUCED net BEFORE capturing. Capturing emits
         // payment_intent.succeeded, and the webhook credits earnings from whatever

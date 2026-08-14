@@ -270,3 +270,56 @@ describe('feeBreakdown', () => {
     expect(feeBreakdown(10000, null).totalCents).toBe(platformFeeCents(10000, 1000));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A partial capture must never cost the platform money to settle.
+//
+// stripe-capture-payment scaled the full fee by the capture percentage:
+//   feeCents = round(fullFee * pct)
+// which is right for the percentage part and WRONG for the floor. Every fee is floored
+// at `ceil(amount*0.029) + 30 + 25` — Stripe's processing plus a 25c margin — so fullFee
+// may already BE that floor. Scaling it shrinks the fixed 30c+25c, while Stripe's own
+// fixed 30c on the captured amount does not shrink.
+//
+// Verified against live pg_proc, both reachable today:
+//   $200 gig, 765c credit, 50%  → scaled 318 vs Stripe cost 320  = platform pays 2c
+//   $10 gig,  NO credit,   50%  → scaled  42 vs Stripe cost  45  = platform pays 3c
+//
+// The second needs no promotion at all, and 0.5 is a one-tap chip in the poster's own
+// Verify sheet — so this fires on ordinary small gigs whenever a dispute is settled.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('partial capture never settles below Stripe cost', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase/functions/stripe-capture-payment/index.ts'), 'utf8');
+  // Strip comments before matching. The explanation of the bug necessarily QUOTES the
+  // floor formula, and a naive /0.029/ then fires on the fix that documents itself — a
+  // guard that fails on correct code is a guard someone deletes.
+  const code = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const partial = code(src.slice(src.indexOf('if (capturePct < 1)'), src.indexOf('await stripe.paymentIntents.capture')));
+
+  it('found the partial-capture branch', () => {
+    expect(partial.length).toBeGreaterThan(200);
+  });
+
+  it('floors the scaled fee rather than shipping it raw', () => {
+    // The bug was `Math.min(captureCents, Math.round(fullFeeCents * capturePct))` with no
+    // lower bound at all.
+    expect(partial).toMatch(/Math\.max\(\s*scaledFee/);
+  });
+
+  it('derives that floor from the ONE fee definition, not a local formula', () => {
+    // CLAUDE.md: platform_fee_cents() is the single definition and all money paths call
+    // it by RPC. Re-deriving `ceil(x*0.029)+30+25` here is how JS and SQL drift.
+    expect(partial).toMatch(/rpc\(['"]platform_fee_cents['"]/);
+    expect(partial).not.toMatch(/0\.029/);
+  });
+
+  it('fails closed if the floor cannot be computed', () => {
+    // Guessing a fee is worse than refusing to capture — the same rule the fee
+    // computation above it already follows.
+    expect(partial).toMatch(/floorErr/);
+    expect(partial).toMatch(/503/);
+  });
+});
