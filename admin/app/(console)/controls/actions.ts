@@ -78,9 +78,51 @@ export async function runSweepNow(): Promise<ActionResult> {
     const ctx = await requireAdmin("support");
     const { error } = await ctx.service.rpc("run_all_controls");
     if (error) return { ok: false, message: error.message };
-    await audit(ctx, "control.sweep", "control", "*", {});
+
+    // ── The EXTERNAL controls too ────────────────────────────────────────────
+    //
+    // run_all_controls deliberately filters out `external = true` rows: those are not
+    // SQL functions, so it cannot execute them. The hourly cron
+    // (controls_sweep_and_page) dispatches them separately over pg_net — but this
+    // button did not, and still reported "Sweep complete."
+    //
+    // So the only control lever the UI offers silently skipped stripe_reconciliation
+    // (the check that asks STRIPE rather than comparing the database to itself) and
+    // stripe_webhook_config (which asserts Stripe can actually deliver what the
+    // handlers read). Someone pressing it to confirm the money is fine got a green
+    // answer from the two checks least able to give one.
+    //
+    // Best-effort and reported honestly: a reconciliation that could not be dispatched
+    // must not read as "everything ran".
+    let externalOk = true;
+    try {
+      const { data: cfg } = await ctx.service
+        .from("app_flags").select("value").eq("key", "controls_alert").maybeSingle();
+      const url = (cfg?.value as Record<string, string> | null)?.url ?? "";
+      const secret = (cfg?.value as Record<string, string> | null)?.secret ?? "";
+      const base = url.replace(/\/controls-alert$/, "");
+      if (!base || !secret) {
+        externalOk = false;
+      } else {
+        const res = await fetch(`${base}/reconcile-stripe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-controls-secret": secret },
+          body: JSON.stringify({ days: 14, limit: 200 }),
+        });
+        externalOk = res.ok;
+      }
+    } catch {
+      externalOk = false;
+    }
+
+    await audit(ctx, "control.sweep", "control", "*", { external_dispatched: externalOk });
     revalidatePath("/controls");
-    return { ok: true, message: "Sweep complete." };
+    return {
+      ok: true,
+      message: externalOk
+        ? "Sweep complete, including the Stripe checks."
+        : "SQL controls ran. The Stripe checks could NOT be dispatched — reconciliation and webhook config were not verified.",
+    };
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
     return { ok: false, message: "Could not run the sweep." };
