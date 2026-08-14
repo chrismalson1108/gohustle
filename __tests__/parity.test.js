@@ -324,16 +324,21 @@ describe('pushed screens do not swipe back from the middle of the screen', () =>
 describe('promo codes can actually be redeemed', () => {
   const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '..', p), 'utf8');
 
-  it('a client calls redeem_promo_code', () => {
-    const lib = read('src/lib/promoCodes.js');
-    expect(lib).toMatch(/rpc\(['"]redeem_promo_code['"]/);
+  it('both clients call redeem_promo_code', () => {
+    for (const p of ['src/lib/promoCodes.js', 'web/lib/promoCodes.ts']) {
+      expect(`${p}: ${/rpc\(['"]redeem_promo_code['"]/.test(read(p))}`).toBe(`${p}: true`);
+    }
   });
 
-  it('there is a user-reachable entry point', () => {
-    // A helper nothing renders is the same dead end one layer up.
-    const settings = read('src/screens/SettingsScreen.js');
-    expect(settings).toMatch(/redeemPromoCode/);
-    expect(settings).toMatch(/Have a code\?/);
+  it('there is a user-reachable entry point on BOTH clients', () => {
+    // A helper nothing renders is the same dead end one layer up. And a code that only
+    // works on the phone means a campaign distributed by code reaches half the users —
+    // the same one-surface gap that made 2FA bypassable by opening a browser.
+    for (const p of ['src/screens/SettingsScreen.js', 'web/app/(app)/settings/page.tsx']) {
+      const settings = read(p);
+      expect(`${p}: ${/redeemPromoCode/.test(settings)}`).toBe(`${p}: true`);
+      expect(`${p}: ${/Have a code\?/.test(settings)}`).toBe(`${p}: true`);
+    }
   });
 
   it('does not leak which failure occurred', () => {

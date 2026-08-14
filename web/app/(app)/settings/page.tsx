@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { redeemPromoCode, normalizePromoCode } from "@/lib/promoCodes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, X, ChevronRight, UserCircle2, Clock, Eye, CreditCard, Receipt,
-  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut,
+  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -38,6 +39,13 @@ interface Row {
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth();
+  // Promo-code redemption. Mobile got this first; leaving web without it would mean a
+  // campaign distributed by code reached phone users and nobody else — the same
+  // one-surface gap that made 2FA bypassable by opening a browser.
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeMsg, setCodeMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const { getPaymentReadiness } = useJobs();
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -103,6 +111,13 @@ export default function SettingsPage() {
             sub: "Track expenses & export for taxes",
             keywords: "tax 1099 expenses mileage receipts income export csv",
             href: "/profile/taxes",
+          },
+          {
+            icon: Tag,
+            title: "Have a code?",
+            sub: "Redeem a promo or referral code",
+            keywords: "promo code coupon referral discount voucher offer redeem claim",
+            onClick: () => setCodeOpen(true),
           },
         ],
       },
@@ -273,6 +288,50 @@ export default function SettingsPage() {
             }}
           >
             Sign out
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Promo / referral code redemption. One message for every failure — the RPC
+          returns a bare boolean on purpose, because distinct errors would be an
+          existence oracle for brute-forcing valid codes, and it is rate-limited on
+          ATTEMPTS rather than successes. */}
+      <Modal open={codeOpen} onClose={() => setCodeOpen(false)} title="Have a code?">
+        <div className="space-y-3">
+          <p className="text-sm text-ink-soft">
+            Promo and referral codes are claimed once and apply automatically to your next
+            eligible gig.
+          </p>
+          <input
+            value={code}
+            onChange={(e) => { setCode(normalizePromoCode(e.target.value)); setCodeMsg(null); }}
+            placeholder="ENTER CODE"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            className="w-full rounded-xl bg-canvas px-4 py-3 text-center text-lg font-bold tracking-[0.2em] text-ink outline-none ring-1 ring-line focus:ring-2 focus:ring-primary"
+          />
+          {codeMsg ? (
+            <p className={classNames("text-center text-sm font-semibold", codeMsg.ok ? "text-success" : "text-urgent")}>
+              {codeMsg.text}
+            </p>
+          ) : null}
+          <Button
+            className="w-full"
+            disabled={!code || codeBusy}
+            onClick={async () => {
+              setCodeBusy(true); setCodeMsg(null);
+              try {
+                const ok = await redeemPromoCode(code);
+                if (ok) {
+                  setCodeMsg({ ok: true, text: "Code applied — it will apply to your next eligible gig." });
+                  setCode("");
+                } else {
+                  setCodeMsg({ ok: false, text: "That code isn't available. Check it and try again." });
+                }
+              } finally { setCodeBusy(false); }
+            }}
+          >
+            {codeBusy ? "Checking…" : "Apply code"}
           </Button>
         </div>
       </Modal>
