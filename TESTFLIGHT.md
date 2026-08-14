@@ -14,6 +14,34 @@
   and an **ENFORCING** CSP (`Content-Security-Policy`, not Report-Only — verify against production before adding any third-party script; the old note said report-only and was wrong
   after the browser console shows no violations).
 
+## ⚠️ SDK 55 upgrade — READ BEFORE THE NEXT RELEASE (2026-08-13)
+
+The app moved Expo 54 → 55 (RN 0.81 → 0.83, `@stripe/stripe-react-native` 0.50 → 0.63).
+That is a NATIVE change, and it has one consequence that is easy to get wrong:
+
+**The runtimeVersion fingerprint changed** — `d75c3ab4…` (SDK 54) → `32a5c684…` (SDK 55).
+The policy is `fingerprint`, so this is it working as designed: it stops incompatible JS
+reaching an old binary. But it means:
+
+- **An OTA cannot carry this upgrade.** `eas update` from master now publishes against the
+  NEW fingerprint and reaches nobody still on the 54 binary.
+- **Ship a build first, then resume OTAs.** Until testers install the new build, any urgent
+  JS fix must ALSO be published against the old fingerprint or it reaches no one.
+
+**Three native surfaces were never verified**, because a simulator cannot exercise them.
+Walk each on the first TestFlight build:
+
+1. **Stripe payment sheet** — the biggest single jump in the upgrade (13 minors). Add a
+   card, pay for a gig, and confirm a saved card still appears. Server-side ephemeral keys
+   are pinned to apiVersion `2024-06-20`; a mismatch here breaks SAVED CARDS specifically.
+2. **Remote push** — `push.js` returns null on simulators via `Device.isDevice`, so the
+   whole registration path is untested. Confirm a token registers and a notification lands.
+3. **Google sign-in** — needs real client IDs and a device.
+
+Everything else was verified: 773 tests, native build, app launch, real data, maps
+rendering, and the two confirmed upgrade breaks fixed (full-screen swipe-back on every
+pushed screen; tab-bar label clipping on OS font-size change).
+
 ## 📱 iOS → TestFlight (you — needs your Apple Developer account)
 
 ```bash
