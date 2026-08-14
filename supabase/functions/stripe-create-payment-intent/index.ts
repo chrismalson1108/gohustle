@@ -340,7 +340,62 @@ Deno.serve(async (req: Request) => {
     if (existingPay?.payment_intent_id) {
       let existingPI: Stripe.PaymentIntent | null = null;
       try { existingPI = await stripe.paymentIntents.retrieve(existingPay.payment_intent_id); }
-      catch (_) { /* not retrievable — fall through and create a fresh one */ }
+      catch (err: any) {
+        // FAIL CLOSED unless Stripe positively says the intent is not there.
+        //
+        // This used to swallow every error with no log, so a rate limit, a timeout or a
+        // Stripe incident left existingPI null and fell straight through to
+        // paymentIntents.create — silently rebuilding the exact double-hold the block
+        // above exists to prevent, and rebuilding it during an incident, when nobody is
+        // reading anything but the incident.
+        //
+        // The asymmetry decides which way to fail. A duplicate authorization is
+        // invisible to every tool we have: the money controls are SQL over our own
+        // tables, and reconcile-stripe retrieves only the id named on the row — which
+        // the upsert below is about to overwrite — so PI#1 becomes unreachable while it
+        // sits on the poster's available credit until Stripe voids it at ~7 days.
+        // Refusing costs one retry on a payment the poster is standing in front of, and
+        // it lands in /errors where someone can see it.
+        //
+        // 404 / resource_missing is the ONE answer that settles it: Stripe has looked
+        // and the intent is not there, so a replacement can orphan nothing. Anything
+        // else — 429, 5xx, connection reset, timeout, a bad key — means we do not know,
+        // and "we do not know" must not authorize a card a second time.
+        const missing = err?.statusCode === 404
+          || err?.code === 'resource_missing'
+          || err?.raw?.code === 'resource_missing';
+        if (!missing) {
+          await logServerError(
+            'stripe-create-payment-intent',
+            `could not verify the existing hold ${existingPay.payment_intent_id} at Stripe — refused rather than risk a second ` +
+            `authorization on the poster's card: ${errMessage(err)}`,
+            {
+              booking_id: bookingId,
+              payment_intent_id: existingPay.payment_intent_id,
+              our_status: existingPay.status,
+            },
+            { fatal: true, userId: user.id },
+          );
+          return json({
+            error: 'HOLD_UNVERIFIABLE',
+            message: "We couldn't check the card hold already on this booking. Please try again in a moment.",
+          }, 503);
+        }
+        // Definitively gone, so creating a replacement is right — but a payments row
+        // naming an intent Stripe has never heard of is a ledger problem in its own
+        // right, and the create below overwrites the evidence. Record it first.
+        await logServerError(
+          'stripe-create-payment-intent',
+          `payments row names a PaymentIntent Stripe does not have (${existingPay.payment_intent_id}, our status ` +
+          `'${existingPay.status}') — creating a replacement`,
+          {
+            booking_id: bookingId,
+            payment_intent_id: existingPay.payment_intent_id,
+            our_status: existingPay.status,
+          },
+          { userId: user.id },
+        ).catch(() => {});
+      }
       const liveStatuses = ['requires_capture', 'requires_confirmation', 'requires_payment_method', 'requires_action', 'processing'];
       if (existingPI && liveStatuses.includes(existingPI.status)) {
         // The row said the hold was dead and Stripe says otherwise. Heal it before
@@ -357,6 +412,41 @@ Deno.serve(async (req: Request) => {
             `stripe-create-payment-intent: healed ${existingPay.payment_intent_id} from ` +
             `'${existingPay.status}' to 'authorized' — Stripe reports a live hold`,
           );
+        } else if (existingPay.status !== 'authorized') {
+          // Live at Stripe but holding NOTHING yet — requires_payment_method after a
+          // declined card is the state the poster reopens this sheet in. Handing back
+          // the same clientSecret is what stops a second hold, and the row is
+          // deliberately left alone: 'authorized' here would name escrow that does not
+          // exist, which is precisely what the branch above refuses to do.
+          //
+          // The row is still a liability, though. If the poster now confirms, this PI
+          // becomes requires_capture and the money IS held — and nothing writes that
+          // back. stripe-webhook has no payment_intent.amount_capturable_updated
+          // handler; reconcile-stripe's dead-payment check keys on amount_received > 0,
+          // which is zero on an uncaptured hold; and accept-booking — the one place
+          // that heals a row after verifying requires_capture — refuses any booking
+          // that is not still 'pending', so on a RECOVERY re-hold it never runs at all.
+          // The row then rests at 'failed' naming real money, and both
+          // stripe-capture-payment and earner-claim-payment turn it away with
+          // HOLD_EXPIRED: the earner is unpaid on funds that are genuinely held.
+          //
+          // The heal belongs on the requires_capture observation, never on a guess made
+          // here. Until something watches for that signal on this path, at least make
+          // the window visible instead of silent — today it leaves no trace anywhere.
+          await logServerError(
+            'stripe-create-payment-intent',
+            `re-issued the client secret for ${existingPay.payment_intent_id} while our row says '${existingPay.status}' and ` +
+            `Stripe says '${existingPI.status}' — if this confirms to requires_capture, only a later call here or ` +
+            `accept-booking will heal the row, and neither runs on a recovery re-hold`,
+            {
+              booking_id: bookingId,
+              payment_intent_id: existingPay.payment_intent_id,
+              our_status: existingPay.status,
+              stripe_status: existingPI.status,
+              booking_status: booking.status,
+            },
+            { userId: user.id },
+          ).catch(() => {});
         }
         // COMPARE WHAT IS STORED. payments.amount_cents holds authorizedCents (the
         // DISCOUNTED total that Stripe is actually holding), so comparing it against

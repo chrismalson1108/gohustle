@@ -60,7 +60,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: pay, error: payErr } = await service
       .from('payments')
-      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, status')
+      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, refunded_at, status')
       .eq('booking_id', bookingId)
       .maybeSingle();
     if (payErr) return json({ error: 'lookup_failed', message: payErr.message }, 503);
@@ -131,8 +131,35 @@ Deno.serve(async (req: Request) => {
         return json({ error: 'not_captured', message: 'Only a captured charge can carry a reversal.' }, 409);
       }
       const capturedC = (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0);
-      const cents = amountCents == null ? capturedC - (pay.refunded_cents ?? 0) : amountCents;
-      if (cents <= 0) return json({ error: 'bad_amount' }, 400);
+      const alreadyReversed = pay.refunded_cents ?? 0;
+      const remaining = capturedC - alreadyReversed;
+
+      // A retry after the console's 20s abort lands HERE, not on the ledger's UNIQUE
+      // index: attempt 1 already moved refunded_cents, so the console's blank amount
+      // resolves to 0 remaining and the zero check below rejected it — as a bare
+      // `bad_amount` with no message, which InterventionPanel prints verbatim in red.
+      // An operator reading "bad_amount" after a timeout concludes the button is broken
+      // and clicks again.
+      //
+      // Still an error rather than a success, deliberately: refunded_cents does not say
+      // WHICH kind of reversal consumed the charge, and recordReversal's success text is
+      // fixed ("Recorded $X as reversed") — echoing it at someone whose charge was
+      // already fully REFUNDED would report a lost chargeback as filed when nothing
+      // filed it, burying the exact accounting gap this op exists to close. The
+      // timestamp is what lets the operator tell their own timed-out click from a
+      // reversal recorded last week.
+      if (alreadyReversed > 0 && remaining <= 0) {
+        return json({
+          error: 'already_reversed',
+          message:
+            `This charge is already fully reversed — $${(alreadyReversed / 100).toFixed(2)} was recorded` +
+            `${pay.refunded_at ? ` at ${pay.refunded_at}` : ''}. If that was this reversal timing out, ` +
+            'it landed; there is nothing further to record.',
+        }, 409);
+      }
+
+      const cents = amountCents == null ? remaining : amountCents;
+      if (cents <= 0) return json({ error: 'bad_amount', message: 'A reversal must be more than zero.' }, 400);
 
       await service.from('payments').update({ refund_source: 'chargeback' }).eq('id', pay.id);
       // p_debit_earner: FALSE. This op makes no stripe.* call — a chargeback on a
@@ -150,13 +177,18 @@ Deno.serve(async (req: Request) => {
         // timeout the operator's second click sends byte-identical values — that is
         // the case this collapses. The reason text is deliberately NOT part of the
         // key: a retyped word would sail straight past it.
+        //
+        // NOT requestId, unlike the refund path below: recordReversal in the console's
+        // actions.ts does not forward one, so keying on it here would mean no dedupe at
+        // all rather than a different dedupe. Unifying the two keys needs that wired up
+        // first — refundIdempotency.test.js pins this shape for that reason.
         p_external_id: `chargeback_${pay.payment_intent_id}_${cents}`,
       });
       if (recErr) throw new Error(recErr.message);
       if (total === null) {
         return json({
           error: 'over_refund',
-          message: `Only ${((capturedC - (pay.refunded_cents ?? 0)) / 100).toFixed(2)} of this charge is still unreversed.`,
+          message: `Only ${(remaining / 100).toFixed(2)} of this charge is still unreversed.`,
         }, 409);
       }
       return json({ ok: true, op, refunded_cents: cents });

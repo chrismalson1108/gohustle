@@ -68,16 +68,23 @@ export default function PaymentsScreen({ navigation, route }) {
 
   const load = useCallback(async () => {
     if (!user?.id) return;
+    // Best-effort: the ledger is the screen's job, and a payouts hiccup must not
+    // make it look like the transactions failed to load. But it must not resolve to
+    // [] either — that renders "No bank deposits yet", which reads to an earner as
+    // "we never sent you money" and is the exact failure the catch below exists to
+    // prevent. Three states: null = loading, [] = confirmed empty, 'error' = unknown.
+    //
+    // Deliberately OUTSIDE the try, and before the awaited ledger read. It used to sit
+    // after it, so a ledger failure jumped to the catch and never dispatched this at
+    // all — leaving payouts at null forever, which is a sheet that spins with no error
+    // and no retry. That is the same lie the catch prevents, just slower. The deposits
+    // read does not depend on the ledger read, so it runs either way and every path now
+    // ends in an array or 'error'.
+    fetchPayouts(user.id).then(setPayouts).catch(() => setPayouts('error'));
     try {
       setError(null);
       const rows = await fetchLedger(user.id);
       setEntries(rows);
-      // Best-effort: the ledger is the screen's job, and a payouts hiccup must not
-      // make it look like the transactions failed to load. But it must not resolve to
-      // [] either — that renders "No bank deposits yet", which reads to an earner as
-      // "we never sent you money" and is the exact failure the catch below exists to
-      // prevent. Three states: null = loading, [] = confirmed empty, 'error' = unknown.
-      fetchPayouts(user.id).then(setPayouts).catch(() => setPayouts('error'));
       if (!chosenRef.current) {
         chosenRef.current = true;
         const earner = rows.filter((r) => r.side === 'earner').length;
@@ -141,6 +148,10 @@ export default function PaymentsScreen({ navigation, route }) {
   const renderRow = ({ item }) => {
     const st = paymentState(item.status, item.side);
     const tone = TONE[st.tone] ?? TONE.muted;
+    // What came off THIS reader's money — the same figure netCents was computed from,
+    // and the one the receipt sheet and the CSV print. The gross refund belongs to the
+    // poster's side of the transaction; see toEntry in src/lib/payments.js.
+    const refundShare = item.refundShareCents ?? item.refundedCents;
     return (
       <TouchableOpacity
         style={styles.row}
@@ -165,8 +176,12 @@ export default function PaymentsScreen({ navigation, route }) {
           >
             {item.side === 'earner' ? '+' : '−'}{fmt(item.netCents)}
           </Text>
-          {item.refundedCents > 0 ? (
-            <Text style={styles.rowSub}>{fmt(item.refundedCents)} refunded</Text>
+          {/* Printing the gross here made the row contradict itself: "+$27.90" over
+              "$30.00 refunded", where 55.80 − 30.00 does not reach 27.90. And on a lost
+              chargeback it announced a $60 loss the earner never took — the row's own
+              amount, the receipt it opens and their dashboard all said otherwise. */}
+          {refundShare > 0 ? (
+            <Text style={styles.rowSub}>{fmt(refundShare)} refunded</Text>
           ) : null}
         </View>
       </TouchableOpacity>
@@ -330,7 +345,15 @@ export default function PaymentsScreen({ navigation, route }) {
                     : { label: 'Discounts', value: `− ${fmt(sum.discountCents)}`, show: sum.discountCents > 0, good: true },
                   { label: 'Tips', value: `+ ${fmt(sum.tipsCents)}`, show: sum.tipsCents > 0, good: true },
                   {
-                    label: side === 'earner' ? 'Refunded to posters' : 'Refunded to you',
+                    // stats() totals the share that came off THIS side, so on the earner
+                    // segment this is their part of the capture — not what the poster got
+                    // back. "Refunded to posters − $27.90" on a $30 refund named the wrong
+                    // party AND the wrong number; the poster received $30.00. Naming the
+                    // share is the honest half to keep, because the share is what the row
+                    // above, the receipt and the CSV are all built from. Same wording as
+                    // the receipt's "Your share of the refund". The poster's figure IS the
+                    // whole refund, so their label is already right.
+                    label: side === 'earner' ? 'Your share of refunds' : 'Refunded to you',
                     value: `${side === 'earner' ? '−' : '+'} ${fmt(sum.refundedCents)}`,
                     show: sum.refundedCents > 0,
                     good: side !== 'earner',

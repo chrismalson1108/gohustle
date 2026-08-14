@@ -298,55 +298,6 @@ Deno.serve(async (req: Request) => {
         const feeCents = Math.min(captureCents, Math.max(scaledFee, Number(floorCalc)));
         earnerAmountCents = captureCents - feeCents;
 
-        // ── Give back the part of the credit this capture could not use ──────
-        //
-        // consume_fee_credit debits the credit at BOOKING, sized to the fee on the FULL
-        // gig. Settle below 100% and the fee shrinks, so the credit can only offset a
-        // smaller amount — and the rest was simply gone: the ledger row stays 'applied',
-        // release_booking_benefits early-returns once captured, and its trigger fires
-        // only on declined/cancelled.
-        //
-        // Measured on a $200 gig with a 765c credit at 50%: the credit delivered 355c of
-        // value and 410c evaporated, more than half.
-        //
-        // settle_booking_benefits already relaxes a PROMOTION's budget on this exact
-        // event; it iterates promo_redemptions only, so referral credits were left out of
-        // a rule the platform already follows. And consume_fee_credit itself refuses to
-        // forfeit a partially-usable credit — "splitting rather than forfeiting is the
-        // difference between a credit and a coupon". This is that, one step later.
-        //
-        // Delivered value = what the fee WOULD have been without the credit, minus what
-        // it actually is. Non-fatal: the money has moved, and a bookkeeping retry must
-        // never fail a settled capture. return_unused_fee_credit is idempotent on the
-        // delivered figure, so the hourly sweep can safely re-run it.
-        if (creditCents > 0) {
-          try {
-            const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
-              p_amount_cents: gigAmountCents,
-              p_fee_bps: safeBps(payment.fee_bps),
-            });
-            if (Number.isFinite(Number(noCreditCalc))) {
-              const noCreditFull = Math.max(0, Number(noCreditCalc) - discountCents);
-              const noCreditAtCapture = Math.min(
-                captureCents,
-                Math.max(Math.round(noCreditFull * capturePct), Number(floorCalc)),
-              );
-              const delivered = Math.max(0, noCreditAtCapture - feeCents);
-              const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
-                p_booking: bookingId,
-                p_delivered_cents: delivered,
-              });
-              if (retErr) throw retErr;
-              if (Number(returned) > 0) {
-                console.log(`stripe-capture-payment: returned ${returned}c of unused fee credit on ${bookingId}`);
-              }
-            }
-          } catch (e) {
-            await logServerError('stripe-capture-payment',
-              `could not return unused fee credit on booking ${bookingId}: ${String((e as Error)?.message ?? e)}`,
-              { booking_id: bookingId, payment_id: payment.id });
-          }
-        }
         // Persist the REDUCED net BEFORE capturing. Capturing emits
         // payment_intent.succeeded, and the webhook credits earnings from whatever
         // earner_amount_cents the row holds — if we wrote it AFTER the capture, a
@@ -383,6 +334,72 @@ Deno.serve(async (req: Request) => {
           fee_cents: settled.feeCents,
           earner_amount_cents: settled.earnerCents,
         }).eq('id', payment.id);
+
+        // ── Give back the part of the credit this capture could not use ──────
+        //
+        // consume_fee_credit debits the credit at BOOKING, sized to the fee on the FULL
+        // gig. Settle below 100% and the fee shrinks, so the credit can only offset a
+        // smaller amount — and the rest was simply gone: the ledger row stays 'applied',
+        // release_booking_benefits early-returns once captured, and its trigger fires
+        // only on declined/cancelled.
+        //
+        // Measured on a $200 gig with a 765c credit at 50%: the credit delivered 355c of
+        // value and 410c evaporated, more than half.
+        //
+        // settle_booking_benefits already relaxes a PROMOTION's budget on this exact
+        // event; it iterates promo_redemptions only, so referral credits were left out of
+        // a rule the platform already follows. And consume_fee_credit itself refuses to
+        // forfeit a partially-usable credit — "splitting rather than forfeiting is the
+        // difference between a credit and a coupon". This is that, one step later.
+        //
+        // ── IT RUNS HERE, AFTER THE CAPTURE — NOT BEFORE ─────────────────────
+        //
+        // Releasing a credit is one-way as far as this function is concerned: the RPC is
+        // idempotent on the DELIVERED figure, so a later call carrying a LARGER delivered
+        // value returns 0 rather than taking the release back. So it must never sit on a
+        // path that can still abort. It used to sit above claimForCapture, and that abort
+        // was reachable — the earner claims the same ghosted gig, earner-claim-payment:285
+        // flips payments.status to 'captured', our claim then matches zero rows and 409s
+        // BOOKING_CHANGED with 410c of the $200/765c case already handed back against a
+        // capture that never happened, free to be spent on another booking. Nothing would
+        // have caught it either: ctl_credit_stranded_on_dead_booking only looks the other
+        // way (still 'applied' on a declined/cancelled booking).
+        //
+        // Below the status flip is also the same rule settle_booking_benefits follows a
+        // few lines down — money first, bookkeeping after.
+        //
+        // Delivered value = what the fee WOULD have been without the credit, minus what
+        // it actually is. Non-fatal: the money has moved, and a bookkeeping retry must
+        // never fail a settled capture. return_unused_fee_credit is idempotent on the
+        // delivered figure, so the hourly sweep can safely re-run it.
+        if (creditCents > 0) {
+          try {
+            const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
+              p_amount_cents: gigAmountCents,
+              p_fee_bps: safeBps(payment.fee_bps),
+            });
+            if (Number.isFinite(Number(noCreditCalc))) {
+              const noCreditFull = Math.max(0, Number(noCreditCalc) - discountCents);
+              const noCreditAtCapture = Math.min(
+                captureCents,
+                Math.max(Math.round(noCreditFull * capturePct), Number(floorCalc)),
+              );
+              const delivered = Math.max(0, noCreditAtCapture - feeCents);
+              const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
+                p_booking: bookingId,
+                p_delivered_cents: delivered,
+              });
+              if (retErr) throw retErr;
+              if (Number(returned) > 0) {
+                console.log(`stripe-capture-payment: returned ${returned}c of unused fee credit on ${bookingId}`);
+              }
+            }
+          } catch (e) {
+            await logServerError('stripe-capture-payment',
+              `could not return unused fee credit on booking ${bookingId}: ${String((e as Error)?.message ?? e)}`,
+              { booking_id: bookingId, payment_id: payment.id });
+          }
+        }
       } else {
         // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
         // overwritten) and persist it BEFORE capturing — same reason as the partial
