@@ -23,7 +23,7 @@ fi
 # whatever was last deployed by hand. It has silently sat a week stale before.
 RANGE="origin/master..HEAD"
 if git diff --name-only $RANGE 2>/dev/null | grep -q '^admin/'; then
-  printf '\033[33m⚠ admin/ changed — it does NOT auto-deploy:  cd admin && npx vercel --prod\033[0m\n'
+  printf '\033[33m⚠ admin/ changed — it does NOT auto-deploy:  cd admin && npx vercel --prod --scope go-hustlr\033[0m\n'
 fi
 
 # Edge functions deploy by hand too.

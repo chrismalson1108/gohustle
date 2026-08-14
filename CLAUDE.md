@@ -19,7 +19,7 @@ npx expo install <package>      # Use instead of npm install for Expo packages (
 npm test                        # Jest — the pure-logic + drift-guard suite in __tests__/ (~1s)
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
-cd admin && npx vercel --prod   # REQUIRED: the admin console does NOT auto-deploy (see below)
+cd admin && npx vercel --prod --scope go-hustlr   # REQUIRED: admin does NOT auto-deploy. --scope is NOT optional
 ```
 
 ⚠️ **Native iOS builds on this Mac: use `xcodebuild`, and never a custom `-derivedDataPath`.**
@@ -72,8 +72,14 @@ four consecutive pushes each triggered a web deploy and none touched admin, whic
 7 days stale at the time. After any `admin/` change:
 
 ```bash
-cd admin && npx vercel --prod
+cd admin && npx vercel --prod --scope go-hustlr
 ```
+
+⚠️ **`--scope go-hustlr` is required.** The project belongs to the `go-hustlr` TEAM while the
+CLI logs in as the personal account `mainmail-1145`, so the bare command documented here
+until 2026-08-14 fails with a flat `"Not authorized"` / `deploy_failed` — which reads like
+an expired login rather than a missing flag, and the obvious response (re-authenticate)
+fixes nothing.
 
 The app runs in the **custom GoHustlr dev client, not Expo Go** — `expo-dev-client` is
 installed and the app's native modules (Stripe, maps, notifications, Google sign-in)
@@ -325,7 +331,7 @@ checklist to be polite about, it is where the actual failures have come from.
 
 | Surface | Ask |
 |---|---|
-| **Admin console** (`admin/`) | Can a human see and act on this? A new object usually needs a page or a column on an existing one. **It does NOT auto-deploy** — `cd admin && npx vercel --prod`. |
+| **Admin console** (`admin/`) | Can a human see and act on this? A new object usually needs a page or a column on an existing one. **It does NOT auto-deploy** — `cd admin && npx vercel --prod --scope go-hustlr`. |
 | **Controls** | What silent wrong state can this create? Write a `ctl_*` function AND register it in `controls` — `run_all_controls` iterates the REGISTRY, so an unregistered check never runs and the board still shows green. `__tests__/adminSurface.test.js` fails on an unregistered control and on a console page missing from `Nav.tsx`. |
 | **Errors** | Client crashes reach `captureError` → `log-client-error` → `client_errors` → console **`/errors`**. New edge functions should `console.error` on failure; nothing else surfaces them. |
 | **Web** (`web/`) | Does the same flow exist there? `shared/` is the single source for pricing, categories, lifecycle and transforms — put logic there, not in one client. |
@@ -431,7 +437,7 @@ prompt is no longer months behind the app.
 ### Pre-push hook (`.githooks/pre-push`, `core.hooksPath` is set)
 Runs the suite and then prints the reminders that no test can produce, because they are
 about deployment rather than code:
-- `admin/` changed → **does not auto-deploy**, `cd admin && npx vercel --prod`
+- `admin/` changed → **does not auto-deploy**, `cd admin && npx vercel --prod --scope go-hustlr`
 - `supabase/functions/` changed → deploy each one by hand
 - `supabase/migrations/` changed → `db push` BEFORE shipping app builds that read new columns
 - native config changed → an OTA will **not** carry it; it needs a new build
