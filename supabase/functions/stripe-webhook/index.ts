@@ -436,11 +436,26 @@ Deno.serve(async (req: Request) => {
           break;
         }
 
-        // Resolve the earner from the connected account. Best-effort: an unmapped
-        // account still gets its payout recorded (user_id null) rather than dropped,
-        // so the row is there to reconcile instead of the event being lost.
-        const { data: acctRow } = await supabase
+        // Resolve the earner from the connected account. Two outcomes land in the same
+        // `user_id null` column and must NOT be reached the same way:
+        //
+        //  • Query succeeded, no row — a genuinely unmapped account. Record the payout
+        //    with a null owner rather than dropping it; /payments renders those as
+        //    "unmapped account" precisely so a human can reconcile them.
+        //  • Query FAILED — we know nothing about the owner, so a null is a WRONG
+        //    attribution rather than an unknown one. stripe_payouts is what the app's
+        //    Bank deposits section reads per user, so that write hides a real deposit
+        //    from the earner who is owed it, permanently and silently: no error surfaces,
+        //    and if the failing event was payout.paid there is no later event to correct
+        //    it. Throw instead — Stripe retries, and a retry that resolves the account
+        //    writes the right owner.
+        const { data: acctRow, error: acctErr } = await supabase
           .from('stripe_accounts').select('user_id').eq('account_id', acct).maybeSingle();
+        if (acctErr) {
+          throw new Error(
+            `payout ${payout.id}: stripe_accounts lookup failed for ${acct} — ${acctErr.message}`,
+          );
+        }
 
         // arrival_date is a UNIX SECONDS field: estimated on created, actual on paid.
         const arrival = typeof payout.arrival_date === 'number'
@@ -450,6 +465,8 @@ Deno.serve(async (req: Request) => {
         const { error: poErr } = await supabase.from('stripe_payouts').upsert({
           payout_id: payout.id,
           account_id: acct,
+          // Null here can only mean "no such mapping" — a failed lookup threw above and
+          // never reaches this payload.
           user_id: acctRow?.user_id ?? null,
           amount_cents: payout.amount,
           currency: payout.currency ?? 'usd',

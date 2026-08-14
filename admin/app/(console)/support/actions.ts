@@ -278,11 +278,14 @@ export async function openThreadWithUser(formData: FormData): Promise<ActionResu
     // their subject line, in the thread where they reported being harmed. Provenance
     // is the entire message there. Same gig as well as same topic: a thread about gig
     // A must not absorb a message about gig B just because both are 'booking'.
-    let reuse: { id: number } | null = null;
+    // `last_author` is read here, BEFORE the message insert below moves it to 'admin',
+    // so it answers the only question the email gate cares about: has the user spoken
+    // in this thread yet?
+    let reuse: { id: number; last_author: string | null } | null = null;
     if (category !== "safety") {
       let reuseQ = ctx.service
         .from("support_tickets")
-        .select("id")
+        .select("id, last_author")
         .eq("user_id", userId)
         .eq("category", category)
         .eq("opened_by", "agent")
@@ -331,7 +334,12 @@ export async function openThreadWithUser(formData: FormData): Promise<ActionResu
     // how it is read. In-app plus the fixed-wording push is enough to reach a real
     // user; once they have replied, the thread is a normal conversation and
     // replyTicket emails as usual.
-    const coldContact = !reuse;
+    //
+    // The gate is "have they replied", NOT "is this thread new". Reuse only ever
+    // matches a thread WE opened, so keying off novelty let the second send email a
+    // user who has still never written to us — the rule bypassed by doing the same
+    // thing twice.
+    const coldContact = !reuse || reuse.last_author !== "user";
     const [emailRes, pushRes] = await Promise.all([
       email && !coldContact
         ? callEdge("support-reply", { ticketId, subject: `${subject} (#${ticketId})`, body }).catch(() => null)
