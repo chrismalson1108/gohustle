@@ -1,5 +1,13 @@
 # CLAUDE.md drift — measured 2026-08-13
 
+⚠️ **AT LEAST ONE FINDING IN THIS FILE IS WRONG.** The claim that
+`__tests__/adminSurface.test.js` does not enforce the control-registration guarantee was
+asserted by TWO independent agents and is FALSE — verified 2026-08-13 by injecting an
+unregistered `ctl_*` function and an unlinked console page, both of which the test caught
+and named. Treat every entry below as a lead to verify, not a fact. Two agents agreeing is
+not evidence.
+
+
 Seven code surfaces diffed against what CLAUDE.md claims, by seven independent agents.
 **79 things exist that the doc never mentions; 33 things the doc asserts are wrong.**
 
