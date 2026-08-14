@@ -383,3 +383,41 @@ describe('the address-masking contract is documented', () => {
     expect(claude).toMatch(/safety_checkins/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A documented prop signature must match the component's real one.
+//
+// CLAUDE.md listed MessageSheet's and CompletionModal's props and omitted `visible` —
+// the prop that makes a modal appear. Anything built from those docs renders a component
+// that mounts and never shows, with no error to explain it. A wrong signature is the
+// expensive kind of doc rot: it does not send you searching, it sends you debugging.
+//
+// Only checks the props CLAUDE.md actually names — this is not a demand that the docs
+// enumerate everything, just that what they DO say is true.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('documented component props exist on the component', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const claude = fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8');
+
+  const components = ['MessageSheet', 'CompletionModal', 'FilterSheet', 'SlotPicker', 'BookingStatusBadge', 'ScreenHeader'];
+
+  for (const name of components) {
+    it(`${name}'s documented props are real`, () => {
+      const file = path.join(__dirname, '..', 'src/components', `${name}.js`);
+      if (!fs.existsSync(file)) return;
+      const sig = (fs.readFileSync(file, 'utf8').match(new RegExp(`export default function ${name}\\(\\{([^}]*)\\}`)) || [])[1];
+      if (!sig) return;
+      const real = new Set(sig.split(',').map((t) => t.split('=')[0].trim()).filter(Boolean));
+
+      // The doc line for this component, and the `backticked` props on it.
+      const line = claude.split('\n').find((l) => l.includes(`**\`${name}\`**`)) ?? '';
+      const documented = [...line.matchAll(/`([a-zA-Z][a-zA-Z0-9]*)`/g)]
+        .map((m) => m[1])
+        .filter((t) => t !== name && real.size > 0);
+
+      const bogus = documented.filter((d) => /^(on[A-Z]|visible$|embedded$)/.test(d) && !real.has(d));
+      expect(`${name}: ${bogus.join(', ') || 'none'}`).toBe(`${name}: none`);
+    });
+  }
+});

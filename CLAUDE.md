@@ -220,17 +220,17 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 
 ## Key Components
 
-- **`FilterSheet`** — bottom-sheet modal with sort, pay range, pay type, available days (parsed from slot labels), location/state chips, urgency toggle. Import `DEFAULT_FILTERS` and `countActiveFilters` from it.
-- **`MessageSheet`** — realtime chat modal between earner and poster. Props: `bookingId`, `jobTitle`, `otherPerson: { name, avatarInitial }`, `onClose`. Reads/writes `messages` table, Supabase realtime channel per `bookingId`.
-- **`CompletionModal`** — poster "Verify & Rate" bottom sheet. Props: `booking`, `onConfirm({ rating, reviewText, paymentMethod })`.
+- **`FilterSheet`** — bottom-sheet modal with sort, pay range, pay type, available days (parsed from slot labels), location/state chips, urgency toggle. Props: `visible`, `filters`, `availableStates`, `mySchool`, `defaultCenterLabel`, `onApply`, `onClose`. Import `DEFAULT_FILTERS` and `countActiveFilters` from it.
+- **`MessageSheet`** — realtime chat modal between earner and poster. Props: `visible`, `bookingId`, `jobId`, `jobTitle`, `otherPerson: { name, avatarInitial }`, `onClose`, `onViewProfile`, `onViewJob`, `embedded` (default `false`). ⚠️ `visible` is required — the docs omitted it, so anything built from them rendered a modal that never appeared. Reads/writes `messages` table, Supabase realtime channel per `bookingId`.
+- **`CompletionModal`** — poster "Verify & Rate" bottom sheet. Props: `visible`, `booking`, `onClose`, `onConfirm({ rating, reviewText, paymentMethod })`. Same omission as above: `visible` and `onClose` were missing.
 - **`LocationPicker`** — live city autocomplete backed by the photon.komoot.io geocoder (worldwide, not a fixed list), plus a "use my location" reverse-geocode via `expo-location` and the remote presets `Remote` / `Zoom / Remote` / `Work from Home`. Controlled: `value` + **`onChange(label, coords)`** — the second argument carries `{ lat, lng }` and is what populates `jobs.lat`/`lng` for distance sort and the map.
 - **`DateTimePicker`** — day chips + time grid producing `slots[]`. Use for posting and editing.
-- **`SlotPicker`** — single-select chip row from existing `slots[]` (used in JobDetail).
+- **`SlotPicker`** — single-select chip row from existing `slots[]` (used in JobDetail). Props: `slots`, `selected`, `onSelect`.
 - **`ScreenHeader`** — flat screen header, the replacement for the deleted gradient hero. Props: `children`, `style`, `topInset` (default `true`; pass `false` on pushed screens where the opaque native bar already cleared the status bar), `surface` (white instead of canvas). **There is no `GradientHeader` and no LinearGradient anywhere in the app.**
 - **`AchievementToast`** — driven by `pendingToast` in UserContext.
 - **`BookingStatusBadge`** — status pill: pending/confirmed/completed/verified/declined/cancelled. Props: `status`, `compact` (icon-only).
 - **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.
-- **`RatingStars`** — reusable star rating display/input component.
+- **`RatingStars`** — star rating DISPLAY. Props: `rating`, `size` (default 13). It is not an input — nothing in it takes a press handler, despite the old wording here saying "display/input".
 - **`JobCard`** — job listing card used in HomeScreen and search results.
 - **`Avatar`** — renders a user's photo (`url`) or the initial-letter circle fallback. Props `{ url, initial, size, bg, fontSize, borderColor, borderWidth, style }`. Used everywhere an avatar appears. Profile photos live in the public `avatars` storage bucket (`profiles.avatar_url`); upload via `src/lib/uploadImage.js` (`pickImage`/`pickImages` + `uploadImage`/`uploadImages`, which compress with expo-image-manipulator and upload an ArrayBuffer to Supabase Storage under `<userId>/…`).
 
