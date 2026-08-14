@@ -23,13 +23,23 @@ export default async function PaymentsPage({
     .limit(60);
   if (statusFilter) payQ = payQ.eq("status", statusFilter);
 
-  const [disputesRes, paymentsRes] = await Promise.all([
+  const [disputesRes, paymentsRes, payoutsRes] = await Promise.all([
     ctx.service
       .from("disputes")
       .select("id, booking_id, raised_by, reason, pct_paid, created_at")
       .order("created_at", { ascending: false })
       .limit(50),
     payQ,
+    // Bank deposits — the last leg of the money, and until now invisible to the team.
+    // stripe_payouts had ZERO surface anywhere in admin/, so when an earner asked "where
+    // is my money" support could see that we released it and nothing about whether it
+    // reached their bank. The data has been arriving since the payout.* events were
+    // enabled; nobody could look at it.
+    ctx.service
+      .from("stripe_payouts")
+      .select("payout_id, user_id, amount_cents, currency, status, method, arrival_date, failure_code, failure_message, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
   // Enrich disputes + payments with booking → job → parties context.
@@ -49,11 +59,81 @@ export default async function PaymentsPage({
     : [];
   const jobById = new Map(jobs.map((j) => [j.id, j]));
 
+  // Payout rows carry a user_id and nothing else human-readable.
+  const payoutUserIds = [...new Set((payoutsRes.data ?? []).map((p) => p.user_id).filter(Boolean) as string[])];
+  const payoutUsers = payoutUserIds.length
+    ? (await ctx.service.from("profiles").select("id, name, username").in("id", payoutUserIds)).data ?? []
+    : [];
+  const userById = new Map(payoutUsers.map((u) => [u.id, u]));
+
   const STATUSES = ["", "authorized", "captured", "cancelled", "failed"];
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Payments &amp; disputes</h1>
+
+      <Section title={`Bank deposits (${payoutsRes.data?.length ?? 0})`}>
+        {(payoutsRes.data ?? []).length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">
+            No payouts recorded yet. Stripe batches transfers, so a deposit covers many gigs and
+            does not map to a single booking.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[var(--muted)]">
+                <th className="py-2">Earner</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Arrives</th>
+                <th>Method</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(payoutsRes.data ?? []).map((po) => {
+                const u = po.user_id ? userById.get(po.user_id) : null;
+                return (
+                  <tr key={po.payout_id} className="border-t border-[var(--line)]">
+                    <td className="py-2">
+                      {u ? (
+                        <Link href={`/users/${po.user_id}`} className="underline">
+                          {u.name ?? u.username ?? po.user_id}
+                        </Link>
+                      ) : (
+                        // A payout whose connected account maps to no user is recorded
+                        // rather than dropped, precisely so it can be reconciled here.
+                        <span className="text-[var(--muted)]">unmapped account</span>
+                      )}
+                    </td>
+                    <td>{fmtCents(po.amount_cents)}</td>
+                    <td>
+                      <Pill tone={statusTone(po.status)}>{po.status}</Pill>
+                      {po.failure_code ? (
+                        <span className="ml-2 text-xs text-[var(--muted)]" title={po.failure_message ?? ""}>
+                          {po.failure_code}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td>{po.arrival_date ? fmtDate(po.arrival_date) : "—"}</td>
+                    <td className="text-[var(--muted)]">{po.method ?? "—"}</td>
+                    <td className="text-right">
+                      <a
+                        href={`${STRIPE_BASE}/payouts/${po.payout_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        Stripe
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Section>
 
       <Section title={`Disputes (${disputesRes.data?.length ?? 0})`}>
         {(disputesRes.data ?? []).length === 0 ? (
