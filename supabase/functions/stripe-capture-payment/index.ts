@@ -168,7 +168,20 @@ Deno.serve(async (req: Request) => {
         const captureCents = Math.max(1, Math.round((payment.amount_cents || 0) * capturePct));
         // The real, final gig value — what the promo budget should actually be charged.
         // Derived from the same immutable inputs as the fee, so it survives a retry.
-        capturedGigCents = captureCents + discountCents;
+        //
+        // The discount is SCALED. captureCents is a percentage of the already-discounted
+        // authorization, so the poster only received `pct` of the discount — on a $100
+        // gig with a $3.55 discount settled at 50% they paid $48.23 rather than $50.00,
+        // i.e. $1.77 of benefit. Adding the FULL $3.55 back overstated the captured gig
+        // value (5178c against an actual 5001c) and burned the campaign's budget faster
+        // than the campaign actually delivered.
+        //
+        // NOTE this does NOT change what the platform collects: the discount is
+        // subtracted from the fee BEFORE the fee is scaled, so round((fee − disc) × pct)
+        // already funds only the scaled share. Verified live: 173c collected vs 172c
+        // ideal, a 1c rounding difference. I first read this as a 2× over-funding and
+        // the arithmetic disproved it — only the budget accounting was wrong.
+        capturedGigCents = captureCents + Math.round(discountCents * capturePct);
         // Derive the fee from the IMMUTABLE authorized amount, never from the
         // mutable fee_cents column: this branch rewrites fee_cents below, so if a
         // first partial attempt persisted the reduced fee and then failed (Stripe
@@ -212,6 +225,56 @@ Deno.serve(async (req: Request) => {
         const scaledFee = Math.round(fullFeeCents * capturePct);
         const feeCents = Math.min(captureCents, Math.max(scaledFee, Number(floorCalc)));
         earnerAmountCents = captureCents - feeCents;
+
+        // ── Give back the part of the credit this capture could not use ──────
+        //
+        // consume_fee_credit debits the credit at BOOKING, sized to the fee on the FULL
+        // gig. Settle below 100% and the fee shrinks, so the credit can only offset a
+        // smaller amount — and the rest was simply gone: the ledger row stays 'applied',
+        // release_booking_benefits early-returns once captured, and its trigger fires
+        // only on declined/cancelled.
+        //
+        // Measured on a $200 gig with a 765c credit at 50%: the credit delivered 355c of
+        // value and 410c evaporated, more than half.
+        //
+        // settle_booking_benefits already relaxes a PROMOTION's budget on this exact
+        // event; it iterates promo_redemptions only, so referral credits were left out of
+        // a rule the platform already follows. And consume_fee_credit itself refuses to
+        // forfeit a partially-usable credit — "splitting rather than forfeiting is the
+        // difference between a credit and a coupon". This is that, one step later.
+        //
+        // Delivered value = what the fee WOULD have been without the credit, minus what
+        // it actually is. Non-fatal: the money has moved, and a bookkeeping retry must
+        // never fail a settled capture. return_unused_fee_credit is idempotent on the
+        // delivered figure, so the hourly sweep can safely re-run it.
+        if (creditCents > 0) {
+          try {
+            const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
+              p_amount_cents: gigAmountCents,
+              p_fee_bps: safeBps(payment.fee_bps),
+            });
+            if (Number.isFinite(Number(noCreditCalc))) {
+              const noCreditFull = Math.max(0, Number(noCreditCalc) - discountCents);
+              const noCreditAtCapture = Math.min(
+                captureCents,
+                Math.max(Math.round(noCreditFull * capturePct), Number(floorCalc)),
+              );
+              const delivered = Math.max(0, noCreditAtCapture - feeCents);
+              const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
+                p_booking: bookingId,
+                p_delivered_cents: delivered,
+              });
+              if (retErr) throw retErr;
+              if (Number(returned) > 0) {
+                console.log(`stripe-capture-payment: returned ${returned}c of unused fee credit on ${bookingId}`);
+              }
+            }
+          } catch (e) {
+            await logServerError('stripe-capture-payment',
+              `could not return unused fee credit on booking ${bookingId}: ${String((e as Error)?.message ?? e)}`,
+              { booking_id: bookingId, payment_id: payment.id });
+          }
+        }
         // Persist the REDUCED net BEFORE capturing. Capturing emits
         // payment_intent.succeeded, and the webhook credits earnings from whatever
         // earner_amount_cents the row holds — if we wrote it AFTER the capture, a
