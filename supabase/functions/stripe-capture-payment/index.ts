@@ -1,7 +1,7 @@
 // Captures a previously-authorized PaymentIntent after both parties verify job completion.
 // Stripe automatically transfers earner_amount to their Connect account on capture.
 import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
 
@@ -22,6 +22,78 @@ function safeBps(v: unknown, fallback = 1000): number {
   return Number.isFinite(n) && n >= 0 && n <= 3000 ? Math.trunc(n) : fallback;
 }
 
+
+// ── Claim the payment row before the irreversible Stripe call ───────────────
+//
+// The split has to be persisted BEFORE capturing (a fast payment_intent.succeeded
+// webhook credits from whatever the row holds), but it used to be written with
+// `.eq('id', …)` alone — no status predicate, no returned-row check. Two overlapping
+// captures then interleave, and the earner is credited whichever number lost the race:
+//
+//   R1 (full)    writes the full split
+//   R2 (50%)     writes the reduced split
+//   R1           captures the FULL amount at Stripe, flips status to 'captured'
+//   credit_earnings reads the REDUCED figure and credits that
+//
+// The mirror is worse: Stripe collects half while the row keeps the full split, so the
+// poster pays $50 and the app tells the earner they were paid $100. credit_earnings is
+// exactly-once but VALUE-blind — it credits whatever the row holds at that instant — and
+// both ctl_payment_ledger_impossible and ctl_earnings_total_drift derive their expected
+// value from the same column, so neither can see it.
+//
+// `authorized` is the only status that reaches here: cancelled/failed return
+// HOLD_EXPIRED above, and captured skips this block entirely. So the predicate costs
+// nothing on the happy path and on a legitimate retry after a Stripe failure (the row
+// is still authorized), while a write arriving after another runner flipped the status
+// matches zero rows and is refused instead of corrupting a settled ledger.
+//
+// accept-booking:83 has used this exact shape since it was written; the money path was
+// the one that did not.
+async function claimForCapture(
+  supabase: SupabaseClient,
+  paymentId: string,
+  feeCents: number,
+  earnerAmountCents: number,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('payments')
+    .update({ fee_cents: feeCents, earner_amount_cents: earnerAmountCents })
+    .eq('id', paymentId)
+    .eq('status', 'authorized')
+    .select('id');
+  // Fail closed on an error too — an unverifiable claim is not a claim.
+  return !error && Array.isArray(data) && data.length === 1;
+}
+
+// ── Reconcile the persisted split against what Stripe actually collected ────
+//
+// The claim above closes the race on OUR side. This closes it on Stripe's: the capture
+// response carries `amount_received`, the only authoritative figure, and writing the
+// split from it means the ledger cannot disagree with the money even if the request we
+// sent and the amount collected differ. earner-claim-payment:212 already states this
+// rule — "STRIPE is the sole source of truth… we NEVER pre-write a computed amount" —
+// and stripe-webhook's succeeded handler re-derives the same way. This path kept the
+// pre-write, which it must, so it reconciles immediately after instead.
+//
+// Normal case: received === requested, nothing is corrected, the values are untouched.
+function reconcileToStripe(
+  pi: Stripe.PaymentIntent,
+  requestedCents: number,
+  feeCents: number,
+  earnerCents: number,
+): { receivedCents: number; feeCents: number; earnerCents: number; corrected: boolean } {
+  const received = typeof pi.amount_received === 'number' ? pi.amount_received : 0;
+  // A zero/absent amount_received on a successful capture means Stripe told us nothing
+  // usable. Keep the computed split rather than zeroing a real payout on a parse miss.
+  if (received <= 0 || received === requestedCents) {
+    return { receivedCents: requestedCents, feeCents, earnerCents, corrected: false };
+  }
+  // Same proportional rule the webhook applies, so the two paths cannot disagree about
+  // the same PaymentIntent.
+  const ratio = requestedCents > 0 ? Math.min(1, received / requestedCents) : 1;
+  const fee = Math.min(received, Math.round(feeCents * ratio));
+  return { receivedCents: received, feeCents: fee, earnerCents: received - fee, corrected: true };
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -281,17 +353,35 @@ Deno.serve(async (req: Request) => {
         // fast webhook could read the stale full amount and over-credit the earner.
         // Keep amount_cents as the originally-AUTHORIZED hold (audit record); the
         // captured total is derivable as earner_amount_cents + fee_cents.
-        await supabase.from('payments').update({
-          fee_cents: feeCents,
-          earner_amount_cents: earnerAmountCents,
-        }).eq('id', payment.id);
-        await stripe.paymentIntents.capture(payment.payment_intent_id, {
+        //
+        // CLAIM the row on the way past (see claimForCapture). Without the status
+        // predicate this write lands on an already-captured row, and the earner is
+        // credited whatever the loser of the race wrote.
+        if (!await claimForCapture(supabase, payment.id, feeCents, earnerAmountCents)) {
+          return json({
+            error: 'BOOKING_CHANGED',
+            message: 'This payment was already being released. Refresh to see the outcome.',
+          }, 409);
+        }
+        const capturedPi = await stripe.paymentIntents.capture(payment.payment_intent_id, {
           amount_to_capture: captureCents,
           application_fee_amount: feeCents,
         });
+        // Stripe is the source of truth for what was collected — reconcile before the
+        // status flip, because that flip is what lets credit_earnings run.
+        const settled = reconcileToStripe(capturedPi, captureCents, feeCents, earnerAmountCents);
+        if (settled.corrected) {
+          await logServerError('stripe-capture-payment',
+            `capture on ${payment.payment_intent_id}: asked for ${captureCents}, Stripe ` +
+            `collected ${settled.receivedCents}. Split re-derived from amount_received.`,
+            { booking_id: bookingId, payment_id: payment.id }, { fatal: false });
+        }
+        earnerAmountCents = settled.earnerCents;
         await supabase.from('payments').update({
           status: 'captured',
           captured_at: new Date().toISOString(),
+          fee_cents: settled.feeCents,
+          earner_amount_cents: settled.earnerCents,
         }).eq('id', payment.id);
       } else {
         // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
@@ -301,15 +391,28 @@ Deno.serve(async (req: Request) => {
         // attempt's stale reduced value must be corrected before a racing webhook can
         // read it (otherwise the earner is under-credited vs. the full amount paid).
         const fullFee = fullFeeForAuth;
-        earnerAmountCents = (payment.amount_cents || 0) - fullFee;
-        await supabase.from('payments').update({
-          fee_cents: fullFee,
-          earner_amount_cents: earnerAmountCents,
-        }).eq('id', payment.id);
-        await stripe.paymentIntents.capture(payment.payment_intent_id);
+        const fullAuthCents = payment.amount_cents || 0;
+        earnerAmountCents = fullAuthCents - fullFee;
+        if (!await claimForCapture(supabase, payment.id, fullFee, earnerAmountCents)) {
+          return json({
+            error: 'BOOKING_CHANGED',
+            message: 'This payment was already being released. Refresh to see the outcome.',
+          }, 409);
+        }
+        const capturedPi = await stripe.paymentIntents.capture(payment.payment_intent_id);
+        const settled = reconcileToStripe(capturedPi, fullAuthCents, fullFee, earnerAmountCents);
+        if (settled.corrected) {
+          await logServerError('stripe-capture-payment',
+            `capture on ${payment.payment_intent_id}: authorized ${fullAuthCents}, Stripe ` +
+            `collected ${settled.receivedCents}. Split re-derived from amount_received.`,
+            { booking_id: bookingId, payment_id: payment.id }, { fatal: false });
+        }
+        earnerAmountCents = settled.earnerCents;
         await supabase.from('payments').update({
           status: 'captured',
           captured_at: new Date().toISOString(),
+          fee_cents: settled.feeCents,
+          earner_amount_cents: settled.earnerCents,
         }).eq('id', payment.id);
       }
     }
