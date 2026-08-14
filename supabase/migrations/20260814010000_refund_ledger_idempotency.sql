@@ -175,23 +175,42 @@ declare
   v_src text;
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  select id into uid from public.profiles limit 1;
+  -- `deleted_at is null`, and it is load-bearing: 20260813150000 made account deletion a
+  -- TOMBSTONE, and a scrubbed profile's guard refuses the seeding UPDATE below. The
+  -- probe then read an unchanged balance, debit_earnings floored at 0, and the whole
+  -- thing failed as "not discriminating" — which is a true statement about the wrong
+  -- cause. Same filter yesterday's chargeback probe used.
+  select id into uid from public.profiles where deleted_at is null limit 1;
+  if uid is null then
+    raise exception 'no live profile to stage against';
+  end if;
 
   insert into public.jobs (poster_id, title, category, pay, pay_type, location, description, status)
   values (uid, 'refund idem probe', 'Odd Jobs', 100, 'flat', 'Probe', 'probe', 'cancelled') returning id into jid;
   insert into public.bookings (job_id, earner_id, status)
   values (jid, uid, 'verified') returning id into bid;
   -- $60 captured: earner 5580 + fee 420.
+  -- earnings_credited MUST be true: debit_earnings returns false outright when it is
+  -- not, on purpose — refunding a capture whose credit failed would debit an earner for
+  -- money they never received. A probe that omits it sees no debit and misreports that
+  -- as the fix failing to discriminate.
   insert into public.payments
     (booking_id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents,
-     refunded_cents, status, captured_at, refund_source)
-  values (bid, 'pi_refund_idem_probe', 6000, 420, 5580, 0, 'captured', now(), 'admin')
+     refunded_cents, status, captured_at, refund_source, earnings_credited)
+  values (bid, 'pi_refund_idem_probe', 6000, 420, 5580, 0, 'captured', now(), 'admin', true)
   returning id into pid;
 
   -- The earner must have a balance or debit_earnings floors at 0 and the probe passes
   -- vacuously — the same trap the chargeback probe hit yesterday.
-  update public.profiles set earnings_total = 500.00 where id = uid;
-  select earnings_total into e0 from public.profiles where id = uid;
+  select coalesce(earnings_total, 0) into e0 from public.profiles where id = uid;
+  update public.profiles set earnings_total = e0 + 500 where id = uid;
+  select coalesce(earnings_total, 0) into e0 from public.profiles where id = uid;
+  -- Assert the SEEDING worked before assigning any meaning to what follows. Without
+  -- this, a refused write is indistinguishable from a fix that does not discriminate,
+  -- and the error names the wrong thing.
+  if e0 < 500 then
+    raise exception 'could not seed a balance on profile % (guard refused the write?) — probe cannot discriminate', uid;
+  end if;
 
   -- First refund: $30 of a $60 capture, keyed on a Stripe refund id.
   t1 := public.record_refund(pid, 3000, 'probe refund', uid, true, 're_probe_AAA');
