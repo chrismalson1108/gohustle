@@ -29,6 +29,12 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
+// Strip comments before asserting on source. Several files here EXPLAIN the contract they
+// implement — quoting row titles, URLs and schemes verbatim — so a naive grep matches the
+// explanation and reports a guard as green when the code underneath has drifted.
+const codeOnly = (src) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
 // ── 1. Push deep-links ──────────────────────────────────────────────────────
 // CLAUDE.md: tab route names are "a wire protocol, not just internal" — every push
 // notification carries data.tab, and send-push validates it against KNOWN_TABS.
@@ -352,6 +358,96 @@ describe('promo codes can actually be redeemed', () => {
     const branch = settings.slice(settings.indexOf('redeemPromoCode(code)'), settings.indexOf('finally { setCodeBusy(false); }'));
     const messages = branch.match(/setCodeErr\((['"`])/g) ?? [];
     expect(messages.length).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Both surfaces must be able to show — and delete — what the assistant remembers.
+//
+// `remember` appends to profiles.assistant_memory and every stored fact is replayed
+// into the system prompt of every future conversation. The viewer shipped mobile-only,
+// so a web user's only way to remove one was to keep chatting until 25 newer facts
+// pushed it out. And the prompt now TELLS every user, on both clients, to go to
+// Settings and read or delete them — a privacy control that exists on one surface and
+// is advertised on both is worse than one that exists on neither.
+//
+// The two mechanics below are asserted because both are invisible when wrong and both
+// were got right once already: the column is outside the profiles SELECT grant
+// (20260624221000_profile_column_lockdown.sql), so a direct .select() returns a
+// permission error rather than the list — and chaining .select() onto the WRITE reports
+// a failure on a write that succeeded.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the assistant memory viewer is wired on BOTH clients', () => {
+  const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '..', p), 'utf8');
+
+  const helpers = { mobile: 'src/lib/assistantMemory.js', web: 'web/lib/assistantMemory.ts' };
+  const screens = {
+    mobile: 'src/screens/AssistantMemoryScreen.js',
+    web: 'web/app/(app)/settings/memory/page.tsx',
+  };
+  const settings = { mobile: 'src/screens/SettingsScreen.js', web: 'web/app/(app)/settings/page.tsx' };
+
+  // Both helpers explain in prose why they never call .select() on this column, quoting
+  // the very call they forbid — so the check below has to read the CODE. Whole-line
+  // comments only: the trailing ones in these files carry no PostgREST calls, and
+  // stripping `//` anywhere would eat the `https://` in a link.
+  const code = (p) => read(p).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+
+  for (const [name, helper] of Object.entries(helpers)) {
+    describe(name, () => {
+      const src = read(helper);
+
+      it('reads the list through my_profile()', () => {
+        expect(`${helper}: ${/rpc\(['"]my_profile['"]\)/.test(src)}`).toBe(`${helper}: true`);
+      });
+
+      it('never asks PostgREST for the column directly', () => {
+        // assistant_memory is not in the profiles column allowlist, so a direct select
+        // returns a permission error — which renders as "nothing is stored about you".
+        // The same call chained onto the UPDATE is the other half: it would report a
+        // failure on a write that had already succeeded.
+        expect(`${helper}: ${/\.select\(/.test(code(helper))}`).toBe(`${helper}: false`);
+      });
+
+      it('offers both a single delete and a clear-all', () => {
+        expect(src).toMatch(/export async function forgetMemory/);
+        expect(src).toMatch(/export async function forgetAllMemories/);
+      });
+    });
+  }
+
+  it('there is a user-reachable entry point on BOTH clients', () => {
+    // A helper nothing renders is a dead end one layer up. The wording is asserted, not
+    // just the link: the assistant's prompt names this row verbatim ("Settings → What
+    // Hustlr AI remembers"), so renaming it on one client sends those users looking for
+    // something that is not there.
+    //
+    // Matched against CODE ONLY. Both files explain this contract in a comment that
+    // quotes the row title, so a whole-file grep was satisfied by the prose: renaming
+    // the actual web row to "AI memory" left this green. Third time in one day that an
+    // assertion here matched an explanation instead of the thing it describes.
+    for (const p of Object.values(settings)) {
+      expect(`${p}: ${/What Hustlr AI remembers/.test(codeOnly(read(p)))}`).toBe(`${p}: true`);
+    }
+  });
+
+  it('both screens can delete one note and all of them', () => {
+    for (const p of Object.values(screens)) {
+      const src = read(p);
+      expect(`${p}: ${/forgetMemory/.test(src)}`).toBe(`${p}: true`);
+      expect(`${p}: ${/forgetAllMemories/.test(src)}`).toBe(`${p}: true`);
+    }
+  });
+
+  it('neither screen renders an empty list it never loaded', () => {
+    // The one wrong answer this feature must never give is "nothing is stored about
+    // you" when plenty is. Both screens keep a not-yet-loaded state distinct from an
+    // empty one, which is the same three-state discipline the ledger needed.
+    for (const p of Object.values(screens)) {
+      const src = read(p);
+      expect(`${p}: ${/useState\(null\)|useState<string\[\] \| null>\(null\)/.test(src)}`).toBe(`${p}: true`);
+      expect(`${p}: ${/memories === null/.test(src)}`).toBe(`${p}: true`);
+    }
   });
 });
 

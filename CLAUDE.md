@@ -127,7 +127,7 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 - **Expo SDK 54**, React Native 0.81.5, React 19.1.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
-- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the ENTIRE live schema** — every guard, policy, trigger and RPC, including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 188 files as of 2026-08-14; production's `supabase_migrations.schema_migrations` was verified to match file-for-file on 2026-08-13 at 166 files, so **the tail is only as applied as your last `db push`** — re-verify rather than trusting this line. Never hand-apply SQL in the dashboard; that is how the two drift.
+- Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the live schema's BEHAVIOUR** — every guard, policy, trigger and RPC — though not for every `create table`: roughly half of those still live in the legacy `supabase/*.sql` files (see the schema-inventory note below). It covers including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 188 files as of 2026-08-14; production's `supabase_migrations.schema_migrations` was verified to match file-for-file on 2026-08-13 at 166 files, so **the tail is only as applied as your last `db push`** — re-verify rather than trusting this line. Never hand-apply SQL in the dashboard; that is how the two drift.
 - ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` from realtime** (added by `migration_stripe.sql`). Neither failure errors; the policy just gets weaker.
   **If a booking action returns a permission error, run `supabase db push --linked`.** The tracked `supabase/migrations/` files are the only reproducible hardened state.
 
@@ -535,8 +535,10 @@ No agent rewrites code, prompts or migrations unattended. In a single day of sup
 work this session dropped a `WHERE` clause from a control, shipped a screen missing an
 import, and broke the MFA gate so a correct code hung the app — each caught because a
 person or an assertion was in the loop. Unsupervised, those land at 3am. Production
-monitoring is already continuous and does not need an agent: 51 `controls` are registered
-(2 are `external`, so 49 run in-database) hourly via pg_cron with a daily digest.
+monitoring is already continuous and does not need an agent: the whole `controls`
+registry runs hourly via pg_cron with a daily digest. The count and the
+in-database/external split live under **Controls** and are stated once, there — this
+sentence carried a second copy of them and it disagreed.
 
 ## Monitoring & analytics
 
@@ -666,6 +668,16 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
+- **53 controls are registered**: 51 run in-database and 2 are `external`. Every
+  in-database row's `key` is its function minus the prefix — registry `payout_overdue`
+  is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
+  out here. The registry table is the roster, `/controls` renders it, and
+  `adminSurface.test.js` already fails on a `ctl_*` function nobody registered, so a
+  control cannot go missing quietly and a third copy in prose would only rot. The COUNT
+  is stated, because it is the one thing that says whether this section was written
+  against today's registry. `__tests__/claudeMdInventory.test.js` recounts it and fails
+  on any number this file gives for controls that no longer matches; both numbers this
+  line has carried before were wrong.
 - **`pg_cron`**: `controls_sweep_and_page` hourly at `:05` (vesting, then all controls,
   then pages **only if something newly needs a human**), `controls_digest` daily 13:05
   UTC (always emails, with Claude triage via `controls-alert`).
@@ -755,3 +767,57 @@ Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role`
 **ID verification** (`src/lib/verification.js`): `fetchVerificationStatus(userId)` / `requestVerification()`. Backed by **Stripe Identity**: `requestVerification()` calls the `stripe-create-identity-session` edge function (creates a document+selfie `VerificationSession` with `metadata.supabase_uid`, marks the profile `pending`, returns the hosted URL), which ProfileScreen opens via `Linking`. The `stripe-webhook` function handles `identity.verification_session.verified` → sets `verified = true` + `id_verification_status = 'verified'`; `requires_input` → `rejected`; `canceled` → resets to `none`. `stripe-identity-return` is the post-flow landing page. `profiles.stripe_identity_session_id` enables resume. ProfileScreen surfaces the status row + header badge. **Dashboard setup required**: enable Stripe Identity on the account and register the three `identity.verification_session.*` webhook events.
 
 Jobs have `poster_id` FK to profiles, `category` (display label) + `category_slug` (the indexed identity everything filters and groups on — both maintained by `trg_y_normalize_job_category`), `tags` (text[], free-form, max 6), and a `recurrence` column (`none`/`weekly`/`biweekly`/`monthly`) — set in PostJob/EditJob, shown as a badge on JobCard/JobDetail, and duplicated via the "Duplicate" button in GigsScreen (`navigation.navigate('PostJob', { prefill: job })`). Bookings have `earner_id`, `job_id`, `earner_done` (bool), `poster_done` (bool), `amendment_status`, `amendment_note`, `earner_rating`, `poster_rating`, `poster_review`. RLS ensures earners see their own bookings and posters see bookings on their jobs.
+
+### All 66 tables — where they live, and the ones nothing above names
+
+⚠️ **The base tables are NOT in `supabase/migrations/`** — this is the other half of the
+**SDK & Backend** note that `schema.sql` runs first. `jobs`, `bookings`, `profiles`,
+`payments`, `messages`, `reviews`, `job_slots` and about two dozen more are created only
+in `schema.sql` and the legacy `migration_*.sql` files. `migrations/` creates the other 35
+and carries every guard, policy, trigger and RPC layered on all of them — so it is the
+source of truth for the live schema's *behaviour*, and still not where half the CREATE
+TABLEs are. A session that greps only `migrations/` finds 35 of the 66 tables and
+concludes the other 31 do not exist. There is no generated `database.types.ts` here, so
+this list and those two directories are the whole inventory —
+`__tests__/claudeMdInventory.test.js` fails if a new table is not named here.
+
+Everything the sections above do not already describe:
+
+- **Rate-limit buckets** — `assistant_rate` (12/min, 300/day per user), `moderation_rate`,
+  `push_send_rate`, `mfa_recovery_attempts`, `admin_login_attempts` (`admin_login_blocked`:
+  5 failed per account **or** 20 per IP in 15 minutes — both, because per-account alone
+  lets one host spray many accounts and per-IP alone lets a botnet grind one). All the
+  same shape as `promo_redeem_attempts`: one row per **attempt** regardless of outcome, so
+  a sweep that only ever fails still registers. Whether the row is written before or after
+  the count differs and is load-bearing — `mfa_recovery_attempts` counts FIRST on purpose,
+  because recording first let every over-limit try extend its own window and hold the
+  account's real owner out indefinitely (fixed 2026-08-14, `20260814040000`).
+- **Money ledgers** — `tip_ledger` (one row per tip, `payment_intent_id` UNIQUE) and
+  `refund_ledger` (one row per reversal, `external_id` UNIQUE — Stripe's refund id, or
+  `chargeback_<pi>_<cents>` for a ledger-only reversal). In both, **the unique index IS
+  the idempotency check**: the insert conflict is what stops a double credit, never a
+  read-then-decide. `stripe_customers` maps a user to their Stripe customer id — the
+  **poster** side, charged by `stripe-create-payment-intent`; `stripe_accounts` is the
+  earner's Connect account. Do not reach for the wrong one.
+- **Verification & 2FA** — `mfa_recovery_codes` (`code_hash` + `used_at`, single-use; see
+  **Two-factor**) and `student_email_verifications` (hashed code, `expires_at`, `attempts`,
+  `consumed`), written by `student-verify-start` / `student-verify-confirm`.
+- **Preferences and saved state** — `notification_preferences` is per-user push/email
+  toggles across bookings/messages/payments/marketing. **Three copies of the defaults
+  must agree**: the column defaults, `DEFAULT_PREFS` in `send-push`, and
+  `DEFAULT_NOTIF_PREFS` in `src/lib/notifications.js`. A user with no row yet is served
+  by the fallbacks, so a disagreement means the server and the settings screen describe
+  different states to the same person.
+  `saved_searches` is not a bookmark — an AFTER INSERT trigger on `jobs`
+  (`notify_saved_searches`) walks every row with `notify` on every gig post, which is why
+  it is hardened to warn and continue rather than abort the post. `user_challenges` holds
+  per-user challenge progress (read by `UserContext`).
+- **Assistant** — `assistant_threads` / `assistant_messages` are Hustlr AI's conversation
+  history (owner RLS, read through `src/lib/assistantThreads.js`), separate from
+  `assistant_pending_actions`, which is the confirmation side-channel under **Hustlr AI**.
+- **Content & taxonomy** — `job_requirements` (ordered requirement lines per job,
+  read and rewritten by `JobsContext`), `category_groups` (the 19 groups; its icon column
+  is spelled **`ion`** — an Ionicons name — on both it and `categories`, so `select icon`
+  errors), `moderation_flags` (what image moderation rejected: bucket, path, categories).
+- **Admin-only** — `admin_user_notes` (notes on a user, shown on the console user page)
+  and `beta_allowlist` (the email gate, managed at `/access`).

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, X, ChevronRight, UserCircle2, Clock, Eye, CreditCard, Receipt,
-  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag,
+  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag, Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -92,6 +92,20 @@ export default function SettingsPage() {
             sub: "See exactly how others see you",
             keywords: "public preview others reviews",
             href: user ? `/u/${user.id}` : undefined,
+          },
+          // Sits next to "View my public profile" because it answers the same
+          // question from the other side: what is held about me, and by whom. Notes
+          // the assistant saves are replayed into every future conversation, so this
+          // is the only place they can be read back or removed. Same row, same
+          // wording as mobile's SettingsScreen — the assistant's prompt sends people
+          // to "Settings → What Hustlr AI remembers" on both clients.
+          {
+            icon: Sparkles,
+            title: "What Hustlr AI remembers",
+            sub: "See and delete the notes the assistant has saved",
+            keywords:
+              "assistant ai hustlr memory remember remembers notes forget delete erase privacy data personalisation personalization",
+            href: "/settings/memory",
           },
         ],
       },
