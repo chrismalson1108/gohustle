@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, previewCost, type ActionResult, type CostEstimate } from "./actions";
+import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, previewCost, type ActionResult, type CostEstimate, revokeGrant } from "./actions";
 import { PRESETS, type Preset } from "./presets";
 
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
@@ -345,5 +345,71 @@ function CloneButton({ id }: { id: string }) {
       </button>
       <Result r={result} />
     </>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Revoking one person's grant.
+//
+// revokeGrant has existed and been correct since the promotions system shipped — it
+// demands a reason because "this takes something away from a named person" — and it had
+// ZERO callers. An admin could mint codes and grant a promotion directly to a list of
+// users, and then had no way to take one back: pausing the campaign stops NEW claims and
+// does nothing about someone already holding a grant.
+//
+// The reason field is required by the server action, so it is required here too rather
+// than being sent empty and bouncing.
+// ─────────────────────────────────────────────────────────────────────────────
+export function RevokeGrant({ grantId }: { grantId: string }) {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-[var(--muted)] underline hover:text-[var(--ink)]"
+      >
+        Revoke
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-1">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="why?"
+          className="w-40 rounded border border-[var(--line)] px-1.5 py-1 text-xs"
+        />
+        <button
+          type="button"
+          disabled={pending || !reason.trim()}
+          onClick={() =>
+            start(async () => {
+              const fd = new FormData();
+              fd.set("grantId", grantId);
+              fd.set("reason", reason.trim());
+              setResult(await revokeGrant(fd));
+            })
+          }
+          className="rounded bg-[var(--ink)] px-2 py-1 text-xs font-semibold text-white disabled:opacity-40"
+        >
+          {pending ? "…" : "Revoke"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-[var(--muted)]">
+          cancel
+        </button>
+      </div>
+      {result ? (
+        <span className={`text-xs ${result.ok ? "text-green-700" : "text-red-700"}`}>{result.message}</span>
+      ) : null}
+    </div>
   );
 }
