@@ -63,8 +63,13 @@ export const stripeEdge = {
   cancelPayment: (bookingId) =>
     callEdgeFunction('stripe-cancel-payment', { bookingId }),
 
+  // `native: true` is what distinguishes this client from the website — web/lib/edge.ts
+  // is a deliberate mirror of this file and does NOT send it, so the browser keeps the
+  // plain https return page by default. It makes Stripe's return land on
+  // /stripe/connect-return?native=1, which bounces to the app scheme so
+  // openAuthSessionAsync can dismiss the in-app browser on its own.
   getPayoutOnboardingUrl: () =>
-    callEdgeFunction('stripe-connect-onboard', { origin: WEB_RETURN_BASE }),
+    callEdgeFunction('stripe-connect-onboard', { origin: WEB_RETURN_BASE, native: true }),
 
   // Live Connect status (retrieves the account from Stripe + syncs the cached flag);
   // does NOT depend on the account.updated webhook.

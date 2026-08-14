@@ -86,7 +86,21 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const RETURN_URL = `${resolveWebBase((body as { origin?: unknown }).origin)}/stripe/connect-return`;
+    // ── Why the return URL is https even for the app ────────────────────────
+    //
+    // Stripe REJECTS a custom scheme outright — creating an account link with
+    // return_url `gohustlr://…` fails with `url_invalid` / "Not a valid URL"
+    // (verified against the live API, 2026-08-14). So the mobile app cannot be sent
+    // back directly; the redirect has to land on a page we own, which then bounces
+    // to the app scheme. `?native=1` is that marker, and it is the ONLY thing the
+    // client gets to influence here — the scheme itself is hardcoded in the web page,
+    // so a forged request cannot turn this into an open redirect.
+    //
+    // Without it the in-app browser never auto-dismisses: the user reads a status
+    // page, taps Done by hand, and only then does the app refresh.
+    const wantsNative = (body as { native?: unknown }).native === true;
+    const RETURN_URL = `${resolveWebBase((body as { origin?: unknown }).origin)}/stripe/connect-return`
+      + (wantsNative ? '?native=1' : '');
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,

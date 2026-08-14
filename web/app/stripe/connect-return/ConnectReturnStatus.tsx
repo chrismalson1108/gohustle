@@ -13,11 +13,34 @@ import PayoutStatusCard from "./PayoutStatusCard";
 //
 // NOTE: this route sits OUTSIDE the (app) route group, so JobsProvider/UserProvider
 // are not mounted — call the edge helper directly rather than useJobs().
+// The app scheme is hardcoded HERE, never taken from the query string. The edge
+// function only gets to say "this came from the app" (?native=1); if it could name the
+// destination, this page would be an open redirect on our own domain.
+const APP_RETURN = "gohustlr://stripe/connect-return";
+
 export default function ConnectReturnStatus() {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [noWebSession, setNoWebSession] = useState(false);
+
+  // ── Hand the app back to itself ─────────────────────────────────────────────
+  //
+  // Stripe will not accept a custom scheme as return_url (`url_invalid`), so the app's
+  // onboarding necessarily lands on this https page. It arrives with ?native=1, and
+  // this is the redirect that lets WebBrowser.openAuthSessionAsync recognise the flow
+  // as finished and close the in-app browser by itself. Without it the user has to
+  // notice a Done button, and the app only refreshes once they tap it.
+  //
+  // Deliberately does NOT return early or block rendering: on a desktop browser (or
+  // anywhere the scheme is not installed) the navigation silently does nothing, and
+  // the real status page below must still be there. Runs once.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isNative = new URLSearchParams(window.location.search).get("native") === "1";
+    if (!isNative) return;
+    window.location.replace(APP_RETURN);
+  }, []);
 
   const load = useCallback(async () => {
     // Check for a web session FIRST. Mobile users arrive here in an in-app browser

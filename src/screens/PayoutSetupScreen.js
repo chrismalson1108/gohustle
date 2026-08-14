@@ -20,6 +20,9 @@ import { colors, radii, shadows } from '../theme';
 //   • Get paid for work  → connect / manage a bank for payouts (earner)
 //   • Pay for gigs        → add / change / remove a card on file (poster)
 // Stripe is the invisible processor — surfaced only as a small trust line.
+// Must match the scheme the web return page redirects to, and app.json's `scheme`.
+const PAYOUT_RETURN_URL = 'gohustlr://stripe/connect-return';
+
 export default function PayoutSetupScreen({ navigation }) {
   const {
     getPayoutOnboardingUrl, getPayoutStatus, getPayoutLoginLink,
@@ -88,7 +91,18 @@ export default function PayoutSetupScreen({ navigation }) {
         setLoadingPayout(false);
         return;
       }
-      await WebBrowser.openBrowserAsync(result.url, {
+      // openAuthSessionAsync, not openBrowserAsync: it watches for a redirect to the
+      // app scheme and closes the in-app browser ITSELF. With openBrowserAsync the user
+      // finished onboarding, sat on our status page, and had to find Done before the app
+      // refreshed — so the screen kept claiming their bank was unconnected when it was.
+      // AuthContext already uses this pattern for Google sign-in.
+      //
+      // Stripe cannot redirect to a scheme (it rejects one with `url_invalid`), so the
+      // return lands on /stripe/connect-return?native=1 and THAT page bounces here.
+      //
+      // refresh() runs on every outcome — success, dismiss and cancel alike. A user who
+      // backs out must not be left looking at a stale "not connected" screen either.
+      await WebBrowser.openAuthSessionAsync(result.url, PAYOUT_RETURN_URL, {
         toolbarColor: colors.primary,
         controlsColor: '#fff',
       });
