@@ -7,11 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F7F4EC"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gohustlr.app",
@@ -106,7 +101,15 @@
           "iosUrlScheme": "com.googleusercontent.apps.735847623182-el3phndjd054rpc0h4p5s235m5nusir9"
         }
       ],
-      "./plugins/withModularHeaders"
+      "./plugins/withModularHeaders",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F4EC"
+        }
+      ]
     ],
     "extra": {
       "eas": {
