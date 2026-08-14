@@ -292,6 +292,44 @@ Deno.serve(async (req: Request) => {
     // Credit the earner exactly once (single conditional UPDATE inside the RPC).
     await supabase.rpc('credit_earnings', { p_payment_id: payment.id });
 
+    // ── Settle the campaign too ──────────────────────────────────────────────
+    //
+    // stripe-capture-payment calls settle_booking_benefits after the money moves; this
+    // path never did. consume_promo_grant charges a campaign the WORST-CASE benefit at
+    // booking so in-flight work cannot oversubscribe the budget, and settling is the
+    // other half — now that the real figure is known, give the difference back.
+    //
+    // Without it, every gig an earner CLAIMED (rather than the poster verifying) left its
+    // campaign permanently charged the reserve. Budgets exhausted early against money
+    // that was never actually given away, and promo_redemptions stayed unsettled forever
+    // — which is exactly what ctl_benefit_never_settled reports.
+    //
+    // Deliberately AFTER the money has moved and deliberately non-fatal, matching the
+    // capture path: a budget momentarily over-charged is a reporting error, while a throw
+    // here would fail a settlement whose funds have already landed with the earner.
+    try {
+      // The GIG VALUE, not the captured amount — settle_booking_benefits prices the
+      // benefit against what the work was worth, and stripe-capture-payment passes it
+      // the same way (captureCents + discount). The discount needs no scaling here
+      // because this path always captures the FULL hold: a ghosted poster forfeits the
+      // partial-capture dispute route.
+      const claimGigCents = capturedCents
+        + Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0));
+      const { error: settleErr } = await supabase.rpc('settle_booking_benefits', {
+        p_booking: bookingId,
+        p_amount_cents: claimGigCents,
+      });
+      if (settleErr) {
+        await logServerError('earner-claim-payment',
+          `benefit settle failed for booking ${bookingId}: ${settleErr.message}`,
+          { booking_id: bookingId, payment_id: payment.id });
+      }
+    } catch (e) {
+      await logServerError('earner-claim-payment',
+        `benefit settle threw for booking ${bookingId}: ${errMessage(e)}`,
+        { booking_id: bookingId, payment_id: payment.id });
+    }
+
     // Close the lifecycle: settled without a poster rating (none was given). Advance
     // poster_done + completed_at + status to 'verified' ONLY here — after a confirmed
     // non-zero capture and the credit_earnings call — so a failed capture
