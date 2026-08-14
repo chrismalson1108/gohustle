@@ -62,7 +62,7 @@ async function recordReversal(
 ): Promise<string | null> {
   if (!paymentIntentId) return null;
   const { data: payment } = await supabase
-    .from('payments').select('id, booking_id, refund_source, refunded_cents')
+    .from('payments').select('id, booking_id, refund_source, refund_source_at, refunded_cents')
     .eq('payment_intent_id', paymentIntentId).maybeSingle();
   const bookingId = (payment as { booking_id?: string } | null)?.booking_id;
   if (!bookingId) return null;
@@ -79,38 +79,66 @@ async function recordReversal(
   // forever, because this function is shared by charge.refunded AND
   // charge.dispute.created.
   //
-  // TWO independent tests, because each covers the other's race:
+  // TWO tests, and the ORDER of the OR matters — the wrong order is how this stayed
+  // broken. An OR can only ADD skips: a wrongly-true `inFlight` wins outright and the
+  // correct `alreadyLedgered` value is discarded. So `inFlight` must be a genuinely
+  // narrow window, not a flag that can stick.
   //
   //  1. `refund_source = 'admin'` is the IN-FLIGHT marker. admin-payment-action stamps
   //     it BEFORE calling Stripe precisely because this webhook can arrive before the
-  //     function returns. As of 20260814010000 record_refund CLEARS it once the refund
-  //     is ledgered, so it now means "in flight", which is all it ever should have
-  //     meant. Left permanent, it made a later EXTERNAL refund on the same payment
-  //     invisible too.
+  //     function returns. It is now TIME-BOUNDED by refund_source_at: record_refund
+  //     clears it on every exit path (including the over-refund refusal and the replay,
+  //     which both used to `return` above the clear) and admin-payment-action clears it
+  //     in its catch — but a marker that outlives all of those must still expire, or one
+  //     failed refund silences every later reversal on that payment forever.
   //
   //  2. Our ledger already accounts for everything Stripe says was refunded. This is
-  //     the self-clearing version of the same statement, and it covers the ordering the
-  //     marker cannot: webhook arriving AFTER record_refund committed and cleared the
-  //     flag. amount_refunded is cumulative, so `refunded_cents >= amount_refunded`
-  //     means there is nothing unledgered to complain about. When Stripe has refunded
-  //     MORE than we recorded, something happened outside the console and the row must
-  //     be filed — which is the entire point of the control that reads it.
+  //     the self-clearing statement, and it covers the ordering the marker cannot:
+  //     webhook arriving AFTER record_refund committed and cleared the flag.
+  //     amount_refunded is cumulative, so `refunded_cents >= amount_refunded` means
+  //     there is nothing unledgered to complain about. When Stripe has refunded MORE
+  //     than we recorded, something happened outside the console and the row must be
+  //     filed — which is the entire point of the control that reads it.
   //
   // What goes dark when this is wrong: the /disputes console page reads only this
   // table, so a human never sees it; ctl_external_reversal_not_ledgered INNER JOINs it;
   // dispute_open_beyond_sla counts its rows; and earner-claim-payment's DISPUTE_OPEN
   // gate would happily settle a booking with a live reversal against it.
   if (kind === 'refund') {
-    const row = payment as { refund_source?: string | null; refunded_cents?: number | null } | null;
-    const inFlight = row?.refund_source === 'admin';
+    const row = payment as {
+      refund_source?: string | null;
+      refund_source_at?: string | null;
+      refunded_cents?: number | null;
+    } | null;
+
+    // A console refund takes seconds. Anything older is a marker that failed to clear,
+    // not a refund in progress.
+    const MARKER_TTL_MS = 5 * 60 * 1000;
+    const markedAt = row?.refund_source_at ? Date.parse(row.refund_source_at) : NaN;
+    const markerFresh = Number.isFinite(markedAt)
+      ? Date.now() - markedAt < MARKER_TTL_MS
+      // No timestamp: a row stamped before refund_source_at existed. Treat it as stale —
+      // failing OPEN here files a dispute row a human can dismiss, whereas failing closed
+      // hides a real reversal from every detector we have.
+      : false;
+    const inFlight = row?.refund_source === 'admin' && markerFresh;
+
     const alreadyLedgered = stripeRefundedCents !== null
       && (row?.refunded_cents ?? 0) >= stripeRefundedCents;
+
     if (inFlight || alreadyLedgered) {
       console.log(
         `recordReversal: skipping dispute row for console refund on ${bookingId} ` +
         `(${inFlight ? 'in flight' : 'already ledgered'})`,
       );
       return bookingId;
+    }
+    if (row?.refund_source === 'admin' && !markerFresh) {
+      // Worth saying out loud: it means a refund failed between the stamp and the
+      // ledger write, and that payment's marker has been suppressing nothing since.
+      console.error(
+        `recordReversal: stale in-flight marker on ${bookingId} (stamped ${row?.refund_source_at ?? 'never'}) — filing the reversal anyway`,
+      );
     }
   }
 

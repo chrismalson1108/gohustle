@@ -16,6 +16,7 @@
 // reaches Stripe is always already on the record.
 import Stripe from 'npm:stripe@22';
 import { requireAdminCaller } from '../_shared/adminAuth.ts';
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
@@ -28,6 +29,9 @@ Deno.serve(async (req: Request) => {
 
   let bookingId: string | null = null;
   let op: string | null = null;
+  // Both visible to the catch below, which must release the in-flight refund marker.
+  let paymentRowId: string | null = null;
+  let serviceRef: SupabaseClient | null = null;
 
   try {
     // 300s step-up. This function issues Stripe refunds and voids escrow holds — the
@@ -38,12 +42,17 @@ Deno.serve(async (req: Request) => {
     const auth = await requireAdminCaller(req, 'admin', 300);
     if (!auth.ok) return json({ error: auth.denial.error }, auth.denial.status);
     const { service, user } = auth.caller;
+    serviceRef = service;
 
     const body = await req.json();
     bookingId = typeof body.bookingId === 'string' ? body.bookingId : null;
     op = typeof body.op === 'string' ? body.op : null;
     const reason = String(body.reason ?? '').trim().slice(0, 500);
     const amountCents = Number.isFinite(body.amountCents) ? Math.round(body.amountCents) : null;
+    // Minted once per populated form in the console and rotated only on success, so an
+    // operator retrying an unchanged form reuses it and Stripe replays instead of
+    // issuing a second real refund. Constrained to a safe key charset.
+    const requestId = String(body.requestId ?? '').trim().slice(0, 64).replace(/[^A-Za-z0-9_-]/g, '');
 
     if (!bookingId) return json({ error: 'booking_required' }, 400);
     if (op !== 'release_hold' && op !== 'refund' && op !== 'record_reversal') return json({ error: 'bad_op' }, 400);
@@ -165,7 +174,42 @@ Deno.serve(async (req: Request) => {
     // never rewritten, so refunding against it would let a partially-captured booking
     // be refunded for more than the poster ever paid.
     const capturedCents = (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0);
-    const alreadyRefunded = pay.refunded_cents ?? 0;
+    const ourRefunded = pay.refunded_cents ?? 0;
+
+    // ASK STRIPE what it has already refunded, and cap against the LARGER figure.
+    //
+    // Capping on our own refunded_cents alone is wrong in exactly the case an operator
+    // is most likely to be here for: a refund issued in the Stripe Dashboard never
+    // moves our column, so ctl_external_reversal_not_ledgered fires with
+    // refunded_cents = 0 and the console cheerfully offers the whole capture as
+    // refundable. Following that offer issues a SECOND real refund with
+    // reverse_transfer:true — the poster is paid twice and the money is clawed out of
+    // the earner's connected account for an overpayment that never happened.
+    //
+    // Fail CLOSED: if Stripe cannot be read we do not know what is already refunded, and
+    // refunding on a stale local figure is the failure this exists to prevent.
+    let stripeRefunded = 0;
+    try {
+      const pi = await stripe.paymentIntents.retrieve(pay.payment_intent_id, { expand: ['latest_charge'] });
+      const charge = pi.latest_charge as Stripe.Charge | null;
+      stripeRefunded = typeof charge?.amount_refunded === 'number' ? charge.amount_refunded : 0;
+    } catch (e) {
+      await logServerError('admin-payment-action',
+        `could not read Stripe refund state for ${pay.payment_intent_id}: ${String((e as Error)?.message ?? e)}`,
+        { booking_id: bookingId, payment_id: pay.id }, { fatal: true });
+      return json({
+        error: 'stripe_unreadable',
+        message: 'Could not confirm what Stripe has already refunded on this charge. Refusing to refund on a stale figure — try again.',
+      }, 503);
+    }
+
+    const alreadyRefunded = Math.max(ourRefunded, stripeRefunded);
+    if (stripeRefunded > ourRefunded) {
+      // Not fatal to the refund, but the operator must know the ledger is behind.
+      await logServerError('admin-payment-action',
+        `Stripe reports ${stripeRefunded}c refunded on ${pay.payment_intent_id} but our ledger has ${ourRefunded}c — capping against Stripe`,
+        { booking_id: bookingId, payment_id: pay.id }, { fatal: false });
+    }
     const remaining = capturedCents - alreadyRefunded;
     if (remaining <= 0) {
       return json({ error: 'already_refunded', message: 'This charge is already fully refunded.' }, 409);
@@ -180,8 +224,19 @@ Deno.serve(async (req: Request) => {
       }, 409);
     }
 
-    // Idempotency keyed on payment + running total, so a double-submit cannot refund
-    // twice while a genuine second partial refund still goes through.
+    // Idempotency keyed on the operator's REQUEST, not on our running total.
+    //
+    // `refund_${pi}_${alreadyRefunded + refundCents}` looked idempotent and was not. The
+    // console aborts at 20s while record_refund commits in about one, so the likely
+    // retry ordering is "attempt 1 fully committed, the response was lost" — and then
+    // attempt 2 re-reads the NEW refunded_cents and builds a DIFFERENT key. Stripe does
+    // not replay; it issues a genuinely new refund. The poster receives $60 for a $30
+    // intent and the earner is reverse-transferred twice. refund_ledger cannot catch it
+    // either, because Stripe's refund.id differs.
+    //
+    // requestId is minted once per populated form in InterventionPanel and only rotates
+    // on success, so retrying an unchanged form reuses it and Stripe replays. Falls back
+    // to the old shape for any caller that does not send one.
     // Mark the source BEFORE the Stripe call. stripe-webhook's charge.refunded
     // handler files a disputes row for every reversal it sees, and it cannot tell an
     // operator-initiated refund from a customer chargeback — so without this marker,
@@ -189,7 +244,13 @@ Deno.serve(async (req: Request) => {
     // earner-claim-payment then treats as a reason to refuse settlement. The console
     // re-blocked the thing it had just fixed. Set first because the webhook can
     // arrive before this function returns.
-    await service.from('payments').update({ refund_source: 'admin' }).eq('id', pay.id);
+    // refund_source_at time-bounds the marker: even if some future path forgets to
+    // clear it, stripe-webhook stops honouring it after a few minutes rather than
+    // skipping every reversal on this payment forever.
+    paymentRowId = pay.id;
+    await service.from('payments')
+      .update({ refund_source: 'admin', refund_source_at: new Date().toISOString() })
+      .eq('id', pay.id);
 
     const refund = await stripe.refunds.create(
       {
@@ -201,7 +262,11 @@ Deno.serve(async (req: Request) => {
         refund_application_fee: true,
         metadata: { booking_id: bookingId, admin_id: user.id, reason },
       },
-      { idempotencyKey: `refund_${pay.payment_intent_id}_${alreadyRefunded + refundCents}` },
+      {
+        idempotencyKey: requestId
+          ? `refund_${pay.payment_intent_id}_${requestId}`
+          : `refund_${pay.payment_intent_id}_${alreadyRefunded + refundCents}`,
+      },
     );
 
     // record_refund adds IN SQL under a row lock and debits the earner's in-app
@@ -254,6 +319,19 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, op, refunded_cents: refundCents, refund_id: refund.id });
   } catch (err) {
     console.error('admin-payment-action:', err);
+    // Release the in-flight marker. It is stamped BEFORE the Stripe call so a fast
+    // webhook does not file a dispute against our own refund, and record_refund clears
+    // it on success — but a throw between the two used to leave it set FOREVER, and
+    // stripe-webhook skips on it. Every later external reversal on that payment then
+    // went unrecorded, which is precisely the bug the marker's scoping was meant to end.
+    // Best-effort: this is already the failure path and must not mask the real error.
+    try {
+      if (paymentRowId && serviceRef) {
+        await serviceRef.from('payments')
+          .update({ refund_source: null, refund_source_at: null })
+          .eq('id', paymentRowId);
+      }
+    } catch (_) { /* the time bound on refund_source_at is the backstop */ }
     await logServerError(
       'admin-payment-action',
       `Admin money action failed (${op ?? 'unknown'}): ${errMessage(err)}`,

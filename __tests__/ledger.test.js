@@ -527,37 +527,50 @@ describe('a partial refund costs the earner only their share', () => {
     expect(sql).toBeDefined();
   });
 
-  it('SQL still apportions the debit by the earner share', () => {
-    // If this changes shape, the JS below is no longer a mirror of anything.
-    expect(sql.replace(/\s+/g, ' ')).toMatch(
+  it('SQL records the debited figure on the row instead of leaving it to be re-derived', () => {
+    // The JS is no longer a mirror of this formula — it READS what the SQL recorded.
+    // That is the point: the formula was only ever correct on the debiting branch, and
+    // since the chargeback split (20260813160000) record_refund is called with
+    // p_debit_earner => false for a lost chargeback, where it debits nothing.
+    const flat = sql.replace(/\s+/g, ' ');
+    expect(flat).toMatch(
       /round\(\s*p_cents::numeric \* coalesce\(earner_amount_cents, 0\) \/ nullif\(v_captured, 0\)\s*\)::integer/,
     );
-    // v_captured is earner + fee, i.e. what was actually collected.
-    expect(sql.replace(/\s+/g, ' ')).toMatch(
-      /coalesce\(earner_amount_cents, 0\) \+ coalesce\(fee_cents, 0\).{0,40}into v_captured/,
-    );
+    // and it must PERSIST it, which is what the client reads.
+    expect(flat).toMatch(/earner_refunded_cents = coalesce\(earner_refunded_cents, 0\) \+ v_earner_share/);
+    // 0 on the non-debiting branch, not the proportional figure.
+    expect(flat).toMatch(/else\s+v_earner_share := 0;/);
   });
 
-  it('JS matches the SQL on the case that shipped wrong', () => {
-    // $60 captured: earner $55.80, fee $4.20. A $30 refund.
-    expect(earnerRefundShareCents(3000, 5580, 420)).toBe(2790);
-    // Not the whole refund, which is what the ledger used to subtract.
-    expect(earnerRefundShareCents(3000, 5580, 420)).not.toBe(3000);
+  it('a chargeback records NO earner loss — the case that shipped wrong', () => {
+    // $60 captured (earner $55.80, fee $4.20) fully charged back. The platform absorbs
+    // it; the earner keeps the money and it is already in their bank. Re-deriving gave
+    // 5580 and told them they had lost all of it.
+    expect(earnerRefundShareCents({
+      earner_refunded_cents: 0, refunded_cents: 6000, earner_amount_cents: 5580, fee_cents: 420,
+    })).toBe(0);
   });
 
-  it('a full refund still costs the earner their whole payout', () => {
-    expect(earnerRefundShareCents(6000, 5580, 420)).toBe(5580);
+  it('a real refund still costs the earner their recorded share', () => {
+    expect(earnerRefundShareCents({
+      earner_refunded_cents: 2790, refunded_cents: 3000, earner_amount_cents: 5580, fee_cents: 420,
+    })).toBe(2790);
   });
 
-  it('rounds half up, as round() does in Postgres', () => {
-    // 100 * 55 / 110 = 50 exactly; 101 * 55 / 110 = 50.5 → 51.
-    expect(earnerRefundShareCents(100, 55, 55)).toBe(50);
-    expect(earnerRefundShareCents(101, 55, 55)).toBe(51);
+  it('accumulates per refund, as debit_earnings is applied per call', () => {
+    // Two $0.50 refunds: SQL debits round(46.5)=47 twice = 94. Re-deriving the
+    // cumulative total gives round(93.0)=93 and drifts a cent per pair.
+    expect(earnerRefundShareCents({
+      earner_refunded_cents: 94, refunded_cents: 100, earner_amount_cents: 5580, fee_cents: 420,
+    })).toBe(94);
   });
 
-  it('falls back to the whole refund when there is no captured total', () => {
-    // A legacy/malformed row must not report the earner losing nothing.
-    expect(earnerRefundShareCents(3000, 0, 0)).toBe(3000);
+  it('falls back to the proportional form only for pre-column rows', () => {
+    // Every refund written before the column existed went down the debiting path.
+    expect(earnerRefundShareCents({
+      refunded_cents: 3000, earner_amount_cents: 5580, fee_cents: 420,
+    })).toBe(2790);
+    expect(earnerRefundShareCents({ refunded_cents: 3000, earner_amount_cents: 0, fee_cents: 0 })).toBe(3000);
   });
 
   it('the earner receipt lines still sum to the payout', () => {

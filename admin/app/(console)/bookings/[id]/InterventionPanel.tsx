@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import {
   forceComplete, reopenBooking, clearStartedAt, forceCancel, releaseHold, refundPayment,
   recordReversal, type ActionResult,
@@ -44,6 +44,14 @@ export default function InterventionPanel({
     );
   }
 
+  // One id per ATTEMPT the operator composed, rotated only when the form clears on
+  // success. admin-payment-action keys Stripe's idempotency on it, so retrying an
+  // unchanged form after a timeout replays the same refund instead of issuing a second
+  // real one. Keying on our running refunded_cents did not do this: record_refund
+  // commits in about a second while this client aborts at 20, so the likely retry reads
+  // the ALREADY-UPDATED total, builds a different key, and Stripe refunds again.
+  const requestIdRef = useRef<string>(crypto.randomUUID());
+
   const fire = (action: Action, label: string, extra: Record<string, string> = {}) => {
     if (!reason.trim()) {
       setResult({ ok: false, message: "Write a reason first." });
@@ -53,6 +61,7 @@ export default function InterventionPanel({
     const fd = new FormData();
     fd.set("bookingId", bookingId);
     fd.set("reason", reason);
+    fd.set("requestId", requestIdRef.current);
     for (const [k, v] of Object.entries(extra)) fd.set(k, v);
     start(async () => {
       const r = await action(fd);
@@ -62,7 +71,9 @@ export default function InterventionPanel({
       // refund button is broken", which is worse than having no step-up at all.
       if (!r.ok && r.message === "stale_mfa") { setPendingFd(fd); setPendingAction(() => action); setResult(null); return; }
       setResult(r);
-      if (r.ok) { setReason(""); setAmount(""); }
+      // New attempt => new key. Only on success: a failed attempt the operator retries
+      // MUST reuse the id, which is the whole mechanism.
+      if (r.ok) { setReason(""); setAmount(""); requestIdRef.current = crypto.randomUUID(); }
     });
   };
 

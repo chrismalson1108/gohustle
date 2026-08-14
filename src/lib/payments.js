@@ -95,25 +95,34 @@ export function settledGrossCents(row) {
 /**
  * How much of a refund came out of the EARNER's payout.
  *
- * Must stay byte-for-byte equivalent to record_refund's own debit, because that is the
- * figure `debit_earnings` actually takes off profiles.earnings_*:
+ * READ, never recomputed. `payments.earner_refunded_cents` records what
+ * `debit_earnings` actually took off profiles.earnings_*, accumulated per call.
  *
- *   round(p_cents::numeric * earner_amount_cents / (earner_amount_cents + fee_cents))
+ * This used to re-derive the figure as
+ *   round(refunded_cents * earner_amount_cents / (earner_amount_cents + fee_cents))
+ * and promised to stay "byte-for-byte equivalent" to the SQL. That promise broke the day
+ * the chargeback split landed: record_refund is called with p_debit_earner => false for a
+ * LOST CHARGEBACK (20260813160000 — on a destination charge the platform absorbs it), so
+ * it raises refunded_cents and debits NOTHING. The formula then invented a loss the
+ * earner never took — on a $60 chargeback their row read "+$0.00" and the receipt read
+ * "Your share of the refund − $55.80", while their dashboard still said $55.80 and the
+ * money was genuinely in their bank.
  *
- * The earner never held the platform fee, so a $30 refund on a $60 capture
- * (earner $55.80 + fee $4.20) costs them $27.90, not $30.00. Subtracting the whole
- * refund made Transactions disagree with the earnings dashboard on every partial refund
- * — and the earnings dashboard was the correct one.
+ * Recording it also fixes a quieter error: the JS applied ONE rounding to the cumulative
+ * total where the SQL applied one PER refund, so partial refunds drifted a cent at a
+ * time even when the branch was right.
  *
- * __tests__/ledger.test.js parses the SQL off disk and fails if the two drift, the same
- * guard pricing.test.js applies to the fee.
+ * The fallback only covers rows written before the column existed. Production has none.
  */
-export function earnerRefundShareCents(refundedCents, earnerAmountCents, feeCents) {
-  const refunded = cents(refundedCents);
-  const earner = cents(earnerAmountCents);
-  const capturedTotal = earner + cents(feeCents);
-  // No captured total to apportion against (a legacy or malformed row): fall back to
-  // the whole refund rather than silently reporting no loss at all.
+export function earnerRefundShareCents(row) {
+  const recorded = row?.earner_refunded_cents;
+  if (typeof recorded === 'number' && Number.isFinite(recorded)) return Math.max(0, Math.trunc(recorded));
+
+  // Pre-column rows: every refund then predated the chargeback split, so all of them
+  // debited and the proportional form is correct for exactly those.
+  const refunded = cents(row?.refunded_cents);
+  const earner = cents(row?.earner_amount_cents);
+  const capturedTotal = earner + cents(row?.fee_cents);
   if (capturedTotal <= 0) return refunded;
   return Math.round((refunded * earner) / capturedTotal);
 }
@@ -138,18 +147,11 @@ function toEntry(row, side, jobsById, bookingsById) {
   // A refund is not the same size on both sides of the transaction.
   //
   // The poster gets the whole refund back. The earner never held the platform fee, so
-  // only their proportional share of the capture comes off their payout — which is
-  // exactly what record_refund debits:
-  //
-  //   round(refunded * earner_amount_cents / (earner_amount_cents + fee_cents))
-  //
-  // Subtracting the FULL refund from the earner's side overstated their loss by the
-  // fee's share of it, so Transactions and the earnings dashboard disagreed on every
-  // partial refund: a $30 refund on a $60 capture (earner $55.80, fee $4.20) showed the
-  // earner losing $30.00 while debit_earnings took $27.90. The formula is duplicated
-  // here rather than derived from the debit because the debit is not on this row —
-  // __tests__/ledger.test.js pins the two together.
-  const earnerRefundShare = earnerRefundShareCents(refunded, cents(row.earner_amount_cents), fee);
+  // only their share comes off their payout — and on a LOST CHARGEBACK nothing does,
+  // because the platform absorbs it. Read from the row rather than derived, so the two
+  // cases cannot be confused: a $30 refund on a $60 capture costs the earner $27.90, a
+  // $60 chargeback costs them $0.00, and both are recorded facts.
+  const earnerRefundShare = earnerRefundShareCents(row);
   // What came off THIS reader's money. Every figure describing the user's own position
   // uses this; `refundedCents` stays the true refund on the payment, because "was this
   // refunded at all" is a different question from "how much of it was mine".
@@ -245,7 +247,8 @@ export async function fetchLedger(userId) {
     .select(
       'id, booking_id, amount_cents, fee_cents, earner_amount_cents, status, ' +
       'authorized_at, captured_at, cancelled_at, created_at, ' +
-      'refunded_cents, refunded_at, refund_reason, fee_bps, fee_credit_cents, poster_discount_cents',
+      'refunded_cents, refunded_at, refund_reason, earner_refunded_cents, ' +
+      'fee_bps, fee_credit_cents, poster_discount_cents',
     )
     .in('booking_id', ids)
     .order('created_at', { ascending: false });

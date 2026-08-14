@@ -261,6 +261,11 @@ export async function refundPayment(formData: FormData): Promise<ActionResult> {
   const bookingId = String(formData.get("bookingId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
+  // Stable across retries of the SAME composed attempt (the panel rotates it only on
+  // success), so admin-payment-action can key Stripe's idempotency on operator intent
+  // instead of on our running refunded_cents — which moves the moment attempt 1 commits
+  // and made the retry issue a second REAL refund.
+  const requestId = String(formData.get("requestId") ?? "").trim();
   if (!bookingId) return { ok: false, message: "Missing booking id." };
   if (!reason) return { ok: false, message: "A refund reason is required." };
 
@@ -273,7 +278,7 @@ export async function refundPayment(formData: FormData): Promise<ActionResult> {
   }
 
   return run("payment.refund", bookingId, { reason, amount_cents: amountCents }, async () => {
-    const { ok, body } = await callPaymentAction({ bookingId, op: "refund", reason, amountCents });
+    const { ok, body } = await callPaymentAction({ bookingId, op: "refund", reason, amountCents, requestId });
       if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
     if (!ok) throw new Error(String(body.message ?? body.error ?? "Refund failed."));
     const cents = Number(body.refunded_cents ?? 0);

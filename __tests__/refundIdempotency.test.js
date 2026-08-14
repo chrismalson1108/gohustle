@@ -53,6 +53,18 @@ function latestDefining(fnName) {
 
 const recordRefund = latestDefining('record_refund');
 
+// Some properties are one-time events in the migration HISTORY (an arity drop happens
+// once and is permanent) or were proved by the probe of whichever migration introduced
+// them. Asserting those against the LATEST definition breaks the moment record_refund is
+// legitimately redefined again — which is what happened on 2026-08-14, when a correct
+// follow-up migration made this suite fail for reasons that had nothing to do with it.
+const allMigrations = fs
+  .readdirSync(MIG)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => fs.readFileSync(path.join(MIG, f), 'utf8'))
+  .join('\n');
+
 describe('the refund ledger makes a Stripe replay a no-op', () => {
   it('there is a refund_ledger keyed UNIQUE on the external id', () => {
     const created = fs
@@ -89,17 +101,26 @@ describe('the refund ledger makes a Stripe replay a no-op', () => {
     expect(capAt).toBeLessThan(claimAt);
   });
 
-  it('dropped the old arity first so 5-arg calls are not ambiguous', () => {
+  it('dropped the old arity so 5-arg calls are not ambiguous', () => {
     // Postgres raises "function is not unique" rather than picking the exact match.
-    expect(recordRefund.sql).toMatch(
+    // Searched across the corpus: the drop happens once and stays done.
+    expect(allMigrations).toMatch(
       /drop function if exists public\.record_refund\(uuid, integer, text, uuid, boolean\)/i,
     );
+    // And no later migration may reintroduce a definition without p_external_id — that
+    // would resurrect the ambiguity the drop exists to prevent.
+    const after = allMigrations.slice(
+      allMigrations.search(/drop function if exists public\.record_refund\(uuid, integer, text, uuid, boolean\)/i),
+    );
+    const sigs = [...after.matchAll(/create or replace function public\.record_refund\(([\s\S]*?)\)\s*returns/gi)];
+    expect(sigs.length).toBeGreaterThan(0);
+    for (const m of sigs) expect(m[1]).toMatch(/p_external_id/);
   });
 
   it('the probe proves a replay changes nothing and a real second refund still lands', () => {
-    expect(recordRefund.sql).toMatch(/REPLAY DOUBLE-COUNTED/);
-    expect(recordRefund.sql).toMatch(/REPLAY DEBITED AGAIN/);
-    expect(recordRefund.sql).toMatch(/OVER-CORRECTED/);
+    expect(allMigrations).toMatch(/REPLAY DOUBLE-COUNTED/);
+    expect(allMigrations).toMatch(/REPLAY DEBITED AGAIN/);
+    expect(allMigrations).toMatch(/OVER-CORRECTED/);
     // Seeded balance: debit_earnings floors at 0, so a zero-balance probe passes
     // vacuously — the trap the chargeback probe hit on 2026-08-13.
     expect(recordRefund.sql).toMatch(/earnings_total = e0 \+ 500/);
