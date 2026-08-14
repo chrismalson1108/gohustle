@@ -212,6 +212,14 @@ export async function fetchLedger(userId) {
       .eq('jobs.poster_id', userId),
   ]);
 
+  // ⚠️ CHECK BOTH. `?? []` on an errored response turns a failed read into "you have
+  // no transactions" — and this screen's whole job is answering "where is my money".
+  // An earner whose booking query 500s would have been shown an authoritative empty
+  // statement rather than the error card the screen already has. The payments query
+  // below has always thrown; these two silently did not.
+  if (asEarner.error) throw asEarner.error;
+  if (asPoster.error) throw asPoster.error;
+
   const earnerBookings = asEarner.data ?? [];
   const posterBookings = asPoster.data ?? [];
   const sideOf = {};

@@ -581,3 +581,49 @@ describe('a partial refund costs the earner only their share', () => {
     expect(r.lines.reduce((a, l) => a + l.cents, 0)).toBe(r.totalCents);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A failed read must never render as a confirmed empty state.
+//
+// PaymentsScreen's own catch says it: "'no transactions' and 'we could not load your
+// transactions' must never look the same, or a user concludes their money vanished."
+// Two paths broke that rule anyway.
+//
+//  • fetchLedger ran both booking queries and then took `.data ?? []` without ever
+//    checking `.error`, so a failed read produced an empty statement rather than the
+//    error card the screen already has. (The payments query has always thrown.)
+//  • The screen resolved a payouts failure to [], which renders "No bank deposits yet"
+//    — to an earner, that reads as "we never sent you money".
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a failed load never looks like an empty statement', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const lib = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'payments.js'), 'utf8');
+  const screen = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'screens', 'PaymentsScreen.js'), 'utf8',
+  );
+
+  it('fetchLedger throws on either booking query failing', () => {
+    const fn = lib.slice(lib.indexOf('export async function fetchLedger'));
+    expect(fn).toMatch(/if \(asEarner\.error\) throw asEarner\.error;/);
+    expect(fn).toMatch(/if \(asPoster\.error\) throw asPoster\.error;/);
+    // Both checks must precede the `?? []` that would otherwise swallow them.
+    expect(fn.indexOf('asEarner.error')).toBeLessThan(fn.indexOf('asEarner.data ??'));
+    expect(fn.indexOf('asPoster.error')).toBeLessThan(fn.indexOf('asPoster.data ??'));
+  });
+
+  it('a payouts failure is its own state, not an empty list', () => {
+    expect(screen).toMatch(/catch\(\(\) => setPayouts\('error'\)\)/);
+    expect(screen).not.toMatch(/catch\(\(\) => setPayouts\(\[\]\)\)/);
+  });
+
+  it('and the payouts sheet renders that state before the empty case', () => {
+    const at = screen.indexOf("payouts === 'error'");
+    const empty = screen.indexOf('payouts.length === 0');
+    expect(at).toBeGreaterThan(-1);
+    // Order matters: 'error'.length === 0 is false, but relying on that is a trap for
+    // whoever edits this next.
+    expect(at).toBeLessThan(empty);
+    expect(screen).toMatch(/Could not load your bank deposits/);
+  });
+});

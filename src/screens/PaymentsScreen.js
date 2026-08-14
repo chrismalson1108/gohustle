@@ -73,8 +73,11 @@ export default function PaymentsScreen({ navigation, route }) {
       const rows = await fetchLedger(user.id);
       setEntries(rows);
       // Best-effort: the ledger is the screen's job, and a payouts hiccup must not
-      // make it look like the transactions failed to load.
-      fetchPayouts(user.id).then(setPayouts).catch(() => setPayouts([]));
+      // make it look like the transactions failed to load. But it must not resolve to
+      // [] either — that renders "No bank deposits yet", which reads to an earner as
+      // "we never sent you money" and is the exact failure the catch below exists to
+      // prevent. Three states: null = loading, [] = confirmed empty, 'error' = unknown.
+      fetchPayouts(user.id).then(setPayouts).catch(() => setPayouts('error'));
       if (!chosenRef.current) {
         chosenRef.current = true;
         const earner = rows.filter((r) => r.side === 'earner').length;
@@ -420,6 +423,15 @@ export default function PaymentsScreen({ navigation, route }) {
             <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 14 }}>
               {payouts === null ? (
                 <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+              ) : payouts === 'error' ? (
+                <View style={styles.errorCard}>
+                  <Ionicons name="alert-circle" size={18} color={colors.urgent} />
+                  <Text style={styles.errorText}>
+                    Could not load your bank deposits. This does not affect any money already
+                    released.
+                  </Text>
+                  <TouchableOpacity onPress={load}><Text style={styles.retry}>Retry</Text></TouchableOpacity>
+                </View>
               ) : payouts.length === 0 ? (
                 <Text style={styles.disclaimer}>
                   No bank deposits yet. Once a gig is verified and released, your first
