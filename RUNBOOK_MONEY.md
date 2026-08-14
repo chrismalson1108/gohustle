@@ -77,6 +77,12 @@ flags the booking (auto-settlement suppressed).
 3. Submit evidence **in Stripe**. The console cannot do this.
 4. Money reality: the earner has likely already been paid out (daily payouts, no
    `delay_days`). If you lose, the platform eats it.
+
+   **As of 2026-08-13 the code agrees with this.** "Record chargeback" no longer debits
+   the earner's in-app earnings: that path makes no Stripe call, so nothing is recovered
+   and the debit only made their displayed total smaller than what they were actually
+   paid. A REFUND still debits them, because that path passes `reverse_transfer` and the
+   money genuinely comes back out of their connected account.
 5. If the same poster appears twice: suspend. `/users/<id>` → **Suspend**, reason
    `repeat chargeback`. A second chargeback should never be able to place a third hold.
 

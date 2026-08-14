@@ -126,8 +126,15 @@ Deno.serve(async (req: Request) => {
       if (cents <= 0) return json({ error: 'bad_amount' }, 400);
 
       await service.from('payments').update({ refund_source: 'chargeback' }).eq('id', pay.id);
+      // p_debit_earner: FALSE. This op makes no stripe.* call — a chargeback on a
+      // destination charge debits the PLATFORM balance and does not reverse the
+      // transfer, so the earner's money is already with them and stays there.
+      // debit_earnings would recover nothing; it would only make their displayed
+      // earnings smaller than what they were actually paid, for something the poster's
+      // cardholder did. RUNBOOK_MONEY:78 already says the platform eats it.
       const { data: total, error: recErr } = await service.rpc('record_refund', {
         p_payment_id: pay.id, p_cents: cents, p_reason: reason, p_admin: user.id,
+        p_debit_earner: false,
       });
       if (recErr) throw new Error(recErr.message);
       if (total === null) {
@@ -200,6 +207,9 @@ Deno.serve(async (req: Request) => {
       p_cents: refundCents,
       p_reason: reason,
       p_admin: user.id,
+      // TRUE here, and earned: this path passed reverse_transfer to Stripe above, so the
+      // money genuinely came back out of the earner's connected account.
+      p_debit_earner: true,
     });
     if (!updErr && newTotal === null) {
       // Lost a race with a concurrent refund: Stripe took the money but the running

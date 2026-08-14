@@ -1,6 +1,9 @@
 // Account deletion (Apple 5.1.1(v) / Play / GDPR-CCPA). The caller deletes their
 // OWN account: validate the JWT, remove their storage objects (buckets don't
-// cascade), then auth.admin.deleteUser → cascades the profile and all user data.
+// cascade), then the profile is SCRUBBED and the auth row is emptied and permanently
+// banned. It is deliberately NOT deleted: profiles_id_fkey cascades from auth.users, and
+// that cascade reaches jobs → bookings → payments, i.e. the COUNTERPARTY's financial
+// records. See the tombstone block below.
 // Financial records of record remain in Stripe.
 import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -220,9 +223,63 @@ Deno.serve(async (req: Request) => {
       console.error('delete-account: support ticket scrub threw', e);
     }
 
-    // 4. Delete the auth user → cascades profile + all user-scoped rows.
-    const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
+    // 4. TOMBSTONE the profile.
+    //
+    // Deleting the auth user cascades to the profile, and the profile cascades to
+    // jobs → bookings → payments. PROVEN on a staged row: a booking and its payment went
+    // 1 → 0. Since delete-account only blocks UNSETTLED bookings, what cascaded away was
+    // precisely the COMPLETED, PAID work — so a poster's erasure destroyed every earner's
+    // record of money they had actually been paid. That is the earner's tax evidence, and
+    // the earner did not ask for anything to be deleted.
+    //
+    // Transaction records are a recognised exception to erasure, and those rows are not
+    // only the deleting party's. So the profile is scrubbed of every identifier and KEPT,
+    // which is the same call this function already makes for support_tickets a few lines
+    // above — "preserves what set null was clearly for … while removing the direct
+    // identifiers".
+    //
+    // Order matters: scrub BEFORE the auth delete. If the auth delete succeeds and the
+    // scrub has not run, the cascade has already taken the records.
+    const { error: tombErr } = await admin.rpc('tombstone_profile', { p_user: user.id });
+    if (tombErr) {
+      // FAIL CLOSED. Proceeding would delete the counterparty's financial records, which
+      // is the exact harm this exists to prevent — better to leave the account intact and
+      // have the person retry.
+      console.error('delete-account: tombstone failed, refusing to delete', tombErr);
+      return json({
+        error: 'Could not complete deletion. Nothing was removed — please try again or contact support.',
+      }, 500);
+    }
+
+    // 5. Neutralise the AUTH row rather than deleting it.
+    //
+    // This is the part that makes the tombstone actually work. `profiles_id_fkey`
+    // references auth.users with ON DELETE CASCADE (confdeltype 'c', read from
+    // pg_constraint), so auth.admin.deleteUser removes the profile — and the profile
+    // cascades to jobs → bookings → payments. Scrubbing the profile and THEN deleting
+    // the auth user would have destroyed exactly the records the scrub was protecting.
+    //
+    // So the auth row is emptied and permanently banned instead: the email is replaced
+    // (freeing the real address for reuse), metadata and phone are cleared, and the
+    // account can never be signed into again. What remains is an opaque uuid with no
+    // personal data attached — the same tombstone shape already used for the profile and
+    // for support_tickets above.
+    const { error: delErr } = await admin.auth.admin.updateUserById(user.id, {
+      email: `deleted-${user.id}@removed.invalid`,
+      phone: undefined,
+      user_metadata: {},
+      app_metadata: { deleted: true },
+      ban_duration: '876000h', // 100 years — Supabase has no "forever", this is it
+    });
     if (delErr) return json({ error: delErr.message }, 500);
+
+    // Kill every live session so the ban takes effect immediately rather than at the
+    // next token refresh.
+    try {
+      await admin.auth.admin.signOut(user.id, 'global');
+    } catch (e) {
+      console.error('delete-account: could not revoke sessions', e);
+    }
 
     return json({ success: true });
   } catch (err) {

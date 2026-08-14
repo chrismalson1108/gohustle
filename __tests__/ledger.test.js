@@ -451,3 +451,44 @@ describe('receipt line items sum to the printed total', () => {
     expect(r.lines.find((l) => l.key === 'credit')?.cents).toBe(300);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleting an account must not delete the counterparty's financial records.
+//
+// PROVEN on a staged row: profiles → jobs → bookings → payments is CASCADE at every
+// link, so a poster's erasure took every earner's booking AND payment from 1 to 0. And
+// delete-account only blocks UNSETTLED bookings, so what cascaded was precisely the
+// completed, PAID work — the earner's 1099 evidence, destroyed by a counterparty.
+//
+// The account is therefore TOMBSTONED, not deleted. The subtle part, and the reason this
+// test exists: profiles_id_fkey cascades FROM auth.users, so calling
+// auth.admin.deleteUser after scrubbing the profile destroys the very records the scrub
+// was protecting. The auth row must be neutralised instead.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('account deletion preserves the counterparty record', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/delete-account/index.ts'), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+  it('scrubs the profile', () => {
+    expect(code).toMatch(/tombstone_profile/);
+  });
+
+  it('never calls auth.admin.deleteUser', () => {
+    // The whole defect: that one call cascades through the profile to jobs, bookings and
+    // payments. Scrubbing first does not save them.
+    expect(code).not.toMatch(/deleteUser\(/);
+  });
+
+  it('neutralises the auth row instead', () => {
+    expect(code).toMatch(/updateUserById/);
+    expect(code).toMatch(/ban_duration/);
+    expect(code).toMatch(/removed\.invalid/);
+  });
+
+  it('refuses to proceed if the scrub failed', () => {
+    // Fail closed: continuing would delete the counterparty's records, which is the
+    // exact harm this exists to prevent.
+    expect(code).toMatch(/tombErr/);
+  });
+});
