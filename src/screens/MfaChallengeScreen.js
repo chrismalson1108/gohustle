@@ -72,8 +72,10 @@ export default function MfaChallengeScreen() {
         haptic.error();
         return;
       }
-      // The code removed the factor server-side, so this session is no longer waiting
-      // on one. They are password-only now and the Security screen says so.
+      // redeemRecoveryCode has removed the factor AND refreshed this session, so the
+      // stored user no longer lists one — clearing the gate here is the same answer the
+      // next relaunch will reach on its own. It is only optimistic about the timing.
+      // They are password-only now and the Security screen says so.
       haptic.success();
       clearMfaPending();
     } catch (e) {

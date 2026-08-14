@@ -287,6 +287,35 @@ Deno.serve(async (req: Request) => {
       const reply = parsed.ok
         ? (parsed.note as string) || 'Done.'
         : (parsed.message as string) || "That didn't go through — try asking me again.";
+
+      // Write this turn into the thread. The model path persists every turn; this one
+      // returned without doing so, so a reopened thread ended at "book me that gig"
+      // and History read as though the booking was never made — the one turn where
+      // something irreversible actually happened was the only turn missing.
+      // Ownership is checked the same way the model path checks it: RLS scopes the
+      // select to the owner, so a foreign or unknown id comes back null and we write
+      // nothing rather than into someone else's thread. Best-effort — a persistence
+      // failure must never swallow the outcome of an action that already ran.
+      if (typeof body.thread_id === 'string' && body.thread_id) {
+        try {
+          const { data: owned } = await sb
+            .from('assistant_threads')
+            .select('id')
+            .eq('id', body.thread_id)
+            .maybeSingle();
+          if (owned) {
+            await sb.from('assistant_messages').insert({
+              thread_id: body.thread_id,
+              user_id: user.id,
+              role: 'assistant',
+              content: reply,
+            });
+            await sb.from('assistant_threads').update({ updated_at: new Date().toISOString() }).eq('id', body.thread_id);
+          }
+        } catch (e) {
+          console.error('assistant: confirm-turn persist failed', e);
+        }
+      }
       return json({ reply, actions: confirmActions, thread_id: body.thread_id ?? null });
     }
 
@@ -687,7 +716,7 @@ async function runTool(
     case 'get_my_schedule':
       return mySchedule(sb, userId);
     case 'remember':
-      return remember(sb, userId, input, actions);
+      return remember(sb, userId, input, actions, token);
     case 'watch_for_gigs':
       return watchForGigs(sb, userId, input, actions);
     case 'list_watches':
@@ -894,8 +923,18 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
   if (!(await moderateViaEdge(token, `${title}\n${description}`, 'gig'))) {
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
-  if (actions.filter((a) => a.type === 'gig_created').length >= 3) {
-    return JSON.stringify({ error: 'limit_reached', message: "That's a few gigs already — let's review them before posting more." });
+  // ONE staged confirmation per request. This counted 'gig_created' actions until the
+  // gate landed and moved that push into executeCreateGig on the confirm path — this
+  // function has not emitted one since, so the cap has been dead code and a single
+  // turn could stage as many rows as the model cared to ask for. The client renders
+  // exactly one card (AssistantButton: `actions.find((a) => a.type ===
+  // 'confirm_action')`), so every row past the first is a live, consumable action the
+  // user was never shown. Count what this turn actually STAGES.
+  if (actions.some((a) => a.type === 'confirm_action')) {
+    return JSON.stringify({
+      error: 'limit_reached',
+      message: "There's already a confirmation waiting — tap that one first and I'll set the next one up.",
+    });
   }
 
   // THE GATE, same shape as book_gig. Posting a gig commits the user publicly and
@@ -1041,8 +1080,15 @@ async function stageAction(userId: string, kind: string, payload: Json, summary:
 async function bookGig(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
   const gigId = String(input.gig_id ?? '');
   if (!gigId) return JSON.stringify({ error: 'gig_id required' });
-  if (actions.filter((a) => a.type === 'gig_booked').length >= 3) {
-    return JSON.stringify({ error: 'limit_reached', message: "That's several bookings in one go — let's pause and review before more." });
+  // Same one-staged-confirmation-per-request cap as create_gig, dead for the same
+  // reason: the 'gig_booked' push it used to count moved into executeBooking when the
+  // gate landed. Counting confirm_action covers both kinds, which is right — the
+  // client shows the first card of ANY kind and drops the rest.
+  if (actions.some((a) => a.type === 'confirm_action')) {
+    return JSON.stringify({
+      error: 'limit_reached',
+      message: "There's already a confirmation waiting — tap that one first and I'll set the next one up.",
+    });
   }
 
   const { data: job } = await sb
@@ -1539,9 +1585,22 @@ async function mySchedule(sb: SupabaseClient, userId: string): Promise<string> {
   });
 }
 
-async function remember(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
+async function remember(sb: SupabaseClient, userId: string, input: Json, actions: Action[], token: string): Promise<string> {
   const fact = String(input.fact ?? '').trim().slice(0, 200);
   if (!fact) return JSON.stringify({ error: 'empty_fact' });
+  // The SAME two layers create_gig and update_profile run, and this is the write that
+  // needs them most: a remembered fact is model-authored text that is replayed into
+  // the system prompt of EVERY future conversation, so one bad line written from
+  // injected gig copy persists across sessions instead of scrolling away. No manual
+  // write path produces this text, so nothing else — no client filter, no DB guard —
+  // ever sees it. Layer 1: keyword filter.
+  if (findProhibited(fact)) {
+    return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
+  }
+  // Layer 2: context-aware moderate-text (fails open, exactly as the other two do).
+  if (!(await moderateViaEdge(token, fact, 'note'))) {
+    return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
+  }
   const { data: profile } = await sb.rpc('my_profile');
   let mem: string[] = Array.isArray((profile as Json | null)?.assistant_memory)
     ? ((profile as Json).assistant_memory as string[])
@@ -1558,7 +1617,16 @@ async function remember(sb: SupabaseClient, userId: string, input: Json, actions
     return JSON.stringify({ error: error.message });
   }
   actions.push({ type: 'memory_updated' });
-  return JSON.stringify({ ok: true, remembered: fact, total: mem.length });
+  return JSON.stringify({
+    ok: true,
+    remembered: fact,
+    total: mem.length,
+    // Say it out loud. There is no screen anywhere that lists these notes, so the
+    // person they are about has no way to find a wrong or unwanted one — this line is
+    // the only moment they learn something was kept. Silent storage plus no viewer is
+    // how a memory nobody asked for survives forever.
+    note: `Tell the user what you saved, quoting it back: "I'll remember: ${fact}". Keep it to that one line.`,
+  });
 }
 
 async function watchForGigs(sb: SupabaseClient, userId: string, input: Json, actions: Action[]): Promise<string> {
@@ -1791,7 +1859,7 @@ How to behave:
 - After you take an action, confirm what happened in plain language and suggest a natural next step. Refer to gigs by their title, never by raw id.
 - When recommending or listing gigs, show title, pay, location, and why it fits — keep it skimmable.
 - If asked something outside GoHustlr, answer briefly if helpful, then steer back to how you can help on the app.
-- You remember useful things across conversations. When the user shares a durable goal, preference, or fact worth keeping (e.g. "I'm saving for spring break", "I prefer weekend gigs", "no delivery jobs"), call **remember** with a one-line note. Don't store trivial or one-off details, and don't make a show of remembering — a brief "got it" is enough.
+- You remember useful things across conversations. When the user shares a durable goal, preference, or fact worth keeping (e.g. "I'm saving for spring break", "I prefer weekend gigs", "no delivery jobs"), call **remember** with a one-line note. Don't store trivial or one-off details. When you do save one, say what you saved in one short line ("I'll remember: …") — the user has no other way to see what is being kept about them, so a silent "got it" hides it from them.
 - Respond with your final answer only — do not narrate your internal steps or tool usage.`;
 }
 

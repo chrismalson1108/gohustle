@@ -181,7 +181,25 @@ export async function confirmRecoveryCodes() {
 export async function redeemRecoveryCode(code) {
   const { data, error } = await supabase.rpc('redeem_mfa_recovery_code', { p_code: String(code ?? '').trim() });
   if (error) throw new MfaError('Could not check that code.', 'redeem_failed');
-  return data === true;
+  if (data !== true) return false;
+
+  // The factor is gone in the database, but THIS DEVICE'S session still remembers it.
+  // getAuthenticatorAssuranceLevel() reads nextLevel off the cached `user.factors` and
+  // currentLevel off the JWT's aal claim, and the RPC updates neither — so the gate goes
+  // on computing "has a factor, hasn't satisfied it", and the next launch inside the
+  // access token's hour prompts again. The user spends a SECOND code from a set that is
+  // already their last resort, on the authenticator they just told us they lost.
+  //
+  // Refreshing re-reads the user server-side, where the factor list is now empty; the
+  // new access token also re-keys the AAL effect in AuthContext, so the gate re-derives
+  // itself instead of resting on the screen's optimistic clear.
+  //
+  // Never fail the redemption over this. The code is spent and 2FA is off either way —
+  // a stale session costs a re-prompt, whereas throwing here shows someone a failure
+  // message for the thing that just worked.
+  await supabase.auth.refreshSession().catch(() => {});
+
+  return true;
 }
 
 /** Formats a code the way people read it back: ABCD-EFGH. */
