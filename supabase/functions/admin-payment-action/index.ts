@@ -135,6 +135,13 @@ Deno.serve(async (req: Request) => {
       const { data: total, error: recErr } = await service.rpc('record_refund', {
         p_payment_id: pay.id, p_cents: cents, p_reason: reason, p_admin: user.id,
         p_debit_earner: false,
+        // No Stripe object exists for a ledger-only reversal, so the key is derived
+        // from what an accidental resubmit repeats: this PaymentIntent and this
+        // amount. InterventionPanel clears the form only on success, so after a
+        // timeout the operator's second click sends byte-identical values — that is
+        // the case this collapses. The reason text is deliberately NOT part of the
+        // key: a retyped word would sail straight past it.
+        p_external_id: `chargeback_${pay.payment_intent_id}_${cents}`,
       });
       if (recErr) throw new Error(recErr.message);
       if (total === null) {
@@ -210,6 +217,12 @@ Deno.serve(async (req: Request) => {
       // TRUE here, and earned: this path passed reverse_transfer to Stripe above, so the
       // money genuinely came back out of the earner's connected account.
       p_debit_earner: true,
+      // Stripe's own refund id — the ONE value that differs between a genuine second
+      // refund and a replay of the first. The idempotency key above protects Stripe;
+      // this protects the ledger. Without it, a retry after the 20s timeout re-reads
+      // refunded_cents = 0, rebuilds the same key, receives the ORIGINAL Refund object
+      // back, and records a second refund that never happened.
+      p_external_id: refund.id,
     });
     if (!updErr && newTotal === null) {
       // Lost a race with a concurrent refund: Stripe took the money but the running

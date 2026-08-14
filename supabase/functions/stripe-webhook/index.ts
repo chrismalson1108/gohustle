@@ -56,10 +56,13 @@ async function recordReversal(
   // 'refund'  — Stripe charge.refunded, which an ADMIN refund also fires
   // 'chargeback' — charge.dispute.created, which only a CARDHOLDER can cause
   kind: 'refund' | 'chargeback',
+  // charge.amount_refunded — Stripe's CUMULATIVE refunded total for this charge.
+  // Null for a chargeback, which moves no refund figure at all.
+  stripeRefundedCents: number | null = null,
 ): Promise<string | null> {
   if (!paymentIntentId) return null;
   const { data: payment } = await supabase
-    .from('payments').select('id, booking_id, refund_source')
+    .from('payments').select('id, booking_id, refund_source, refunded_cents')
     .eq('payment_intent_id', paymentIntentId).maybeSingle();
   const bookingId = (payment as { booking_id?: string } | null)?.booking_id;
   if (!bookingId) return null;
@@ -70,23 +73,45 @@ async function recordReversal(
   // then refuses to settle that booking — so fixing a problem re-blocked it. Still
   // return the booking id so the caller's admin email is sent; only skip the row.
   //
-  // ⚠️ REFUNDS ONLY. `refund_source` is written once and NEVER cleared — nothing in
-  // supabase/, admin/, src/ or any pg_proc resets it — so this test is permanent, while
-  // the thing it describes was a single action. Because this function is shared by
-  // charge.refunded AND charge.dispute.created, one admin refund used to silence every
-  // later CHARGEBACK on that payment, forever.
+  // ⚠️ REFUNDS ONLY. A chargeback is not something an admin can initiate — it is a
+  // cardholder going to their bank — so the exemption cannot apply to it whatever any
+  // flag says. One admin refund used to silence every later CHARGEBACK on that payment
+  // forever, because this function is shared by charge.refunded AND
+  // charge.dispute.created.
   //
-  // A chargeback is not something an admin can initiate: it is a cardholder going to
-  // their bank. So the exemption cannot apply to it, whatever the flag says.
+  // TWO independent tests, because each covers the other's race:
   //
-  // What went dark: the /disputes console page reads only this table, so a human never
-  // saw it; ctl_external_reversal_not_ledgered INNER JOINs it; dispute_open_beyond_sla
-  // counts its rows; and earner-claim-payment's DISPUTE_OPEN gate would happily settle a
-  // booking with a live chargeback against it.
-  if (kind === 'refund'
-      && (payment as { refund_source?: string | null } | null)?.refund_source === 'admin') {
-    console.log(`recordReversal: skipping dispute row for admin-initiated refund on ${bookingId}`);
-    return bookingId;
+  //  1. `refund_source = 'admin'` is the IN-FLIGHT marker. admin-payment-action stamps
+  //     it BEFORE calling Stripe precisely because this webhook can arrive before the
+  //     function returns. As of 20260814010000 record_refund CLEARS it once the refund
+  //     is ledgered, so it now means "in flight", which is all it ever should have
+  //     meant. Left permanent, it made a later EXTERNAL refund on the same payment
+  //     invisible too.
+  //
+  //  2. Our ledger already accounts for everything Stripe says was refunded. This is
+  //     the self-clearing version of the same statement, and it covers the ordering the
+  //     marker cannot: webhook arriving AFTER record_refund committed and cleared the
+  //     flag. amount_refunded is cumulative, so `refunded_cents >= amount_refunded`
+  //     means there is nothing unledgered to complain about. When Stripe has refunded
+  //     MORE than we recorded, something happened outside the console and the row must
+  //     be filed — which is the entire point of the control that reads it.
+  //
+  // What goes dark when this is wrong: the /disputes console page reads only this
+  // table, so a human never sees it; ctl_external_reversal_not_ledgered INNER JOINs it;
+  // dispute_open_beyond_sla counts its rows; and earner-claim-payment's DISPUTE_OPEN
+  // gate would happily settle a booking with a live reversal against it.
+  if (kind === 'refund') {
+    const row = payment as { refund_source?: string | null; refunded_cents?: number | null } | null;
+    const inFlight = row?.refund_source === 'admin';
+    const alreadyLedgered = stripeRefundedCents !== null
+      && (row?.refunded_cents ?? 0) >= stripeRefundedCents;
+    if (inFlight || alreadyLedgered) {
+      console.log(
+        `recordReversal: skipping dispute row for console refund on ${bookingId} ` +
+        `(${inFlight ? 'in flight' : 'already ledgered'})`,
+      );
+      return bookingId;
+    }
   }
 
   // raised_by is NOT NULL → attribute to the poster (the cardholder who charged back);
@@ -480,6 +505,7 @@ Deno.serve(async (req: Request) => {
           supabase, piId, charge.id,
           `Stripe refund on charge ${charge.id} (${charge.currency ?? 'usd'} ${refunded} refunded)`,
           'refund',
+          typeof charge.amount_refunded === 'number' ? charge.amount_refunded : null,
         );
         await emailAdmin(
           `Refund processed: ${charge.currency ?? 'usd'} ${refunded}`,

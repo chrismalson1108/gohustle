@@ -144,15 +144,35 @@ describe('the admin-refund exemption cannot silence a chargeback', () => {
   });
 
   it('gates the refund_source exemption on the event being a REFUND', () => {
-    const line = fn.split('\n').find((l) => l.includes("refund_source") && l.includes("'admin'"));
+    const line = fn.split('\n').find((l) => l.includes('refund_source') && l.includes("'admin'"));
     expect(line).toBeDefined();
-    // The exemption must be conjoined with a refund-only condition, not stand alone.
-    expect(fn).toMatch(/kind === ['"]refund['"]\s*\n?\s*&&[\s\S]{0,120}refund_source/);
+    // The PROPERTY, not one spelling of it: every read of refund_source must sit
+    // inside a refund-only scope. Written as `kind === 'refund' && …` originally and
+    // as an `if (kind === 'refund') { … }` block since 20260814010000 added the second
+    // (self-clearing) test alongside it — both satisfy this, a bare exemption does not.
+    // The exemption itself, not the SELECT that fetches the column.
+    const at = fn.indexOf("refund_source === 'admin'");
+    expect(at).toBeGreaterThan(-1);
+    expect(fn.slice(0, at)).toMatch(/kind === ['"]refund['"][\s\S]{0,600}$/);
+  });
+
+  it('never exempts a chargeback from being recorded', () => {
+    // The inverse, stated directly: a cardholder dispute has no admin-remediation
+    // reading, so nothing may return early for one before the disputes insert.
+    const insertAt = fn.indexOf(".from('disputes').insert");
+    expect(insertAt).toBeGreaterThan(-1);
+    const beforeInsert = fn.slice(0, insertAt);
+    expect(beforeInsert).not.toMatch(/kind === ['"]chargeback['"][\s\S]{0,200}return/);
   });
 
   it('both call sites declare which kind of reversal they are', () => {
     const body = strip(src);
-    expect(body).toMatch(/['"]chargeback['"],\s*\n?\s*\)/);
-    expect(body).toMatch(/['"]refund['"],\s*\n?\s*\)/);
+    // Match the argument list rather than the kind's position in it — the refund call
+    // gained a trailing amount_refunded argument, and asserting "kind is last" made a
+    // correct change look like a regression.
+    const calls = [...body.matchAll(/await recordReversal\(\s*([\s\S]*?)\);/g)].map((m) => m[1]);
+    expect(calls.length).toBe(2);
+    expect(calls.filter((a) => /'chargeback'/.test(a)).length).toBe(1);
+    expect(calls.filter((a) => /'refund'/.test(a)).length).toBe(1);
   });
 });
