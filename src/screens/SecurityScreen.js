@@ -24,7 +24,7 @@ import { useUser } from '../context/UserContext';
 import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchMfaStatus, startEnrollment, confirmEnrollment, disableMfa,
-  generateRecoveryCodes,
+  generateRecoveryCodes, confirmRecoveryCodes,
 } from '../lib/mfa';
 import { colors, radii, shadows } from '../theme';
 
@@ -76,28 +76,55 @@ export default function SecurityScreen() {
     }
   };
 
+  // Generate, show, and only THEN retire the previous set. The old codes stay valid
+  // until confirmRecoveryCodes lands, so a dropped response leaves the user with codes
+  // that work rather than none at all.
+  const showFreshCodes = async () => {
+    const fresh = await generateRecoveryCodes();
+    setCodes(fresh);
+    setStep('codes');
+    await confirmRecoveryCodes();
+    return fresh;
+  };
+
   const verify = async () => {
     haptic.medium(); setErr(null); setBusy(true);
+    // Tracked separately because the two halves fail differently and the SECOND one
+    // failing does not undo the first.
+    let factorOn = false;
     try {
       await confirmEnrollment(enroll.factorId, code);
+      factorOn = true;
       // Recovery codes are generated IMMEDIATELY, not offered later. 2FA without a way
       // back in turns a lost phone into a lost account, and "I'll do it later" is how
       // that happens.
-      setCodes(await generateRecoveryCodes());
-      setStep('codes');
+      await showFreshCodes();
       setCode('');
       haptic.success();
+    } catch (e) {
+      // If the factor verified and only the CODES failed, two-factor is genuinely ON.
+      // Reporting the generic error here told the user enrolment had failed while the
+      // card still read "Off" — so they walked away believing they had no 2FA and no
+      // recovery codes, when in fact they had 2FA and no recovery codes. That is the
+      // exact state that turns a lost phone into a lost account.
+      setErr(factorOn
+        ? 'Two-factor is now ON, but we could not create your recovery codes. '
+          + 'Tap “Regenerate recovery codes” before you lose access to this device.'
+        : e.message);
+      haptic.error();
+    } finally {
+      // ALWAYS reload — in the finally, not on the success path. Once the factor is
+      // verified the card must never still claim "Off", whatever happened afterwards.
       await load();
-    } catch (e) { setErr(e.message); haptic.error(); } finally { setBusy(false); }
+      setBusy(false);
+    }
   };
 
   const regenerate = async () => {
-    haptic.medium(); setBusy(true);
+    haptic.medium(); setErr(null); setBusy(true);
     try {
-      setCodes(await generateRecoveryCodes());
-      setStep('codes');
-      await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+      await showFreshCodes();
+    } catch (e) { setErr(e.message); } finally { await load(); setBusy(false); }
   };
 
   const turnOff = async () => {

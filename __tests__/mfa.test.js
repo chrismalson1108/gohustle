@@ -86,8 +86,41 @@ describe('enrollment is built for a phone, not a laptop', () => {
 
   it('generates recovery codes as part of enrollment, not as an optional extra', () => {
     // 2FA without a way back in turns a lost phone into a lost account.
+    //
+    // Asserts the PROPERTY — enrolment reaches code generation — rather than the call
+    // appearing literally inside verify(). Both call sites now route through
+    // showFreshCodes(), so pinning the syntax made a correct refactor look like a
+    // regression.
     const i = screen.indexOf('confirmEnrollment(enroll.factorId');
-    expect(screen.slice(i, i + 400)).toMatch(/generateRecoveryCodes\(\)/);
+    const afterEnroll = screen.slice(i, i + 400);
+    expect(afterEnroll).toMatch(/showFreshCodes\(\)|generateRecoveryCodes\(\)/);
+    const helper = screen.slice(screen.indexOf('const showFreshCodes'));
+    expect(helper.slice(0, 400)).toMatch(/generateRecoveryCodes\(\)/);
+  });
+
+  it('retires the previous code set only AFTER the new one is delivered', () => {
+    // Generation used to delete the old set first and then return the new codes, so a
+    // lost response left the user with the old codes destroyed and the new ones existing
+    // only as hashes they had never seen — zero usable codes, on the one feature whose
+    // job is being the way back in.
+    const helper = screen.slice(screen.indexOf('const showFreshCodes'));
+    const gen = helper.indexOf('generateRecoveryCodes()');
+    const show = helper.indexOf('setCodes(');
+    const confirm = helper.indexOf('confirmRecoveryCodes()');
+    expect(gen).toBeGreaterThan(-1);
+    expect(confirm).toBeGreaterThan(gen);
+    expect(confirm).toBeGreaterThan(show); // delivered before the old set is retired
+  });
+
+  it('reloads status in a finally, so the card cannot still read Off', () => {
+    // confirmEnrollment can succeed and code generation fail. 2FA is then genuinely ON;
+    // reporting a generic failure while the card said "Off" left the user believing they
+    // had neither 2FA nor recovery codes, when they had 2FA and no recovery codes.
+    const verify = screen.slice(screen.indexOf('const verify = async'));
+    const body = verify.slice(0, verify.indexOf('const regenerate'));
+    expect(body).toMatch(/finally\s*\{[\s\S]*?await load\(\)/);
+    expect(body).toMatch(/factorOn/);
+    expect(body).toMatch(/Two-factor is now ON/);
   });
 
   it('tells the truth about the logo', () => {

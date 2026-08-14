@@ -139,11 +139,35 @@ export async function disableMfa(factorId, code) {
   if (error) throw new MfaError('Could not turn off two-factor.', 'unenroll_failed');
 }
 
-/** Fresh recovery codes. Shown ONCE; generating again retires the previous set. */
+/**
+ * Fresh recovery codes, shown ONCE.
+ *
+ * The previous set stays VALID until confirmRecoveryCodes() runs. Generation used to
+ * delete it first and then return the new codes, so a lost response — dropped
+ * connection, backgrounded app, killed process — left the old codes destroyed and the
+ * new ones existing only as hashes nobody had ever seen. Zero usable codes, on the one
+ * feature whose entire job is being the way back in.
+ */
 export async function generateRecoveryCodes() {
   const { data, error } = await supabase.rpc('generate_mfa_recovery_codes', { p_count: 10 });
   if (error) throw new MfaError('Could not create recovery codes.', 'codes_failed');
   return data ?? [];
+}
+
+/**
+ * "I have received and saved these" — retires the PREVIOUS batch.
+ *
+ * Delivery, not generation, is the point of no return. Call this only once the new
+ * codes are actually in hand and on screen.
+ *
+ * Deliberately non-throwing: by the time it runs the user already HAS their new codes,
+ * and the only consequence of failure is that the previous batch lives a little longer
+ * (the next generation retires it anyway). Surfacing an error here would tell someone
+ * staring at a valid set of codes that something went wrong with them.
+ */
+export async function confirmRecoveryCodes() {
+  const { error } = await supabase.rpc('confirm_mfa_recovery_codes');
+  return !error;
 }
 
 /**
