@@ -349,3 +349,37 @@ describe('promo codes can actually be redeemed', () => {
     expect(messages.length).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The address-masking contract must stay written down AND stay wired.
+//
+// `jobs.location` is masked by trg_mask_job_location → capture_job_location(); the exact
+// label lives in `job_locations` behind an RLS policy that reveals it to the poster, and
+// to an earner ONLY once their booking is accepted.
+//
+// None of that appeared in CLAUDE.md until 2026-08-13. A session that does not know it
+// either concludes the address feature is broken, or "fixes" the masking and publishes
+// every street address on the platform. That is a privacy control nobody had written
+// down — which is strictly more dangerous than an undocumented feature.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the address-masking contract is documented', () => {
+  const claude = require('fs').readFileSync(require('path').join(__dirname, '..', 'CLAUDE.md'), 'utf8');
+
+  it('says jobs.location is masked', () => {
+    expect(claude).toMatch(/jobs\.location.{0,40}MASKED|MASKED.{0,40}jobs\.location/is);
+  });
+
+  it('names where the exact address actually lives', () => {
+    expect(claude).toMatch(/job_locations/);
+  });
+
+  it('states that an earner only sees it once the booking is accepted', () => {
+    // The condition is the whole point — without it, an open application would leak it.
+    expect(claude).toMatch(/confirmed.{0,60}completed.{0,60}verified/s);
+  });
+
+  it('names the rest of the safety subsystem', () => {
+    expect(claude).toMatch(/gig_shares/);
+    expect(claude).toMatch(/safety_checkins/);
+  });
+});

@@ -82,6 +82,32 @@ do not exist in the Expo Go runtime.
 ## Legal docs (DB-driven, `src/lib/legal.js`)
 Documents live in the **`legal_documents`** table (latest row per `slug` = current; slugs `terms`/`privacy`/`contractor`, public read). Acceptances are appended to **`legal_acceptances`** (one row per `slug`+`version`, owner RLS) — an audit trail. `AuthContext` gates the app (`ConsentScreen`) when `checkNeedsAcceptance()` finds a required doc whose current version the user hasn't accepted; onboarding records acceptance for new users. **To publish new terms + force re-acceptance: insert a new `(slug, version)` row** — no app release needed. Helpers: `fetchCurrentDocs`, `recordAcceptances`, `checkNeedsAcceptance`. `SUPPORT_EMAIL` lives here too.
 
+## In-person safety (undocumented until 2026-08-13 — read before touching `jobs.location`)
+
+⚠️ **`jobs.location` is MASKED. The exact address is in `job_locations`, behind RLS.**
+`trg_mask_job_location` → `capture_job_location()` moves the precise label into
+`job_locations` on write and stores a masked one on `jobs`. `mask_location()` drops any
+segment containing a digit or ending in a street/unit keyword, so "742 Evergreen Terrace,
+Springfield, IL" is published as "Springfield, IL".
+
+A session that does not know this will either think the address feature is broken, or
+"fix" the masking and publish every street address on the platform. `job_locations`'s
+only policy (`job_locations_party_read`) exposes the exact label to the **poster**, and to
+an earner **only once their booking is `confirmed`/`completed`/`verified`** — never on an
+open application.
+
+- **`gig_shares`** — a tokenised, expiring, revocable link an earner sends to a friend
+  ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
+  names only, and it re-applies the same accepted-booking condition before revealing the
+  exact label — a definer function that skipped that would be a way to read addresses off
+  unaccepted applications.
+- **`safety_checkins`** — `due_at` / `nudged_at` / `escalated_at` / `resolved_at` per
+  booking: the "are you OK?" timer, its nudge, and escalation when it goes unanswered.
+- `trg_notify_safety_report` dispatch config lives in `app_flags`, **not a GUC** — that is
+  why it sat dead from 2026-07-10 to 2026-08-06 without firing once.
+
+Read `RUNBOOK_SAFETY.md` before changing any of it.
+
 ## Location, tips & disputes
 - **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build).
 - **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`.
