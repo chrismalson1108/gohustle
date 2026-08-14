@@ -18,7 +18,7 @@ export default async function PaymentsPage({
 
   let payQ = ctx.service
     .from("payments")
-    .select("id, booking_id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, status, captured_at, created_at")
+    .select("id, booking_id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, fee_bps, status, captured_at, created_at")
     .order("created_at", { ascending: false })
     .limit(60);
   if (statusFilter) payQ = payQ.eq("status", statusFilter);
@@ -211,6 +211,13 @@ export default async function PaymentsPage({
                 <th className="py-1 pr-4">Authorized</th>
                 <th className="py-1 pr-4">Captured</th>
                 <th className="py-1 pr-4">Fee</th>
+                {/* The rate PINNED to each booking, not today's. It cannot be
+                    derived from the row: fee ÷ authorized renders bps × pct on a
+                    partial capture, and two different pinned rates can produce an
+                    identical fee once the Stripe floor binds. Production already
+                    holds two distinct rates, including two payments at the same
+                    amount_cents carrying different ones. */}
+                <th className="py-1 pr-4">Rate</th>
                 <th className="py-1 pr-4">To earner</th>
                 <th className="py-1 pr-4">When</th>
                 <th className="py-1">Stripe</th>
@@ -239,6 +246,11 @@ export default async function PaymentsPage({
                         : "—"}
                     </td>
                     <td className="py-2 pr-4">{fmtCents(p.fee_cents)}</td>
+                    <td className="py-2 pr-4">
+                      {p.fee_bps == null
+                        ? <span className="text-[var(--muted)]">—</span>
+                        : `${(p.fee_bps / 100).toFixed(2)}%`}
+                    </td>
                     <td className="py-2 pr-4">{fmtCents(p.earner_amount_cents)}</td>
                     <td className="py-2 pr-4">{fmtDate(p.captured_at ?? p.created_at)}</td>
                     <td className="py-2">

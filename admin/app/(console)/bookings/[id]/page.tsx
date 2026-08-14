@@ -138,6 +138,44 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             </div>
             <div><dt className="text-[var(--muted)]">Fee</dt><dd>{fmtCents(pay.fee_cents)}</dd></div>
             <div><dt className="text-[var(--muted)]">To earner</dt><dd>{fmtCents(pay.earner_amount_cents)}</dd></div>
+            {/* ── The PINNED inputs. Rendered because they were unrecoverable. ──
+                fee_bps / fee_credit_cents / poster_discount_cents are frozen onto the
+                row at INSERT by trg_z_pin_payment_fee_bps and nothing may change them,
+                yet the console selected them (`select("*")`) and displayed none — on
+                this page, the one an operator opens BECAUSE of a dispute.
+
+                Neither escape hatch works. Dividing fee ÷ authorized is wrong on
+                exactly a partial capture, which is what creates the dispute: capture
+                rewrites fee_cents scaled by pct while deliberately leaving amount_cents
+                at the full authorization, so a 50% capture on a 700bps booking renders
+                3.5% — a rate that exists nowhere. It is wrong again when the Stripe
+                floor binds (two different pinned rates can produce an identical fee) and
+                again with a poster discount (the fee is computed on amount + discount).
+                And the PaymentIntent metadata carries only ids, so "Open in Stripe ↗"
+                reproduces the ambiguity rather than resolving it.
+
+                Live today: production holds two distinct fee_bps, including two payments
+                at the IDENTICAL amount_cents=2000 carrying different pinned rates. */}
+            <div>
+              <dt className="text-[var(--muted)]">Fee rate (pinned)</dt>
+              <dd>
+                {pay.fee_bps == null
+                  ? <span className="text-[var(--muted)]">not pinned</span>
+                  : `${(pay.fee_bps / 100).toFixed(2)}% · ${pay.fee_bps} bps`}
+              </dd>
+            </div>
+            {(pay.fee_credit_cents ?? 0) > 0 && (
+              <div>
+                <dt className="text-[var(--muted)]">Fee credit applied</dt>
+                <dd>{fmtCents(pay.fee_credit_cents)}</dd>
+              </div>
+            )}
+            {(pay.poster_discount_cents ?? 0) > 0 && (
+              <div>
+                <dt className="text-[var(--muted)]">Poster discount</dt>
+                <dd>{fmtCents(pay.poster_discount_cents)}</dd>
+              </div>
+            )}
             {/* Renamed: a field labelled "Captured" holding a DATE sat directly
                 beside money fields, reading as a fourth amount. */}
             <div><dt className="text-[var(--muted)]">Captured at</dt><dd>{fmtDate(pay.captured_at)}</dd></div>
