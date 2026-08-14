@@ -102,11 +102,17 @@ reports "Verify & Rate" failing.
    - `succeeded` → it actually worked; the failure was after capture. Check
      whether `payments.status` says `captured` and whether the earner's earnings
      moved. If not, this is a ledger drift — record it and credit by hand.
-3. **Do not capture from the Stripe Dashboard as a shortcut.** A Dashboard capture
-   fires `payment_intent.succeeded`, and that handler credits the earner the
-   **pre-computed full split** without reading `amount_received` — so a partial
-   capture credits the earner too much and overstates GMV. Fix that first (see
-   `ADMIN_AUDIT_2026-08-04.md` L7) or accept the drift knowingly and note it.
+3. **A Dashboard capture is now safe, but still prefer the app.** This used to say
+   "do not capture from the Stripe Dashboard": `payment_intent.succeeded` credited the
+   earner the **pre-computed full split** without reading `amount_received`, so a
+   partial capture over-credited them and overstated GMV, and `earnings_credited`
+   latched so it could not be re-run.
+   Fixed 2026-08-13 — the handler now re-derives the split from `amount_received`
+   before anything credits, refuses to rewrite a split already paid out on, and will
+   not resurrect a cancelled or failed row. It also logs to `client_errors` so an
+   out-of-band capture is visible rather than silent.
+   Still prefer capturing through the app: only that path settles promo budgets and
+   fee credits (`settle_booking_benefits`), which the webhook does not do.
 
 ---
 

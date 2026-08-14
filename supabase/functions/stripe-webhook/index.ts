@@ -8,6 +8,7 @@
 //   identity.verification_session.canceled
 import Stripe from 'npm:stripe@22';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { logServerError } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -141,15 +142,79 @@ Deno.serve(async (req: Request) => {
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
+
+        // ── This used to credit the earner a number Stripe never collected ────
+        //
+        // It marked the row captured with NO status predicate and then credited
+        // straight off earner_amount_cents, never reading pi.amount_received. Both
+        // sibling handlers below ARE status-guarded, with comments explaining why;
+        // this one — the only one that moves money — was not.
+        //
+        // The full split is written at AUTHORIZATION (create-payment-intent:408), so
+        // a row carries a full-value split from the moment the hold is placed. Capture
+        // the PaymentIntent for a smaller amount anywhere other than our own capture
+        // function — the Stripe Dashboard being the obvious one — and this credited the
+        // earner the FULL figure regardless of what was actually collected, then latched
+        // earnings_credited=true so it could not be re-run.
+        //
+        // RUNBOOK_MONEY.md §3 has been telling operators "do not capture from the Stripe
+        // Dashboard… fix that first" instead of the code refusing to get it wrong.
+        //
+        // Our own capture path is unaffected: stripe-capture-payment deliberately
+        // persists the REDUCED split BEFORE calling Stripe precisely so a fast webhook
+        // cannot over-credit, so its rows already reconcile and fall through untouched.
+        const { data: row } = await supabase
+          .from('payments')
+          .select('id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited')
+          .eq('payment_intent_id', pi.id)
+          .maybeSingle();
+
+        if (!row) {
+          console.error(`stripe-webhook: succeeded for unknown payment_intent ${pi.id}`);
+          break;
+        }
+
+        const received = typeof pi.amount_received === 'number' ? pi.amount_received : 0;
+        const storedSplit = (row.earner_amount_cents ?? 0) + (row.fee_cents ?? 0);
+
+        // Stripe collected something other than what this row claims. Re-derive the
+        // split from what actually moved, using the same proportional rule as
+        // stripe-capture-payment, BEFORE anything credits the earner.
+        if (received > 0 && received !== storedSplit) {
+          const authorized = row.amount_cents || 0;
+          const pct = authorized > 0 ? Math.min(1, received / authorized) : 1;
+          const fee = Math.min(received, Math.round((row.fee_cents ?? 0) * pct));
+          await supabase.from('payments')
+            .update({ fee_cents: fee, earner_amount_cents: received - fee })
+            .eq('id', row.id)
+            // Never rewrite a split that has already been paid out on.
+            .eq('earnings_credited', false);
+          await logServerError('stripe-webhook',
+            `partial//external capture on ${pi.id}: Stripe collected ${received} but the row ` +
+            `claimed ${storedSplit}. Split re-derived before crediting.`,
+            { payment_id: row.id, received, stored: storedSplit }, { fatal: false });
+        }
+
+        // Only a not-yet-settled row may become captured. A stale or redelivered
+        // succeeded must not resurrect a cancelled or failed payment — the same
+        // reasoning the payment_failed and canceled handlers below already apply.
         await supabase.from('payments')
           .update({ status: 'captured', captured_at: new Date().toISOString() })
-          .eq('payment_intent_id', pi.id);
-        // Settlement must credit the earner exactly once, no matter which path
-        // (this webhook or the capture edge function) observes it first. The
-        // credit_earnings RPC is atomic + idempotent, so calling it here is safe.
-        const { data: paid } = await supabase
-          .from('payments').select('id').eq('payment_intent_id', pi.id).single();
-        if (paid?.id) await supabase.rpc('credit_earnings', { p_payment_id: paid.id });
+          .eq('payment_intent_id', pi.id)
+          .in('status', ['pending', 'authorized']);
+
+        if (!['pending', 'authorized', 'captured'].includes(row.status)) {
+          console.error(
+            `stripe-webhook: succeeded arrived for ${pi.id} while the row was '${row.status}' — ` +
+            `status left alone, but Stripe has this money. Needs a human.`,
+          );
+        }
+
+        // Settlement must credit the earner exactly once, no matter which path (this
+        // webhook or the capture edge function) observes it first. credit_earnings is
+        // atomic + idempotent and requires status='captured', so calling it here is
+        // safe — and it now reads a split that matches what Stripe collected.
+        await supabase.rpc('credit_earnings', { p_payment_id: row.id });
         break;
       }
 

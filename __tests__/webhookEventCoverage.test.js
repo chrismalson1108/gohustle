@@ -66,3 +66,51 @@ describe('webhook event coverage', () => {
     for (const e of connectOnly) expect(required.connect).toContain(e);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The one handler that moves money must be as careful as the two that don't.
+//
+// payment_intent.succeeded marked the row captured with NO status predicate and credited
+// straight off earner_amount_cents, never reading pi.amount_received — while its two
+// siblings (payment_failed, canceled) both carried status predicates AND comments
+// explaining exactly why a stale redelivery must not overwrite a settled row.
+//
+// The full split is written at AUTHORIZATION, so every row carries a full-value split
+// from the moment the hold is placed. Capture that PaymentIntent for less anywhere but
+// our own capture function — the Stripe Dashboard being the obvious way — and the earner
+// was credited the full figure regardless of what Stripe collected, then earnings_credited
+// latched so it could not be re-run.
+//
+// RUNBOOK_MONEY.md had been instructing operators around it ("do not capture from the
+// Stripe Dashboard… fix that first") rather than the code refusing to get it wrong.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('payment_intent.succeeded settles against what Stripe actually collected', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8');
+  // The handler body: from its case label to the next case label.
+  const body = src.slice(
+    src.indexOf("case 'payment_intent.succeeded':"),
+    src.indexOf("case 'payment_intent.payment_failed':"),
+  );
+
+  it('found the handler', () => {
+    expect(body.length).toBeGreaterThan(200);
+  });
+
+  it('reads amount_received rather than trusting the stored split', () => {
+    expect(body).toMatch(/amount_received/);
+  });
+
+  it('guards the status transition, like its siblings do', () => {
+    // A stale or redelivered succeeded must not resurrect a cancelled or failed row.
+    expect(body).toMatch(/\.in\(\s*['"]status['"],\s*\[[^\]]*['"]authorized['"]/);
+  });
+
+  it('never rewrites a split that has already been paid out on', () => {
+    expect(body).toMatch(/earnings_credited['"]?\s*,\s*false|eq\(['"]earnings_credited['"],\s*false\)/);
+  });
+
+  it('still credits the earner exactly once', () => {
+    expect(body).toMatch(/credit_earnings/);
+  });
+});
