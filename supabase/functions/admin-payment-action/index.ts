@@ -12,8 +12,14 @@
 //   • refund       — refund a captured charge, fully or partially.
 //
 // ADMIN TIER ONLY. Support may read the money pages; only an admin may move money.
-// The console writes its admin_audit_log row BEFORE calling this, so an action that
-// reaches Stripe is always already on the record.
+//
+// This function writes its OWN admin_audit_log row before it touches Stripe, and refuses
+// the action if that write fails. The header used to assert instead that "the console
+// writes its row BEFORE calling this, so an action that reaches Stripe is always already
+// on the record" — which nothing enforced. This authenticates the OPERATOR's own JWT, so
+// the same token sitting in a console browser can be POSTed straight at
+// /functions/v1/admin-payment-action and the console is never involved. Three ops that
+// move money ran with no record of who did it.
 import Stripe from 'npm:stripe@22';
 import { requireAdminCaller } from '../_shared/adminAuth.ts';
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -57,6 +63,33 @@ Deno.serve(async (req: Request) => {
     if (!bookingId) return json({ error: 'booking_required' }, 400);
     if (op !== 'release_hold' && op !== 'refund' && op !== 'record_reversal') return json({ error: 'bad_op' }, 400);
     if (!reason) return json({ error: 'reason_required', message: 'A written reason is required.' }, 400);
+
+    // ── On the record BEFORE anything moves ──────────────────────────────────
+    //
+    // Written here, not by the caller: this endpoint is reachable with the operator's own
+    // token without the console, so a row the CONSOLE writes proves nothing about a
+    // request that never went through it. Fail CLOSED — the same posture admin/lib/audit.ts
+    // takes — because an untraceable money action is worse than a refused one, and the
+    // operator can simply retry.
+    //
+    // `.edge` distinguishes it from the console's own row for the same action, so the
+    // /audit page shows a direct call as the distinct event it is rather than a duplicate.
+    const { error: auditErr } = await service.from('admin_audit_log').insert({
+      admin_id: user.id,
+      action: `payment.${op}.edge`,
+      target_type: 'booking',
+      target_id: bookingId,
+      detail: { amount_cents: amountCents, reason, request_id: requestId || null },
+    });
+    if (auditErr) {
+      await logServerError('admin-payment-action',
+        `refusing ${op} on ${bookingId}: could not write the audit row — ${auditErr.message}`,
+        { booking_id: bookingId, op }, { fatal: true });
+      return json({
+        error: 'audit_unavailable',
+        message: 'Could not record this action, so it was not performed. Try again.',
+      }, 503);
+    }
 
     const { data: pay, error: payErr } = await service
       .from('payments')

@@ -31,16 +31,21 @@ export async function resolveFinding(formData: FormData): Promise<ActionResult> 
       .eq("id", id)
       .maybeSingle();
 
+    // Audit BEFORE the mutation. audit() throws on an insert failure and this action wraps
+    // its body in a catch that turns anything into a generic message, so writing it
+    // afterwards meant a crash — or an audit-table problem — between the two left the
+    // change made and unattributed. An admin_audit_log that is missing exactly the rows
+    // from the runs that went wrong is worse than no log, because it reads as complete.
+    await audit(ctx, "control_finding.resolve", "control_finding", id, {
+      control_key: before?.control_key, entity_id: before?.entity_id, severity: before?.severity, note,
+    });
+
     const { error } = await ctx.service
       .from("control_findings")
       .update({ resolved_at: new Date().toISOString(), resolved_by: ctx.user.id, note })
       .eq("id", id)
       .is("resolved_at", null);
     if (error) return { ok: false, message: error.message };
-
-    await audit(ctx, "control_finding.resolve", "control_finding", id, {
-      control_key: before?.control_key, entity_id: before?.entity_id, severity: before?.severity, note,
-    });
     revalidatePath("/controls");
     return { ok: true, message: "Closed. It will re-open on the next sweep if the condition still holds." };
   } catch (e) {
@@ -60,9 +65,11 @@ export async function setControlEnabled(formData: FormData): Promise<ActionResul
 
   try {
     const ctx = await requireAdmin("admin");
+    // Before, not after — see resolveFinding above. Disabling a control is the single
+    // action here most worth being able to attribute later.
+    await audit(ctx, enabled ? "control.enable" : "control.disable", "control", key, { enabled });
     const { error } = await ctx.service.from("controls").update({ enabled }).eq("key", key);
     if (error) return { ok: false, message: error.message };
-    await audit(ctx, enabled ? "control.enable" : "control.disable", "control", key, { enabled });
     revalidatePath("/controls");
     return { ok: true, message: enabled ? `${key} enabled.` : `${key} disabled — you are no longer being told about this.` };
   } catch (e) {

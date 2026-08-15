@@ -44,6 +44,15 @@ export async function setPlatformRate(formData: FormData): Promise<ActionResult>
   try {
     const ctx = await requireFreshAdmin("admin");
     const feeBps = Math.round(pct * 100);
+    // Audit BEFORE the insert. audit() throws on failure and this body is wrapped in a
+    // catch that converts anything into a generic message, so writing it afterwards meant
+    // the rate could change with nobody recorded as having changed it. The rate card is
+    // the highest-leverage money value in the app — it is append-only precisely so its
+    // history is readable, and an unattributed row defeats that.
+    await audit(ctx, "pricing.set_rate", "platform_rate", String(feeBps), {
+      fee_bps: feeBps, effective_from: effective.toISOString(), note,
+    });
+
     const { error } = await ctx.service.from("platform_rates").insert({
       fee_bps: feeBps,
       effective_from: effective.toISOString(),
@@ -51,10 +60,6 @@ export async function setPlatformRate(formData: FormData): Promise<ActionResult>
       created_by: ctx.user.id,
     });
     if (error) return { ok: false, message: error.message };
-
-    await audit(ctx, "pricing.set_rate", "platform_rate", String(feeBps), {
-      fee_bps: feeBps, effective_from: effective.toISOString(), note,
-    });
     revalidatePath("/pricing");
     return {
       ok: true,
@@ -119,12 +124,17 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
     if (pErr && !ids.length) return { ok: false, message: pErr.message };
     if (!ids.length) return { ok: false, message: "None of those matched a user." };
 
+    // Before the RPC — this hands a campaign benefit directly to named people, which is
+    // the console action most worth being able to attribute after the fact. `granted` is
+    // not known yet, so the intent is recorded here and the count follows in the result.
+    await audit(ctx, "promotion.grant_direct", "promotion", promotionId, {
+      requested: emails.length, user_ids: ids.length,
+    });
+
     const { data: n, error } = await ctx.service.rpc("grant_promotion_to_users", {
       p_promotion: promotionId, p_user_ids: ids,
     });
     if (error) return { ok: false, message: error.message };
-
-    await audit(ctx, "promotion.grant_direct", "promotion", promotionId, { granted: n, requested: emails.length });
     revalidatePath("/pricing");
     return {
       ok: true,
