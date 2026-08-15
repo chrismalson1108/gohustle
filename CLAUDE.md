@@ -694,7 +694,15 @@ only runs when a human opens a page.
   ever firing. Config in a table can be **asserted on**.
 - **Disabling a control is a MUTE, not a switch.** `enabled = false` requires a
   `disabled_until` (default 24h) and `reenable_expired_controls()` runs at the top of
-  every sweep, so a control cannot be quietly switched off forever.
+  every sweep, so a control cannot be quietly switched off forever. **The same now holds
+  for the ALERT flags** (`controls_alert`, `safety_alert` in `app_flags`), which that rule
+  did NOT cover until 20260814100000: switching one off, or blanking its url or secret,
+  silenced every pager while the board stayed green — three separate early returns sit
+  ahead of `net.http_post`, in `controls_sweep_and_page`, `controls_digest` and
+  `notify_safety_report`. That is the 2026-07-10 outage class, where a trigger sat dead for
+  four weeks. `ctl_alert_not_dispatching` now names each dark channel and the shape that
+  broke it, resolving url/secret exactly as each dispatcher does — including the GUC
+  fallback only `notify_safety_report` has, so it cannot report a live channel dark.
 - TWO registry rows are `external = true` — `stripe_reconciliation` and `stripe_webhook_config`,
   both `fn_name = 'external:reconcile-stripe'`. `run_all_controls` filters them out (it iterates
   `where enabled and not external`), so they run only via `controls_sweep_and_page`'s HTTP dispatch
@@ -798,7 +806,16 @@ Everything the sections above do not already describe:
   the count differs and is load-bearing — `mfa_recovery_attempts` counts FIRST on purpose,
   because recording first let every over-limit try extend its own window and hold the
   account's real owner out indefinitely (fixed 2026-08-14, `20260814040000`).
-- **Money ledgers** — `tip_ledger` (one row per tip, `payment_intent_id` UNIQUE) and
+- **Money ledgers** — `tip_ledger` (one row per tip, `payment_intent_id` UNIQUE — but
+  NULLABLE since 20260814090000, because a row now starts life as a RESERVATION: the
+  pre-charge cap gate is a WRITE under `reservation_key`, so `trg_guard_tip_caps` evaluates
+  the caps under the advisory locks it already takes and concurrent callers can no longer
+  all pass a lock-free read. `reserved_until` expires a stranded reservation so it stops
+  consuming headroom; a retired one keeps an addressable `..._retired_<id>` key rather than
+  a null, or the corpse becomes unreachable by `release_tip_reservation` forever.
+  `reversed_cents`/`reversed_at` record a refunded or charged-back tip, which was reversed
+  NOWHERE before — and `ctl_earnings_total_drift` subtracts them, having previously added
+  every credited tip and certified the inflated balance as healthy) and
   `refund_ledger` (one row per reversal, `external_id` UNIQUE — Stripe's refund id, or
   `chargeback_<pi>_<cents>` for a ledger-only reversal). In both, **the unique index IS
   the idempotency check**: the insert conflict is what stops a double credit, never a
