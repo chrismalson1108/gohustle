@@ -104,6 +104,18 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div><dt className="text-[var(--muted)]">Poster done</dt><dd>{booking.poster_done ? "yes" : "no"}</dd></div>
           <div><dt className="text-[var(--muted)]">Tip</dt><dd>{fmtDollars(booking.tip_amount)}</dd></div>
           <div><dt className="text-[var(--muted)]">Amendment</dt><dd>{booking.amendment_status ?? "none"}</dd></div>
+          {/* The amount pinned at BOOKING insert by trg_z_pin_booking_amount — what the two
+              parties agreed to, which is the question in a dispute. The payment row does not
+              carry it (it inherits only fee_bps / fee_credit_cents / poster_discount_cents),
+              so before this it appeared on exactly one console page, support/[id]. Rendered
+              beside the escrow figures it will not always equal: a poster discount makes the
+              authorization lower, and a partial capture makes the settled total lower again. */}
+          {booking.amount_cents_quoted != null && (
+            <div>
+              <dt className="text-[var(--muted)]">Agreed at booking</dt>
+              <dd>{fmtCents(booking.amount_cents_quoted)}</dd>
+            </div>
+          )}
           <div><dt className="text-[var(--muted)]">Messages</dt><dd>{messages.length}</dd></div>
           {booking.counter_offer && <div><dt className="text-[var(--muted)]">Counter-offer</dt><dd>${Number(booking.counter_offer)}</dd></div>}
         </dl>
