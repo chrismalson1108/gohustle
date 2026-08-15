@@ -279,3 +279,14 @@ exercise a payment change.
 - **Rollback** is manual: re-insert from the JSON backup in §1, parents before children
   (`profiles` → `jobs` → `job_slots`/`job_requirements` → `bookings` → everything else).
   There is no transactional undo once committed.
+
+## Flip `app_flags.stripe_mode` in the same change that swaps the keys
+
+`ctl_stripe_id_mode_mismatch` reads this flag and is a deliberate no-op while it says
+`test`. Leave it behind and the control keeps checking for the wrong thing at exactly the
+moment it matters.
+
+Expect it to fire immediately: as of 2026-08-14 there are **8 test-shaped Stripe ids** in
+`stripe_accounts` / `stripe_customers`. That is the control working — an id minted in test
+mode is meaningless in live, and the failure otherwise surfaces when a poster tries to pay.
+Clear those rows as part of the reset, then flip the flag.
