@@ -106,7 +106,41 @@ export async function addTeamMember(formData: FormData): Promise<ActionResult> {
   }
 
   return run("team.add", String(userId), { email, role, note: note || null }, async (c) => {
-    const { error } = await c.service.from("admin_users").upsert(
+    // ── "Add" must never DOWNGRADE an existing member ────────────────────────
+    //
+    // This was an upsert that always wrote status:'pending'. requireAdmin refuses any row
+    // that is not 'active' (lib/guard.ts), so re-adding someone who is already active —
+    // to correct a role, or fix a typo in a note — knocked them straight out, and their
+    // next request 403s. With a single admin in production that is a total console
+    // lockout, recoverable only with direct Supabase credentials, which
+    // 20260804030000_admin_team_lifecycle.sql calls "exactly the wrong dependency".
+    //
+    // The two siblings below already guard this shape: setTeamStatus refuses
+    // self-targeting AND calls assertNotLastAdmin; setTeamRole refuses self-targeting.
+    // Add was the one path with neither.
+    if (userId === c.user.id) {
+      throw new Error("You are already on the team — use Change role rather than Add.");
+    }
+
+    const { data: existing } = await c.service
+      .from("admin_users").select("status").eq("user_id", userId).maybeSingle();
+
+    if (existing) {
+      // Update the editable fields and LEAVE STATUS ALONE. An active member stays active;
+      // a pending one stays pending.
+      const { error: updErr } = await c.service
+        .from("admin_users")
+        .update({ role, note: note || null })
+        .eq("user_id", userId);
+      if (updErr) throw new Error(updErr.message);
+      return {
+        __message:
+          `${email} is already on the team — role set to ${role}, status left as ` +
+          `${existing.status}. Adding someone twice no longer demotes them.`,
+      };
+    }
+
+    const { error } = await c.service.from("admin_users").insert(
       {
         user_id: userId,
         role,
@@ -119,7 +153,6 @@ export async function addTeamMember(formData: FormData): Promise<ActionResult> {
         note: note || null,
         disabled_at: null,
       },
-      { onConflict: "user_id" },
     );
     if (error) throw new Error(error.message);
     return {
@@ -176,8 +209,11 @@ export async function setTeamRole(formData: FormData): Promise<ActionResult> {
     if (userId === ctx.user.id) {
       throw new Error("You can't change your own role — ask another admin.");
     }
-    // Demoting the last admin to support is the same lockout as disabling them.
-    if (role === "support") await assertNotLastAdmin(ctx, userId);
+    // Demoting the last admin is the same lockout as disabling them — and it is not only
+    // 'support' that does it. finance and trust are peers of each other, NOT of admin
+    // (lib/guard.ts roleSatisfies), so demoting the last admin to either strands the
+    // console just as completely. The check is "no longer admin", not "is support".
+    if (role !== "admin") await assertNotLastAdmin(ctx, userId);
 
     const { data, error } = await ctx.service
       .from("admin_users").update({ role }).eq("user_id", userId).select("user_id");
