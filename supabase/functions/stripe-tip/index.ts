@@ -73,29 +73,33 @@ Deno.serve(async (req: Request) => {
     }
     if (!pmId) return json({ error: 'No saved card on file' }, 400);
 
-    // ── Tip caps, checked BEFORE any money moves ─────────────────────────────
-    // The 50¢–$1000 bound above is PER CALL, and the idempotency key below
-    // includes the amount — so varying the amount mints a fresh PaymentIntent and
-    // the per-call bound caps nothing cumulative. Tips also carry no
-    // application_fee_amount, so 100% lands in the earner's connected balance and
-    // pays out daily. Uncapped, that is a fee-free money-movement channel.
+    // ── Reserve the headroom BEFORE any money moves ──────────────────────────
+    // This used to be `rpc('tip_headroom_cents')` — a `stable`, lock-free READ, in its
+    // own round trip, and a read consumes nothing. N concurrent callers all got the
+    // same answer and all passed; because the old idempotency key was
+    // `tip_${booking}_${cents}`, varying the amount by a cent produced N genuinely
+    // distinct PaymentIntents that never collided. The advisory locks in
+    // trg_guard_tip_caps only fired afterwards, at credit time — AFTER the card was
+    // charged — and every rejection rolled back its own ledger row, so the over-cap
+    // money never counted toward the next attempt's cap either.
     //
-    // trg_guard_tip_caps on tip_ledger is the authoritative backstop, but it runs
-    // at claim_and_credit_tip time — AFTER the card has been charged, which would
-    // strand the poster's money in the connected account. So the cap is checked
-    // here first and the trigger should never fire in practice.
-    const { data: headroom, error: capErr } = await supabase.rpc('tip_headroom_cents', {
+    // The gate is now a WRITE. reserve_tip_slot inserts an uncharged tip_ledger row,
+    // which makes trg_guard_tip_caps evaluate all three caps under its own locks at
+    // the moment headroom is taken. The cap arithmetic still lives in exactly one
+    // place — the trigger — and this function no longer knows what the limits are.
+    const { data: reservation, error: capErr } = await supabase.rpc('reserve_tip_slot', {
       p_booking: bookingId,
+      p_cents: Math.round(tipCents),
     });
     if (capErr) {
-      // FAIL CLOSED. Not knowing the remaining headroom is not a reason to charge
-      // an unbounded amount to someone's card.
-      console.error('stripe-tip: cap check failed — refusing:', capErr);
+      // FAIL CLOSED. Not being able to reserve is not a reason to charge an
+      // unreserved amount to someone's card.
+      console.error('stripe-tip: tip reservation failed — refusing:', capErr);
       return json({ error: 'Tip limits are unavailable right now. Please try again.' }, 503);
     }
-    const remaining = Number(headroom?.headroom_cents ?? 0);
-    if (Math.round(tipCents) > remaining) {
-      const reason = headroom?.reason ?? 'tip_cap_booking';
+    if (!reservation?.ok) {
+      const reason = reservation?.reason ?? 'tip_cap_booking';
+      const remaining = Number(reservation?.headroom_cents ?? 0);
       return json({
         error:
           reason === 'tip_cap_count'
@@ -109,57 +113,87 @@ Deno.serve(async (req: Request) => {
         remainingCents: Math.max(0, remaining),
       }, 409);
     }
+    const reservationKey: string = reservation.key;
 
     // Off-session charge → full tip to earner (no platform fee on tips).
-    // Idempotency key (booking + amount) prevents a retried request from charging
-    // the poster's saved card twice for the same tip.
-    const pi = await stripe.paymentIntents.create({
-      amount: Math.round(tipCents),
-      currency: 'usd',
-      customer: cust.customer_id,
-      payment_method: pmId,
-      off_session: true,
-      confirm: true,
-      transfer_data: { destination: earnerAcct.account_id },
-      description: `GoHustlr tip: ${one(booking.job)?.title}`,
-      metadata: { booking_id: bookingId, type: 'tip', earner_id: booking.earner_id, poster_id: user.id },
-    }, { idempotencyKey: `tip_${bookingId}_${Math.round(tipCents)}` });
+    //
+    // The idempotency key is the RESERVATION, not booking+amount. It is deterministic
+    // (`resv_<booking>_<cents>`), so a double-tap still collapses onto one
+    // PaymentIntent exactly as before — but it is now also the row that consumed the
+    // headroom, so a second charge cannot exist without a second reservation having
+    // passed the caps. It makes a retry after a timeout exactly-once rather than
+    // merely likely: reserve_tip_slot hands back the same key, Stripe replays the same
+    // PaymentIntent, and confirm_tip_charge attaches it.
+    let pi;
+    try {
+      pi = await stripe.paymentIntents.create({
+        amount: Math.round(tipCents),
+        currency: 'usd',
+        customer: cust.customer_id,
+        payment_method: pmId,
+        off_session: true,
+        confirm: true,
+        transfer_data: { destination: earnerAcct.account_id },
+        description: `GoHustlr tip: ${one(booking.job)?.title}`,
+        metadata: {
+          booking_id: bookingId,
+          type: 'tip',
+          earner_id: booking.earner_id,
+          poster_id: user.id,
+          reservation: reservationKey,
+        },
+      }, { idempotencyKey: reservationKey });
+    } catch (chargeErr: any) {
+      // Release ONLY on a definitive decline. An ambiguous failure (timeout, network,
+      // Stripe 5xx) may have created the charge anyway, and giving the slot back would
+      // let a second charge in beside it. Those reservations expire on their own —
+      // reserved_until is excluded from every cap query — so nothing is held forever
+      // and the deterministic key makes the retry land on the same PaymentIntent.
+      if (chargeErr?.type === 'StripeCardError' || chargeErr?.code === 'authentication_required') {
+        await supabase.rpc('release_tip_reservation', { p_key: reservationKey });
+      }
+      throw chargeErr;
+    }
 
-    if (pi.status !== 'succeeded') return json({ error: `Tip not completed (${pi.status})` }, 400);
+    if (pi.status !== 'succeeded') {
+      if (pi.status === 'requires_payment_method' || pi.status === 'canceled') {
+        await supabase.rpc('release_tip_reservation', { p_key: reservationKey });
+      }
+      return json({ error: `Tip not completed (${pi.status})` }, 400);
+    }
 
-    // Record + credit the tip ATOMICALLY and exactly once. claim_and_credit_tip
-    // inserts the idempotency ledger row (unique on the PaymentIntent id) AND credits
-    // bookings.tip_amount + the earner's earnings in ONE transaction, claiming a
-    // `credited` flag. So a Stripe idempotent replay (same booking+amount) is a
-    // no-op, and a retry after a mid-way failure still credits exactly once (the
-    // ledger row exists but credited is still false). Replaces the previous
-    // ledger-insert-then-separate-credit, which could strand an un-credited tip.
-    const { error: creditErr } = await supabase.rpc('claim_and_credit_tip', {
+    // Attach the real PaymentIntent to the reservation and credit, in ONE transaction,
+    // claiming a `credited` flag — so a Stripe idempotent replay is a no-op and a retry
+    // after a mid-way failure still credits exactly once. The cap can no longer fire
+    // here: the row was admitted by the trigger before the card was touched, and
+    // confirm is an UPDATE.
+    const { data: confirmed, error: creditErr } = await supabase.rpc('confirm_tip_charge', {
+      p_key: reservationKey,
       p_pi: pi.id,
-      p_booking: bookingId,
-      p_earner: booking.earner_id,
-      p_cents: Math.round(tipCents),
     });
-    if (creditErr) {
+    if (creditErr || confirmed !== true) {
       // MONEY HAS ALREADY MOVED. The card is charged and the funds are on their way
       // to the earner's connected account, but our ledger did not record it — so the
       // earner's dashboard is short and nothing will reconcile it on its own.
-      // The likeliest cause is trg_guard_tip_caps firing on a race the pre-check
-      // above couldn't see (two concurrent tips). Page it loudly rather than
-      // returning a generic 500 nobody investigates.
+      // ctl_earner_credit_missing raises the reservation row after 15 minutes, but
+      // page it now rather than returning a generic 500 nobody investigates.
       await logServerError(
         'stripe-tip',
-        `Tip charged but NOT credited — manual reconciliation required: ${errMessage(creditErr)}`,
+        `Tip charged but NOT credited — manual reconciliation required: ${
+          creditErr ? errMessage(creditErr) : 'the reservation was gone at confirm time'
+        }`,
         {
           payment_intent: pi.id,
           booking_id: bookingId,
           earner_id: booking.earner_id,
           tip_cents: Math.round(tipCents),
-          action: 'refund the PaymentIntent in Stripe, or credit the earner by hand',
+          reservation_key: reservationKey,
+          action: 'service_role: select public.confirm_tip_charge(reservation_key, payment_intent) '
+            + '— or refund the PaymentIntent in Stripe',
         },
         { fatal: true, userId: user.id },
       );
-      throw creditErr;
+      throw creditErr ?? new Error('tip_confirm_failed');
     }
 
     return json({ success: true, tipCents: Math.round(tipCents) });

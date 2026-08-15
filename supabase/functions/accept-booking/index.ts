@@ -73,7 +73,49 @@ Deno.serve(async (req: Request) => {
 
     // Real hold confirmed → mark the payment authorized (reflecting reality) and
     // confirm the booking. Service role, so guard_bookings_write exempts these writes.
-    await supabase.from('payments').update({ status: 'authorized' }).eq('id', payment.id);
+    //
+    // Predicated for the same reason the booking confirm below is, and it is NOT covered
+    // by that guard. Everything above this line is a read, so a release landing between
+    // the Stripe retrieve and this write is a live window — and declineBooking calls
+    // stripe-cancel-payment BEFORE it writes 'declined' (JobsContext), so for the whole
+    // of that window the booking is still 'pending' and the confirm predicate below
+    // matches happily. Unpredicated, this stamps 'authorized' over 'cancelled': the row
+    // then names a voided PaymentIntent as a live hold, which is what both UIs, every
+    // escrow control and stripe-capture-payment read as "money is held".
+    //
+    // 'failed' is deliberately ALLOWED, and that is load-bearing rather than an
+    // oversight. A declined card demotes the row to 'failed' via the payment_failed
+    // webhook; the poster then retries on the SAME clientSecret and it is that second
+    // attempt which makes the intent requires_capture — precisely the state verified
+    // just above. Excluding 'failed' would leave a live hold recorded as failed, and
+    // stripe-capture-payment hard-refuses a 'failed' row with HOLD_EXPIRED, stranding
+    // the poster permanently on a booking they have genuinely paid for.
+    //
+    // So exclude only the two that must never be resurrected: 'cancelled' (Stripe has
+    // released the funds) and 'captured' (the money already moved).
+    const { data: payAuthorized, error: payErr } = await supabase
+      .from('payments')
+      .update({ status: 'authorized' })
+      .eq('id', payment.id)
+      .in('status', ['authorized', 'failed'])
+      .select('id');
+    if (payErr) return json({ error: payErr.message }, 500);
+    if (!payAuthorized || payAuthorized.length === 0) {
+      // Fail safe: something released or settled this payment underneath us, so do NOT
+      // confirm the booking — a confirmed booking with no hold behind it is free work.
+      // Re-read for the operator; the status we selected above is stale by definition.
+      const { data: current } = await supabase
+        .from('payments').select('status').eq('id', payment.id).maybeSingle();
+      await logServerError('accept-booking',
+        `accept raced a payment state change on booking ${bookingId}: Stripe reported ` +
+        `requires_capture but the row is now '${current?.status ?? 'missing'}' — refused to confirm`,
+        { booking_id: bookingId, payment_id: payment.id, payment_status: current?.status ?? null },
+        { fatal: false, userId: user.id });
+      return json({
+        error: 'HOLD_RELEASED',
+        message: 'The payment on this booking changed while you were accepting it. Refresh and try again.',
+      }, 409);
+    }
     // Guard the confirm with a status predicate so a booking the earner concurrently
     // withdrew (pending→cancelled) between our earlier read and here isn't silently
     // flipped back to 'confirmed' — that would leave a confirmed booking whose hold

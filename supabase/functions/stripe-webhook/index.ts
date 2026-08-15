@@ -64,7 +64,48 @@ async function recordReversal(
   const { data: payment } = await supabase
     .from('payments').select('id, booking_id, refund_source, refund_source_at, refunded_cents')
     .eq('payment_intent_id', paymentIntentId).maybeSingle();
-  const bookingId = (payment as { booking_id?: string } | null)?.booking_id;
+  let bookingId = (payment as { booking_id?: string } | null)?.booking_id;
+
+  // ── No payments row? It may be a TIP ─────────────────────────────────────────
+  //
+  // Tips write no payments row at all — stripe-tip charges its own PaymentIntent and
+  // records it only in tip_ledger. So every refunded or charged-back tip used to fall out
+  // here and be reversed NOWHERE: the money left the platform balance, the earner kept the
+  // credit, and ctl_earnings_total_drift did not merely miss it — its `tipped` CTE adds
+  // every credited tip while its clawback side reads only payments, so a fully reversed
+  // tip left stored == expected EXACTLY and the control certified the inflated balance as
+  // healthy. Tightening that control on 2026-08-14 made the payments half exact and left
+  // this half blind.
+  //
+  // record_tip_reversal takes Stripe's CUMULATIVE figure as a TARGET and reverses only the
+  // difference, so a redelivery is a no-op by arithmetic rather than by a separate
+  // idempotency check. It returns null when the PI is not a tip at all.
+  if (!bookingId) {
+    const { data: tipRow } = await supabase
+      .from('tip_ledger')
+      .select('booking_id, amount_cents')
+      .eq('payment_intent_id', paymentIntentId)
+      .maybeSingle();
+    const tip = tipRow as { booking_id?: string; amount_cents?: number } | null;
+    if (!tip?.booking_id) return null;   // genuinely neither a payment nor a tip
+
+    // A chargeback moves no refund figure, so the whole tip is gone; a refund carries
+    // Stripe's cumulative total. The RPC takes that as a TARGET and reverses only the
+    // difference, which is what makes a redelivery a no-op by arithmetic.
+    const { error: tipErr } = await supabase.rpc('record_tip_reversal', {
+      p_payment_intent: paymentIntentId,
+      p_target_cents: kind === 'chargeback' ? (tip.amount_cents ?? 0) : stripeRefundedCents,
+      p_reason: reason,
+    });
+    if (tipErr) {
+      // Money left the platform balance and the earner still holds the credit. Page it —
+      // nothing downstream reconciles a tip on its own.
+      await logServerError('stripe-webhook',
+        `tip reversal failed for ${paymentIntentId}: ${tipErr.message}`,
+        { payment_intent: paymentIntentId, kind }, { fatal: true });
+    }
+    bookingId = tip.booking_id;
+  }
   if (!bookingId) return null;
 
   // An ADMIN-initiated refund is a remediation, not a new complaint. Filing a
@@ -291,19 +332,64 @@ Deno.serve(async (req: Request) => {
 
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
-        // Status precondition, mirroring payment_intent.canceled below. Stripe
-        // delivers at-least-once and retries for up to ~3 days, so a stale or
-        // redelivered payment_failed can arrive AFTER the intent succeeded and was
-        // captured. Without this guard that late event stamped a settled row
-        // 'failed', which makes a paid booking look unpaid to both UIs and to
-        // stripe-capture-payment's HOLD_EXPIRED branch. Only a not-yet-settled row
-        // can fail.
-        await supabase.from('payments')
+
+        // `event.data.object` is a SNAPSHOT taken when the event was created, and
+        // Stripe redelivers on any non-2xx for up to ~3 days. One PaymentIntent
+        // legitimately emits payment_failed and then reaches requires_capture: the
+        // card declines, the poster retries on the SAME clientSecret, and the retry
+        // authorizes. The status predicate below is a precondition on OUR row, not on
+        // Stripe's — a late or redelivered payment_failed still passes it while the
+        // row is 'authorized', so it stamped 'failed' on a row naming a LIVE hold and
+        // dragged a confirmed booking back to 'pending'. That re-opens the slot to a
+        // second earner via sync_slot_taken, and stripe-capture-payment then refuses
+        // the funded booking with HOLD_EXPIRED.
+        //
+        // So ask Stripe what the intent is NOW, the same way stripe-create-payment-intent
+        // does before it touches a row: our status column is a belief, Stripe is the fact.
+        //
+        // Fail SAFE. The two mistakes do not cost the same. Demoting a live hold
+        // silently strips a funded booking from the person who is about to do the work;
+        // skipping the demotion leaves at worst a row that reads 'authorized' for a
+        // dead intent, which the next accept, the next event, and reconcile-stripe all
+        // correct. So if Stripe cannot be read, touch nothing and say so loudly.
+        let liveStatus: string;
+        try {
+          liveStatus = (await stripe.paymentIntents.retrieve(pi.id)).status;
+        } catch (e: any) {
+          await logServerError('stripe-webhook',
+            `payment_failed for ${pi.id}: could not re-read the intent (${e?.message ?? e}) — left the ` +
+            `payment and booking untouched rather than risk demoting a live hold`,
+            { payment_intent_id: pi.id }, { fatal: false });
+          break;
+        }
+        // 'requires_capture' is a real authorization hold; 'succeeded' is already
+        // captured. Either way this event describes an attempt that has been superseded.
+        if (liveStatus === 'requires_capture' || liveStatus === 'succeeded') {
+          console.log(
+            `stripe-webhook: stale payment_failed for ${pi.id} — Stripe now reports ` +
+            `'${liveStatus}', so the hold is live; not demoting`,
+          );
+          break;
+        }
+
+        // Status precondition, mirroring payment_intent.canceled below: only a
+        // not-yet-settled row can fail, so a settled row is never stamped 'failed'.
+        //
+        // The booking demotion is driven off the rows this update MATCHED, not off a
+        // fresh select. A re-read cannot tell us whether the payment row was actually
+        // demoted, so a 'captured' or 'cancelled' row — which this predicate correctly
+        // skips — still dragged its booking back to 'pending'.
+        //
+        // 'failed' is in the predicate although it changes nothing on such a row: the
+        // match is what yields booking_id, so a REDELIVERY still repairs a first
+        // delivery that died between the payment write and the booking write. Stripe's
+        // retry is the recovery mechanism here; dropping the row would remove it.
+        const { data: demoted } = await supabase.from('payments')
           .update({ status: 'failed' })
           .eq('payment_intent_id', pi.id)
-          .in('status', ['pending', 'authorized']);
-        const { data: payment } = await supabase
-          .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
+          .in('status', ['pending', 'authorized', 'failed'])
+          .select('booking_id');
+        const payment = demoted?.[0] ?? null;
         if (payment) {
           // Only revert to 'pending' while the booking is still pre-settlement. If
           // the work is already done (completed/verified) this is a CAPTURE failure
