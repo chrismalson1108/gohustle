@@ -100,6 +100,20 @@ Deno.serve(async (req: Request) => {
     if (!reservation?.ok) {
       const reason = reservation?.reason ?? 'tip_cap_booking';
       const remaining = Number(reservation?.headroom_cents ?? 0);
+
+      // NOT every refusal is a cap. reserve_tip_slot also returns tip_invalid (the booking
+      // is not in a tippable state) and tip_reserve_failed (the reservation row vanished
+      // between the insert and the read). Both used to fall through to the cap wording
+      // below and told the poster their tip was "larger than this gig allows" — which is
+      // false, unactionable, and sends them to support with the wrong question. The `code`
+      // always carried the truth; only the sentence was wrong.
+      if (reason === 'tip_invalid' || reason === 'tip_reserve_failed') {
+        return json({
+          error: 'This gig cannot be tipped right now. Please try again in a moment.',
+          code: reason,
+        }, 409);
+      }
+
       return json({
         error:
           reason === 'tip_cap_count'
@@ -202,8 +216,13 @@ Deno.serve(async (req: Request) => {
     // A saved card that needs off-session SCA throws authentication_required (or a
     // generic StripeCardError). Surface a distinct, actionable code so the client
     // can tell the poster their card needs re-verification, instead of a generic
-    // 500. No money moved (the off-session confirm failed), and the idempotency key
-    // + claim_and_credit_tip ledger keep any later successful retry exactly-once.
+    // 500. No money moved (the off-session confirm failed), and a later successful retry
+    // is still exactly-once — but by the RESERVATION now, not claim_and_credit_tip: the
+    // reservation row already holds this slot under a deterministic key, so the retry
+    // reuses it and confirm_tip_charge does the crediting. If this attempt dies here the
+    // reservation is left behind deliberately, times out of the caps on its own, and
+    // ctl_earner_credit_missing raises it as tip_reservation_unconfirmed with the key an
+    // operator needs.
     if (err?.type === 'StripeCardError' || err?.code === 'authentication_required') {
       return json({ error: 'card_requires_authentication' }, 402);
     }
