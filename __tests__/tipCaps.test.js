@@ -553,3 +553,63 @@ describe('ctl_earner_credit_missing keeps BOTH arms', () => {
     expect(body).toMatch(/union all/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The reversal RPC needs a CALLER, or the whole thing is decoration.
+//
+// record_tip_reversal, tip_ledger.reversed_cents and the drift control's tip clawback all
+// shipped together and were, for a moment, completely inert: recordReversal returns early
+// when the payments lookup misses, and a tip has no payments row by construction — so
+// every refunded or charged-back tip still fell out before reaching any of it.
+//
+// That is the same shape as the two defects this repo has already paid for: a correct
+// handler wired to nothing (the payout events), and a throttle in SQL with zero callers
+// (the admin login). Both reported success because nothing was delivered to fail.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a refunded tip actually reaches the reversal', () => {
+  const fs3 = require('fs');
+  const path3 = require('path');
+  const webhookSrc = fs3.readFileSync(
+    path3.join(__dirname, '..', 'supabase', 'functions', 'stripe-webhook', 'index.ts'),
+    'utf8',
+  );
+  const stripComments = (src) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = stripComments(webhookSrc);
+
+  it('recordReversal falls back to tip_ledger when there is no payments row', () => {
+    // Without this the RPC has no caller at all.
+    expect(code).toMatch(/from\(['"]tip_ledger['"]\)/);
+    expect(code).toMatch(/rpc\(\s*['"]record_tip_reversal['"]/);
+  });
+
+  it('the fallback runs BEFORE the no-booking early return', () => {
+    const fn = code.slice(code.indexOf('async function recordReversal'));
+    const fallback = fn.indexOf("from('tip_ledger')") >= 0
+      ? fn.indexOf("from('tip_ledger')")
+      : fn.indexOf('from("tip_ledger")');
+    const bail = fn.indexOf('if (!bookingId) return null;');
+    expect(fallback).toBeGreaterThan(-1);
+    expect(bail).toBeGreaterThan(-1);
+    // A fallback after the bail would never execute — the exact bug being guarded.
+    expect(fallback).toBeLessThan(bail);
+  });
+
+  it('a chargeback reverses the whole tip, a refund only Stripe\'s cumulative figure', () => {
+    // A chargeback moves no refund figure, so passing stripeRefundedCents (null) as the
+    // target would reverse nothing and silently leave the earner credited.
+    const fn = code.slice(code.indexOf('async function recordReversal'));
+    const call = fn.slice(fn.indexOf('record_tip_reversal'), fn.indexOf('record_tip_reversal') + 400);
+    expect(call).toMatch(/p_target_cents:\s*kind === ['"]chargeback['"]/);
+    expect(call).toMatch(/stripeRefundedCents/);
+  });
+
+  it('a failed reversal is paged, not swallowed', () => {
+    // Money has left the platform balance and the earner still holds the credit; nothing
+    // downstream reconciles a tip on its own.
+    const fn = code.slice(code.indexOf('async function recordReversal'));
+    const after = fn.slice(fn.indexOf('record_tip_reversal'));
+    expect(after.slice(0, 700)).toMatch(/logServerError/);
+    expect(after.slice(0, 700)).toMatch(/fatal:\s*true/);
+  });
+});
