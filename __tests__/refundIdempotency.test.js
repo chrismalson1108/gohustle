@@ -123,15 +123,23 @@ describe('the refund ledger makes a Stripe replay a no-op', () => {
     expect(allMigrations).toMatch(/OVER-CORRECTED/);
     // Seeded balance: debit_earnings floors at 0, so a zero-balance probe passes
     // vacuously — the trap the chargeback probe hit on 2026-08-13.
-    expect(recordRefund.sql).toMatch(/earnings_total = e0 \+ 500/);
+    //
+    // Searched across the corpus, not against the LATEST record_refund migration. That
+    // function is redefined whenever the refund path changes — four times so far — and
+    // each new migration carries the probe for ITS OWN change. Pinning this to the newest
+    // one made a correct follow-up fail for a property it was never about.
+    expect(allMigrations).toMatch(/earnings_total = e0 \+ 500/);
     // And it must CHECK the seed landed. A tombstoned profile's guard silently refuses
     // the write, and the probe then failed as "not discriminating" — a true statement
     // about the wrong cause, which cost two push attempts to work out.
-    expect(recordRefund.sql).toMatch(/could not seed a balance/);
-    expect(recordRefund.sql).toMatch(/deleted_at is null/);
+    //
+    // Corpus-wide for the same reason as above: these are properties of the probe that
+    // introduced the idempotency, not of whichever migration last touched record_refund.
+    expect(allMigrations).toMatch(/could not seed a balance/);
+    expect(allMigrations).toMatch(/deleted_at is null/);
     // debit_earnings returns false outright unless the capture was credited, so the
     // staged payment must say so or no debit happens at all.
-    expect(recordRefund.sql).toMatch(/earnings_credited/);
+    expect(allMigrations).toMatch(/earnings_credited/);
   });
 });
 
