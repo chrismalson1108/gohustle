@@ -122,3 +122,51 @@ describe('capture reconciles the ledger to what Stripe collected', () => {
     expect(capture).toContain('logServerError');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A dispute row must record a capture that HAPPENED, not one that was requested.
+//
+// The insert was gated on `capturePctFinal < 1` — the caller's own pct — while the
+// booking gate admits 'verified'. So a poster could POST {pct: 0.5, disputeReason: '…'}
+// at their OWN fully-settled booking and fabricate a "50% paid" dispute. No money moves
+// (capture is skipped on an already-captured payment and credit_earnings is idempotent),
+// which is exactly why it went unnoticed — the damage is elsewhere:
+//
+//   · vest_bonuses holds a referral bonus while ANY open dispute exists on the source
+//     booking, so it freezes money belonging to a THIRD PARTY who cannot see or contest it
+//   · it is a false entry in the only server-authored dispute log, rendered as fact on
+//     three console pages
+//   · ctl_dispute_open_beyond_sla opens a HIGH finding on it after 14 days
+//
+// capturedGigCents is the flag that means "a capture ran in THIS invocation" — it is
+// assigned only inside the not-yet-captured block, and the settle call already used it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the dispute row follows the capture, not the request', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const src = fs2.readFileSync(
+    path2.join(__dirname, '..', 'supabase', 'functions', 'stripe-capture-payment', 'index.ts'),
+    'utf8',
+  );
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('gates the insert on a capture having happened in this invocation', () => {
+    expect(code).toMatch(/if \(capturedGigCents !== null && capturePctFinal < 1\)/);
+    // The bare form is the bug: pct alone is the caller's claim.
+    expect(code).not.toMatch(/if \(capturePctFinal < 1\) \{\s*\n\s*const \{ data: existingDispute/);
+  });
+
+  it('uses the same did-a-capture-run flag the benefit settle uses', () => {
+    // Both consequences of a capture should hang off one fact, or they drift apart.
+    expect(code).toMatch(/if \(capturedGigCents !== null\)/);
+  });
+
+  it('capturedGigCents is still assigned only inside the not-yet-captured block', () => {
+    // If it were assigned unconditionally the flag would mean nothing and the gate above
+    // would silently become a no-op.
+    const guard = code.indexOf("if (payment.status !== 'captured')");
+    const firstAssign = code.indexOf('capturedGigCents = ');
+    expect(guard).toBeGreaterThan(-1);
+    expect(firstAssign).toBeGreaterThan(guard);
+  });
+});

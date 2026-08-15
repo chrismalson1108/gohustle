@@ -469,7 +469,24 @@ Deno.serve(async (req: Request) => {
     // Record the dispute server-side so a reduced payout ALWAYS has an audit trail
     // (the client no longer inserts this). Idempotent per booking so a capture retry
     // doesn't duplicate the row.
-    if (capturePctFinal < 1) {
+    //
+    // ── Gated on a capture HAVING HAPPENED, not on the pct the caller asked for ──
+    //
+    // `capturedGigCents` is assigned only inside the `payment.status !== 'captured'`
+    // block, so it stays null on a retry against an already-settled payment — which is
+    // exactly the flag the settle call above already uses. `capturePctFinal` is just the
+    // caller's request, and the booking gate admits 'verified'.
+    //
+    // Without this, a poster could POST {pct: 0.5, disputeReason: '…'} at their OWN
+    // fully-settled booking and fabricate a "50% paid" dispute. No money moves — capture
+    // is skipped and credit_earnings is idempotent — but the row is not harmless:
+    //   · vest_bonuses holds a referral bonus while ANY open dispute exists on the source
+    //     booking, so it freezes money belonging to a THIRD PARTY who cannot see or
+    //     contest it;
+    //   · it is a false entry in the only server-authored dispute log, rendered as fact on
+    //     three console pages;
+    //   · ctl_dispute_open_beyond_sla opens a HIGH finding on it after 14 days.
+    if (capturedGigCents !== null && capturePctFinal < 1) {
       const { data: existingDispute } = await supabase
         .from('disputes').select('id').eq('booking_id', bookingId).maybeSingle();
       if (!existingDispute) {
