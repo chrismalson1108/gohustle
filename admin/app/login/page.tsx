@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
+import { loginBlocked, recordLoginAttempt } from "./actions";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,8 +16,23 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setBusy(true);
+    // Ask the server whether this email/IP is already over the threshold. The throttle
+    // and its table existed in SQL with no caller at all, so until now the documented
+    // "5 failures per account / 15 min" was not enforced anywhere and the brute-force
+    // control had no rows to count.
+    if (await loginBlocked(email)) {
+      setBusy(false);
+      // Same generic string as a bad password: telling an attacker they found a real
+      // account and tripped a limit is two facts they did not have.
+      setError("Sign-in failed.");
+      return;
+    }
+
     const supabase = getBrowserSupabase();
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    // Record BEFORE branching, so a failure cannot skip the write that makes the
+    // attempt visible to ctl_admin_login_bruteforce.
+    await recordLoginAttempt(email, !err);
     setBusy(false);
     if (err) {
       // Deliberately generic — this page is reachable by anyone.

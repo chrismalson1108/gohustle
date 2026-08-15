@@ -717,7 +717,13 @@ promotions). **`trust` and `finance` are peers**, neither outranks the other.
 availability was a money-harm control.
 
 MFA (AAL2) is re-verified **on every request** from the JWT claim, and money- or privilege-moving actions additionally require **step-up** (`requireFreshAdmin`, factor satisfied within 5 minutes). Membership lives in `admin_users`; **`status` gates, not just membership** — a row starts `pending` and grants nothing until approved. Login throttle:
-5 failures per account / 15 min, or 20 per IP. Nav hides what a role cannot open, but
+5 failures per account / 15 min, or 20 per IP — enforced from `admin/app/login/actions.ts`,
+which is **new as of 2026-08-14**: `admin_login_blocked` and `admin_login_attempts` existed
+in SQL from 20260806090000 with ZERO callers, so this line described nothing for two months
+and `ctl_admin_login_bruteforce` counted a table nothing wrote to. Note the honest bound —
+the sign-in itself is client-side, so this gates the CONSOLE path and records every attempt
+(which is what makes the control work); someone POSTing straight at Supabase is bounded by
+Supabase's own limits, not ours. Nav hides what a role cannot open, but
 **the guard is the enforcement** — if they disagree the guard wins.
 
 ⚠️ **`gohustlr-admin` does NOT auto-deploy.** See the Commands block.
