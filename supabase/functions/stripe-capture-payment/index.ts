@@ -4,6 +4,7 @@ import Stripe from 'npm:stripe@22';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
+import { payoutCapable } from '../_shared/payoutCapable.ts';
 
 // Number(null) is 0 and Number.isFinite(0) is true, so a bare
 // `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
@@ -187,13 +188,26 @@ Deno.serve(async (req: Request) => {
     // dashboard anyway. Only gate a fresh capture — a retry on an already-captured
     // payment should still fall through to crediting.
     if (payment.status !== 'captured') {
-      const { data: earnerAcct } = await supabase
-        .from('stripe_accounts').select('onboarded').eq('user_id', booking.earner_id).single();
-      if (!earnerAcct?.onboarded) {
+      // Ask STRIPE when our cache says no. The flag going false is always correct, but it
+      // going STALE at false is silent and expensive here: the work is done and the hold
+      // is live, so refusing on a cached value leaves the worker unpaid AND the poster
+      // uncharged until the authorization voids at ~7 days. Authorization-time already
+      // re-verified for the milder case of merely blocking a booking; settle time did not.
+      const cap = await payoutCapable(stripe, supabase, booking.earner_id);
+      if (!cap.capable && !cap.unverifiable) {
         return json({
           error: 'EARNER_PAYOUTS_DISABLED',
           message: "The earner's payout account is no longer active. They need to re-verify it before payment can be released.",
         }, 409);
+      }
+      if (cap.unverifiable) {
+        // Stripe itself is unreachable. Refusing here would start the clock on a voided
+        // hold over a transient API error, so proceed and let the capture be the thing
+        // that fails if the destination really is restricted — that failure is loud,
+        // immediate and reversible, which a silently expired authorization is not.
+        await logServerError('stripe-capture-payment',
+          `could not verify payout capability for earner ${booking.earner_id} — proceeding to capture`,
+          { booking_id: bookingId, payment_id: payment.id });
       }
     }
 

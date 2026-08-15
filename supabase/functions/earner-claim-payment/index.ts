@@ -14,6 +14,7 @@
 import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
+import { payoutCapable } from '../_shared/payoutCapable.ts';
 
 // Number(null) is 0 and Number.isFinite(0) is true, so a bare
 // `Number.isFinite(Number(x)) ? Number(x) : FALLBACK` resolves a NULL rate to 0 bps —
@@ -201,11 +202,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // The earner's payout account must still be live (mirrors stripe-capture-payment).
+    // Verified against STRIPE when the cache says no: a stale false here refuses to settle
+    // work that is already done, and the hold voids at ~7 days leaving this earner unpaid
+    // and the poster uncharged. This leg largely self-heals — EarnScreen runs
+    // getPayoutStatus() on mount and the Claim button is on that same screen — but relying
+    // on the screen the user happened to open is not a guarantee.
     if (payment.status !== 'captured') {
-      const { data: earnerAcct } = await supabase
-        .from('stripe_accounts').select('onboarded').eq('user_id', booking.earner_id).single();
-      if (!earnerAcct?.onboarded) {
+      const cap = await payoutCapable(stripe, supabase, booking.earner_id);
+      if (!cap.capable && !cap.unverifiable) {
         return json({ error: 'EARNER_PAYOUTS_DISABLED', message: 'Your payout account is not active. Re-verify it, then claim again.' }, 409);
+      }
+      if (cap.unverifiable) {
+        // Stripe unreachable. Proceed: the capture below is itself the check, and it
+        // fails loudly and reversibly, which an expired authorization does not.
+        await logServerError('earner-claim-payment',
+          `could not verify payout capability for earner ${booking.earner_id} — proceeding to claim`,
+          { booking_id: bookingId, payment_id: payment.id });
       }
     }
 
