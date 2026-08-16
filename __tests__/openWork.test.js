@@ -22,15 +22,27 @@ describe('the open-work register is usable by a future session', () => {
     expect(m).not.toBeNull();
     const declared = Number(m[1]);
     const section = doc.slice(doc.indexOf('## Open ('), doc.indexOf('## Closed ('));
-    const rows = section.split('\n').filter((l) => /^\| (critical|high|medium|low) \|/.test(l));
+    const rows = section.split('\n').filter((l) => /^\| (critical|high|medium|low|gated) \|/.test(l));
     expect(`declared ${declared} / rows ${rows.length}`).toBe(`declared ${declared} / rows ${declared}`);
   });
 
   it('every open row carries a severity we act on', () => {
+    // `gated` was added 2026-08-14 and is deliberately NOT a severity — it means the row
+    // is blocked on a business decision or a milestone, not on work. The live-mode Stripe
+    // webhook sat as `high` for two days while being entirely correct: the platform is on
+    // sandbox and go-live is not scheduled, so there was nothing to do. A high row nobody
+    // can action reads as neglect and trains people to skim the severity column, which
+    // costs more than the row it mislabels.
+    //
+    // A gated row must SAY what it is waiting on, or it is just a high row in a costume.
     const section = doc.slice(doc.indexOf('## Open ('), doc.indexOf('## Closed ('));
     const rows = section.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Sev') && !l.startsWith('|---'));
     rows.forEach((r) => {
-      expect(r).toMatch(/^\| (critical|high|medium|low) \|/);
+      expect(r).toMatch(/^\| (critical|high|medium|low|gated) \|/);
+      if (r.startsWith('| gated |')) {
+        expect(`${r.slice(0, 70)}…`).toMatch(/gated/);
+        expect(r).toMatch(/NOT A DEFECT|waiting on|gate\b|not scheduled|decision/i);
+      }
     });
   });
 
