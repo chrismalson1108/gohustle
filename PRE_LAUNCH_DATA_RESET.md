@@ -286,7 +286,15 @@ exercise a payment change.
 `test`. Leave it behind and the control keeps checking for the wrong thing at exactly the
 moment it matters.
 
-Expect it to fire immediately: as of 2026-08-14 there are **8 test-shaped Stripe ids** in
-`stripe_accounts` / `stripe_customers`. That is the control working — an id minted in test
-mode is meaningless in live, and the failure otherwise surfaces when a poster tries to pay.
-Clear those rows as part of the reset, then flip the flag.
+Writing `{"mode":"live"}` stamps `live_since` automatically (trigger
+`trg_z_stripe_mode_live_since`), and a later plain write preserves that first stamp rather
+than re-dating it. Supply `live_since` explicitly only if the real cutover happened at a
+different moment than the flag write.
+
+**Correction to an earlier note here:** it previously said the control would flag "8
+test-shaped Stripe ids". That figure came from the old predicate, which tested the id's
+LENGTH — and a Stripe account id is `acct_1` + 14 characters = 21 in *both* modes, so it
+matched every account that has ever existed. It was not signal. The control now judges
+provenance (`created_at < live_since`), so what it flags after the cutover is genuinely the
+set of ids minted under test keys — clear those rows as part of the reset and the control
+goes quiet on its own.
