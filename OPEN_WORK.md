@@ -16,6 +16,13 @@
 
 _Last reconciled: 2026-08-14._
 
+> **`gated` is not a severity.** It marks a row blocked on a business decision or a
+> milestone rather than on work — go-live, a device, a counterparty. It exists because the
+> live-mode Stripe webhook sat as `high` for two days while being entirely correct: the
+> platform is on Stripe SANDBOX and go-live is not scheduled, so there was nothing to do. A
+> high row nobody can action reads as neglect and teaches people to skim the severity
+> column. A gated row must say what it is waiting on.
+
 ## Open (13)
 
 | Sev | Area | Finding | Fix |
