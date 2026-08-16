@@ -109,11 +109,17 @@ Deno.serve(async (req: Request) => {
     // When the escrow hold was placed. Needed by the eligibility gate below (the hold
     // ages from ACCEPT time, the grace counts from SLOT time). The full payments row
     // is re-read further down for the capture itself; this is just the timestamp.
+    //
+    // authorized_at, falling back to created_at. The row is UPSERTed on booking_id when a
+    // hold is re-placed (stripe-create-payment-intent), so created_at is the FIRST hold
+    // ever placed and never moves, while authorized_at is stamped on each new one. Reading
+    // created_at made the age of a re-held authorization read as the age of a hold Stripe
+    // cancelled days ago — and this figure decides both whether a claim is allowed at all
+    // and whether the expiry escape hatch opens.
     const { data: holdRow } = await supabase
-      .from('payments').select('created_at').eq('booking_id', bookingId).maybeSingle();
-    const payment_created_at_hint = holdRow?.created_at
-      ? new Date(holdRow.created_at).getTime()
-      : null;
+      .from('payments').select('created_at, authorized_at').eq('booking_id', bookingId).maybeSingle();
+    const holdStamp = holdRow?.authorized_at ?? holdRow?.created_at;
+    const payment_created_at_hint = holdStamp ? new Date(holdStamp).getTime() : null;
     // The slot-time grace is the NORMAL anchor, but it cannot be the only one.
     // Stripe auto-cancels an uncaptured authorization ~7 days after it is placed, and
     // the hold is placed at ACCEPT time while this gate counts from SLOT time — so for
@@ -184,7 +190,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at, fee_bps, fee_credit_cents, poster_discount_cents')
+      .select('id, payment_intent_id, status, amount_cents, fee_cents, earner_amount_cents, earnings_credited, created_at, authorized_at, fee_bps, fee_credit_cents, poster_discount_cents')
       .eq('booking_id', bookingId)
       .single();
     if (pErr || !payment) return json({ error: 'NO_PAYMENT', message: 'No escrow hold found for this booking.' }, 404);
@@ -194,7 +200,9 @@ Deno.serve(async (req: Request) => {
     // Belt-and-suspenders: the escrow authorization ITSELF must have aged past the
     // grace window. Even if the scheduled time somehow reads as past, a hold placed
     // moments ago can never be instantly claimed.
-    if (!payment.created_at || Date.now() < new Date(payment.created_at).getTime() + GRACE_MS) {
+    // Same anchor as above: the CURRENT authorization's age, not the first one ever placed.
+    const heldSince = payment.authorized_at ?? payment.created_at;
+    if (!heldSince || Date.now() < new Date(heldSince).getTime() + GRACE_MS) {
       return json({
         error: 'TOO_EARLY',
         message: `You can claim payment ${GRACE_DAYS} days after the scheduled time if the poster hasn't confirmed.`,

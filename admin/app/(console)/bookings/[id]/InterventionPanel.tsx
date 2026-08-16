@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import {
-  forceComplete, reopenBooking, clearStartedAt, forceCancel, releaseHold, refundPayment,
+  forceComplete, reopenBooking, clearStartedAt, forceCancel, releaseHold, settleHold, refundPayment,
   recordReversal, type ActionResult,
 } from "../actions";
 import ReauthPrompt from "../../ReauthPrompt";
@@ -130,6 +130,22 @@ export default function InterventionPanel({
             onClick={() => fire(releaseHold, "Void the escrow hold? The poster is never charged.")}
           >
             Release hold
+          </button>
+          {/* The other direction, and the one support was already being told to perform:
+              a "Flexible — Contact to Schedule" gig has no starts_at, so the worker gets no
+              Claim button and earner-claim-payment sends them here. Until now there was
+              nothing here to send them to, and the hold voided at ~7 days unpaid. */}
+          <button
+            className={btn}
+            disabled={pending || paymentStatus !== "authorized"}
+            onClick={() =>
+              fire(
+                settleHold,
+                "Charge the poster the FULL held amount and credit the earner? Use this when the work is done and the poster never verified.",
+              )
+            }
+          >
+            Settle &amp; pay earner
           </button>
           <input
             value={amount}

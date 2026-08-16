@@ -237,6 +237,39 @@ export async function releaseHold(formData: FormData): Promise<ActionResult> {
   });
 }
 
+// The lever support was already being told to use.
+//
+// A gig posted with the "Flexible — Contact to Schedule" slot carries no starts_at, so
+// shared/lifecycle returns false, EarnScreen renders no Claim button, and
+// earner-claim-payment refuses with NO_SCHEDULE telling the worker to contact support to
+// settle it. Support had no way to settle anything: the console offered release (nobody
+// paid), refund (poster paid, then unpaid) and record-chargeback — no capture. So the
+// worker's money sat until Stripe voided the hold at ~7 days and they were paid nothing
+// for work they did.
+//
+// FULL capture only. A reduced settlement is a dispute outcome and belongs to the poster's
+// own Verify sheet, which records a disputes row naming who asked for it.
+export async function settleHold(formData: FormData): Promise<ActionResult> {
+  const bookingId = String(formData.get("bookingId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!bookingId) return { ok: false, message: "Missing booking id." };
+  if (!reason) return { ok: false, message: "A reason is required." };
+
+  return run("payment.settle", bookingId, { reason }, async () => {
+    const { ok, body } = await callPaymentAction({ bookingId, op: "settle", reason });
+    if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
+    if (!ok) throw new Error(String(body.message ?? body.error ?? "Settle failed."));
+    const cents = Number(body.captured_cents ?? 0);
+    const earner = Number(body.earner_cents ?? 0);
+    return {
+      captured_cents: cents,
+      __message:
+        `Charged the poster $${(cents / 100).toFixed(2)} and credited the earner ` +
+        `$${(earner / 100).toFixed(2)}. The booking is now verified.`,
+    };
+  });
+}
+
 // For a chargeback we LOST: the money is already gone from the platform balance and
 // Stripe refuses a refund on a disputed charge, so the ledger has to be told directly.
 export async function recordReversal(formData: FormData): Promise<ActionResult> {

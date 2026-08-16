@@ -144,3 +144,54 @@ describe('the reversal control does not instruct an operator into a second refun
     expect(remedy).not.toMatch(/Record chargeback \(or Refund\), so record_refund writes refunded_cents and debits the earner/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The settle lever exists, because the app already tells people it does.
+//
+// A gig posted with the "Flexible — Contact to Schedule" slot carries no starts_at. So
+// shared/lifecycle returns false, EarnScreen renders no Claim button, and
+// earner-claim-payment refuses with NO_SCHEDULE telling the worker to contact support to
+// settle it. Support had no way to settle anything: the console offered release (nobody
+// pays), refund (poster pays, then unpaid) and record-chargeback. No capture.
+//
+// So the worker did the job, the poster never verified, and the hold voided at ~7 days
+// with nobody charged and nobody paid — while both the app copy and RUNBOOK_MONEY promised
+// support could fix it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('support can settle a booking the app cannot', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const R = path2.join(__dirname, '..');
+  const rd = (...p) => fs2.readFileSync(path2.join(R, ...p), 'utf8');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  const fn = strip(rd('supabase', 'functions', 'admin-payment-action', 'index.ts'));
+  const actions = strip(rd('admin', 'app', '(console)', 'bookings', 'actions.ts'));
+  const panel = strip(rd('admin', 'app', '(console)', 'bookings', '[id]', 'InterventionPanel.tsx'));
+
+  it('the edge function accepts a settle op', () => {
+    expect(fn).toMatch(/op !== 'settle'/);
+    expect(fn).toMatch(/if \(op === 'settle'\)/);
+  });
+
+  it('it captures in FULL and reconciles to what Stripe collected', () => {
+    const branch = fn.slice(fn.indexOf("if (op === 'settle')"));
+    // No amount argument: a reduced settlement is a dispute outcome and belongs to the
+    // poster's Verify sheet, which records who asked for it.
+    expect(branch).toMatch(/paymentIntents\.capture\(pay\.payment_intent_id\)/);
+    expect(branch).toMatch(/amount_received/);
+    // And it must credit the earner — capturing without crediting is the worse bug.
+    expect(branch.slice(0, 2000)).toMatch(/credit_earnings/);
+  });
+
+  it('it only settles an open hold', () => {
+    const branch = fn.slice(fn.indexOf("if (op === 'settle')"));
+    expect(branch.slice(0, 400)).toMatch(/pay\.status !== 'authorized'/);
+  });
+
+  it('the console exposes it', () => {
+    expect(actions).toMatch(/export async function settleHold/);
+    expect(actions).toMatch(/op: "settle"/);
+    expect(panel).toMatch(/settleHold/);
+  });
+});

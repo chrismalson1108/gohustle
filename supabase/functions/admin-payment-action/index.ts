@@ -9,6 +9,13 @@
 //
 // Two operations, both reconciled against Stripe's own numbers rather than ours:
 //   • release_hold — void an uncaptured authorization. Nobody is charged.
+//   • settle       — capture an authorized hold in FULL and credit the earner. The
+//     operator lever for a booking the app cannot settle by itself: a gig posted with
+//     the "Flexible — Contact to Schedule" slot has no starts_at, so shared/lifecycle
+//     returns false, EarnScreen renders no Claim button, and earner-claim-payment
+//     refuses with NO_SCHEDULE telling the worker to "contact support to settle it".
+//     Support had no way to do that. The copy promised something no lever delivered,
+//     and the worker's money sat until Stripe voided the hold at ~7 days.
 //   • refund       — refund a captured charge, fully or partially.
 //
 // ADMIN TIER ONLY. Support may read the money pages; only an admin may move money.
@@ -61,7 +68,7 @@ Deno.serve(async (req: Request) => {
     const requestId = String(body.requestId ?? '').trim().slice(0, 64).replace(/[^A-Za-z0-9_-]/g, '');
 
     if (!bookingId) return json({ error: 'booking_required' }, 400);
-    if (op !== 'release_hold' && op !== 'refund' && op !== 'record_reversal') return json({ error: 'bad_op' }, 400);
+    if (op !== 'release_hold' && op !== 'refund' && op !== 'record_reversal' && op !== 'settle') return json({ error: 'bad_op' }, 400);
     if (!reason) return json({ error: 'reason_required', message: 'A written reason is required.' }, 400);
 
     // ── On the record BEFORE anything moves ──────────────────────────────────
@@ -93,7 +100,9 @@ Deno.serve(async (req: Request) => {
 
     const { data: pay, error: payErr } = await service
       .from('payments')
-      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, refunded_at, status')
+      // poster_discount_cents is needed by the settle op: settle_booking_benefits is
+      // charged the GIG value, and amount_cents is already net of any discount.
+      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, refunded_at, status, poster_discount_cents')
       .eq('booking_id', bookingId)
       .maybeSingle();
     if (payErr) return json({ error: 'lookup_failed', message: payErr.message }, 503);
@@ -159,6 +168,64 @@ Deno.serve(async (req: Request) => {
     // operator to use the Refund control for this, which could only ever fail — so
     // GMV kept overstating revenue by the value of every chargeback lost. This is
     // the ledger-only path: no Stripe call, same accounting, distinctly labelled.
+    if (op === 'settle') {
+      if (pay.status !== 'authorized') {
+        return json({
+          error: 'not_authorized_state',
+          message: `This payment is "${pay.status}", not an open hold. Only an uncaptured authorization can be settled.`,
+        }, 409);
+      }
+
+      // FULL capture only. A reduced settlement is a dispute outcome and belongs to the
+      // poster's own Verify sheet, which records a disputes row with the poster as the
+      // party who asked for it. An operator quietly capturing 60% would produce a reduced
+      // payout with no such record and no counterparty consent.
+      const captured = await stripe.paymentIntents.capture(pay.payment_intent_id);
+
+      // Stripe is the source of truth for what was collected — the same rule
+      // stripe-capture-payment follows. Never write a computed figure and hope.
+      const received = typeof captured.amount_received === 'number'
+        ? captured.amount_received
+        : (pay.amount_cents ?? 0);
+      const feeCents = Math.min(received, pay.fee_cents ?? 0);
+      const earnerCents = Math.max(0, received - feeCents);
+
+      const { error: updErr } = await service.from('payments').update({
+        status: 'captured',
+        captured_at: new Date().toISOString(),
+        fee_cents: feeCents,
+        earner_amount_cents: earnerCents,
+      }).eq('id', pay.id);
+      if (updErr) {
+        await logServerError('admin-payment-action',
+          `settle captured ${pay.payment_intent_id} at Stripe but the ledger write failed: ${updErr.message}`,
+          { booking_id: bookingId, payment_id: pay.id }, { fatal: true });
+        return json({ error: 'ledger_desync', message: 'The charge went through but the ledger update failed. This is logged.' }, 500);
+      }
+
+      // Credit and settle the campaign, in that order and both non-fatal — the money has
+      // moved, and a bookkeeping retry must never fail a settled capture.
+      const { error: creditErr } = await service.rpc('credit_earnings', { p_payment_id: pay.id });
+      if (creditErr) {
+        await logServerError('admin-payment-action',
+          `settle: credit_earnings failed for ${pay.id}: ${creditErr.message}`,
+          { booking_id: bookingId }, { fatal: true });
+      }
+      const { error: settleErr } = await service.rpc('settle_booking_benefits', {
+        p_booking: bookingId,
+        p_amount_cents: received + (pay.poster_discount_cents ?? 0),
+      });
+      if (settleErr) {
+        await logServerError('admin-payment-action',
+          `settle: benefit settle failed for ${bookingId}: ${settleErr.message}`,
+          { booking_id: bookingId });
+      }
+
+      await service.from('bookings').update({ status: 'verified' }).eq('id', bookingId);
+
+      return json({ ok: true, op, captured_cents: received, earner_cents: earnerCents });
+    }
+
     if (op === 'record_reversal') {
       if (pay.status !== 'captured') {
         return json({ error: 'not_captured', message: 'Only a captured charge can carry a reversal.' }, 409);

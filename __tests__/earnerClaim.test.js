@@ -74,3 +74,50 @@ describe('H3 earner-claim server guards stay in the edge function', () => {
     expect(fn).toContain('capturedOnStripe');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The claim gates measure the CURRENT authorization's age, not the first one ever.
+//
+// payments is UPSERTed on booking_id when a hold is re-placed, so created_at is the first
+// hold ever placed on that booking and never moves, while authorized_at is stamped on each
+// new one (20260806150000 exists for exactly this distinction, and the controls already
+// switched to coalesce(authorized_at, …)).
+//
+// earner-claim-payment still read created_at in both gates. On a re-held booking that made
+// a fresh authorization look days old — which decides whether the claim is allowed at all
+// and whether the near-expiry escape hatch opens. The escape hatch exists because Stripe
+// auto-cancels an uncaptured hold at ~7 days; anchoring it to a hold Stripe already
+// cancelled is the opposite of what it is for.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('claim gates anchor on the current hold', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const src = fs2.readFileSync(
+    path2.join(__dirname, '..', 'supabase', 'functions', 'earner-claim-payment', 'index.ts'),
+    'utf8',
+  );
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('selects authorized_at wherever it selects created_at', () => {
+    const selects = [...code.matchAll(/\.select\('([^']*created_at[^']*)'\)/g)].map((m) => m[1]);
+    expect(selects.length).toBeGreaterThan(0);
+    for (const sel of selects) {
+      expect(`${sel.slice(0, 60)}…: ${sel.includes('authorized_at')}`)
+        .toBe(`${sel.slice(0, 60)}…: true`);
+    }
+  });
+
+  it('prefers authorized_at over created_at in both gates', () => {
+    // The hold-age hint that feeds the near-expiry escape hatch.
+    expect(code).toMatch(/holdRow\?\.authorized_at \?\? holdRow\?\.created_at/);
+    // And the belt-and-suspenders grace check.
+    expect(code).toMatch(/payment\.authorized_at \?\? payment\.created_at/);
+  });
+
+  it('no gate reads created_at on its own any more', () => {
+    // A bare `new Date(payment.created_at)` is the bug: it dates the first hold ever
+    // placed, not the one that is live.
+    expect(code).not.toMatch(/new Date\(payment\.created_at\)/);
+    expect(code).not.toMatch(/new Date\(holdRow\.created_at\)/);
+  });
+});
