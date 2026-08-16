@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, requireFreshAdmin, AdminAuthError } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -21,6 +21,18 @@ function mintCode(len = 8): string {
   return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
 }
 
+// ── Why these step up ────────────────────────────────────────────────────────
+//
+// /promotions was the only budget-spending surface in the console on plain requireAdmin,
+// while the SAME capability routed through /pricing (grantToUsers → grant_promotion_to_users)
+// required requireFreshAdmin. A borrowed session could mint codes, clone a campaign, raise a
+// budget or revoke a grant without proving a second factor — and a promotion is money, just
+// money spent slowly.
+//
+// requireFreshAdmin additionally demands the TOTP amr timestamp be under 300s, the same
+// posture the money edge functions take. previewCost stays on requireAdmin: it reads and
+// computes, and forcing a re-auth to look at a number teaches people to re-auth reflexively,
+// which is how step-up stops meaning anything.
 export async function createPromotion(formData: FormData): Promise<ActionResult> {
   const name = String(formData.get("name") ?? "").trim();
   const kind = String(formData.get("kind") ?? "fee_override");
@@ -51,7 +63,7 @@ export async function createPromotion(formData: FormData): Promise<ActionResult>
   }
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const row = {
       name,
       kind,
@@ -88,7 +100,7 @@ export async function setPromotionStatus(formData: FormData): Promise<ActionResu
   }
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { error } = await ctx.service.from("promotions").update({ status }).eq("id", id);
     if (error) return { ok: false, message: error.message };
     await audit(ctx, "promotion.status", "promotion", id, { status });
@@ -115,7 +127,7 @@ export async function mintCodes(formData: FormData): Promise<ActionResult> {
   if (!promotionId) return { ok: false, message: "Missing promotion." };
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const rows = Array.from({ length: count }, () => ({
       promotion_id: promotionId,
       code: mintCode(),
@@ -147,7 +159,7 @@ export async function editPromotion(formData: FormData): Promise<ActionResult> {
   if (!id) return { ok: false, message: "Missing promotion." };
 
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { data: cur } = await ctx.service
       .from("promotions")
       .select("spent_cents, redemptions_used, ends_at, name")
@@ -204,7 +216,7 @@ export async function clonePromotion(formData: FormData): Promise<ActionResult> 
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, message: "Missing promotion." };
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { data: src } = await ctx.service.from("promotions").select("*").eq("id", id).maybeSingle();
     if (!src) return { ok: false, message: "Not found." };
     const { id: _drop, created_at: _c, spent_cents: _s, redemptions_used: _r, ...rest } = src;
@@ -237,7 +249,7 @@ export async function revokeGrant(formData: FormData): Promise<ActionResult> {
   if (!grantId) return { ok: false, message: "Missing grant." };
   if (!reason) return { ok: false, message: "Say why — this takes something away from a named person." };
   try {
-    const ctx = await requireAdmin("admin");
+    const ctx = await requireFreshAdmin("admin");
     const { error } = await ctx.service
       .from("promo_grants")
       .update({ revoked_at: new Date().toISOString(), revoked_reason: reason })

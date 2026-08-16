@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 import { createPromotion, setPromotionStatus, mintCodes, editPromotion, clonePromotion, previewCost, type ActionResult, type CostEstimate, revokeGrant } from "./actions";
 import { PRESETS, type Preset } from "./presets";
 
@@ -12,6 +14,7 @@ function Result({ r }: { r: ActionResult | null }) {
 }
 
 export function CreatePromotion() {
+  const stepUp = useStepUp();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [kind, setKind] = useState("fee_override");
@@ -40,7 +43,7 @@ export function CreatePromotion() {
     <form
       className="mt-4 rounded-xl border border-[var(--line)] bg-white p-4"
       onChange={(e) => refreshEstimate(e.currentTarget)}
-      action={(fd) => start(async () => setResult(await createPromotion(fd)))}
+      action={(fd) => start(async () => setResult(await stepUp.run(() => createPromotion(fd))))}
     >
       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Start from a preset</div>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -131,6 +134,7 @@ export function CreatePromotion() {
           {pending ? "Creating…" : "Create draft"}
         </button>
         <Result r={result} />
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       </div>
       {/* WHAT WILL THIS COST. Answered before activating, rather than discovered from
           the burn-down bar two weeks later. */}
@@ -176,6 +180,7 @@ export function CreatePromotion() {
 }
 
 export function StatusButtons({ id, status }: { id: string; status: string }) {
+  const stepUp = useStepUp();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const fire = (next: string) =>
@@ -183,7 +188,7 @@ export function StatusButtons({ id, status }: { id: string; status: string }) {
       const fd = new FormData();
       fd.set("id", id);
       fd.set("status", next);
-      setResult(await setPromotionStatus(fd));
+      setResult(await stepUp.run(() => setPromotionStatus(fd)));
     });
   const btn =
     "rounded-lg border border-[var(--line)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface)] disabled:opacity-40";
@@ -207,11 +212,13 @@ export function StatusButtons({ id, status }: { id: string; status: string }) {
         )}
       </div>
       <Result r={result} />
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
     </div>
   );
 }
 
 export function MintCodes({ id }: { id: string }) {
+  const stepUp = useStepUp();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [count, setCount] = useState("10");
@@ -241,7 +248,7 @@ export function MintCodes({ id }: { id: string }) {
               fd.set("promotionId", id);
               fd.set("count", count);
               fd.set("seats", seats);
-              setResult(await mintCodes(fd));
+              setResult(await stepUp.run(() => mintCodes(fd)));
             })
           }
           className="rounded bg-[var(--surface)] px-2 py-1 text-xs font-medium disabled:opacity-40"
@@ -250,6 +257,7 @@ export function MintCodes({ id }: { id: string }) {
         </button>
       </div>
       <Result r={result} />
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
     </div>
   );
 }
@@ -266,6 +274,7 @@ export function EditPromotion({
 }: {
   promo: { id: string; name: string; budget_cents: number; spent_cents: number; max_redemptions: number };
 }) {
+  const stepUp = useStepUp();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -285,7 +294,7 @@ export function EditPromotion({
   return (
     <form
       className="flex flex-col gap-1"
-      action={(fd) => start(async () => setResult(await editPromotion(fd)))}
+      action={(fd) => start(async () => setResult(await stepUp.run(() => editPromotion(fd))))}
     >
       <input type="hidden" name="id" value={promo.id} />
       <div className="flex flex-wrap items-end gap-1.5">
@@ -322,12 +331,14 @@ export function EditPromotion({
         Budget can&rsquo;t go below the ${(promo.spent_cents / 100).toFixed(2)} already committed.
       </span>
       <Result r={result} />
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
     </form>
   );
 }
 
 function CloneButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
+  const stepUp = useStepUp();
   const [result, setResult] = useState<ActionResult | null>(null);
   return (
     <>
@@ -337,13 +348,14 @@ function CloneButton({ id }: { id: string }) {
         onClick={() => start(async () => {
           const fd = new FormData();
           fd.set("id", id);
-          setResult(await clonePromotion(fd));
+          setResult(await stepUp.run(() => clonePromotion(fd)));
         })}
         className="text-xs text-[var(--brand)] underline disabled:opacity-40"
       >
         clone
       </button>
       <Result r={result} />
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
     </>
   );
 }
@@ -362,6 +374,7 @@ function CloneButton({ id }: { id: string }) {
 // than being sent empty and bouncing.
 // ─────────────────────────────────────────────────────────────────────────────
 export function RevokeGrant({ grantId }: { grantId: string }) {
+  const stepUp = useStepUp();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -396,7 +409,7 @@ export function RevokeGrant({ grantId }: { grantId: string }) {
               const fd = new FormData();
               fd.set("grantId", grantId);
               fd.set("reason", reason.trim());
-              setResult(await revokeGrant(fd));
+              setResult(await stepUp.run(() => revokeGrant(fd)));
             })
           }
           className="rounded bg-[var(--ink)] px-2 py-1 text-xs font-semibold text-white disabled:opacity-40"
@@ -410,6 +423,11 @@ export function RevokeGrant({ grantId }: { grantId: string }) {
       {result ? (
         <span className={`text-xs ${result.ok ? "text-green-700" : "text-red-700"}`}>{result.message}</span>
       ) : null}
+      {/* This one renders its own result inline rather than via <Result>, so it needed the
+          prompt added by hand. Without it the operator hits stale_mfa on a revoke and has
+          no way forward — a step-up with no recovery path is worse than no step-up, which
+          is the argument useStepUp's own header makes. */}
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
     </div>
   );
 }
