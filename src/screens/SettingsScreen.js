@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, Platform,
+  KeyboardAvoidingView,
   Modal, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -258,8 +259,14 @@ export default function SettingsScreen({ navigation }) {
         ))}
       </ScrollView>
       <KeyboardDoneBar />
+      {/* Same bottom-anchored sheet, same fix as JobDetailScreen's rate sheet: the code
+          field is the last thing in it, so without this the keyboard sits on top of the
+          field you are being asked to type a code into. */}
       <Modal visible={codeOpen} transparent animationType="slide" onRequestClose={() => setCodeOpen(false)}>
-        <View style={styles.codeBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.codeBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setCodeOpen(false)} />
           <View style={styles.codeSheet}>
             <Text style={styles.codeTitle}>Have a code?</Text>
@@ -299,7 +306,7 @@ export default function SettingsScreen({ navigation }) {
               {codeBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.codeBtnText}>Apply code</Text>}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

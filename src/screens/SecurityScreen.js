@@ -157,8 +157,17 @@ export default function SecurityScreen() {
 
   const on = status?.enabled;
 
+  // automaticallyAdjustKeyboardInsets: the "enter the 6-digit code" and "turn off
+  // two-factor" cards render BELOW the status card, so on a short screen the keyboard
+  // covered the field being typed into. Same pair the rest of the app uses — insets on
+  // the scrolling body, KeyboardAvoidingView on bottom sheets.
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 48 }}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={{ paddingBottom: 48 }}
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
+    >
       <ScreenHeader topInset={false}>
         <Text style={styles.sub}>Extra protection for your account and your money.</Text>
       </ScreenHeader>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Image, Modal, ActivityIndicator,
+  StyleSheet, TextInput, Image, Modal, ActivityIndicator, KeyboardAvoidingView,
   Keyboard, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -266,8 +266,17 @@ export default function JobDetailScreen({ route, navigation }) {
     <View style={styles.container}>
       {/* Rating happens HERE rather than bouncing to another tab to find the row
           again. The stars are the whole requirement; the note is optional. */}
+      {/* KeyboardAvoidingView, not a plain View. The sheet is bottom-anchored and the
+          note field sits below the stars, so on iOS the keyboard covered the thing being
+          typed into — reported 2026-08-17 as "I can't see what I'm typing". EarnScreen's
+          rate sheet, which is the same flow, has had this since it was written; this copy
+          was the one without it. KeyboardDoneBar below only DISMISSES the keyboard, it
+          never moves the content. */}
       <Modal visible={rateVisible} transparent animationType="slide" onRequestClose={() => setRateVisible(false)}>
-        <View style={styles.rateBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.rateBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setRateVisible(false)} />
           <View style={[styles.rateSheet, { paddingBottom: insets.bottom + 18 }]}>
             <Text style={styles.rateTitle}>How was {job?.posterName || 'the poster'}?</Text>
@@ -304,7 +313,7 @@ export default function JobDetailScreen({ route, navigation }) {
               <Text style={styles.rateCancel}>Not now</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <KeyboardDoneBar />

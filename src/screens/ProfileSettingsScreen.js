@@ -728,8 +728,15 @@ export default function ProfileSettingsScreen({ navigation }) {
           abstract "all your data"; step 2 requires typing your own username, so
           muscle memory and a mis-tap can't finish it. Cancel is the primary
           button at both steps. */}
+      {/* CENTRED, not a bottom sheet — but a centred card is still laid out against the
+          FULL screen height, so the keyboard covers its lower half on a short phone, and
+          that half is the "type DELETE to confirm" field and the button beside it. The
+          KeyboardDoneBar below can dismiss the keyboard; it cannot move the card. */}
       <Modal visible={deleteStep > 0} transparent animationType="fade" onRequestClose={() => setDeleteStep(0)}>
-        <View style={styles.delOverlay}>
+        <KeyboardAvoidingView
+          style={styles.delOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.delCard}>
             {deleteStep === 1 ? (
               <>
@@ -789,7 +796,7 @@ export default function ProfileSettingsScreen({ navigation }) {
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
   );
