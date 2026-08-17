@@ -65,8 +65,21 @@ const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 
+// `expo-updates fingerprint:generate --platform ios`, NOT `@expo/fingerprint .`.
+//
+// The two are different numbers and only one of them is the runtime. The bare
+// @expo/fingerprint computes a generic, platform-agnostic hash; EAS resolves the runtime
+// per platform. Measured on build 34: expo-updates --platform ios gave
+// 7c71f381d18a5f39706e1f36ca82c5aeb06d13a7, byte-identical to the build's own
+// "Resolved runtime version", while @expo/fingerprint . said b2c63bc0… for the same tree.
+//
+// The first version of this script used the wrong one. It still caught the react-native-maps
+// drift, because that is a per-source comparison — but the RUNTIME it printed was not the
+// runtime, which on a preflight is the worst kind of wrong: authoritative-looking and off.
+const PLATFORM = process.argv.includes('--android') ? 'android' : 'ios';
+
 function fingerprint() {
-  const out = execFileSync('npx', ['--yes', '@expo/fingerprint', '.'], {
+  const out = execFileSync('npx', ['expo-updates', 'fingerprint:generate', '--platform', PLATFORM], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -88,7 +101,9 @@ try {
 const installed = require(`${PINNED.package}/package.json`).version;
 const source = fp.sources.find((s) => String(s.filePath ?? '').includes(PINNED.package));
 
-console.log(`runtime fingerprint : ${fp.hash}`);
+console.log(`runtime (${PLATFORM})       : ${fp.hash}`);
+console.log('  ↳ this is what EAS will resolve. Compare it to the runtime of the build');
+console.log('    you intend an OTA to reach — `eas build:view <id>` phase log, not a guess.');
 console.log(`${PINNED.package.padEnd(20)}: ${source?.hash ?? 'NOT IN FINGERPRINT'}`);
 
 if (!source) {
@@ -118,6 +133,25 @@ if (source.hash !== PINNED.hash) {
   console.error('  diagnosis. Capture it first —');
   console.error(`    npm pack ${PINNED.package}@${installed} && diff -r <extracted> node_modules/${PINNED.package}`);
   process.exit(1);
+}
+
+// An optional expected runtime makes this directly usable before an OTA: pass the
+// runtime of the build the update must reach, taken from that build's phase log.
+const expectIdx = process.argv.indexOf('--expect-runtime');
+if (expectIdx !== -1) {
+  const want = process.argv[expectIdx + 1];
+  if (!want) {
+    console.error(red('\n✖ --expect-runtime needs a value.'));
+    process.exit(2);
+  }
+  if (fp.hash !== want) {
+    console.error(red('\n✖ RUNTIME MISMATCH — an OTA from this tree would reach nobody.'));
+    console.error(`  expected ${want}`);
+    console.error(`  found    ${fp.hash}`);
+    console.error('\n  Publishing anyway succeeds silently and delivers to zero devices.');
+    process.exit(1);
+  }
+  console.log(green(`\n✓ Runtime matches ${want} — an OTA from this tree will reach that build.`));
 }
 
 console.log(green('\n✓ Native fingerprint matches the last known-good build. Safe to build or publish.'));
