@@ -55,7 +55,7 @@
     },
     "android": {
       "package": "com.gohustlr.app",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "backgroundColor": "#5038FF",
         "foregroundImage": "./assets/android-icon-foreground.png",
