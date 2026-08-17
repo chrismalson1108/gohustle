@@ -124,17 +124,32 @@ validates your app by certificate — Google Sign-In and the restricted Maps key
 trust **both** fingerprints, or it works in your internal build and fails for every real
 installer.
 
-```bash
-eas credentials --platform android
+### The upload keystore (already exists — do NOT regenerate)
+
+EAS has held this since 2026-07-07 and all five Android builds are signed with it.
+Regenerating it means never being able to update the app on Play again.
+
+```
+Credential   Build Credentials RBU3HG5WKL  (default)
+Key alias    032556d00f93094cd0f480c9b190f398   (type JKS)
+SHA-1        7F:15:5C:37:23:28:A5:2C:92:2E:E0:62:EF:19:15:83:EF:B1:A4:35
+SHA-256      56:98:58:DD:C9:5C:76:20:6A:74:5E:5F:FE:19:6F:0A:97:B6:64:6B:40:58:0A:05:FE:6A:91:85:AE:67:EE:2C
+MD5          6F:14:72:5D:CD:99:B8:CA:D5:11:43:BA:9F:BF:19:FA
 ```
 
-→ *production* → *Keystore* → shows the **upload** SHA-1. (First run offers to generate
-the keystore; let EAS manage it — losing it means never updating the app again.)
+These are certificate fingerprints, not secrets — they are extractable from any installed
+APK, and Google's model is to *restrict by* them, not to hide them.
 
-Then, after your first upload: **Play Console → Test and release → App integrity → App
-signing** → copy the **App signing key certificate** SHA-1.
+To re-read them yourself: `eas credentials --platform android` → *production* → the
+summary block prints all three. The Expo dashboard truncates them in the middle
+(`7F:15...A4:35`); the copy button beside each field yields the full value.
 
-Register **both** SHA-1s everywhere a fingerprint is asked for.
+### The second fingerprint, after your first upload
+
+**Play Console → Test and release → App integrity → App signing** → copy the **App signing
+key certificate** SHA-1. Register **both** that one and the upload SHA-1 above everywhere a
+fingerprint is asked for, or Maps and Google sign-in work in your own build and fail for
+every user who installs from Play.
 
 ---
 
