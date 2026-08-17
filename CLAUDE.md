@@ -195,7 +195,7 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 
 ## Location, tips & disputes
 - **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build).
-- **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`.
+- **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`. ⚠️ **The earner gets 100% and the platform pays Stripe's 2.9%+30¢ — a DECISION, not an oversight** (KNOWN_RISKS T-1, decided 2026-08-17). `stripe-tip` sets `transfer_data.destination` with no `application_fee_amount` on purpose: every marketplace that has taken a cut of tips has turned it into a public scandal, and on a platform selling "keep what you earn" it is the most expensive dollar available. Do not "fix" the missing application fee.
 - **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `stripe-capture-payment` partial capture; a `disputes` row is recorded. `verifyAndRate(..., { pct, disputeReason })`.
 - **Scheduling**: slots carry machine-readable `starts_at` (job_slots + bookings); `SlotPicker` hides past slots.
 
@@ -747,7 +747,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **57 controls are registered**: 55 run in-database and 2 are `external`. Every
+- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
