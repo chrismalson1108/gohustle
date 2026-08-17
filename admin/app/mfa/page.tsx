@@ -81,7 +81,18 @@ export default function MfaPage() {
       router.replace("/login");
       return;
     }
-    if (aal.currentLevel === "aal2") {
+    // ?reauth=1 is the session cap in lib/guard.ts asking for a fresh factor on a
+    // session that is ALREADY aal2. Without honouring it this short-circuit sends them
+    // straight back to "/", the guard rejects the stale amr again, and the two bounce
+    // off each other forever.
+    //
+    // Read off window rather than useSearchParams(): this route is statically rendered,
+    // and useSearchParams there demands a Suspense boundary at build time. bootstrap
+    // only ever runs in an effect, so window is always there.
+    const reauth = typeof window !== "undefined"
+      && new URLSearchParams(window.location.search).has("reauth");
+
+    if (aal.currentLevel === "aal2" && !reauth) {
       router.replace("/");
       router.refresh();
       return;

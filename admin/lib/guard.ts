@@ -79,6 +79,13 @@ function aalFromToken(token: string | undefined): string | null {
 // unverified.
 const MFA_METHODS = new Set(["totp", "mfa/totp", "webauthn", "mfa/webauthn"]);
 
+// Twelve hours: a working day. Long enough that nobody re-verifies mid-task, short
+// enough that a session left open overnight on an unattended machine is not still a
+// console in the morning. Deliberately far coarser than the 5-minute step-up window —
+// they answer different questions ("is this still the same day?" vs "is the person at
+// the keyboard right now the one who passed the factor?").
+export const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
+
 export function mfaAgeSeconds(token: string | undefined): number | null {
   if (!token) return null;
   try {
@@ -139,6 +146,29 @@ export async function requireAdmin(minRole: AdminRole = "support"): Promise<Admi
   } = await supa.auth.getSession();
   if (aalFromToken(session?.access_token) !== "aal2") throw new AdminAuthError("mfa");
 
+  // ── Absolute session cap ──────────────────────────────────────────────────
+  //
+  // AAL2 proves the factor was satisfied at SOME point. Supabase rotates the refresh
+  // token indefinitely, so without this a console session — holding the service-role
+  // key — stays live forever on whatever laptop it was opened on. Step-up already
+  // time-boxes money and privilege actions to 5 minutes; this bounds the session itself.
+  //
+  // RE-VERIFICATION, NOT SIGN-OUT, and that distinction is the whole design. Signing
+  // someone out mid-task loses their place and trains them to resent the control;
+  // asking for six digits costs seconds and keeps them where they were. It reuses
+  // mfaAgeSeconds rather than adding a second notion of freshness, so there is one
+  // definition of "when did this person last prove who they are".
+  //
+  // Enforced HERE rather than by a client timer. A timer in the browser is a suggestion:
+  // it looks like security and is defeated by a client that ignores it.
+  //
+  // Fails closed on an unreadable amr, same as requireFreshAdmin — the cost is being
+  // asked for a code, never being let through unverified.
+  const sessionAge = mfaAgeSeconds(session?.access_token);
+  if (sessionAge === null || sessionAge > SESSION_MAX_AGE_SECONDS) {
+    throw new AdminAuthError("stale_mfa");
+  }
+
   const service = getServiceClient();
   const { data: row, error: lookupErr } = await service
     .from("admin_users")
@@ -173,6 +203,11 @@ export async function requireAdminPage(minRole: AdminRole = "support"): Promise<
     if (e instanceof AdminAuthError) {
       if (e.reason === "unauthenticated") redirect("/login");
       if (e.reason === "mfa") redirect("/mfa");
+      // stale_mfa from the session cap. WITHOUT the ?reauth flag this loops forever:
+      // /mfa short-circuits an aal2 session straight back to "/", the guard rejects it
+      // again, and the two bounce off each other. The flag tells the gate to challenge
+      // an already-aal2 session on purpose.
+      if (e.reason === "stale_mfa") redirect("/mfa?reauth=1");
       redirect("/denied");
     }
     throw e;

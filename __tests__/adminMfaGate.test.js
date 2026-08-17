@@ -147,3 +147,85 @@ describe('the challenge says what it is challenging', () => {
     expect(admin).toMatch(/same login/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A console session must not live forever.
+//
+// AAL2 proves the factor was satisfied at SOME point. Supabase rotates the refresh token
+// indefinitely, so without a cap a session holding the service-role key stays live for
+// as long as the laptop it was opened on. Step-up already time-boxes money and privilege
+// actions to five minutes; this bounds the session itself.
+//
+// RE-VERIFICATION, NOT SIGN-OUT. Signing someone out mid-task loses their place and
+// teaches them to resent the control; six digits costs seconds and keeps them where they
+// were. Enforced in the guard rather than by a browser timer — a client-side timeout
+// looks like security and is defeated by a client that ignores it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the console session expires into a re-verification', () => {
+  const fs5 = require('fs');
+  const path5 = require('path');
+  const R5 = path5.join(__dirname, '..');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const guard = strip(fs5.readFileSync(path5.join(R5, 'admin', 'lib', 'guard.ts'), 'utf8'));
+  const gate = strip(fs5.readFileSync(path5.join(R5, 'admin', 'app', 'mfa', 'page.tsx'), 'utf8'));
+
+  // requireFreshAdmin is declared ABOVE requireAdmin in guard.ts, so slicing between the
+  // two names in source order returns an empty string and every assertion inside it
+  // passes vacuously. Take requireAdmin's body up to whatever is exported next.
+  const requireAdminBody = () => {
+    const from = guard.indexOf('export async function requireAdmin(');
+    expect(from).toBeGreaterThan(-1);
+    const next = guard.indexOf('\nexport ', from + 1);
+    const body = guard.slice(from, next === -1 ? undefined : next);
+    expect(body.length).toBeGreaterThan(200);
+    return body;
+  };
+
+  it('the cap is twelve hours and stated once', () => {
+    expect(guard).toMatch(/export const SESSION_MAX_AGE_SECONDS = 12 \* 60 \* 60;/);
+  });
+
+  it('requireAdmin enforces it on every request', () => {
+    // Not requireFreshAdmin — that guards individual actions. This has to sit on the
+    // base guard or a session that never touches money is never re-checked at all.
+    const base = requireAdminBody();
+    expect(base).toMatch(/mfaAgeSeconds\(session\?\.access_token\)/);
+    expect(base).toMatch(/SESSION_MAX_AGE_SECONDS/);
+  });
+
+  it('fails closed on an unreadable amr', () => {
+    const base = requireAdminBody();
+    // `sessionAge === null` must DENY. Treating an unparseable claim as fresh would make
+    // the cap skippable by anything that perturbs the token.
+    expect(base).toMatch(/sessionAge === null \|\| sessionAge > SESSION_MAX_AGE_SECONDS/);
+  });
+
+  it('an expired session re-verifies instead of landing on /denied', () => {
+    // stale_mfa previously fell through to the catch-all. A correct, current admin would
+    // have been told they are not authorized.
+    expect(guard).toMatch(/if \(e\.reason === "stale_mfa"\) redirect\("\/mfa\?reauth=1"\)/);
+    const wrapper = guard.slice(guard.indexOf('export async function requireAdminPage'));
+    expect(wrapper.indexOf('stale_mfa')).toBeLessThan(wrapper.indexOf('/denied'));
+  });
+
+  it('the gate challenges an already-aal2 session when asked to', () => {
+    // Without this the two bounce off each other forever: /mfa short-circuits aal2 back
+    // to "/", the guard rejects the stale amr, redirect, repeat.
+    expect(gate).toMatch(/const reauth = /);
+    expect(gate).toMatch(/has\("reauth"\)/);
+    expect(gate).toMatch(/aal\.currentLevel === "aal2" && !reauth/);
+  });
+
+  it('does not read the flag with useSearchParams', () => {
+    // This route is statically rendered; useSearchParams there demands a Suspense
+    // boundary and fails the build. bootstrap runs in an effect, so window is present.
+    expect(gate).not.toMatch(/useSearchParams/);
+  });
+
+  it('leaves the five-minute step-up window alone', () => {
+    // They answer different questions — "is this still the same day?" versus "is the
+    // person at the keyboard right now the one who passed the factor?". Collapsing them
+    // would either nag every five minutes or leave money actions open for twelve hours.
+    expect(guard).toMatch(/maxAgeSeconds = 300/);
+  });
+});
