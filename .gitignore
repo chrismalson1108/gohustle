@@ -18,6 +18,22 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Android/Play submission secrets.
+#
+# eas.json points submit.production.android at credentials/play-service-account.json.
+# That file is a Google Cloud service-account PRIVATE KEY with release-manager rights on
+# the Play listing — the existing rules above only cover *.p8/*.p12/*.jks, so a .json key
+# would otherwise have been committed on the first `eas submit` setup.
+credentials/*.json
+
+# The Firebase FCM V1 service-account private key (uploaded to EAS, never to git).
+firebase-service-account*.json
+fcm-v1-*.json
+
+# NOTE: google-services.json is deliberately NOT ignored. It holds only public
+# identifiers, Expo needs it at build time via android.googleServicesFile, and EAS
+# build workers get it from the repo — ignoring it silently breaks Android push.
+
 # Metro
 .metro-health-check*
 

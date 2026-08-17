@@ -15,7 +15,7 @@ npm run android                 # expo run:android — build & launch the dev cl
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 deno check --node-modules-dir=none supabase/functions/<fn>/index.ts   # type-check an edge fn (see below)
-npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
+npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 55 version)
 npm test                        # Jest — the pure-logic + drift-guard suite in __tests__/ (~1s)
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
@@ -124,7 +124,7 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 
 ## SDK & Backend
 
-- **Expo SDK 54**, React Native 0.81.5, React 19.1.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
+- **Expo SDK 55**, React Native 0.83.10, React 19.2.0. **Not 56 or 57, deliberately:** `expo-modules-jsi` first ships at 56.0.0 and its 57.0.4 — still the latest published build as of 2026-08-17 — fails to compile under Xcode 26.3 / Swift 6.2.4. Staying on 55 keeps that package out of the tree entirely while still getting modern RN and `stripe-react-native`. Re-check `npm view expo-modules-jsi dist-tags` before attempting 56/57 again. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
 - Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the live schema's BEHAVIOUR** — every guard, policy, trigger and RPC — though not for every `create table`: roughly half of those still live in the legacy `supabase/*.sql` files (see the schema-inventory note below). It covers including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 188 files as of 2026-08-14; production's `supabase_migrations.schema_migrations` was verified to match file-for-file on 2026-08-13 at 166 files, so **the tail is only as applied as your last `db push`** — re-verify rather than trusting this line. Never hand-apply SQL in the dashboard; that is how the two drift.
@@ -198,7 +198,7 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 Realtime: three Supabase channels per session — `bookings-user-${user.id}` (earner), `poster-bookings-${user.id}` (poster; broad subscription that calls `loadPosterBookings()` on any change), and `messages-unread-${user.id}` (feeds `unreadMessages` and the Messages tab badge).
 
 ### Push notifications (`src/lib/push.js`)
-Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab (the values must match `send-push`'s `KNOWN_TABS` — see the tab-route-name note above). `expo-notifications` is a dependency **and** a registered config plugin in `app.json`, so the native module **is** compiled into the current dev-client / TestFlight binary — no rebuild is outstanding. Remote push still needs a real device: `push.js` returns `null` on simulators via `Device.isDevice`, and plain Expo Go on SDK 54 cannot receive Android remote push.
+Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab (the values must match `send-push`'s `KNOWN_TABS` — see the tab-route-name note above). `expo-notifications` is a dependency **and** a registered config plugin in `app.json`, so the native module **is** compiled into the current dev-client / TestFlight binary — no rebuild is outstanding. Remote push still needs a real device: `push.js` returns `null` on simulators via `Device.isDevice`, and plain Expo Go on SDK 55 cannot receive Android remote push. **Android push is additionally unconfigured at the credential layer** — it needs a `google-services.json` wired through `android.googleServicesFile` *and* an FCM V1 service-account key uploaded to EAS. Neither exists yet, so Android builds register a token but never receive a notification; iOS is unaffected. See `ANDROID_LAUNCH.md` step 4.
 
 ## Key Screens
 
@@ -478,13 +478,14 @@ root is not listed here, which is what stops that happening again.
 | `CLAUDE_MD_DRIFT.md` | **When editing CLAUDE.md, or wondering why a new session got something wrong.** The measured diff between this file's claims and the code: 79 undocumented surfaces, 33 assertions that are false. Every surface is mechanically enumerable, so it is the spec for a drift test, not a cleanup list. |
 | `ATTACK_FINDINGS.md` | **Before trusting any money path.** 23 UNVERIFIED candidates from an adversarial attack on promotions, referrals, refunds, capture and the admin console after the stripe@22 upgrade. The refutation pass did not finish — verify before acting. One is confirmed and fixed. |
 | `OPEN_WORK.md` | **Every session, first.** Confirmed-but-unfixed findings, worked highest-severity-first without being asked. |
-| `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
+| `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 55 docs before writing Expo code. |
 | `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
 | `RUNBOOK_SAFETY.md` | What to do when a person is at risk, or a person *is* the risk. |
 | `ROLE_PERMISSION_MATRIX.md` | Who may do what to which object — check before changing any policy, guard or admin tier. |
 | `PRODUCT_FLOW_MAP.md` | End-to-end user flows, cited to `path:line`. Read before changing a flow you have not personally walked. |
 | `ROADMAP.md` | Where the product is heading and what blocks a customer-ready trial. |
 | `TESTFLIGHT.md` | The shipping + security checklist for a TestFlight build. |
+| `ANDROID_LAUNCH.md` | The Google Play counterpart: account type and its timeline consequences, Maps/FCM/OAuth credentials, and the listing answers that get a review rejected. |
 
 ⚠️ **Several of these carry a self-reported "Verified <date>" line that is older than
 their last edit.** Where a doc and the code disagree, the code wins — and fix the doc.

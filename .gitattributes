@@ -1,0 +1,48 @@
+# Normalize text files to LF in the repo AND in the working tree on every platform.
+#
+# Why this file exists: Git for Windows defaults to core.autocrlf=true, so a Windows
+# checkout rewrote every tracked file to CRLF while the repo itself stored LF
+# (`git ls-files --eol` reported `i/lf w/crlf`). Several tests parse source as raw text
+# and silently break on the stray \r:
+#
+#   __tests__/haptics-usage.test.js   strips comments with /\/\/.*$/ — in JS regex `.`
+#                                     never matches \r, so `$` cannot anchor, the comment
+#                                     is left intact, and prose describing the OLD bug
+#                                     ("this was `haptic('light')`") is flagged as the bug.
+#   __tests__/refundAttribution.test.js  slices on indexOf('.select(\n'), which is -1
+#                                     against '.select(\r\n'; slice(-1, n) yields "" and
+#                                     the assertion fails against an empty string.
+#
+# Both pass on macOS/CI and fail on Windows — green for whoever wrote them, red for
+# everyone else, with a failure message that points at the money code rather than at the
+# line endings. Pinning eol=lf removes the whole class.
+* text=auto eol=lf
+
+# Binary assets — never run EOL conversion or diff these as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.mp4   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+
+# Signing material — binary, and never diffed.
+*.p8       binary
+*.p12      binary
+*.jks      binary
+*.keystore binary
+
+# Windows batch files must keep CRLF or cmd.exe mis-parses them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts and the Gradle wrapper must stay LF even on Windows, or the Linux
+# EAS build workers fail with "bad interpreter: /bin/sh^M".
+*.sh    text eol=lf
+gradlew text eol=lf
