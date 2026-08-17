@@ -41,6 +41,40 @@ containing a `.swiftinterface` that re-declares symbols from its own source — 
 reports `type of expression is ambiguous without a type annotation` in Expo's own code, which
 reads exactly like an SDK/Xcode incompatibility and is not one. `rm -rf` it and rebuild.
 
+⚠️ **A LOCAL iOS BUILD MUTATES `node_modules/react-native-maps`, AND THE NEXT EAS BUILD
+FAILS FOR IT.** Confirmed twice — 2026-08-14 (builds 29 and 30) and again 2026-08-17
+(build 32), same package, byte-identical hashes both times. The 08-14 note guessed "almost
+certainly a previous local iOS build"; on 08-17 a local `xcodebuild` was run to fix the
+simulator and the very next EAS build failed the same way, which settles it.
+
+The visible error is useless: `Build failed — Unknown error. See logs of the Configure
+expo-updates build phase`, and `eas build` **exits 0 anyway**, so a script that trusts the
+exit code reports a successful build that does not exist. The real error is in the phase
+log:
+
+```
+Runtime version mismatch:
+- Runtime version calculated on local machine: 30e3fffb…
+- Runtime version calculated on EAS:           34f88e2d…
+```
+
+with a fingerprint diff naming exactly one source — `node_modules/react-native-maps`
+(`rncoreAutolinkingIos`), local `2f21a192…` vs EAS `bd7bcd0a…`.
+
+**The fix, both times:** `rm -rf node_modules/react-native-maps && npm install
+--legacy-peer-deps`, which restores the hash to EAS's `bd7bcd0a…` exactly.
+
+**So: after ANY local `xcodebuild`/`pod install`, reinstall that package before an EAS
+build or an OTA.** The same drift silently mis-targets `eas update` — an OTA published
+from a dirty tree goes to a runtime no installed build has, reaches nobody, and looks like
+it worked.
+
+**Reading the phase log is not optional** — twice now the guess was wrong and the log was
+right. The signed URL is in `eas build:view <id> --json` → `logFiles[0]`; it is **brotli**,
+not gzip, so decode with `zlib.brotliDecompressSync`. `eas build:view` must be run from
+inside the project directory or it prints "Run this command inside a project directory"
+instead of JSON.
+
 ⚠️ **Stale `ios/build*` artifacts break `pod install`, and the error blames CocoaPods.**
 React Native's post-install hook (`new_architecture.rb`) scans every Info.plist in the tree
 for git conflict markers. Compiled BINARY plists inside `ios/build/` and `ios/build-release/`
