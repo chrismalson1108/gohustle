@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addTeamMember, resetAuthenticator, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
+import { addTeamMember, confirmAuthenticators, resetAuthenticator, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
 import ReauthPrompt from "../ReauthPrompt";
 import { useStepUp } from "../useStepUp";
 
@@ -81,6 +81,7 @@ export function MemberControls({
   status,
   mfaEnrolledAt,
   mfaFactorCount,
+  needsConfirm,
   isSelf,
   isAdmin,
 }: {
@@ -90,6 +91,7 @@ export function MemberControls({
   status: string;
   mfaEnrolledAt: string | null;
   mfaFactorCount: number;
+  needsConfirm: boolean;
   isSelf: boolean;
   isAdmin: boolean;
 }) {
@@ -135,6 +137,23 @@ export function MemberControls({
             }
           >
             Activate
+          </button>
+        )}
+        {/* The "yes, I checked" click. It grants nothing and changes no access — it
+            records that a human read the factor list on this row and recognised every
+            entry, which is the thing the pending→active instruction has always asked
+            for and never captured. Without it a legitimate second device leaves a
+            finding open forever, which is how a board stops being read. */}
+        {needsConfirm && (
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() =>
+              fire(confirmAuthenticators, {},
+                `Confirm every authenticator on ${email}?\n\nOnly do this once they have told you, directly, that each entry listed on their row is theirs.\n\nAnything enrolled after now will reopen the check.`)
+            }
+          >
+            Confirm authenticators
           </button>
         )}
         {/* The way out of a lost authenticator. Before this the only route was direct

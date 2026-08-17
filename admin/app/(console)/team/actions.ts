@@ -177,7 +177,17 @@ export async function setTeamStatus(formData: FormData): Promise<ActionResult> {
 
     const { data, error } = await ctx.service
       .from("admin_users")
-      .update({ status, disabled_at: status === "disabled" ? new Date().toISOString() : null })
+      .update({
+        status,
+        disabled_at: status === "disabled" ? new Date().toISOString() : null,
+        // Activating IS the confirmation. The instruction has always been "activate only
+        // after you have confirmed the enrolment time with them directly" — this is the
+        // click where that happens, so it is the click that should record it. Without a
+        // stamp, a factor enrolled a week later is indistinguishable from the one that
+        // was vouched for, and ctl_admin_unconfirmed_factor has nothing to compare
+        // against. Cleared on the way OUT of active, so re-activating vouches afresh.
+        factors_confirmed_at: status === "active" ? new Date().toISOString() : null,
+      })
       .eq("user_id", userId)
       .select("user_id");
     if (error) throw new Error(error.message);
@@ -271,7 +281,7 @@ export async function resetAuthenticator(formData: FormData): Promise<ActionResu
     // 20260817000000 probe exists to rule out.
     await ctx.service
       .from("admin_users")
-      .update({ mfa_enrolled_at: null, mfa_factor_id: null })
+      .update({ mfa_enrolled_at: null, mfa_factor_id: null, factors_confirmed_at: null })
       .eq("user_id", userId);
 
     // ── Re-close the trust-on-first-use window the reset just re-opened ──────
@@ -326,6 +336,47 @@ export async function resetAuthenticator(formData: FormData): Promise<ActionResu
         (demoted
           ? " Set back to PENDING — confirm the new enrolment time with them, then Activate."
           : ""),
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Every authenticator on this account is accounted for."
+//
+// ctl_admin_unconfirmed_factor fires on any verified factor newer than the last time
+// somebody vouched. Activate stamps it, but an existing member who legitimately adds a
+// second device — the app enrols as 'GoHustlr', the console as 'GoHustlr Admin', so
+// holding both is normal and correct — would otherwise leave a finding open forever with
+// no way to close it. That is the permanent-false-positive shape this project has now
+// fixed three times, and a board people learn to ignore is worse than no board.
+//
+// So this is the "yes, I checked" click. It grants nothing and changes no access; it
+// records that a human looked at the list on the row and recognised every entry. If they
+// do NOT recognise one, the other button is the answer.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function confirmAuthenticators(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, message: "Missing user id." };
+
+  return run("team.confirm_factors", userId, {}, async (ctx) => {
+    // Read the list back and audit WHAT was vouched for, not merely that someone
+    // clicked. A confirmation nobody can reconstruct later is not evidence of anything.
+    const { data: user } = await ctx.service.auth.admin.getUserById(userId);
+    const factors = (user?.user?.factors ?? [])
+      .filter((f) => f.status === "verified")
+      .map((f) => `${f.friendly_name ?? "unnamed"} @ ${f.created_at}`);
+
+    const { data, error } = await ctx.service
+      .from("admin_users")
+      .update({ factors_confirmed_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .select("user_id");
+    if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error("No such team member.");
+
+    return {
+      confirmed: factors,
+      __message: `Confirmed ${factors.length} authenticator${factors.length === 1 ? "" : "s"}. A new one appearing after now will reopen the check.`,
     };
   });
 }

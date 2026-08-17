@@ -166,7 +166,13 @@ describe('a lost authenticator can be reset from the console', () => {
     // A leftover unverified row keeps the per-user friendly-name uniqueness occupied,
     // so the next enrol fails on a name collision instead of showing a QR — the reset
     // would appear to work and leave them just as stuck.
-    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    //
+    // Bounded to THIS function. An open-ended slice ran into confirmAuthenticators,
+    // which filters to verified on purpose, and the negative assertion below started
+    // failing on a function it was never about.
+    const from = actions.indexOf('export async function resetAuthenticator');
+    const nextExport = actions.indexOf('export async function', from + 1);
+    const fn = actions.slice(from, nextExport === -1 ? undefined : nextExport);
     expect(fn).toMatch(/user\?\.user\?\.factors \?\? \[\]/);
     expect(fn).toMatch(/for \(const f of factors\)/);
     expect(fn).toMatch(/mfa\.deleteFactor\(\{ id: f\.id, userId \}\)/);
@@ -292,5 +298,79 @@ describe('/denied distinguishes the four ways requireAdmin says no', () => {
     // that pending exists to close would be open again.
     expect(guard).toMatch(/if \(row\.status !== "active"\) throw new AdminAuthError\("forbidden"\)/);
     expect(guard).toMatch(/if \(!roleSatisfies\(role, minRole\)\) throw new AdminAuthError\("forbidden"\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The confirmation that guards the console was never recorded, and nothing noticed when
+// it was owed. Both halves bit on 2026-08-17: an invited admin enrolled and sat at a
+// denial screen until he texted the founder, and Activate — the click that IS the
+// confirmation — left no trace to compare a later factor against.
+//
+// Deliberately NOT a "more than one factor" alert: the app enrols as 'GoHustlr' and the
+// console as 'GoHustlr Admin', so two is a legitimate permanent steady state and the
+// finding could never be closed. That is the permanent-false-positive shape this repo has
+// now fixed three times. The signal is "unreviewed", which is closable.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a console factor is confirmed, not assumed', () => {
+  const fs4 = require('fs');
+  const path4 = require('path');
+  const R4 = path4.join(__dirname, '..');
+  const clean = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const acts = clean(fs4.readFileSync(path4.join(R4, 'admin', 'app', '(console)', 'team', 'actions.ts'), 'utf8'));
+  const ctrls = clean(fs4.readFileSync(path4.join(R4, 'admin', 'app', '(console)', 'team', 'TeamControls.tsx'), 'utf8'));
+  const pg = clean(fs4.readFileSync(path4.join(R4, 'admin', 'app', '(console)', 'team', 'page.tsx'), 'utf8'));
+
+  it('both controls exist AND are registered', () => {
+    // run_all_controls iterates the REGISTRY, so an unregistered ctl_ function never
+    // runs while the board stays green.
+    for (const key of ['admin_pending_enrolled', 'admin_unconfirmed_factor']) {
+      expect(allMigrations).toMatch(new RegExp(`create or replace function public\\.ctl_${key}\\b`));
+      expect(allMigrations).toMatch(new RegExp(`\\('${key}',`));
+      expect(allMigrations).toMatch(new RegExp(`'ctl_${key}'`));
+    }
+  });
+
+  it('a never-vouched-for account is unconfirmed, not assumed good', () => {
+    // Failing open on a NULL stamp would make the control silent on exactly the accounts
+    // it knows least about.
+    expect(allMigrations).toMatch(/a\.factors_confirmed_at is null or f\.newest > a\.factors_confirmed_at/);
+  });
+
+  it('the pending control waits, so a same-day activation never pages', () => {
+    expect(allMigrations).toMatch(/f\.enrolled_at < now\(\) - interval '12 hours'/);
+    expect(allMigrations).toMatch(/fired one hour in — this would page on every normal invite/);
+  });
+
+  it('the probe proves the finding is CLOSABLE, not permanent noise', () => {
+    expect(allMigrations).toMatch(/still open after confirmation — this control could never be closed/);
+    expect(allMigrations).toMatch(/a factor appearing AFTER the confirmation re-opens it/);
+    expect(allMigrations).toMatch(/an unverified factor was treated as an authenticator/);
+  });
+
+  it('Activate stamps the confirmation, because Activate IS the confirmation', () => {
+    expect(acts).toMatch(/factors_confirmed_at: status === "active" \? new Date\(\)\.toISOString\(\) : null/);
+  });
+
+  it('a reset clears it — the factors it vouched for are gone', () => {
+    const fn = acts.slice(acts.indexOf('export async function resetAuthenticator'));
+    expect(fn).toMatch(/factors_confirmed_at: null/);
+  });
+
+  it('confirming audits WHAT was vouched for, not merely that someone clicked', () => {
+    const fn = acts.slice(acts.indexOf('export async function confirmAuthenticators'));
+    expect(fn).toMatch(/return run\("team\.confirm_factors"/);
+    expect(fn).toMatch(/confirmed: factors/);
+    expect(fn).toMatch(/f\.status === "verified"/);
+  });
+
+  it('the row renders the same state the control sees', () => {
+    // A finding about something the operator's own screen does not show sends them
+    // looking for what they cannot find.
+    expect(pg).toMatch(/function needsConfirm\(m: Member\): boolean/);
+    expect(pg).toMatch(/factors_confirmed_at: string \| null/);
+    expect(pg).toMatch(/if \(!m\.factors_confirmed_at\) return true/);
+    expect(ctrls).toMatch(/needsConfirm && \(/);
+    expect(ctrls).toMatch(/confirmAuthenticators/);
   });
 });

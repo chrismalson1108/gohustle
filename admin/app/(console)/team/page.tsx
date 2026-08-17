@@ -19,9 +19,22 @@ interface Member {
   // 'GoHustlr' is the app or web, 'GoHustlr Admin' is this console.
   mfa_factor_count: number;
   mfa_factors: { name: string | null; created_at: string }[];
+  // When an admin last vouched for every factor above. ctl_admin_unconfirmed_factor
+  // fires on anything newer, so the row has to render the same state the control sees —
+  // a finding about something the operator's own screen does not show sends them
+  // looking for what they cannot find.
+  factors_confirmed_at: string | null;
   created_at: string;
   disabled_at: string | null;
   note: string | null;
+}
+
+// Mirrors ctl_admin_unconfirmed_factor exactly: active, has a factor, and either nobody
+// has ever vouched or the newest factor postdates the last time they did.
+function needsConfirm(m: Member): boolean {
+  if (m.status !== "active" || m.mfa_factor_count === 0) return false;
+  if (!m.factors_confirmed_at) return true;
+  return new Date(m.mfa_enrolled_at ?? 0) > new Date(m.factors_confirmed_at);
 }
 
 function factorOrigin(name: string | null): string {
@@ -109,6 +122,16 @@ export default async function TeamPage() {
                       ))}
                     </ul>
                   )}
+                  {needsConfirm(m) && (
+                    <p className="mt-1 text-xs font-semibold text-[var(--warn)]">
+                      {m.factors_confirmed_at
+                        ? "An authenticator here is newer than the last time anyone vouched for it."
+                        : "Nobody has vouched for this authenticator yet."}{" "}
+                      Check every entry above with them. If it all belongs to them, press
+                      Confirm authenticators — if any of it doesn&apos;t, press Reset and
+                      have them change their password.
+                    </p>
+                  )}
                   {m.mfa_factor_count > 1 && (
                     <p className="mt-1 text-xs font-semibold text-[var(--warn)]">
                       More than one authenticator on this account. Only one person should
@@ -124,6 +147,7 @@ export default async function TeamPage() {
                   status={m.status}
                   mfaEnrolledAt={m.mfa_enrolled_at}
                   mfaFactorCount={m.mfa_factor_count}
+                  needsConfirm={needsConfirm(m)}
                   isSelf={m.user_id === ctx.user.id}
                   isAdmin={ctx.role === "admin"}
                 />
