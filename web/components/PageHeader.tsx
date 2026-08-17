@@ -43,7 +43,9 @@ export default function PageHeader({
   right?: React.ReactNode;
   children?: React.ReactNode;
   width?: PageWidth;
-  /** Renders a back affordance above the title. `true` uses history.back(). */
+  /** Renders a back affordance above the title. A path string, or {href,label}.
+   *  NOT a boolean — this said "`true` uses history.back()" and the body reads
+   *  back.href, so `back` would have rendered a link to undefined. */
   back?: string | { href: string; label?: string };
   className?: string;
 }) {

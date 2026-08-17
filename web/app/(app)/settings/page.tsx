@@ -2,11 +2,13 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { redeemPromoCode, normalizePromoCode } from "@/lib/promoCodes";
+import { fetchMfaStatus } from "@/lib/mfa";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, X, ChevronRight, UserCircle2, Clock, Eye, CreditCard, Receipt,
   SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag, Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -56,6 +58,20 @@ export default function SettingsPage() {
     getPaymentReadiness().then(setPayReady).catch(() => {});
   }, [getPaymentReadiness]);
 
+  // Two-factor state, so the row says what is actually true rather than a generic
+  // invitation. `null` while unknown deliberately reads as neutral copy — claiming
+  // "Off" before the lookup lands would nag someone who already has it on.
+  const [mfaOn, setMfaOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetchMfaStatus().then((s) => setMfaOn(s.enabled)).catch(() => {});
+  }, []);
+  const twoFactorSub =
+    mfaOn === null
+      ? "Authenticator app & recovery codes"
+      : mfaOn
+        ? "On · manage recovery codes"
+        : "Off · a stolen password is enough right now";
+
   // Payments subtitle mirrors the You tab's banner so the two never disagree.
   const paymentsSub = !payReady
     ? "Payout account & card on file"
@@ -99,6 +115,18 @@ export default function SettingsPage() {
           // is the only place they can be read back or removed. Same row, same
           // wording as mobile's SettingsScreen — the assistant's prompt sends people
           // to "Settings → What Hustlr AI remembers" on both clients.
+          // The web could FORCE you through two-factor and could not help you manage
+          // it — /mfa has challenged every web sign-in since it was written, and there
+          // was no page here to turn it on, mint recovery codes, or turn it off. Which
+          // means anyone locked out of the phone the app is on had no route at all.
+          {
+            icon: ShieldCheck,
+            title: "Two-factor authentication",
+            sub: twoFactorSub,
+            keywords:
+              "2fa mfa two factor authenticator totp security recovery codes google authenticator 1password authy login sign in protect",
+            href: "/settings/security",
+          },
           {
             icon: Sparkles,
             title: "What Hustlr AI remembers",
@@ -218,7 +246,7 @@ export default function SettingsPage() {
         ],
       },
     ],
-    [user, paymentsSub],
+    [user, paymentsSub, twoFactorSub],
   );
 
   const filtered = useMemo(() => {

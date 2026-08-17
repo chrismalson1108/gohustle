@@ -285,6 +285,66 @@ describe('the two-factor gate is wired on BOTH clients', () => {
     expect(page).toMatch(/redeem_mfa_recovery_code/);
     expect(page).toMatch(/lost my phone/i);
   });
+
+  // ── Forcing it is not the same as supporting it ───────────────────────────
+  //
+  // Until 2026-08-17 the web could FORCE you through two-factor and could not help you
+  // manage it: the gate above shipped, and no page on gohustlr.com could turn 2FA on,
+  // mint recovery codes, or turn it off. The only surface that could was a CURRENT build
+  // of the mobile app — which is exactly the device someone locked out of their
+  // authenticator may not have.
+  //
+  // It surfaced when an admin needed recovery codes, the simulator carried a stale SDK 54
+  // dev client, and the honest answer from a laptop was "you cannot, from anywhere".
+  describe('both clients can MANAGE two-factor, not only enforce it', () => {
+    const managers = {
+      mobile: read('src/screens/SecurityScreen.js'),
+      web: read('web/app/(app)/settings/security/page.tsx'),
+    };
+    for (const [name, src] of Object.entries(managers)) {
+      it(`${name} can enrol`, () => {
+        expect(src).toMatch(/startEnrollment/);
+        expect(src).toMatch(/confirmEnrollment/);
+      });
+
+      it(`${name} mints recovery codes AT enrolment, not later`, () => {
+        // 2FA with no way back in turns a lost phone into a lost account, and "I'll do
+        // it later" is how that happens. The generate call must sit inside the verify
+        // path, not only behind a separate button.
+        expect(src).toMatch(/generateRecoveryCodes/);
+        const verifyAt = src.search(/confirmEnrollment\(/);
+        const codesAt = src.search(/showFreshCodes\(\)/);
+        expect(verifyAt).toBeGreaterThan(-1);
+        expect(codesAt).toBeGreaterThan(verifyAt);
+      });
+
+      it(`${name} shows the codes BEFORE retiring the previous set`, () => {
+        // confirmRecoveryCodes is the point of no return. Calling it before the new
+        // codes are on screen destroys a working set for one nobody has seen.
+        const show = src.search(/setCodes\(/);
+        const confirm = src.search(/confirmRecoveryCodes\(\)/);
+        expect(show).toBeGreaterThan(-1);
+        expect(show).toBeLessThan(confirm);
+      });
+
+      it(`${name} requires a current code to turn it OFF`, () => {
+        expect(src).toMatch(/disableMfa\(/);
+      });
+
+      it(`${name} reports "factor on, codes failed" as its own state`, () => {
+        // The generic error here tells someone enrolment failed while the card reads
+        // On — so they walk away believing they have neither 2FA nor recovery codes,
+        // when in fact they have 2FA and no recovery codes. That is the exact state
+        // that turns a lost phone into a lost account.
+        expect(src).toMatch(/factorOn/);
+        expect(src).toMatch(/could not create your recovery codes|couldn't create your recovery codes/i);
+      });
+    }
+
+    it('is reachable from the web settings hub, not just by typing the URL', () => {
+      expect(read('web/app/(app)/settings/page.tsx')).toMatch(/\/settings\/security/);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
