@@ -153,19 +153,42 @@ every user who installs from Play.
 
 ---
 
-## Step 3 — Google Sign-In on Android
+## Step 3 — Google Sign-In on Android — DONE 2026-08-17
 
-`signInWithGoogle` uses the native module with `webClientId`. On Android, Google
-additionally validates the calling app by package + certificate, so without an **Android
-OAuth client** you get `DEVELOPER_ERROR` at sign-in — with no useful message.
+⚠️ **There are TWO Google Cloud projects, and only one of them is authoritative.**
+This cost real time to work out, so it is written down:
 
-1. Google Cloud Console → **Credentials → Create credentials → OAuth client ID → Android**
-2. Package name `com.gohustlr.app`, SHA-1 = the upload fingerprint from Step 2
-3. Create a **second** Android client with the Play App Signing SHA-1
-4. Nothing to change in `app.json` — Android clients are matched by fingerprint, not by ID
+| Project | Number | Holds |
+|---|---|---|
+| **`gohustlr`** | **735847623182** | **the OAuth clients the app actually uses** — iOS, Supabase Auth (web), and now Android |
+| `gohustlr-501123` | 971024768392 | a newer project in the `gohustlr.com` org, with an unrelated web client |
 
-Your existing `webClientId` stays as-is and must remain listed under
-**Supabase → Auth → Providers → Google → Client IDs**.
+`app.json`'s `iosClientId`/`webClientId` are both `735847623182-…`, so **anything
+auth-related must be created in `gohustlr`**. Creating the Android client in the other
+project would look correct and fix nothing — Google matches the app signature against
+clients in the same project as the `webClientId`.
+
+`mainmail@gohustlr.com` initially had **no access** to `gohustlr` (`resourcemanager.projects.get`
+missing); it resolved after a re-auth. If it recurs, grant that account Owner on the project
+from whichever account owns it.
+
+**Created:** `GoHustlr Android (EAS upload key)` —
+`735847623182-n3phm31dq0p236hjof0crt6tu3j1gbgm.apps.googleusercontent.com`,
+package `com.gohustlr.app`, SHA-1 = the upload fingerprint above.
+
+**Nothing changed in `app.json`, and nothing should.** Android OAuth clients are matched by
+package + fingerprint, never referenced by id; the app keeps sending `webClientId` for the
+ID token. The existing `webClientId` must stay listed under **Supabase → Auth → Providers
+→ Google → Client IDs**.
+
+**Consent screen verified:** publishing status **In production**, user type External,
+0 / 100 user cap. That cap only binds *unapproved sensitive or restricted* scopes — Google
+sign-in requests plain `email`/`profile`, so no verification review and no user ceiling at
+launch.
+
+**Still outstanding:** after the first Play upload, create a **second** Android OAuth client
+with the **Play App Signing** SHA-1. Play re-signs the AAB, so without it sign-in works in
+your own builds and fails for everyone who installs from the store.
 
 ---
 
