@@ -61,11 +61,24 @@ routine. ⚠️ Fixing it with `npx expo install --check` **changes the fingerpr
 strands every OTA against the current build's runtime until a new build ships. Batch it
 with a change that needs a build anyway.
 
-⚠️ **A LOCAL iOS BUILD MUTATES `node_modules/react-native-maps`, AND THE NEXT EAS BUILD
-FAILS FOR IT.** Confirmed twice — 2026-08-14 (builds 29 and 30) and again 2026-08-17
-(build 32), same package, byte-identical hashes both times. The 08-14 note guessed "almost
-certainly a previous local iOS build"; on 08-17 a local `xcodebuild` was run to fix the
-simulator and the very next EAS build failed the same way, which settles it.
+⚠️ **`node_modules/react-native-maps` DRIFTS OUT OF STEP WITH EAS, AND THE NEXT EAS BUILD
+FAILS FOR IT.** Observed three times — 2026-08-14 (builds 29, 30) and 2026-08-17 (build 32,
+then again after a local rebuild), always the same two hashes: local `2f21a192…` versus
+EAS `bd7bcd0a…`.
+
+**The MECHANISM is not known, and two confident guesses have now been wrong.** The 08-14
+note said "almost certainly a previous local iOS build"; I repeated that on 08-17 as
+settled — and then measured it: `find node_modules/react-native-maps -newermt '-90 minutes'`
+returned **zero touched files** while the hash was in its drifted state. So whatever moves
+it, it is not a build rewriting files in place. It may be file modes, a nested
+`node_modules` npm creates and later hoists, or something the `rncoreAutolinkingIos`
+fingerprint reason reads that is not package content at all.
+
+**To find out, capture evidence BEFORE fixing it** — the reinstall destroys the only copy
+of the broken state. `npm pack react-native-maps@<version>` into a temp dir and `diff -r`
+it against the installed tree, and check modes with `find … -exec stat -f '%p %N' {} +`.
+
+What IS reliable, three times over: the drift happens, and the reinstall below fixes it.
 
 The visible error is useless: `Build failed — Unknown error. See logs of the Configure
 expo-updates build phase`, and `eas build` **exits 0 anyway**, so a script that trusts the
