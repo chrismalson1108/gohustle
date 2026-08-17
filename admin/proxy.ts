@@ -46,7 +46,23 @@ export async function proxy(request: NextRequest) {
   };
 
   if (!user && !isAuthRoute) return redirectTo("/login");
-  if (user && path === "/login") return redirectTo("/");
+
+  // GET only, and that word is load-bearing. This redirect is a UX affordance for
+  // someone who NAVIGATES to /login while already signed in — it has no business
+  // touching a server-action POST, which is not a navigation.
+  //
+  // It did, and it wedged sign-in completely (2026-08-17). The login form calls the
+  // recordLoginAttempt server action immediately after signInWithPassword, and that
+  // POSTs back to /login — by which point the session cookie exists, so `user` is
+  // truthy and this line answered a server action with a 307 to "/". NextResponse.redirect
+  // is a 307, so the POST is re-sent to a route whose bundle does not contain that
+  // action; it fails, the client await rejects, and setBusy(false) below it never runs.
+  // The button sat on "Signing in…" forever while the session was in fact established,
+  // which is why refreshing landed straight on /mfa.
+  //
+  // Only successful sign-ins broke: a failed one leaves no session, so `user` is null
+  // here and the action POST passes through untouched.
+  if (user && path === "/login" && request.method === "GET") return redirectTo("/");
   return response;
 }
 

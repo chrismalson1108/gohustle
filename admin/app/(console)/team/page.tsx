@@ -13,9 +13,21 @@ interface Member {
   role: string;
   status: string;
   mfa_enrolled_at: string | null;
+  // Every VERIFIED factor, oldest first. One date could not tell "they enrolled and
+  // forgot where" from "somebody enrolled beside them" — those read identically and
+  // mean opposite things. The friendly name says which surface it came from:
+  // 'GoHustlr' is the app or web, 'GoHustlr Admin' is this console.
+  mfa_factor_count: number;
+  mfa_factors: { name: string | null; created_at: string }[];
   created_at: string;
   disabled_at: string | null;
   note: string | null;
+}
+
+function factorOrigin(name: string | null): string {
+  if (name === "GoHustlr Admin") return "set up on this console";
+  if (name === "GoHustlr") return "set up in the app or on the website";
+  return name ? `“${name}”` : "unnamed";
 }
 
 // admin_users used to be seeded by hand in the SQL editor, and users/[id]/actions.ts
@@ -80,12 +92,30 @@ export default async function TeamPage() {
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     added {fmtDate(m.created_at)}
                     {" · "}
-                    {m.mfa_enrolled_at
-                      ? `authenticator enrolled ${fmtDate(m.mfa_enrolled_at)}`
-                      : "no authenticator enrolled yet"}
+                    {m.mfa_factor_count === 0
+                      ? "no authenticator enrolled yet"
+                      : `${m.mfa_factor_count} authenticator${m.mfa_factor_count === 1 ? "" : "s"}`}
                     {m.disabled_at ? ` · revoked ${fmtDate(m.disabled_at)}` : ""}
                     {m.note ? ` · ${m.note}` : ""}
                   </p>
+                  {/* Itemised, because the count alone still cannot say WHERE a factor
+                      came from — and the pending→active decision turns on exactly that. */}
+                  {m.mfa_factors.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">
+                      {m.mfa_factors.map((f, i) => (
+                        <li key={`${f.created_at}-${i}`}>
+                          ↳ {factorOrigin(f.name)}, {fmtDate(f.created_at)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {m.mfa_factor_count > 1 && (
+                    <p className="mt-1 text-xs font-semibold text-[var(--warn)]">
+                      More than one authenticator on this account. Only one person should
+                      hold one — confirm every entry above with them before activating,
+                      and reset if any is unaccounted for.
+                    </p>
+                  )}
                 </div>
                 <MemberControls
                   userId={m.user_id}
@@ -93,6 +123,7 @@ export default async function TeamPage() {
                   role={m.role}
                   status={m.status}
                   mfaEnrolledAt={m.mfa_enrolled_at}
+                  mfaFactorCount={m.mfa_factor_count}
                   isSelf={m.user_id === ctx.user.id}
                   isAdmin={ctx.role === "admin"}
                 />

@@ -222,3 +222,62 @@ export async function setTeamRole(formData: FormData): Promise<ActionResult> {
     return { __message: `Role set to ${role}.` };
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Remove someone's authenticator so they can enrol a new one.
+//
+// Until 2026-08-17 the only way out of a lost authenticator was the Supabase dashboard —
+// direct database credentials, which 20260804030000 calls "exactly the wrong dependency"
+// for exactly this kind of task. And the console's own enrol flow minted no recovery
+// codes until today, so every admin who enrolled through it had no self-service route
+// either. The two gaps together turn a lost phone into a lost console.
+//
+// ── WHY THIS IS NOT AN ESCALATION ───────────────────────────────────────────
+// It removes a factor; it does not grant one. The target still needs their PASSWORD to
+// sign in, and the fresh enrolment that follows happens on their own device. An admin
+// caller could already suspend users and move money, so the tier is not the constraint
+// that matters here — the constraint is that this leaves an audit row naming who did it,
+// which is why `run` writes the audit BEFORE the mutation rather than after.
+//
+// Self-service is allowed: removing your own factor drops you to password-only and the
+// gate immediately asks you to enrol again. Blocking it would mean an admin who loses
+// their phone still needs a second admin, which is the dependency this exists to remove.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function resetAuthenticator(formData: FormData): Promise<ActionResult> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, message: "Missing user id." };
+
+  return run("team.reset_mfa", userId, {}, async (ctx) => {
+    // listFactors, not a guess: the ids are needed and the count is what gets audited.
+    const { data: user, error: getErr } = await ctx.service.auth.admin.getUserById(userId);
+    if (getErr) throw new Error(`Couldn't read that account: ${getErr.message}`);
+    const factors = user?.user?.factors ?? [];
+    if (factors.length === 0) {
+      return { __message: "That account has no authenticator — they'll get a QR code on their next sign-in." };
+    }
+
+    // EVERY factor, not just the verified ones. A leftover unverified row keeps the
+    // per-user friendly-name uniqueness occupied, and the next enrol attempt fails on a
+    // name collision rather than showing a QR.
+    const removed: string[] = [];
+    for (const f of factors) {
+      const { error } = await ctx.service.auth.admin.mfa.deleteFactor({ id: f.id, userId });
+      if (error) throw new Error(`Removed ${removed.length} of ${factors.length}: ${error.message}`);
+      removed.push(`${f.friendly_name ?? "unnamed"} (${f.status})`);
+    }
+
+    // The cache on admin_users described the old factor. Leaving it set would make /team
+    // report an enrolment that no longer exists — the phantom-date direction the
+    // 20260817000000 probe exists to rule out.
+    await ctx.service
+      .from("admin_users")
+      .update({ mfa_enrolled_at: null, mfa_factor_id: null })
+      .eq("user_id", userId);
+
+    return {
+      removed_count: removed.length,
+      removed,
+      __message: `Removed ${removed.length} authenticator${removed.length === 1 ? "" : "s"}. They'll be shown a QR code and recovery codes on their next sign-in.`,
+    };
+  });
+}

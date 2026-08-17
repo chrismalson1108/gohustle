@@ -70,3 +70,60 @@ describe('the admin login throttle has callers', () => {
     expect(codeOnly(fn)).toMatch(/if \(error\) return false;/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The throttle above wedged sign-in completely, and the mechanism is worth keeping
+// asserted because it is invisible from either file alone.
+//
+// recordLoginAttempt is a SERVER ACTION, so calling it POSTs back to /login. It runs
+// immediately after signInWithPassword, by which point the session cookie exists — and
+// proxy.ts answered `user && path === "/login"` with a redirect, unconditionally, for
+// every method. NextResponse.redirect is a 307, so the POST was re-sent to "/", whose
+// bundle does not carry that action; the call rejected out in the page, the function
+// unwound past setBusy(false), and the button sat on "Signing in…" forever while the
+// session was in fact established. Refreshing landed straight on /mfa, which is exactly
+// how it was reported.
+//
+// Only SUCCESSFUL sign-ins broke — a failed one leaves no session, so `user` is null and
+// the POST passes through. That is why it survived a deploy: the failure path was the
+// one being exercised while the throttle was tested.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the signed-in redirect off /login cannot eat a server action', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const R = path2.join(__dirname, '..');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const proxy = strip(fs2.readFileSync(path2.join(R, 'admin', 'proxy.ts'), 'utf8'));
+  const login = strip(fs2.readFileSync(path2.join(R, 'admin', 'app', 'login', 'page.tsx'), 'utf8'));
+
+  it('the /login bounce applies to GET navigations only', () => {
+    expect(proxy).toMatch(/path === "\/login" && request\.method === "GET"/);
+  });
+
+  it('the signed-OUT bounce is untouched — it must still cover every method', () => {
+    // This one is the actual UX guard for unauthenticated visitors; narrowing it to GET
+    // would let an action POST through to a console route with no session.
+    expect(proxy).toMatch(/if \(!user && !isAuthRoute\) return redirectTo\("\/login"\)/);
+  });
+
+  it('the login page can never leave the button stuck', () => {
+    // A finally, not a setBusy before each return: the bug was an exception thrown from
+    // a line nobody expected to throw.
+    expect(login).toMatch(/finally \{\s*setBusy\(false\);\s*\}/);
+    expect(login).toMatch(/\} catch \{/);
+  });
+
+  it('recording an attempt cannot break a sign-in', () => {
+    // The action's own body is fail-open, but that only covers the RPC — not the
+    // transport, which is what actually failed.
+    expect(login).toMatch(/recordLoginAttempt\(email, !err\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('the post-sign-in hop is a hard navigation', () => {
+    // The session cookie changed one line earlier. A client-side transition races the
+    // cookie write and the middleware's own redirects, and the router.refresh() that
+    // used to follow re-fetched the route being LEFT.
+    expect(login).toMatch(/window\.location\.assign\("\/mfa"\)/);
+    expect(login).not.toMatch(/router\.refresh\(\)/);
+  });
+});

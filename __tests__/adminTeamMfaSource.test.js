@@ -45,6 +45,13 @@ function latestDefining(fnName) {
   return { file: last, sql: stripSql(fs.readFileSync(path.join(MIG, last), 'utf8')) };
 }
 
+const allMigrations = fs
+  .readdirSync(MIG)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => fs.readFileSync(path.join(MIG, f), 'utf8'))
+  .join('\n');
+
 const teamList = latestDefining('admin_team_list');
 // The function body only — the probe below it stages rows against both sources on purpose.
 const body = teamList.sql.slice(
@@ -82,12 +89,105 @@ describe('admin_team_list reads the authoritative factor table', () => {
   });
 
   it('the probe proves both directions on the same staged row', () => {
-    const whole = fs.readFileSync(path.join(MIG, teamList.file), 'utf8');
-    expect(whole).toMatch(/FIX FAILED: a verified factor exists and the page still reports none/);
-    expect(whole).toMatch(/FIX FAILED: a removed authenticator still reports enrolled/);
+    // Searched across the CORPUS, not against the latest defining migration. Each
+    // migration carries the probe for its OWN change, and admin_team_list is redefined
+    // whenever the team page needs another field — 20260817010000 did so within the
+    // hour, which made the first version of this test fail for a property that
+    // migration was never about. Same lesson refundIdempotency.test.js records after
+    // the same mistake on record_refund.
+    expect(allMigrations).toMatch(/FIX FAILED: a verified factor exists and the page still reports none/);
+    expect(allMigrations).toMatch(/FIX FAILED: a removed authenticator still reports enrolled/);
     // And the staging must be checked, or a probe that never wrote the cache passes vacuously.
-    expect(whole).toMatch(/staging wrong: the cache was written/);
-    expect(whole).toMatch(/staging wrong: the stale cache did not take/);
+    expect(allMigrations).toMatch(/staging wrong: the cache was written/);
+    expect(allMigrations).toMatch(/staging wrong: the stale cache did not take/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One date could not answer the question the Activate dialog asks.
+//
+// A pending admin's row read "authenticator enrolled Aug 17, 6:02 PM" three days after
+// he was added, and nothing on screen could say whether that was a SECOND factor beside
+// an older one or the only one there had ever been. Those render identically under a
+// single max() and mean opposite things:
+//
+//   one factor, dated when they were invited → they enrolled and forgot where
+//   one factor, dated long after             → something happened that day
+//   TWO factors                              → somebody enrolled beside them
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the row itemises every factor, not just the newest date', () => {
+  it('the function returns a count and a list', () => {
+    expect(body).toMatch(/mfa_factor_count\s+integer/);
+    expect(body).toMatch(/mfa_factors\s+jsonb/);
+    expect(body).toMatch(/jsonb_agg\(/);
+  });
+
+  it('the list is oldest-first, so the original stays identifiable', () => {
+    expect(body).toMatch(/order by mf\.created_at/);
+  });
+
+  it('empty is an ARRAY, not null', () => {
+    // The page maps over it unguarded; a null would crash the whole Team page for
+    // anyone who has not enrolled — which is every pending member.
+    expect(body).toMatch(/coalesce\(f\.list, '\[\]'::jsonb\)/);
+    expect(body).toMatch(/coalesce\(f\.n, 0\)/);
+  });
+
+  it('the headline still points at the newest factor', () => {
+    expect(body).toMatch(/max\(\s*mf\.created_at\s*\)/);
+  });
+
+  it('the probe proves two factors read as two, not as a moved date', () => {
+    expect(allMigrations).toMatch(/FIX FAILED: two factors reported as/);
+    expect(allMigrations).toMatch(/factors are not oldest-first/);
+    expect(allMigrations).toMatch(/the headline moved off the newest factor/);
+    // An abandoned half-enrolment must not read as somebody enrolling beside them.
+    expect(allMigrations).toMatch(/an unverified factor was counted/);
+  });
+});
+
+describe('a lost authenticator can be reset from the console', () => {
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const actions = strip(
+    fs.readFileSync(path.join(ROOT, 'admin', 'app', '(console)', 'team', 'actions.ts'), 'utf8'),
+  );
+  const controls = strip(
+    fs.readFileSync(path.join(ROOT, 'admin', 'app', '(console)', 'team', 'TeamControls.tsx'), 'utf8'),
+  );
+
+  it('the action exists and goes through the audited admin-tier runner', () => {
+    // `run` is what applies requireFreshAdmin("admin") and writes the audit row BEFORE
+    // the mutation. Calling deleteFactor outside it would be an unlogged factor removal.
+    expect(actions).toMatch(/export async function resetAuthenticator/);
+    expect(actions).toMatch(/return run\("team\.reset_mfa"/);
+  });
+
+  it('it removes EVERY factor, including unverified ones', () => {
+    // A leftover unverified row keeps the per-user friendly-name uniqueness occupied,
+    // so the next enrol fails on a name collision instead of showing a QR — the reset
+    // would appear to work and leave them just as stuck.
+    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    expect(fn).toMatch(/user\?\.user\?\.factors \?\? \[\]/);
+    expect(fn).toMatch(/for \(const f of factors\)/);
+    expect(fn).toMatch(/mfa\.deleteFactor\(\{ id: f\.id, userId \}\)/);
+    expect(fn).not.toMatch(/status === ['"]verified['"]/);
+  });
+
+  it('it clears the admin_users cache it invalidates', () => {
+    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    expect(fn).toMatch(/mfa_enrolled_at: null, mfa_factor_id: null/);
+  });
+
+  it('the console exposes it, and only when there is something to reset', () => {
+    expect(controls).toMatch(/resetAuthenticator/);
+    expect(controls).toMatch(/mfaFactorCount > 0 &&/);
+  });
+
+  it('Activate warns specifically when more than one factor exists', () => {
+    // The generic "confirm the time" copy is wrong here: with two factors, confirming
+    // the newest one still leaves the other unaccounted for.
+    expect(controls).toMatch(/mfaFactorCount > 1/);
+    expect(controls).toMatch(/mfaFactorCount === 0/);
   });
 });
 
@@ -106,7 +206,8 @@ describe('the Activate dialog still consumes it', () => {
   it('Activate branches on it and asks for an out-of-band confirmation when set', () => {
     // Fixing the data source is only half the control — if the confirmation prompt were
     // dropped, a correct timestamp would be shown to nobody.
-    expect(controls).toMatch(/mfaEnrolledAt\s*$/m);
+    // The timestamp must still reach the copy — it is the thing being confirmed.
+    expect(controls).toMatch(/new Date\(mfaEnrolledAt\)\.toLocaleString\(\)/);
     expect(controls).toMatch(/Confirm that time with them directly/);
     expect(controls).toMatch(/have NOT enrolled an authenticator yet/);
   });

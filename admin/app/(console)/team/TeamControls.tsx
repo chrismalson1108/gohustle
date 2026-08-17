@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addTeamMember, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
+import { addTeamMember, resetAuthenticator, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
 import ReauthPrompt from "../ReauthPrompt";
 import { useStepUp } from "../useStepUp";
 
@@ -79,6 +79,7 @@ export function MemberControls({
   role,
   status,
   mfaEnrolledAt,
+  mfaFactorCount,
   isSelf,
   isAdmin,
 }: {
@@ -87,6 +88,7 @@ export function MemberControls({
   role: string;
   status: string;
   mfaEnrolledAt: string | null;
+  mfaFactorCount: number;
   isSelf: boolean;
   isAdmin: boolean;
 }) {
@@ -116,12 +118,31 @@ export function MemberControls({
             disabled={pending}
             onClick={() =>
               fire(setTeamStatus, { status: "active" },
-                mfaEnrolledAt
-                  ? `Activate ${email}?\n\nThey enrolled an authenticator at ${new Date(mfaEnrolledAt).toLocaleString()}.\nConfirm that time with them directly before activating — if it wasn't them, someone else now holds the factor.`
-                  : `Activate ${email}?\n\nThey have NOT enrolled an authenticator yet. Activating now re-opens the window this status exists to close. Prefer waiting until they've enrolled.`)
+                mfaFactorCount === 0
+                  ? `Activate ${email}?\n\nThey have NOT enrolled an authenticator yet. Activating now re-opens the window this status exists to close. Prefer waiting until they've enrolled.`
+                  : mfaFactorCount > 1
+                    ? `Activate ${email}?\n\nThis account has ${mfaFactorCount} authenticators, the newest added ${mfaEnrolledAt ? new Date(mfaEnrolledAt).toLocaleString() : "at an unknown time"}.\n\nOnly one person should hold one. Account for EVERY entry listed on their row with them directly, or reset the authenticator first — an extra factor is someone else holding a key.`
+                    : `Activate ${email}?\n\nThey enrolled an authenticator at ${mfaEnrolledAt ? new Date(mfaEnrolledAt).toLocaleString() : "an unknown time"}.\nConfirm that time with them directly before activating — if it wasn't them, someone else now holds the factor.`)
             }
           >
             Activate
+          </button>
+        )}
+        {/* The way out of a lost authenticator. Before this the only route was direct
+            Supabase credentials, and the console's own enrol flow minted no recovery
+            codes — so a lost phone was a lost console. It removes a factor, it never
+            grants one: they still need their password, and they enrol afresh on their
+            own device. */}
+        {mfaFactorCount > 0 && (
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() =>
+              fire(resetAuthenticator, {},
+                `Reset the authenticator for ${email}?\n\nThis removes ${mfaFactorCount === 1 ? "their authenticator" : `all ${mfaFactorCount} authenticators`} on the account. They keep their password, and the next sign-in shows them a fresh QR code plus recovery codes.\n\nDo this when they can't produce a code, or when a factor on their row is unaccounted for.`)
+            }
+          >
+            Reset authenticator
           </button>
         )}
         {status === "active" && !isSelf && (
