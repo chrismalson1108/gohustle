@@ -41,6 +41,26 @@ containing a `.swiftinterface` that re-declares symbols from its own source — 
 reports `type of expression is ambiguous without a type annotation` in Expo's own code, which
 reads exactly like an SDK/Xcode incompatibility and is not one. `rm -rf` it and rebuild.
 
+⚠️ **`expo-doctor` reports 18/20 and one of the two failures is CORRECT BEHAVIOUR — do
+not "fix" it.** `Check dependencies for packages that should not be installed directly`
+flags `@expo/config-plugins`. It is a direct dependency **on purpose**:
+`@stripe/stripe-react-native/lib/commonjs/plugin/withStripe.js` does a bare
+`require("@expo/config-plugins")`, so removing it breaks `expo prebuild` and therefore
+every native build. expo-doctor's own message says as much — "if you installed it to
+fulfill a peer dependency for a config plugin … you can ignore this warning".
+
+Our own `plugins/withModularHeaders.js` correctly uses the `expo/config-plugins`
+sub-export, so this is Stripe's requirement and not ours. It is pinned to the SDK's major
+(`~55.0.11` against expo 55.x), excluded from `expo install` bumps via
+`expo.install.exclude`, and guarded by `__tests__/configPluginsAlignment.test.js` —
+because a version that drifts off the SDK line yields TWO copies of config-plugins, which
+is what killed EAS build 29. **The check will keep failing. That is expected.**
+
+The other failure — 15 packages behind on patch versions within SDK 55 — is real but
+routine. ⚠️ Fixing it with `npx expo install --check` **changes the fingerprint**, so it
+strands every OTA against the current build's runtime until a new build ships. Batch it
+with a change that needs a build anyway.
+
 ⚠️ **A LOCAL iOS BUILD MUTATES `node_modules/react-native-maps`, AND THE NEXT EAS BUILD
 FAILS FOR IT.** Confirmed twice — 2026-08-14 (builds 29 and 30) and again 2026-08-17
 (build 32), same package, byte-identical hashes both times. The 08-14 note guessed "almost
