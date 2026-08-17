@@ -274,10 +274,58 @@ export async function resetAuthenticator(formData: FormData): Promise<ActionResu
       .update({ mfa_enrolled_at: null, mfa_factor_id: null })
       .eq("user_id", userId);
 
+    // ── Re-close the trust-on-first-use window the reset just re-opened ──────
+    //
+    // An account with no factor is one where /mfa enrols a FRESH authenticator for
+    // whoever presents the password. That is the exact hole `pending` was created to
+    // cover for new members (20260804030000), and a reset puts an ACTIVE member back
+    // into it — a compromised password now buys a full admin session as soon as the
+    // attacker reaches the login page first.
+    //
+    // So a reset on somebody else drops them to pending: their fresh enrolment grants
+    // nothing until an admin confirms the new time with them and activates. That is one
+    // extra click on a rare action, against a window measured in however long it takes
+    // them to get round to re-enrolling.
+    //
+    // NEVER on yourself. A self-reset is somebody at the keyboard about to re-enrol, and
+    // demoting them would strand the console with nobody able to activate anyone —
+    // which is the failure this whole surface exists to avoid. The window is unavoidable
+    // there, and it is also not a NEW one: an attacker who has your password and finds
+    // you factorless is already in.
+    //
+    // The console cannot be stranded by the demotion either way: the caller is an active
+    // admin by construction (requireFreshAdmin above), and it is never the target.
+    let demoted = false;
+    if (userId !== ctx.user.id) {
+      const { data: target } = await ctx.service
+        .from("admin_users").select("status").eq("user_id", userId).maybeSingle();
+      if (target?.status === "active") {
+        const { error } = await ctx.service
+          .from("admin_users").update({ status: "pending" }).eq("user_id", userId);
+        // Non-fatal and SAID: the factors are already gone, so failing the whole action
+        // here would leave them removed with the demotion silently skipped — the worst
+        // of both. Reporting it lets the operator set pending by hand.
+        if (error) {
+          return {
+            removed_count: removed.length,
+            removed,
+            demote_failed: error.message,
+            __message: `Removed ${removed.length} authenticator${removed.length === 1 ? "" : "s"}, but could NOT set them back to pending (${error.message}). Do that by hand — until you do, whoever has their password can enrol a new authenticator and reach the console.`,
+          };
+        }
+        demoted = true;
+      }
+    }
+
     return {
       removed_count: removed.length,
       removed,
-      __message: `Removed ${removed.length} authenticator${removed.length === 1 ? "" : "s"}. They'll be shown a QR code and recovery codes on their next sign-in.`,
+      demoted,
+      __message:
+        `Removed ${removed.length} authenticator${removed.length === 1 ? "" : "s"}. They'll be shown a QR code and recovery codes on their next sign-in.` +
+        (demoted
+          ? " Set back to PENDING — confirm the new enrolment time with them, then Activate."
+          : ""),
     };
   });
 }

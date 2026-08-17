@@ -183,6 +183,37 @@ describe('a lost authenticator can be reset from the console', () => {
     expect(controls).toMatch(/mfaFactorCount > 0 &&/);
   });
 
+  it('resetting someone ELSE drops them back to pending', () => {
+    // A factorless account is one where /mfa enrols a fresh authenticator for whoever
+    // presents the password — the exact hole `pending` exists to cover for new members.
+    // A reset puts an ACTIVE member straight back into it.
+    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    expect(fn).toMatch(/if \(userId !== ctx\.user\.id\)/);
+    expect(fn).toMatch(/target\?\.status === "active"/);
+    expect(fn).toMatch(/update\(\{ status: "pending" \}\)/);
+  });
+
+  it('but NEVER on yourself — that would strand the console', () => {
+    // A self-reset is somebody at the keyboard about to re-enrol. Demoting them leaves
+    // nobody able to activate anyone, which is the failure this surface exists to avoid.
+    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    const demote = fn.slice(fn.indexOf('if (userId !== ctx.user.id)'));
+    expect(demote).toMatch(/update\(\{ status: "pending" \}\)/);
+    // The guard must WRAP the demotion, not sit beside it.
+    expect(demote.indexOf('update({ status: "pending" })')).toBeGreaterThan(0);
+  });
+
+  it('a failed demotion is reported, not swallowed', () => {
+    // The factors are already gone by then, so failing the action would leave them
+    // removed with the demotion silently skipped — the worst of both.
+    const fn = actions.slice(actions.indexOf('export async function resetAuthenticator'));
+    expect(fn).toMatch(/could NOT set them back to pending/);
+  });
+
+  it('the row refreshes so the display cannot contradict the message beside it', () => {
+    expect(controls).toMatch(/if \(r\?\.ok\) router\.refresh\(\)/);
+  });
+
   it('Activate warns specifically when more than one factor exists', () => {
     // The generic "confirm the time" copy is wrong here: with two factors, confirming
     // the newest one still leaves the other unaccounted for.

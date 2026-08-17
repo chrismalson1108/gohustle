@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { addTeamMember, resetAuthenticator, setTeamStatus, setTeamRole, type ActionResult } from "./actions";
 import ReauthPrompt from "../ReauthPrompt";
 import { useStepUp } from "../useStepUp";
@@ -92,6 +93,7 @@ export function MemberControls({
   isSelf: boolean;
   isAdmin: boolean;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   // Changing someone's role or suspending them is a step-up action.
   const stepUp = useStepUp();
@@ -104,7 +106,14 @@ export function MemberControls({
     const fd = new FormData();
     fd.set("userId", userId);
     for (const [k, v] of Object.entries(fields)) fd.set(k, v);
-    start(async () => { await stepUp.run(() => action(fd)); });
+    start(async () => {
+      const r = await stepUp.run(() => action(fd));
+      // revalidatePath() inside the action marks the route stale, but the client router
+      // can still serve the row it already has — which after a reset shows an
+      // authenticator that no longer exists, i.e. the screen contradicting the message
+      // directly beside it. On a security surface the display must not lag the fact.
+      if (r?.ok) router.refresh();
+    });
   };
 
   const btn = "rounded-lg border border-[var(--line)] px-2.5 py-1 text-xs font-medium hover:bg-[var(--surface)] disabled:opacity-40";
