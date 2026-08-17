@@ -243,3 +243,54 @@ describe('the Activate dialog still consumes it', () => {
     expect(controls).toMatch(/have NOT enrolled an authenticator yet/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requireAdmin throws "forbidden" for FOUR different situations — no membership row, a
+// pending row, a disabled row, and an active row whose role is too low — and /denied
+// answered all four with "This account doesn't have access to this tool."
+//
+// That is true of exactly one of them. On 2026-08-17 a newly invited admin enrolled his
+// authenticator, passed the code prompt, landed here and read it as "wrong account". He
+// had done everything right and was one click from being switched on; his next message
+// was "I have other emails if I need to set it up through another one" — a second
+// account, a second factor, and a second thing for someone to confirm.
+//
+// The gate does not move. Only what it says to someone standing one approval away.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('/denied distinguishes the four ways requireAdmin says no', () => {
+  const fs3 = require('fs');
+  const path3 = require('path');
+  const R3 = path3.join(__dirname, '..');
+  const clean = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const denied = clean(fs3.readFileSync(path3.join(R3, 'admin', 'app', 'denied', 'page.tsx'), 'utf8'));
+  const guard = clean(fs3.readFileSync(path3.join(R3, 'admin', 'lib', 'guard.ts'), 'utf8'));
+
+  it('all four situations are branched', () => {
+    for (const k of ['pending', 'disabled', 'role', 'none']) {
+      expect(denied).toMatch(new RegExp(`\\b${k}\\b`));
+    }
+  });
+
+  it('a pending member is told to do nothing, not that they are unauthorized', () => {
+    expect(denied).toMatch(/Waiting on approval/);
+    // The specific thing that nearly happened: he offered to sign up with another email.
+    expect(denied).toMatch(/different email/);
+  });
+
+  it('the generic string survives for the case with genuinely no row', () => {
+    // Someone who lands here by guessing must still learn nothing.
+    expect(denied).toMatch(/This account doesn&apos;t have access to this tool\.|This account doesn't have access to this tool\./);
+    expect(denied).toMatch(/if \(!row\) return "none"/);
+  });
+
+  it('a lookup failure degrades to the generic copy, never a 500', () => {
+    expect(denied).toMatch(/\} catch \{[\s\S]{0,300}?return "none";/);
+  });
+
+  it('the GUARD itself is unchanged — this is copy, not access', () => {
+    // If softening the message ever softened the check, the trust-on-first-use window
+    // that pending exists to close would be open again.
+    expect(guard).toMatch(/if \(row\.status !== "active"\) throw new AdminAuthError\("forbidden"\)/);
+    expect(guard).toMatch(/if \(!roleSatisfies\(role, minRole\)\) throw new AdminAuthError\("forbidden"\)/);
+  });
+});
