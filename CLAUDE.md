@@ -74,9 +74,21 @@ it, it is not a build rewriting files in place. It may be file modes, a nested
 `node_modules` npm creates and later hoists, or something the `rncoreAutolinkingIos`
 fingerprint reason reads that is not package content at all.
 
-**To find out, capture evidence BEFORE fixing it** — the reinstall destroys the only copy
-of the broken state. `npm pack react-native-maps@<version>` into a temp dir and `diff -r`
-it against the installed tree, and check modes with `find … -exec stat -f '%p %N' {} +`.
+Three measurements on 2026-08-17 narrow it to one shape: the hash IS content-sensitive
+(adding a single file moves it), a clean install is byte-identical to the published
+tarball (`npm pack` + `diff -rq` is silent), and no file was modified in 90 minutes. Those
+reconcile only if the drifted tree was **MISSING** content rather than carrying extra —
+removing files leaves no recent mtime on the survivors and still changes the hash. The
+likely agent is npm pruning during an install, not a build writing anything.
+
+**Capture the broken tree BEFORE fixing it** — the reinstall destroys the only copy, which
+is why three occurrences have produced no proof. `npm pack react-native-maps@<version>`
+into a temp dir and `diff -r` against the installed tree; if the theory holds, the diff
+lists files present in the tarball and absent locally.
+
+**`node scripts/preflight-eas-build.mjs` is the guard.** Run it before every `eas build`
+AND every `eas update`. It fails loudly with the remedy, and it fails loudly when it
+cannot measure — a preflight that shrugs turns "I don't know" into "go ahead".
 
 What IS reliable, three times over: the drift happens, and the reinstall below fixes it.
 
