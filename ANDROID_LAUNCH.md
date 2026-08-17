@@ -28,28 +28,52 @@ is either done or a console/account step below.
 
 ---
 
-## Decide this first — it sets your whole timeline
+## The account — decided and created (2026-08-17)
 
-Google gates production access differently by account type, and this is the long pole:
+**Google Play developer account: `GoHustlr`, Personal, ID `5809739066544181636`, owned by
+`mainmail@gohustlr.com`.** The owning Google account is permanent and cannot be changed.
 
-| | **Personal account** | **Organization account** (Go Hustlr LLC) |
-|---|---|---|
-| D-U-N-S number | not required | **required** — free, but can take up to 30 days |
-| Closed-test gate | **12 testers, opted in 14 continuous days**, before you may apply for production | **exempt** |
-| Best when | you want to start testing today | you want the shortest path to public launch |
+Organization was attempted first and abandoned: it requires a **D-U-N-S number**, and the
+Apple Developer membership turned out to be **enrolled as Individual** (Team `BMCG8D9BLS`),
+so there was no existing D-U-N-S to reuse — only Apple *organization* enrollments issue one.
+A from-scratch D-U-N-S is 5–30 business days, and it blocks the Play account from existing
+at all, which blocks internal testing too. Personal unblocked Android immediately.
 
-You already have **Go Hustlr LLC** (the Stripe account is on it). Because the 12-tester/
-14-day clock and the D-U-N-S wait can run *in parallel*, the fastest sequence is:
+**The cost of that choice, and it is real:**
 
-1. **Request the D-U-N-S number today** (free, dnb.com) — it is the only step with a
-   multi-week floor and nothing else depends on it.
-2. Register the Play account as an **Organization** using the LLC.
-3. The legal business name in Play Console must match the incorporation documents
-   *exactly* — a mismatch is the single most common verification rejection.
+- Before you may go public you need **12 testers opted in for 14 *continuous* days**. Start
+  recruiting now; a tester who opts out resets their own contribution to zero. Run this
+  clock against the closed beta you are already operating.
+- The public developer name is a personal name, not Go Hustlr LLC.
+- Moving to an LLC account later means creating a new developer account and **transferring
+  the app** — not a settings toggle. Request the free D-U-N-S in the background if you
+  think you will want that.
 
-If you would rather not wait on D-U-N-S, register personal and start the 12-tester clock
-immediately — but note that closed beta testers must stay opted in for 14 *continuous*
-days; someone who opts out resets their own contribution to zero.
+**Answers given at signup, and why** (these are on record; keep them consistent):
+
+- *App categories* → **None of the above.** GoHustlr is a marketplace for real-world
+  services, not a financial product. The financial category means offering loans, deposit
+  accounts, investments, wallets or betting — not taking payment for a service. Checking
+  any financial box also **forces an organization account**.
+- *Earning money on Google Play* → **Yes.** The platform fee is revenue from the app
+  (`platform_rate`, `fee_bps`, `fee_tiers`). This is not a Play Billing question.
+
+### Still blocking `Create app`
+
+Two account verifications remain, and **both need you personally**:
+
+1. **Verify access to an Android mobile device** — sign in to the Play Console app on a
+   *physical* Android phone. An emulator was attempted on this machine and could not be
+   made to boot (see Known gaps).
+2. **Verify contact phone number** — requires submitting identity documents for Google
+   approval. As a Personal account, the ID must match the **account holder's name**, not
+   Go Hustlr LLC.
+
+Until both clear, `Create app` stays disabled and nothing can be uploaded.
+
+> Phone numbers must be entered in **E.164** (`+19727439567`) — no spaces or dashes, even
+> though the field renders them. The validator rejects the formatted version with a
+> misleading "include the + symbol and country code" message.
 
 ---
 
@@ -230,19 +254,34 @@ Keep it that way — adding any in-app digital purchase would drag you into Play
 
 ## Known gaps, stated plainly
 
-- **The Android build is not yet verified to compile.** Local Gradle cannot run on this
-  Windows machine — every invocation dies with
-  `java.io.IOException: Unable to establish loopback connection`, before compiling a
-  single file. It is not a project problem (it reproduces with the daemon on and off, with
-  matched JVM args, and outside the tool sandbox); Java is being denied a loopback socket,
-  which on Windows is almost always endpoint-security or firewall software blocking
-  `java.exe`. This also blocks `npm run android` locally. **An EAS cloud build sidesteps it
-  entirely** and is the real verification — nothing here has been proven to compile until
-  that build goes green.
+- **The Android build compiles — verified 2026-08-17.** EAS build `b902766b`: SDK 55.0.0,
+  RN 0.83.10, v1.4.2, versionCode 10, `.aab` in ~15 minutes. This confirms the SDK 54 → 55
+  upgrade is sound on Android and that the changes here (the `RECORD_AUDIO` manifest
+  removal, the Maps meta-data, `expo-system-ui`) do not break the native build. Four
+  earlier Android builds exist, all SDK 54, versionCodes 1–9.
+- **Local Gradle cannot run on this Windows machine.** Every invocation dies with
+  `java.io.IOException: Unable to establish loopback connection` before compiling anything
+  — reproduced with the daemon on and off, with matched JVM args, and with the tool sandbox
+  disabled. Java is being denied a loopback socket, which on Windows is almost always
+  endpoint-security or firewall software blocking `java.exe`. This also blocks
+  `npm run android` locally. EAS cloud builds sidestep it entirely, so it is an
+  inconvenience rather than a blocker — but worth fixing if you want local iteration.
+- **The emulator does not work here either.** `Medium_Tablet` (android-35,
+  `google_apis_playstore`) hangs at adb `offline` and never boots. WHPX virtualization is
+  fine; the failure is graphics — `Failed to load opengl32sw`, then
+  `UpdateLayeredWindowIndirect failed (A device attached to the system is not
+  functioning)`. Not worth further effort, because **an emulator cannot test push at all**:
+  `src/lib/push.js` returns `null` on non-physical devices via `Device.isDevice`.
+- **A physical Android device is required, not optional.** It is the only way to satisfy
+  Google's device verification, and the only way to exercise push, the Stripe payment
+  sheet, Google sign-in, and real-world performance. Buy at the *bottom* of the market, not
+  the top — a Galaxy A17 (~$199) or a refurbished A15/A16 (~$100) matches the hardware your
+  gig-worker users actually carry, so it surfaces jank a flagship would hide. Needs Android
+  13+ (for the `POST_NOTIFICATIONS` runtime prompt), stock Play Services, and unlocked.
 - **The maps key and FCM are placeholders.** A build made right now compiles and installs,
   but the Map view is blank and push does not arrive.
 - **Untested on Android hardware:** Stripe payment sheet, Google sign-in, push delivery,
-  and the map. None can be exercised by the Jest suite (1221 tests, all passing) because
+  and the map. None can be exercised by the Jest suite (1222 tests, all passing) because
   all four are native surfaces. Test them on an internal-track build before opening the
   beta.
 - **Google Pay is off** (`enableGooglePay: false`). Not required; card entry works. Turning
