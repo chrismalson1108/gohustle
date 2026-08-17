@@ -345,6 +345,36 @@ describe('the two-factor gate is wired on BOTH clients', () => {
       expect(read('web/app/(app)/settings/page.tsx')).toMatch(/\/settings\/security/);
     });
   });
+
+  // ── Every web gate lands in the APP, never on the marketing page ──────────
+  //
+  // "/" is web/app/page.tsx — the signed-out marketing hero, with no session check. The
+  // MFA screen sent users there after a correct code, in all four of its navigations,
+  // while login / onboarding / consent / the app layout all used /browse. Reported
+  // 2026-08-17: "typed in MFA, it took me back to home screen, but when I clicked sign in
+  // it took me right back logged in" — the second half being /login noticing the session
+  // the user already had.
+  //
+  // A gate that lands you somewhere indistinguishable from signed-out is a gate people
+  // conclude did not work.
+  it('no auth gate on web sends a signed-in user to the marketing page', () => {
+    const gates = [
+      'web/app/mfa/page.tsx',
+      'web/app/login/page.tsx',
+      'web/app/onboarding/page.tsx',
+      'web/app/consent/page.tsx',
+      'web/app/(app)/layout.tsx',
+    ];
+    const offenders = [];
+    for (const g of gates) {
+      const src = read(g)
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      // Exactly `router.replace("/")` — the root. Sub-paths are fine.
+      if (/router\.(replace|push)\((["'])\/\2\)/.test(src)) offenders.push(g);
+    }
+    expect(offenders).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

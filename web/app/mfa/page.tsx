@@ -18,6 +18,17 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 
+// /browse, not "/". The root route is the MARKETING landing page — it has no session
+// check and renders the signed-out hero — so every navigation on this screen dropped a
+// freshly-verified user onto a page that looks logged out. Reported 2026-08-17: "typed in
+// MFA, it took me back to home screen, but when I clicked sign in it took me right back
+// logged in", which is /login line 49 seeing the session it already had.
+//
+// Every other gate — login, onboarding, consent, and the app layout — already lands on
+// /browse. This screen was the only one of the five that did not, in all four of its
+// navigations.
+const HOME = "/browse";
+
 function formatRecoveryCode(raw: string): string {
   const s = String(raw ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
   return s.length > 4 ? `${s.slice(0, 4)}-${s.slice(4)}` : s;
@@ -43,7 +54,7 @@ export default function MfaPage() {
   const stranded = !session || !needsMfaChallenge;
   useEffect(() => {
     if (!session) router.replace("/login");
-    else if (!needsMfaChallenge) router.replace("/");
+    else if (!needsMfaChallenge) router.replace(HOME);
   }, [session, needsMfaChallenge, router]);
   if (stranded) return null;
 
@@ -62,7 +73,7 @@ export default function MfaPage() {
         return;
       }
       const factor = (factors?.totp ?? []).find((f: { id: string; status: string }) => f.status === "verified");
-      if (!factor) { clearMfaPending(); router.replace("/"); return; }
+      if (!factor) { clearMfaPending(); router.replace(HOME); return; }
 
       const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId: factor.id });
       if (chErr || !ch) { setErr("Couldn't start the check. Please try again."); return; }
@@ -72,7 +83,7 @@ export default function MfaPage() {
       if (vErr) { setErr("That code wasn't accepted. Codes expire quickly — try the current one."); setCode(""); return; }
 
       clearMfaPending();
-      router.replace("/");
+      router.replace(HOME);
     } catch (e) {
       setErr((e as Error).message || "Something went wrong. Please try again.");
     } finally { setBusy(false); }
@@ -92,7 +103,7 @@ export default function MfaPage() {
       // The code removed the factor server-side, so this session is no longer waiting
       // on one. They are password-only now and the Security screen says so.
       clearMfaPending();
-      router.replace("/");
+      router.replace(HOME);
     } catch (e) {
       setErr((e as Error).message || "Something went wrong. Please try again.");
     } finally { setBusy(false); }
