@@ -982,6 +982,19 @@ When a booking is `confirmed` or `completed` and the poster needs to change core
 
 Amendment status values: `'none'` | `'pending'` | `'accepted'` | `'declined'`.
 
+⚠️ **An amendment that silently does not appear is not a bug — it is the safety pin.**
+`guard_bookings_write`'s poster branch pins `amendment_status`, `amendment_note`,
+`review_text`, `earner_rating` and `payment_method` back to `old.*` when the poster is
+suspended or a block exists between the two parties (`20260906055000`). Those five are
+every poster-authored column the earner reads in My Jobs, and the note carries a push —
+so blocking and suspension had to cover them for the same reason they cover messaging
+(`20260730150000`): the counterparty is whoever most likely just reported them. It is a
+silent pin rather than a raise because the block is deliberately silent, and the same
+migration adds the pair to `reviews_insert_auth`, which is the PUBLIC and unredactable
+version of the same act. Lifecycle is untouched — a suspended poster can still decline,
+cancel, complete and verify, because suspension must never strand an escrow hold or
+withhold money already earned.
+
 ## Supabase Schema Notes
 
 Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role` (enum: `earner`/`poster`/`both`), `city`, `skills` (text[] of canonical category labels — see **Categories & skills**), `skill_rates` (jsonb: skill label → hourly rate; the keys must stay in step with `skills`), `recent_category_slugs` (text[], trigger-maintained, owner-private), `radius_miles`, `rating`, `review_count`, `poster_rating`, `poster_review_count`, `xp`, `earnings_total`, `onboarding_done`, `referral_code`, `verified` (bool — drives the Verified badge), `id_verification_status` (`none`/`pending`/`verified`/`rejected`), etc.
