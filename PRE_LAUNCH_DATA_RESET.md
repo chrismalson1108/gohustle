@@ -3,10 +3,41 @@
 Wipes the accumulated **test activity** from the production database so beta users start
 from a clean slate, while leaving **accounts, identity and the legal audit trail intact**.
 
-> **Not yet executed.** Written 2026-07-22 while the app was still TestFlight-only on
-> Stripe **test** keys.
+> ## ✅ EXECUTED 2026-09-06 — database half. Storage still outstanding.
 >
-> ⚠️ **Re-verified against the live schema 2026-09-06, and it was incomplete.** Twelve
+> Run against production before closed beta, on Chris's instruction, with Stripe
+> deliberately left on TEST keys (so §5 was NOT performed: `stripe_accounts`,
+> `stripe_customers` and `app_flags.stripe_mode` are untouched and testers keep their
+> cards and Connect onboarding).
+>
+> **Deleted:** 20 jobs · 90 slots · 21 bookings · 7 payments · 36 messages ·
+> 93 notifications · 5 reviews · 21 badges · 83 assistant messages · 11 reports ·
+> 6 support tickets + 8 ticket messages · 1 gig share · 2 check-ins · 3 payout events ·
+> 1 tip ledger row · 15 client errors, and all derived profile counters reset.
+>
+> **Preserved and verified after the fact:** 16 profiles (9 onboarded — nobody is bounced
+> back through onboarding), 52 legal acceptances (nobody re-consents), 2 ID verifications,
+> 1 student verification, 5 push tokens, 2 allowlist rows, 275 categories, 7
+> `stripe_accounts`, 5 `stripe_customers`, 2 avatars.
+>
+> **Verified in the app:** Browse reads "0 gigs available", Profile reads 0 jobs / $0 /
+> "—" rating, no My Jobs badge, still signed in, no onboarding or consent gate.
+>
+> ⚠️ **STORAGE IS STILL OUTSTANDING** — see the storage step below. 5 objects remain
+> (2 chat-photos, 3 completion-photos, ~670 KB). They are unreachable through the app now
+> that their rows are gone (private buckets whose policies need a booking or message that
+> no longer exists), so this is dead weight rather than exposure. `supabase storage rm`
+> needs CLI ≥ 2.11x; this machine is on 2.106.
+>
+> **Two things a re-run must know.** First, `storage.protect_delete()` raises 42501 on ANY
+> direct `delete from storage.objects` — and because the purge is one atomic block, that
+> single statement rolled the entire thing back on the first attempt. Storage must be a
+> separate step through the Storage API. Second, the CLI parses a leading `--` comment as
+> a flag, so pass the file with `--file`, never inline via `$(cat …)`.
+>
+> Written 2026-07-22 while the app was still TestFlight-only on Stripe **test** keys.
+>
+> ⚠️ **Re-verified against the live schema 2026-09-06 before running, and it was incomplete.** Twelve
 > tables that hold activity did not exist when this was drafted — support threads,
 > safety check-ins, gig share links, Stripe payout events, the promo/bonus ledgers, the
 > assistant's staged actions and the client error sink. Running the original list would
