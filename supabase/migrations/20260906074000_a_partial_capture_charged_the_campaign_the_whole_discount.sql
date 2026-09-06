@@ -228,7 +228,7 @@ on conflict (key) do update set title = excluded.title, why = excluded.why,
 -- ── Prove the campaign is charged what it delivered, and no more ────────────
 do $$
 declare
-  uid uuid; jid uuid; bid uuid; pid uuid; promo uuid; grant_id uuid;
+  uid uuid; jid uuid; jid2 uuid; bid uuid; pid uuid; promo uuid; grant_id uuid;
   spent_before int; spent_after int; benefit int; n_ctl int;
   bid2 uuid; benefit2 int;
 begin
@@ -327,7 +327,12 @@ begin
   raise notice 'registered in the roster run_all_controls actually iterates';
 
   -- ── A FULL capture must be unchanged ──────────────────────────────────────
-  insert into public.bookings (job_id, earner_id, status) values (jid, uid, 'verified')
+  -- Its own gig: bookings_job_id_earner_id_key is one booking per (job, earner)
+  -- whatever the status, so the control case cannot share the partial case's gig.
+  insert into public.jobs (poster_id, title, category, pay, pay_type, location, description, status)
+  values (uid, 'partial capture discount probe — full capture control', 'Odd Jobs', 100, 'flat', 'Probe', 'probe', 'cancelled')
+  returning id into jid2;
+  insert into public.bookings (job_id, earner_id, status) values (jid2, uid, 'verified')
   returning id into bid2;
   update public.bookings
      set amount_cents_quoted = 10000, fee_bps_quoted = 700,
