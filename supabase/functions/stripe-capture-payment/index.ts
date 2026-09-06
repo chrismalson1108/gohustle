@@ -388,20 +388,24 @@ Deno.serve(async (req: Request) => {
         // delivered figure, so the hourly sweep can safely re-run it.
         if (creditCents > 0) {
           try {
-            const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
-              p_amount_cents: gigAmountCents,
-              p_fee_bps: safeBps(payment.fee_bps),
+            // ONE definition of the delivered figure, shared with record_refund
+            // (20260906023000_refund_returns_the_credit_the_capture_delivered.sql). This
+            // used to be computed inline here and a SECOND, different way in the refund
+            // path — which got it wrong on exactly the two shapes this branch produces, a
+            // capture below 100% and any capture carrying a poster discount, so a later
+            // partial refund handed the earner back nothing.
+            //
+            // The RPC reads the row's PERSISTED split, so it is also the figure Stripe
+            // actually settled on rather than the one we asked for (reconcileToStripe may
+            // have moved it) — that is why it runs after the update above.
+            const { data: delivered, error: delErr } = await supabase.rpc('fee_credit_delivered_cents', {
+              p_payment_id: payment.id,
             });
-            if (Number.isFinite(Number(noCreditCalc))) {
-              const noCreditFull = Math.max(0, Number(noCreditCalc) - discountCents);
-              const noCreditAtCapture = Math.min(
-                captureCents,
-                Math.max(Math.round(noCreditFull * capturePct), Number(floorCalc)),
-              );
-              const delivered = Math.max(0, noCreditAtCapture - feeCents);
+            if (delErr) throw delErr;
+            if (Number.isFinite(Number(delivered))) {
               const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
                 p_booking: bookingId,
-                p_delivered_cents: delivered,
+                p_delivered_cents: Math.max(0, Number(delivered)),
               });
               if (retErr) throw retErr;
               if (Number(returned) > 0) {
