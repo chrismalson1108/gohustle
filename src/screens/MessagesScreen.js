@@ -8,6 +8,8 @@ import ScreenHeader from '../components/ScreenHeader';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobsContext';
+import { supabase } from '../lib/supabase';
+import { bookingPosterId } from '../../shared/lifecycle';
 import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchLastMessages, fetchConversationState, markConversationRead, setConversationArchived, isUnread, previewText, notBlocked,
@@ -55,24 +57,55 @@ export default function MessagesScreen({ navigation }) {
     const list = ids.map(id => {
       const pb = posterBookings.find(b => b.id === id);
       const eb = bookings.find(b => b.id === id);
-      let other = null, jobTitle = '', jobId = null;
+      let other = null, jobTitle = '', jobId = null, namePending = false;
       if (pb) {
         other = pb.earner ? { id: pb.earner.id, name: pb.earner.name, avatarInitial: pb.earner.avatarInitial, avatarUrl: pb.earner.avatarUrl } : null;
         jobTitle = pb.job?.title || '';
         jobId = pb.jobId;
       } else if (eb) {
         const job = jobs.find(j => j.id === eb.jobId);
-        other = job?.poster ? { id: job.posterId, name: job.poster.name, avatarInitial: job.poster.avatarInitial, avatarUrl: job.poster.avatarUrl } : null;
+        // The browse feed excludes soft-cancelled gigs and is capped at 200 rows, so a
+        // conversation about a gig the poster removed — or one that has simply aged out
+        // — finds no `job` here. Falling through to `other = null` dropped the whole row
+        // at the filter below while JobsContext.refreshUnread kept counting it: the tab
+        // showed an unread badge for a conversation this screen refused to list, the
+        // push for that message deep-linked to "No messages yet", and the thread could
+        // never be marked read. The booking's own embed carries the poster id (web has
+        // used it for exactly this since its own fix); names are filled in below.
+        const posterId = bookingPosterId(eb, jobs);
+        other = job?.poster
+          ? { id: job.posterId, name: job.poster.name, avatarInitial: job.poster.avatarInitial, avatarUrl: job.poster.avatarUrl }
+          : (posterId ? { id: posterId, name: 'Poster', avatarInitial: 'P', avatarUrl: null } : null);
+        namePending = !job?.poster && !!posterId;
         jobTitle = job?.title || eb.job?.title || '';
         jobId = eb.jobId;
       }
       return {
-        bookingId: id, other, jobTitle, jobId,
+        bookingId: id, other, jobTitle, jobId, namePending,
         lastMsg: last[id], state: st[id],
         unread: isUnread(last[id], st[id], user.id),
         archived: !!st[id]?.archived,
       };
     }).filter(c => c.lastMsg && c.other && notBlocked(c, blockedIds));
+
+    // Put a real name on the rows that came from the embed fallback. One batched read,
+    // and it fails open: a row whose name we can't resolve still lists as "Poster"
+    // rather than vanishing, which is the whole point of the fallback.
+    const missing = [...new Set(list.filter(c => c.namePending).map(c => c.other.id))];
+    if (missing.length) {
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, name, avatar_initial, avatar_url')
+          .in('id', missing);
+        const byId = Object.fromEntries((profs || []).map(p => [p.id, p]));
+        list.forEach(c => {
+          const p = c.namePending ? byId[c.other.id] : null;
+          if (p) { c.other = { id: p.id, name: p.name, avatarInitial: p.avatar_initial, avatarUrl: p.avatar_url }; c.namePending = false; }
+        });
+      } catch (_) { /* keep the placeholder — a listed thread beats a hidden one */ }
+    }
+
     list.sort((a, b) => new Date(b.lastMsg.created_at) - new Date(a.lastMsg.created_at));
     setConvos(list);
     setLoading(false);
