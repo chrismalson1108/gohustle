@@ -21,6 +21,7 @@ import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
 import { categoryLabel, sameCategory } from '../../shared/categories.js';
 import { bookingBlockReason } from '../../shared/filters.js';
+import { posterDisplayName } from '../../shared/transforms.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
 import { getFeeBps, feeBpsSync, platformFeeCents, effectiveFeeLabel, feeLabel, feeBreakdown } from '../lib/pricing';
@@ -291,7 +292,7 @@ export default function JobDetailScreen({ route, navigation }) {
         >
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setRateVisible(false)} />
           <View style={[styles.rateSheet, { paddingBottom: insets.bottom + 18 }]}>
-            <Text style={styles.rateTitle}>How was {job?.posterName || 'the poster'}?</Text>
+            <Text style={styles.rateTitle}>How was {posterDisplayName(job) || 'the poster'}?</Text>
             <Text style={styles.rateSub}>Your rating is public on their profile.</Text>
             <View style={styles.rateStars}>
               {[1, 2, 3, 4, 5].map((n) => (
