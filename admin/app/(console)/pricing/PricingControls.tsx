@@ -123,7 +123,10 @@ export function GrantDirect({ promos }: { promos: { id: string; name: string }[]
       </label>
       <label className="flex flex-1 flex-col gap-1 text-xs text-[var(--muted)]">
         Emails or usernames
-        <textarea name="emails" rows={2} placeholder="one@school.edu, two@school.edu" className="min-w-[18rem] rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-sm" />
+        {/* Mixing the two is supported and the placeholder now says so — this box used to
+            drop every email in a list that also contained a username, and the only clue
+            was a count that did not add up. */}
+        <textarea name="emails" rows={2} placeholder="one@school.edu, sam_k, two@school.edu" className="min-w-[18rem] rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-sm" />
       </label>
       <button type="submit" disabled={pending} className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40">
         {pending ? "Granting…" : "Grant"}
