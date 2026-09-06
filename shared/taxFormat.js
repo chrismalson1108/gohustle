@@ -2,6 +2,25 @@
 
 import { bookingNetDollars } from './pricing.js';
 
+/**
+ * Today's date in the USER's time zone, as YYYY-MM-DD.
+ *
+ * `new Date().toISOString().slice(0, 10)` is the UTC date, and this is a US college
+ * market: from about 7pm Eastern (4pm Pacific) onward it is already tomorrow in UTC,
+ * so the date prefilled into "Add expense" and stamped on an auto-logged gig drive was
+ * the wrong day every evening. `expenses.date` is a DATE and the year filter, the
+ * per-job grouping and the year-end CSV all read it, while the year those are scoped
+ * to comes from the LOCAL clock (new Date().getFullYear()) — so the two disagreed. A
+ * receipt logged at 9pm on 31 December filed itself into the NEXT tax year.
+ *
+ * Built from local components for that reason. Callers may pass a Date to format.
+ */
+export function localDateISO(dt = new Date()) {
+  const d = dt instanceof Date ? dt : new Date(dt);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Deductible categories aligned to a gig worker's Schedule C.
 export const EXPENSE_CATEGORIES = [
   { id: 'supplies',  label: 'Supplies',         ion: 'cube-outline' },

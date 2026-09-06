@@ -278,6 +278,12 @@ declare module "@gohustlr/shared" {
   export function isAdult(dob: string | Date | null | undefined, now?: Date): boolean;
 
   // ── taxFormat ──
+  // Today (or a given Date) in the VIEWER's time zone as YYYY-MM-DD — never the UTC
+  // date, which is already tomorrow for most of the US every evening.
+  // Overloaded because the no-argument call cannot fail: `new Date()` is always a
+  // valid date, and making every caller null-check today's date would be noise.
+  export function localDateISO(): string;
+  export function localDateISO(dt: Date | string | number): string | null;
   export const EXPENSE_CATEGORIES: { id: string; label: string; ion: string }[];
   export const INCOME_SOURCES: { id: string; label: string; ion: string }[];
   export function categoryMeta(id: string): { id: string; label: string; ion: string };

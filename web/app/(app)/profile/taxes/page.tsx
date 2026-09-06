@@ -31,6 +31,7 @@ import {
   sourceMeta,
   buildTaxSummaryCSV,
   platformIncomeForYear,
+  localDateISO,
 } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -55,7 +56,10 @@ import Button from "@/components/ui/Button";
 import { Input, Textarea, Label } from "@/components/ui/Field";
 import { money, classNames } from "@/lib/format";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The USER's local date, not the UTC one. `toISOString().slice(0, 10)` rolls over at
+// 7pm Eastern, so an evening entry was dated tomorrow and a 31 December one landed in
+// the next tax year — while the year filter reading it uses the local clock.
+const todayISO = () => localDateISO();
 
 // Map shared category/source ids to lucide icons (web equivalent of the mobile
 // Ionicons). Falls back to a generic icon.

@@ -13,13 +13,16 @@ import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage'
 import {
   EXPENSE_CATEGORIES, categoryMeta, fetchExpenses, addExpense, deleteExpense,
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
-  expensesByJob, platformIncomeForYear,
+  expensesByJob, platformIncomeForYear, localDateISO,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The USER's local date, not the UTC one. `toISOString().slice(0, 10)` rolls over at
+// 7pm Eastern, so an evening entry was dated tomorrow and a 31 December one landed in
+// the next tax year — while the year filter reading it uses the local clock.
+const todayISO = () => localDateISO();
 const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
