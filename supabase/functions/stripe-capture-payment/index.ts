@@ -96,6 +96,74 @@ function reconcileToStripe(
   return { receivedCents: received, feeCents: fee, earnerCents: received - fee, corrected: true };
 }
 
+// ── Give back the part of the credit a below-100% settlement could not use ───
+//
+// consume_fee_credit debits the credit at BOOKING, sized to the fee on the FULL gig.
+// Settle below 100% and the fee shrinks, so the credit can only offset a smaller
+// amount — and the rest was simply gone: the ledger row stays 'applied',
+// release_booking_benefits early-returns once captured, and its trigger fires only on
+// declined/cancelled.
+//
+// Measured on a $200 gig with a 765c credit at 50%: the credit delivered 355c of value
+// and 410c evaporated, more than half.
+//
+// settle_booking_benefits already relaxes a PROMOTION's budget on this exact event; it
+// iterates promo_redemptions only, so referral credits were left out of a rule the
+// platform already follows. And consume_fee_credit itself refuses to forfeit a
+// partially-usable credit — "splitting rather than forfeiting is the difference between
+// a credit and a coupon". This is that, one step later.
+//
+// Delivered value = what the fee WOULD have been without the credit, minus what it
+// actually is. Non-fatal: the money has moved, and a bookkeeping retry must never fail a
+// settled capture. return_unused_fee_credit is idempotent on the DELIVERED figure, so
+// the hourly sweep — and the recovery path below — can safely re-run it.
+//
+// EXTRACTED so it has two call sites. It used to be inline in the partial branch only,
+// which meant it was reachable exactly once: on the first attempt, and never again. If
+// that attempt died after the Stripe capture the credit was destroyed silently, because
+// nothing looks in this direction (ctl_credit_stranded_on_dead_booking only checks a
+// credit still 'applied' on a declined/cancelled booking).
+async function returnUnusedFeeCredit(
+  supabase: SupabaseClient,
+  args: {
+    bookingId: string;
+    paymentId: string;
+    gigAmountCents: number;
+    feeBps: number;
+    discountCents: number;
+    captureCents: number;
+    capturePct: number;
+    feeCents: number;
+    floorCents: number;
+  },
+): Promise<void> {
+  try {
+    const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
+      p_amount_cents: args.gigAmountCents,
+      p_fee_bps: args.feeBps,
+    });
+    if (!Number.isFinite(Number(noCreditCalc))) return;
+    const noCreditFull = Math.max(0, Number(noCreditCalc) - args.discountCents);
+    const noCreditAtCapture = Math.min(
+      args.captureCents,
+      Math.max(Math.round(noCreditFull * args.capturePct), args.floorCents),
+    );
+    const delivered = Math.max(0, noCreditAtCapture - args.feeCents);
+    const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
+      p_booking: args.bookingId,
+      p_delivered_cents: delivered,
+    });
+    if (retErr) throw retErr;
+    if (Number(returned) > 0) {
+      console.log(`stripe-capture-payment: returned ${returned}c of unused fee credit on ${args.bookingId}`);
+    }
+  } catch (e) {
+    await logServerError('stripe-capture-payment',
+      `could not return unused fee credit on booking ${args.bookingId}: ${String((e as Error)?.message ?? e)}`,
+      { booking_id: args.bookingId, payment_id: args.paymentId });
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -177,9 +245,21 @@ Deno.serve(async (req: Request) => {
     }
 
     let earnerAmountCents = payment.earner_amount_cents ?? 0;
-    // The final gig value this capture settles at, for the promo budget. Null means the
-    // capture branch never ran (already captured) and there is nothing new to settle.
+    // The final gig value this capture settles at, for the promo budget. Null means no
+    // settlement is attributable to this request at all.
     let capturedGigCents: number | null = null;
+    // The fraction of the authorization that was ACTUALLY collected, for the dispute
+    // record. Set alongside capturedGigCents so the two can never disagree, and never
+    // taken from the caller's `pct` — see the recovery block below.
+    let settledPct = 1;
+
+    // Hoisted out of the capture block: the recovery path below needs the same three
+    // immutable inputs. amount_cents is never rewritten, and fee_bps / fee_credit_cents /
+    // poster_discount_cents are pinned by trg_z_pin_payment_fee_bps, so every figure
+    // derived from them is stable across retries.
+    const discountCents = Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0));
+    const creditCents = Math.max(0, Math.trunc(Number(payment.fee_credit_cents) || 0));
+    const gigAmountCents = (payment.amount_cents || 0) + discountCents;
 
     // Re-check the earner's Connect account is STILL payout-capable before we move
     // money. It was verified at accept time, but Stripe can restrict an account in
@@ -223,14 +303,11 @@ Deno.serve(async (req: Request) => {
       // Replaces `Math.round(amount_cents * 0.10)` in two places. The rate is no
       // longer a literal, but the idempotency property is unchanged and is still the
       // reason this is derived rather than read from the mutable fee_cents column.
-      // Recover the ORIGINAL gig amount: amount_cents is what Stripe is holding, which
-      // with a poster discount is already net of it. Every input here is immutable —
-      // amount_cents is never rewritten, and fee_bps / fee_credit_cents /
-      // poster_discount_cents are pinned by trg_z_pin_payment_fee_bps — so this stays
-      // idempotent under retry, which is the property the partial branch depends on.
-      const discountCents = Math.max(0, Math.trunc(Number(payment.poster_discount_cents) || 0));
-      const creditCents = Math.max(0, Math.trunc(Number(payment.fee_credit_cents) || 0));
-      const gigAmountCents = (payment.amount_cents || 0) + discountCents;
+      // The ORIGINAL gig amount, discount and credit are hoisted above the block: every
+      // input is immutable — amount_cents is never rewritten, and fee_bps /
+      // fee_credit_cents / poster_discount_cents are pinned by trg_z_pin_payment_fee_bps
+      // — so this stays idempotent under retry, which is the property the partial branch
+      // depends on.
       // Defaults to the full authorized value; the partial branch narrows it.
       capturedGigCents = gigAmountCents;
 
@@ -349,70 +426,26 @@ Deno.serve(async (req: Request) => {
           earner_amount_cents: settled.earnerCents,
         }).eq('id', payment.id);
 
-        // ── Give back the part of the credit this capture could not use ──────
+        // The unused part of the fee credit goes back to the earner's ledger — see
+        // returnUnusedFeeCredit above for why, and why it runs AFTER the status flip
+        // rather than before it (money first, bookkeeping after; the release is one-way
+        // and must never sit on a path that can still abort).
         //
-        // consume_fee_credit debits the credit at BOOKING, sized to the fee on the FULL
-        // gig. Settle below 100% and the fee shrinks, so the credit can only offset a
-        // smaller amount — and the rest was simply gone: the ledger row stays 'applied',
-        // release_booking_benefits early-returns once captured, and its trigger fires
-        // only on declined/cancelled.
-        //
-        // Measured on a $200 gig with a 765c credit at 50%: the credit delivered 355c of
-        // value and 410c evaporated, more than half.
-        //
-        // settle_booking_benefits already relaxes a PROMOTION's budget on this exact
-        // event; it iterates promo_redemptions only, so referral credits were left out of
-        // a rule the platform already follows. And consume_fee_credit itself refuses to
-        // forfeit a partially-usable credit — "splitting rather than forfeiting is the
-        // difference between a credit and a coupon". This is that, one step later.
-        //
-        // ── IT RUNS HERE, AFTER THE CAPTURE — NOT BEFORE ─────────────────────
-        //
-        // Releasing a credit is one-way as far as this function is concerned: the RPC is
-        // idempotent on the DELIVERED figure, so a later call carrying a LARGER delivered
-        // value returns 0 rather than taking the release back. So it must never sit on a
-        // path that can still abort. It used to sit above claimForCapture, and that abort
-        // was reachable — the earner claims the same ghosted gig, earner-claim-payment:285
-        // flips payments.status to 'captured', our claim then matches zero rows and 409s
-        // BOOKING_CHANGED with 410c of the $200/765c case already handed back against a
-        // capture that never happened, free to be spent on another booking. Nothing would
-        // have caught it either: ctl_credit_stranded_on_dead_booking only looks the other
-        // way (still 'applied' on a declined/cancelled booking).
-        //
-        // Below the status flip is also the same rule settle_booking_benefits follows a
-        // few lines down — money first, bookkeeping after.
-        //
-        // Delivered value = what the fee WOULD have been without the credit, minus what
-        // it actually is. Non-fatal: the money has moved, and a bookkeeping retry must
-        // never fail a settled capture. return_unused_fee_credit is idempotent on the
-        // delivered figure, so the hourly sweep can safely re-run it.
+        // `settledPct` records what was ACTUALLY collected so the recovery block after
+        // the capture can re-derive this same call from the ledger alone.
+        settledPct = capturePct;
         if (creditCents > 0) {
-          try {
-            const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
-              p_amount_cents: gigAmountCents,
-              p_fee_bps: safeBps(payment.fee_bps),
-            });
-            if (Number.isFinite(Number(noCreditCalc))) {
-              const noCreditFull = Math.max(0, Number(noCreditCalc) - discountCents);
-              const noCreditAtCapture = Math.min(
-                captureCents,
-                Math.max(Math.round(noCreditFull * capturePct), Number(floorCalc)),
-              );
-              const delivered = Math.max(0, noCreditAtCapture - feeCents);
-              const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
-                p_booking: bookingId,
-                p_delivered_cents: delivered,
-              });
-              if (retErr) throw retErr;
-              if (Number(returned) > 0) {
-                console.log(`stripe-capture-payment: returned ${returned}c of unused fee credit on ${bookingId}`);
-              }
-            }
-          } catch (e) {
-            await logServerError('stripe-capture-payment',
-              `could not return unused fee credit on booking ${bookingId}: ${String((e as Error)?.message ?? e)}`,
-              { booking_id: bookingId, payment_id: payment.id });
-          }
+          await returnUnusedFeeCredit(supabase, {
+            bookingId,
+            paymentId: payment.id,
+            gigAmountCents,
+            feeBps: safeBps(payment.fee_bps),
+            discountCents,
+            captureCents,
+            capturePct,
+            feeCents,
+            floorCents: Number(floorCalc),
+          });
         }
       } else {
         // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
@@ -445,6 +478,67 @@ Deno.serve(async (req: Request) => {
           fee_cents: settled.feeCents,
           earner_amount_cents: settled.earnerCents,
         }).eq('id', payment.id);
+      }
+    }
+
+    // ── The retry after this function died mid-flight ──────────────────────────
+    //
+    // Everything below the Stripe call — settle_booking_benefits, the disputes row, the
+    // unused fee credit — runs AFTER the money has irreversibly moved, and up to eight
+    // awaited round trips sit in that window (the capture, an optional error log, the
+    // payments update, two fee RPCs, return_unused_fee_credit, credit_earnings, the
+    // dispute lookup). Lose the instance in there — an SDK read timeout on the capture
+    // response, an edge deploy, an eviction — and the capture landed while none of the
+    // bookkeeping did. This function's own `.update({ status: 'captured' })` (or, if it
+    // died before that, payment_intent.succeeded) leaves the row settled, and the webhook
+    // writes NO disputes row, calls NO settle_booking_benefits and returns NO credit.
+    //
+    // The poster's retry then arrived on an already-'captured' row, skipped the block
+    // above, left capturedGigCents null and returned success. So a 50% payout kept no
+    // dispute record anywhere — the /disputes queue, ctl_dispute_open_beyond_sla and
+    // earner-claim-payment's DISPUTE_OPEN gate all read that table — and the earner's
+    // unused referral credit was destroyed with nothing looking in that direction.
+    //
+    // Re-derive the fact from the LEDGER, never from the caller. `pct` is only what THIS
+    // request asks for; `earner_amount_cents + fee_cents` is what was actually collected,
+    // and it is short of the immutable `amount_cents` exactly when a partial capture
+    // happened. That preserves the anti-fabrication property the dispute gate below was
+    // added for: a poster POSTing {pct: 0.5} at a FULLY settled booking still records
+    // nothing, because the row says the whole amount was taken.
+    //
+    // Safe to run on every already-captured retry: settle_booking_benefits is a no-op
+    // once settled_at is set, and return_unused_fee_credit is idempotent on the delivered
+    // figure. It also repairs the same loss on a FULL capture that aborted before its
+    // settle call.
+    if (capturedGigCents === null && payment.status === 'captured') {
+      const settledTotal = (payment.earner_amount_cents ?? 0) + (payment.fee_cents ?? 0);
+      const authorizedTotal = payment.amount_cents || 0;
+      if (settledTotal > 0 && authorizedTotal > 0) {
+        const observedPct = Math.min(1, settledTotal / authorizedTotal);
+        settledPct = observedPct;
+        // The gig value this settlement really landed at, scaling the discount the same
+        // way the partial branch does so the promo budget is charged one figure.
+        capturedGigCents = settledTotal + Math.round(discountCents * observedPct);
+
+        if (creditCents > 0 && settledTotal < authorizedTotal) {
+          const { data: floorRecalc, error: floorRecalcErr } = await supabase.rpc('platform_fee_cents', {
+            p_amount_cents: settledTotal,
+            p_fee_bps: 0,
+          });
+          if (!floorRecalcErr && Number.isFinite(Number(floorRecalc))) {
+            await returnUnusedFeeCredit(supabase, {
+              bookingId,
+              paymentId: payment.id,
+              gigAmountCents,
+              feeBps: safeBps(payment.fee_bps),
+              discountCents,
+              captureCents: settledTotal,
+              capturePct: observedPct,
+              feeCents: payment.fee_cents ?? 0,
+              floorCents: Number(floorRecalc),
+            });
+          }
+        }
       }
     }
 
@@ -484,12 +578,12 @@ Deno.serve(async (req: Request) => {
     // (the client no longer inserts this). Idempotent per booking so a capture retry
     // doesn't duplicate the row.
     //
-    // ── Gated on a capture HAVING HAPPENED, not on the pct the caller asked for ──
+    // ── Gated on a REDUCED capture HAVING HAPPENED, not on the pct the caller asked ──
     //
-    // `capturedGigCents` is assigned only inside the `payment.status !== 'captured'`
-    // block, so it stays null on a retry against an already-settled payment — which is
-    // exactly the flag the settle call above already uses. `capturePctFinal` is just the
-    // caller's request, and the booking gate admits 'verified'.
+    // `settledPct` is what the ledger says was collected — set in the partial branch, and
+    // re-derived from earner_amount_cents + fee_cents vs amount_cents on the recovery
+    // path above. `capturePctFinal` is only this request's ASK, and the booking gate
+    // admits 'verified', so it can never be the thing that authorises the record.
     //
     // Without this, a poster could POST {pct: 0.5, disputeReason: '…'} at their OWN
     // fully-settled booking and fabricate a "50% paid" dispute. No money moves — capture
@@ -500,7 +594,7 @@ Deno.serve(async (req: Request) => {
     //   · it is a false entry in the only server-authored dispute log, rendered as fact on
     //     three console pages;
     //   · ctl_dispute_open_beyond_sla opens a HIGH finding on it after 14 days.
-    if (capturedGigCents !== null && capturePctFinal < 1) {
+    if (capturedGigCents !== null && capturePctFinal < 1 && settledPct < 1) {
       const { data: existingDispute } = await supabase
         .from('disputes').select('id').eq('booking_id', bookingId).maybeSingle();
       if (!existingDispute) {
@@ -519,7 +613,8 @@ Deno.serve(async (req: Request) => {
           booking_id: bookingId,
           raised_by: user.id,
           reason: String(disputeReason).trim().slice(0, 500),
-          pct_paid: Math.round(capturePctFinal * 100),
+          // What was actually paid, from the ledger — not what this request asked for.
+          pct_paid: Math.round(settledPct * 100),
           photos,
         });
       }
