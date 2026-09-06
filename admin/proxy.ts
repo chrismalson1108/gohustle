@@ -68,5 +68,19 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Skip static assets; run on pages and server-action posts.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
+  //
+  // /api is excluded, and that exclusion is load-bearing. Those handlers are called by
+  // machines — the Vercel cron that drives /api/controls-heartbeat authenticates with a
+  // shared secret and carries no session cookie, so `user` is null and the redirect
+  // above would answer it with a 307 to /login. Vercel's cron log would record a 2xx
+  // after following it and report the invocation as fine; the heartbeat would never
+  // once run. A monitoring path that fails by looking successful is the exact shape it
+  // exists to catch.
+  //
+  // The trade is explicit: nothing under /api gets even the UX-level session check, so
+  // EVERY route handler there must authenticate itself. Today that is the CRON_SECRET
+  // bearer check in controls-heartbeat, which fails closed when the secret is unset.
+  // Handlers that serve user data live outside /api (see users/[id]/export) and go
+  // through requireAdmin, which is the real enforcement either way.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|api/).*)"],
 };

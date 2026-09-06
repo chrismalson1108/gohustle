@@ -245,6 +245,54 @@ export function isJobBookable(job) {
 }
 
 /**
+ * The slots an earner could actually pick right now: untaken, and either flexible
+ * (no start time — "any time") or still ahead of us. Mirrors SlotPicker, which HIDES
+ * past slots and DISABLES taken ones, so the button and the chips can never disagree.
+ */
+export function selectableSlots(job, nowMs = Date.now()) {
+  return (job?.slots || []).filter(
+    s => !s.taken && (!s.startsAt || new Date(s.startsAt).getTime() > nowMs)
+  );
+}
+
+/**
+ * Why this gig cannot be booked with this selection — null when it can.
+ *
+ * THE BUG THIS EXISTS FOR: JobDetailScreen refused only when the job had DATED slots
+ * and none was selectable. A gig whose only slot is the undated "Flexible — Contact to
+ * Schedule" one, already taken by an accepted earner, matched neither guard: the
+ * dated-slot check was skipped because nothing carried a startsAt, and the
+ * "pick a time" check was skipped because there were no selectable slots to pick. So
+ * the footer read "Book this gig" and booking inserted a row with slot_id = null —
+ * outside bookings_one_active_per_slot (which is scoped `where slot_id is not null`),
+ * with no schedule for earner-claim-payment to settle against (it returns NO_SCHEDULE
+ * forever), and reported by ctl_live_booking_without_schedule_anchor as 'no_slot_id'.
+ * The same defect was found and fixed on the web client in f91ab4f; this is the rule
+ * both clients now read from one place.
+ *
+ * A gig with NO slots at all is left bookable, matching isJobBookable: PostJob and
+ * EditJob always attach a Flexible slot, so an empty array is anomalous legacy data
+ * and refusing on it would break bookings that work today.
+ *
+ * Reasons: 'all_slots_taken' | 'slots_expired' | 'select_slot' | 'slot_taken'.
+ */
+export function bookingBlockReason(job, selectedSlotId, nowMs = Date.now()) {
+  const slots = job?.slots || [];
+  const open = selectableSlots(job, nowMs);
+  if (slots.length > 0 && open.length === 0) {
+    // Distinguish "someone got there first" from "this listing is finished" — they
+    // lead to completely different next steps, the same split the assistant makes.
+    const anyFuture = slots.some(s => !s.startsAt || new Date(s.startsAt).getTime() > nowMs);
+    return anyFuture ? 'all_slots_taken' : 'slots_expired';
+  }
+  if (slots.length === 0) return null;
+  if (!selectedSlotId) return 'select_slot';
+  // The chosen slot can go stale — realtime can flip `taken` while the sheet is open.
+  if (!open.some(s => s.id === selectedSlotId)) return 'slot_taken';
+  return null;
+}
+
+/**
  * Statuses that mean "this viewer already has this gig" — it should leave their Browse
  * feed even though it may still be bookable by someone else.
  *

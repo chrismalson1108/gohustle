@@ -146,6 +146,54 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
     console.error("admin deleteUserCascade: escrow release failed (continuing)", e);
   }
 
+  // 2b. Delete the card on file, and the Connect account, AT STRIPE.
+  //
+  // Mirrors delete-account step 2b, and for the same reason: step 2 only voids open
+  // holds, and nothing ever deleted the Stripe CUSTOMER — created with the user's real
+  // email and name by stripe-create-setup-intent, with their card attached and
+  // off-session charging enabled. Deleting the local rows (which step 4's cascade does
+  // here) only drops OUR pointer; the object and the card live on at the processor,
+  // where an erasure verification finds them and nothing in the app can remove them.
+  //
+  // `customers.del` detaches every attached PaymentMethod; Stripe keeps the charge
+  // history it is obliged to keep. Connect is attempted the same way but allowed to
+  // fail — Stripe refuses to delete an account with a positive balance, and that
+  // refusal protects money still owed to the earner. Best-effort throughout: a
+  // compliance deletion must not be blocked on Stripe being reachable.
+  try {
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (stripeKey) {
+      const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
+      const [{ data: cust }, { data: acct }] = await Promise.all([
+        service.from("stripe_customers").select("customer_id").eq("user_id", userId).maybeSingle(),
+        service.from("stripe_accounts").select("account_id").eq("user_id", userId).maybeSingle(),
+      ]);
+      if (cust?.customer_id) {
+        try {
+          await stripe.customers.del(cust.customer_id);
+        } catch (e) {
+          if ((e as { statusCode?: number })?.statusCode !== 404) {
+            console.error("admin deleteUserCascade: stripe customer delete failed", e);
+          }
+        }
+      }
+      if (acct?.account_id) {
+        try {
+          await stripe.accounts.del(acct.account_id);
+        } catch (e) {
+          if ((e as { statusCode?: number })?.statusCode !== 404) {
+            console.error(
+              "admin deleteUserCascade: stripe connect account kept (Stripe refused deletion — likely a positive balance)",
+              e,
+            );
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("admin deleteUserCascade: stripe object cleanup failed (continuing)", e);
+  }
+
   // 3. Scrub the support queue's copy of this person's identity. MUST run before the
   // auth delete, while support_tickets.user_id still points at them.
   //

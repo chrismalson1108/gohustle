@@ -4,7 +4,18 @@ import { audit } from "@/lib/audit";
 // GDPR/CCPA data-access export: dumps everything the platform holds about a user
 // across all user-linked tables + auth + storage into one JSON download. Admin
 // only; audited. Best-effort per table (a missing table/column is recorded, not
-// fatal) so the export stays complete as the schema evolves.
+// fatal) so one renamed column cannot fail the whole download.
+//
+// ⚠️ "Best-effort per table" is exactly why this list cannot be trusted to stay
+// complete on its own: a table that is simply ABSENT from it produces no error and
+// no marker, so an incomplete export is indistinguishable from a complete one. It
+// had drifted — notification_preferences, gig_shares, promo_grants, bonus_ledger,
+// client_errors, moderation_flags, stripe_payouts and the whole promo family were
+// missing, as was every table that hangs off a job/booking/ticket rather than
+// naming the user directly (see DERIVED below). `__tests__/exportCoverage.test.js`
+// now enumerates every table in supabase/ with a profiles/auth FK and fails unless
+// it is exported here or excused there with a reason — the same shape as the
+// delete path's bucket list, which drifted twice before it was asserted.
 const TABLES: { t: string; cols: string[] }[] = [
   { t: "profiles", cols: ["id"] },
   { t: "legal_acceptances", cols: ["user_id"] },
@@ -35,7 +46,19 @@ const TABLES: { t: string; cols: string[] }[] = [
   { t: "stripe_customers", cols: ["user_id"] },
   { t: "assistant_threads", cols: ["user_id"] },
   { t: "assistant_messages", cols: ["user_id"] },
+  { t: "assistant_pending_actions", cols: ["user_id"] },
   { t: "support_tickets", cols: ["user_id"] },
+  { t: "notification_preferences", cols: ["user_id"] },
+  { t: "gig_shares", cols: ["created_by"] },
+  { t: "promo_grants", cols: ["user_id"] },
+  { t: "promo_redemptions", cols: ["user_id"] },
+  { t: "promo_redeem_attempts", cols: ["user_id"] },
+  { t: "promo_codes", cols: ["bound_user_id"] },
+  { t: "bonus_ledger", cols: ["user_id"] },
+  { t: "stripe_payouts", cols: ["user_id"] },
+  { t: "client_errors", cols: ["user_id"] },
+  { t: "moderation_flags", cols: ["user_id"] },
+  { t: "categories", cols: ["created_by"] },
 ];
 // `certificates` was missing here too (same omission as both delete paths), and
 // `support-photos` was missing until 2026-09-05 — so a data-access request answered
@@ -96,6 +119,70 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       tables[t] = { error: e instanceof Error ? e.message : String(e) };
     }
   }
+
+  // ── DERIVED ────────────────────────────────────────────────────────────────
+  // Some of the subject's own data is held in tables that never name them: it hangs
+  // off one of their jobs, bookings, payments or tickets. A "column equals this user
+  // id" list cannot reach any of it, and the omission is silent.
+  //
+  // The worst case was `bookings`, filtered on earner_id alone: a user who HIRES
+  // rather than works got their jobs exported but not one of the bookings on them —
+  // and `payments`, the actual record of what they were charged, appeared nowhere in
+  // the file at all. A subject-access request from a poster returned an export with
+  // their entire transaction history missing and nothing saying so.
+  const rowIds = (rows: unknown, key = "id"): string[] =>
+    Array.isArray(rows)
+      ? [...new Set(rows.map((r) => (r as Record<string, unknown>)[key]).filter(Boolean))].map(String)
+      : [];
+
+  // PostgREST puts .in() lists in the query string, so a heavy account could build a
+  // URL the gateway truncates or rejects — which would read as "no rows". Chunk it.
+  const selectIn = async (table: string, col: string, ids: string[]) => {
+    const rows: Record<string, unknown>[] = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await ctx.service
+        .from(table)
+        .select("*")
+        .in(col, ids.slice(i, i + 200));
+      if (error) throw new Error(error.message);
+      rows.push(...((data ?? []) as Record<string, unknown>[]));
+    }
+    return rows;
+  };
+
+  const derive = async (name: string, run: () => Promise<unknown>) => {
+    try {
+      tables[name] = await run();
+    } catch (e) {
+      tables[name] = { error: e instanceof Error ? e.message : String(e) };
+    }
+    return Array.isArray(tables[name]) ? (tables[name] as Record<string, unknown>[]) : [];
+  };
+
+  const jobIds = rowIds(tables.jobs);
+  const ticketIds = rowIds(tables.support_tickets);
+
+  const posterBookings = await derive("bookings_as_poster", () =>
+    selectIn("bookings", "job_id", jobIds),
+  );
+  const bookingIds = [...new Set([...rowIds(tables.bookings), ...rowIds(posterBookings)])];
+
+  const payments = await derive("payments", () => selectIn("payments", "booking_id", bookingIds));
+  await derive("refund_ledger", () => selectIn("refund_ledger", "payment_id", rowIds(payments)));
+  await derive("safety_checkins", () => selectIn("safety_checkins", "booking_id", bookingIds));
+  await derive("job_slots", () => selectIn("job_slots", "job_id", jobIds));
+  await derive("job_requirements", () => selectIn("job_requirements", "job_id", jobIds));
+  await derive("job_locations", () => selectIn("job_locations", "job_id", jobIds));
+  // The user's own support thread, both sides. `admin_id` is the agent's identity, not
+  // the subject's data — same reasoning as REPORTER_SAFE_EXPORT below. The body is kept
+  // because the subject was sent it.
+  await derive("support_ticket_messages", async () =>
+    (await selectIn("support_ticket_messages", "ticket_id", ticketIds)).map((m) => ({
+      ...m,
+      admin_id: m.admin_id ? "[redacted — support agent identity]" : null,
+    })),
+  );
+
   // REPORTER_SAFE_EXPORT — reports and blocks are two-sided, and only ONE side is
   // this user's own data.
   //

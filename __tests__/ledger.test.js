@@ -129,6 +129,52 @@ describe('ledgerCsv', () => {
     const csv = ledgerCsv([entry({ title: 'Bob\'s "big" move' })], 'earner');
     expect(csv).toContain('"Bob\'s ""big"" move"');
   });
+
+  // The export is dated in LOCAL time because everything that selected and grouped
+  // those rows was: rangeBounds() bounds a tax year with new Date(y, 0, 1), byMonth()
+  // keys on getFullYear()/getMonth(), and the screen prints toLocaleDateString(). A UTC
+  // date in the file files a row outside the year the statement claims to cover, and
+  // the person exporting it is reconciling against it.
+  //
+  // process.env.TZ cannot be used to force a zone here — jest sandboxes process.env, so
+  // assigning it never reaches V8's timezone notification. So the case is built from
+  // THIS machine's offset instead, in whichever direction it runs.
+  const csvDate = (at) => ledgerCsv([entry({ at })], 'earner').split('\n')[1].split(',')[0].replace(/"/g, '');
+  const pad = (n) => String(n).padStart(2, '0');
+  const localDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // An instant on one side of local midnight whose UTC calendar day is the other one.
+  // West of UTC that is the last half hour of 31 Dec; east of it, the first half hour
+  // of 1 Jan. Exactly at UTC no such instant exists, and the source guard below is what
+  // covers that machine.
+  const westOfUtc = new Date(2027, 0, 1).getTimezoneOffset() > 0;
+  const straddle = westOfUtc ? new Date(2026, 11, 31, 23, 30) : new Date(2027, 0, 1, 0, 30);
+
+  it('dates a settlement on the day the screen shows it, not the UTC day', () => {
+    expect(csvDate(straddle.toISOString())).toBe(localDay(straddle));
+  });
+
+  it('agrees with the month bucket the same entry is filed under', () => {
+    const at = straddle.toISOString();
+    const [bucket] = byMonth([entry({ at })]);
+    // byMonth's key is YYYY-MM, keyed on the LOCAL month; the CSV must file it there.
+    expect(csvDate(at).slice(0, 7)).toBe(bucket.key);
+  });
+
+  it('and that case really is one the old UTC formatting got wrong', () => {
+    // Only meaningful off UTC — where it is meaningful, it proves the two disagree, so
+    // the assertions above are not passing by coincidence.
+    if (new Date(2027, 0, 1).getTimezoneOffset() === 0) return;
+    expect(straddle.toISOString().slice(0, 10)).not.toBe(localDay(straddle));
+  });
+
+  it('never reaches for UTC to date a row the screen dated locally', () => {
+    // The guard that holds on a UTC machine, where no instant straddles.
+    const fs = require('fs');
+    const path = require('path');
+    const lib = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'payments.js'), 'utf8');
+    const fn = lib.slice(lib.indexOf('export function ledgerCsv'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).not.toMatch(/toISOString/);
+  });
 });
 
 const { rangeBounds, filterEntries, stats, monthlyTotals, STATUS_FILTERS } = require('../src/lib/payments');
@@ -499,6 +545,66 @@ describe('account deletion preserves the counterparty record', () => {
     // Fail closed: continuing would delete the counterparty's records, which is the
     // exact harm this exists to prevent.
     expect(code).toMatch(/tombErr/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleting an account must also delete what STRIPE holds — the saved card most of all.
+//
+// Both delete paths cancelled open PaymentIntents and stopped there. Neither ever called
+// `customers.del` or `accounts.del`, so the Stripe Customer — created by
+// stripe-create-setup-intent with the user's real email and name, with their card
+// attached and off-session charging enabled — survived deletion indefinitely. There was
+// no way back either: the account is banned, so stripe-detach-payment-method (the only
+// caller of `paymentMethods.detach` in the repo) is a user-JWT function they can never
+// reach. And because the profile is now TOMBSTONED rather than deleted, the
+// stripe_customers row that used to cascade away survives too, still mapping the
+// departed uuid to a live payment method.
+//
+// The privacy policy retains only what "must be retained by us or by our processors
+// (notably Stripe) to meet legal, tax, accounting, and fraud-prevention obligations"
+// (20260702020000). A card kept for future charges is not one of those.
+//
+// Connect deletion is deliberately allowed to fail — Stripe refuses to delete an account
+// holding a positive balance, and that refusal protects money still owed to the earner.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('account deletion removes the Stripe customer and the saved card', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+  const paths = {
+    'delete-account edge function': path.join(
+      __dirname, '..', 'supabase/functions/delete-account/index.ts'),
+    'admin deleteUserCascade': path.join(__dirname, '..', 'admin/lib/deleteUser.ts'),
+  };
+
+  for (const [name, p] of Object.entries(paths)) {
+    const code = strip(fs.readFileSync(p, 'utf8'));
+
+    it(`${name}: deletes the Stripe Customer (which detaches every saved card)`, () => {
+      expect(code).toMatch(/customers\.del\(/);
+      // Deleted by id read from our own mapping row, not from anything the caller sent.
+      expect(code).toMatch(/stripe_customers["']?\)?\s*\)?[\s\S]{0,120}customer_id/);
+    });
+
+    it(`${name}: attempts to delete the Connect account too`, () => {
+      expect(code).toMatch(/accounts\.del\(/);
+    });
+
+    it(`${name}: a Stripe failure never blocks the deletion`, () => {
+      // The whole block is best-effort — a compliance deletion must not depend on
+      // Stripe being reachable.
+      const block = code.slice(code.indexOf('customers.del('));
+      expect(block).toMatch(/catch/);
+    });
+  }
+
+  it('the edge function drops the local mapping row once Stripe has removed the object', () => {
+    // The tombstone keeps the profile, so nothing cascades these away any more.
+    const code = strip(fs.readFileSync(paths['delete-account edge function'], 'utf8'));
+    expect(code).toMatch(/from\('stripe_customers'\)\.delete\(\)/);
+    expect(code).toMatch(/from\('stripe_accounts'\)\.delete\(\)/);
   });
 });
 

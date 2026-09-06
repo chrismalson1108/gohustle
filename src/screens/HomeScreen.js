@@ -4,6 +4,7 @@ import {
   ScrollView, TextInput, StyleSheet, RefreshControl, Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import JobCard from '../components/JobCard';
@@ -20,6 +21,7 @@ import { applyJobFilters, availableStatesFrom, browsableJobs } from '../lib/filt
 import { fetchCategories } from '../lib/categories';
 import { browseChipsFromJobs } from '../../shared/categories.js';
 import { maskLocation } from '../lib/address';
+import { mapsAvailable } from '../lib/mapsConfig';
 
 // "For You" and "All" are pseudo-categories, not entries in the taxonomy — their ids
 // are in RESERVED_CATEGORY_SLUGS precisely so a real category can never collide with
@@ -69,6 +71,10 @@ export default function HomeScreen({ navigation }) {
   const geoMounted = useRef(true);
   useEffect(() => () => { geoMounted.current = false; }, []);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+  // Android ships no Google Maps API key, and a MapView built without one is
+  // rejected by the Maps SDK — so there is no Map control to offer there. Lifts
+  // by itself once app.json carries the key (src/lib/mapsConfig.js).
+  const canShowMap = mapsAvailable(Platform.OS, Constants.expoConfig);
   // Community categories, so a chip for one someone created shows the creator's own
   // label and icon rather than a title-cased slug. fetchCategories never rejects and
   // falls back to the seed catalog, so the chips render either way.
@@ -294,19 +300,21 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="bar-chart-outline" size={16} color={colors.textPrimary} />
             <Text style={styles.viewToggleText} numberOfLines={1}>Insights</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.viewToggle}
-            onPress={() => { haptic.light(); expandTabBar(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
-          >
-            <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.textPrimary} />
-            <Text style={styles.viewToggleText} numberOfLines={1}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
-          </TouchableOpacity>
+          {canShowMap && (
+            <TouchableOpacity
+              style={styles.viewToggle}
+              onPress={() => { haptic.light(); expandTabBar(); setViewMode(m => (m === 'list' ? 'map' : 'list')); }}
+            >
+              <Ionicons name={viewMode === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.textPrimary} />
+              <Text style={styles.viewToggleText} numberOfLines={1}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </>
   );
 
-  if (viewMode === 'map') {
+  if (viewMode === 'map' && canShowMap) {
     return (
       <View style={styles.container}>
         {header}

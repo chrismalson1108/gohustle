@@ -45,11 +45,19 @@ export async function archiveAllRead(): Promise<void> {
 }
 
 // Where an alert should take you when tapped (gig deep-link, else a tab).
+// The keys are send-push's KNOWN_TABS and must stay complete: an alert whose
+// data.tab is missing here resolves to href null, so tapping it marks the row read,
+// navigates nowhere and leaves a dead button. ProfileTab was the missing one — it
+// carries the DB-written "Two-factor authentication was turned off … change your
+// password now" alert, the Stripe payout landed/failed alerts, and every admin
+// notice from the console. Mobile hit the same omission and fixed it there;
+// __tests__/parity.test.js now pins both clients to KNOWN_TABS.
 const TAB_ROUTE: Record<string, string> = {
   EarnTab: "/my-jobs",
   GigsTab: "/hiring",
   MessagesTab: "/messages",
   HomeTab: "/browse",
+  ProfileTab: "/profile",
 };
 export function notificationHref(n: NotificationRow): string | null {
   if (n.job_id) return `/jobs/${n.job_id}`;

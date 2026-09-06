@@ -1,5 +1,6 @@
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
+import { GRANTABLE_PROMO_KINDS } from "@/lib/promoKinds";
 import { SetRate, CancelScheduledRate, TierToggle, GrantDirect, TierEditor } from "./PricingControls";
 
 export const metadata = { title: "Pricing" };
@@ -20,8 +21,16 @@ export default async function PricingPage() {
   const { data: current } = await ctx.service.rpc("fee_bps_at");
   const { data: tiers } = await ctx.service
     .from("fee_tiers").select("id, name, min_completed, fee_bps, enabled, note").order("min_completed");
+  // Only the kinds a grant can actually deliver. A grant on a bonus campaign is inert —
+  // referral bonuses are minted into bonus_ledger when the referred person's gig is
+  // verified and never look at a grant — so offering one here hands the operator a
+  // control whose only outcome is a claim the recipient can never spend. The RPC refuses
+  // it as well (migration 20260906031000); this keeps it out of the picker.
   const { data: promos } = await ctx.service
-    .from("promotions").select("id, name").in("status", ["active", "draft"]).order("created_at", { ascending: false });
+    .from("promotions").select("id, name")
+    .in("status", ["active", "draft"])
+    .in("kind", [...GRANTABLE_PROMO_KINDS])
+    .order("created_at", { ascending: false });
 
   const now = Date.now();
   const pending = (rates ?? []).filter((r) => Date.parse(r.effective_from) > now);

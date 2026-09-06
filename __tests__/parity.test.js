@@ -63,6 +63,36 @@ describe('push deep-links still point at real tabs', () => {
     const stale = known.filter((k) => !routes.includes(k));
     expect(`stale: ${stale.join(', ') || 'none'}`).toBe('stale: none');
   });
+
+  // The SAME set again, twice more: the in-app inboxes route a tapped alert by the
+  // same data.tab. A tab missing from one of these does not fail loudly — the row
+  // resolves to "nowhere", is marked read, and becomes a dead button. That is how
+  // ProfileTab (the "Two-factor authentication was turned off" alert, the payout
+  // alerts, every admin notice) was unroutable on mobile, and then, after mobile was
+  // fixed, on the website.
+  const inboxRouters = {
+    'the app inbox (src/lib/notifications.js)': [
+      read('src/lib/notifications.js'),
+      /const TABS = \{([^}]*)\}/,
+      /(\w+):/g,
+    ],
+    'the website inbox (web/lib/notifications.ts)': [
+      read('web/lib/notifications.ts'),
+      /const TAB_ROUTE: Record<string, string> = \{([^}]*)\}/,
+      /(\w+):/g,
+    ],
+  };
+
+  Object.entries(inboxRouters).forEach(([who, [src, block, key]]) => {
+    it(`${who} routes every tab send-push will send`, () => {
+      const body = src.match(block);
+      expect(`${who} has a tab table: ${body ? 'yes' : 'NO'}`).toBe(`${who} has a tab table: yes`);
+      const tabs = [...body[1].matchAll(key)].map((m) => m[1]);
+      const unroutable = known.filter((k) => !tabs.includes(k));
+      expect(`${who} cannot route: ${unroutable.join(', ') || 'none'}`)
+        .toBe(`${who} cannot route: none`);
+    });
+  });
 });
 
 // ── 2. Hustlr AI's picture of the app ───────────────────────────────────────
@@ -73,7 +103,25 @@ describe('push deep-links still point at real tabs', () => {
 describe('Hustlr AI knows what the app actually looks like', () => {
   const app = read('App.js');
   const assistant = read('supabase/functions/assistant/index.ts');
-  const prompt = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+  const shared = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+
+  // ONE function, TWO clients, and they do not have the same screens. Both POST the
+  // same body, so the prompt used to hard-code the phone's navigation for everyone —
+  // "You → Payments & payouts → Transactions" and "Messages → GoHustlr Support" name
+  // screens gohustlr.com does not have. The prompt now carries a per-client block and
+  // the caller says which surface it is; every check below runs against BOTH of the
+  // prompts a real user can be served, not just the phone's.
+  const placesBlock = (name) => {
+    const m = assistant.match(new RegExp('const ' + name + ' = `([\\s\\S]*?)`;'));
+    if (!m) throw new Error(`${name} is missing from supabase/functions/assistant/index.ts`);
+    return m[1];
+  };
+  const PLACES = { mobile: placesBlock('PLACES_MOBILE'), web: placesBlock('PLACES_WEB') };
+  const CLIENTS = ['mobile', 'web'];
+  // The template interpolates ${places}; put each block back to get the prompt that
+  // client is actually served. Function replacement, so a $ in the block is literal.
+  const promptFor = (c) => shared.replace('${places}', () => PLACES[c]);
+  const prompt = promptFor('mobile');
 
   const labels = [...app.matchAll(/<Tab\.Screen\s+name="[A-Za-z]+"\s+component=\{\w+\}\s+options=\{\{ title: '([^']+)'/g)]
     .map((m) => m[1]);
@@ -121,6 +169,60 @@ describe('Hustlr AI knows what the app actually looks like', () => {
       .toBe('retired names in the tab line: none');
   });
 
+  // ── The assistant can tell the two clients apart at all ───────────────────
+  // Without this the per-client block is decoration: the server would still send
+  // every user the same directions.
+  describe('is told which client is asking', () => {
+    it('reads a client field off the request and passes it to the prompt', () => {
+      const code = codeOnly(assistant);
+      expect(code).toMatch(/client\?:\s*string/);
+      expect(code).toMatch(/body\.client === 'web'/);
+      expect(code).toMatch(/buildSystemPrompt\(user\.id, profile \?\? \{\}, client\)/);
+    });
+
+    it('the app says it is the app', () => {
+      expect(codeOnly(read('src/lib/assistantClient.js'))).toMatch(/client:\s*'mobile'/);
+    });
+
+    it('the website says it is the website', () => {
+      expect(codeOnly(read('web/lib/assistant.ts'))).toMatch(/client:\s*"web"/);
+    });
+  });
+
+  // ── A named Settings row has to be a row that client HAS ──────────────────
+  // This is the check that would have caught the original defect: the one prompt
+  // told website users to open "Settings → Security", which on the website is
+  // titled "Two-factor authentication".
+  const rowTitles = (src) => [...src.matchAll(/title:\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  const SETTINGS_ROWS = {
+    mobile: rowTitles(read('src/screens/SettingsScreen.js')),
+    web: rowTitles(read('web/app/(app)/settings/page.tsx')),
+  };
+
+  CLIENTS.forEach((c) => {
+    it(`every "Settings → …" row the ${c} prompt names exists in ${c} Settings`, () => {
+      const named = [...PLACES[c].matchAll(/Settings → ([^,.;\n·]+)/g)].map((m) => m[1].trim());
+      expect(named.length).toBeGreaterThan(0);
+      const invented = named.filter((t) => !SETTINGS_ROWS[c].includes(t));
+      expect(`${c} names rows that do not exist: ${invented.join(', ') || 'none'}`)
+        .toBe(`${c} names rows that do not exist: none`);
+    });
+  });
+
+  // ── The website block must not hand out app-only screens ──────────────────
+  // Both of these are real screens — on a phone. On gohustlr.com they are nowhere,
+  // and a user told to open one concludes the feature is broken.
+  const APP_ONLY = [
+    ['the Transactions ledger screen', /→ Transactions/],
+    ['the in-app Support conversation', /Messages → GoHustlr Support/],
+  ];
+  APP_ONLY.forEach(([what, re]) => {
+    it(`does not send website users to ${what}`, () => {
+      expect(`${what}: ${re.test(PLACES.web) ? 'POINTS AT A SCREEN THE WEBSITE LACKS' : 'ok'}`)
+        .toBe(`${what}: ok`);
+    });
+  });
+
   // Curated on purpose. Not every screen belongs in the prompt — internal and
   // one-off screens would be noise — but a user-facing destination people ASK for
   // does. Adding a feature here is the cheapest possible reminder to teach the
@@ -147,12 +249,33 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // worst available answer to either.
     ['stopping a location share', /Stop sharing my location/i],
     ['the in-gig safety controls', /Share my gig|Get help/],
+    // Added 2026-09-06. The prompt named five destinations and the app has a dozen
+    // more that people ASK about — so the assistant fell back on "I'm not sure, ask
+    // Support" for questions one tap answers. The first two are the ones that cost
+    // something: a ghosted earner was being told escrow releases "on completion" with
+    // no mention of the button that releases it, and a poster holding a promo code was
+    // sent to Support for a row that sits in Settings on both clients.
+    ['claiming payment when a poster goes quiet', /Claim your payment/],
+    ['redeeming a promo or referral code', /Have a code\?/],
+    ['reporting or blocking someone', /Reporting or blocking/],
+    ['identity and student verification', /Verify Student Status/],
+    ['inviting friends', /Invite friends/],
+    ['saved gigs and saved people', /Saved gigs/],
+    ['the alerts inbox', /Alerts inbox/],
+    ['notification settings', /Notification settings/],
+    ['availability and class schedule', /Availability & schedule/],
+    ['market insights', /Browse → Insights/],
+    ['closing an account', /Manage your account/],
   ];
 
-  MUST_KNOW.forEach(([what, re]) => {
-    it(`can point someone at ${what}`, () => {
-      expect(`${what}: ${re.test(prompt) ? 'known' : 'MISSING FROM PROMPT'}`)
-        .toBe(`${what}: known`);
+  // Run against BOTH prompts. A destination the website answers differently still
+  // has to be answered — "it is in the phone app" is an answer; silence is not.
+  CLIENTS.forEach((c) => {
+    MUST_KNOW.forEach(([what, re]) => {
+      it(`can point a ${c} user at ${what}`, () => {
+        expect(`${c}/${what}: ${re.test(promptFor(c)) ? 'known' : 'MISSING FROM PROMPT'}`)
+          .toBe(`${c}/${what}: known`);
+      });
     });
   });
 

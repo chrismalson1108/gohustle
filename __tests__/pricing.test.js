@@ -1,6 +1,5 @@
 // Drift guard between shared/pricing.js (what the apps DISPLAY) and
-// public.platform_fee_cents in supabase/migrations/20260806050000_platform_rate.sql
-// (what the server actually CHARGES).
+// public.platform_fee_cents (what the server actually CHARGES).
 //
 // Same job as categories.test.js does for category_slug: the two implementations must
 // agree, and the only way to be sure is to read the SQL off disk rather than trust a
@@ -8,25 +7,154 @@
 // differ by a cent is a disclosure failure — the Terms commit to the amount being
 // "disclosed before you confirm".
 //
+// ⚠️ THE MIGRATION IS RESOLVED, NEVER NAMED — and the mirror is BUILT FROM IT.
+//
+// Until 2026-09-06 this file did neither. It opened 20260806050000_platform_rate.sql by
+// hardcoded path, and that file's platform_fee_cents body had already been replaced by
+// 20260806140000_fee_overflow_fix.sql — so every constant assertion here was pinning
+// text Postgres no longer runs. It stayed green only because the replacement happened
+// to keep the same constants. The second half was worse: sqlFee() below RETYPED
+// 5000 / 0.029 / 30 / 25 as JavaScript literals, so even pointed at the right file it
+// mirrored what someone once believed rather than what is on disk. A third
+// `create or replace` raising the 25c margin, or "simplifying" the half-up rounding
+// back to truncation — the exact bug this was written for — would have shipped with the
+// whole suite green, while JobDetail/CompletionModal quoted one fee and
+// stripe-capture-payment took another.
+//
+// Postgres keeps whichever definition ran LAST. So does this, the way
+// supportGuardDrift.test.js and tipCaps.test.js already do it. And every constant the
+// mirror uses is PARSED out of that body, so moving one moves the mirror and the parity
+// matrix disagrees with shared/pricing.js on the next run.
+//
 // This test cannot execute Postgres, so it does two things instead:
-//   1. asserts the CONSTANTS in the SQL are the ones the JS uses (parsed, not assumed)
-//   2. re-implements the SQL's arithmetic literally, from those parsed constants, and
-//      compares it to the JS across a wide range including every rounding edge
+//   1. asserts the CONSTANTS in the live SQL body are the ones the JS uses
+//   2. re-implements the SQL's arithmetic from those PARSED constants, and compares it
+//      to the JS across a wide range including every rounding edge
 // A test that compared two JS constants to each other could never fail; parsing the
-// migration is what gives it teeth.
+// live migration is what gives it teeth.
 const fs = require('fs');
 const path = require('path');
 const { platformFeeCents, earnerNetCents, feeLabel, DEFAULT_FEE_BPS, feeBreakdown
 } = require('../shared/pricing.js');
 
-const MIGRATION = path.join(
-  __dirname, '..', 'supabase', 'migrations', '20260806050000_platform_rate.sql',
-);
-const sql = fs.readFileSync(MIGRATION, 'utf8');
+const MIG_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
+
+// Quote-aware comment stripper, lifted from tipCaps.test.js. Necessary here, not merely
+// tidy: 20260806140000's own header QUOTES both the broken expression and the fixed one,
+// so a regex run over raw text can be satisfied by the prose explaining the code rather
+// than by the code.
+function stripSqlComments(sql) {
+  let out = '';
+  let i = 0;
+  const tags = [];
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") { j += 2; continue; }
+        if (sql[j] === "'") { j += 1; break; }
+        j += 1;
+      }
+      out += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+    const dollar = ch === '$' ? sql.slice(i).match(/^\$[a-zA-Z_]*\$/) : null;
+    if (dollar) {
+      const tag = dollar[0];
+      if (tags[tags.length - 1] === tag) tags.pop();
+      else tags.push(tag);
+      out += tag;
+      i += tag.length;
+      continue;
+    }
+    if (ch === '-' && sql[i + 1] === '-') {
+      while (i < sql.length && sql[i] !== '\n') i += 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+const migrationFiles = fs.readdirSync(MIG_DIR).filter((f) => f.endsWith('.sql')).sort();
+
+// The last migration that defines a function is the one the database is running.
+function latestDefining(fnName) {
+  const hits = migrationFiles.filter((f) =>
+    new RegExp(`create or replace function public\\.${fnName}\\b`, 'i')
+      .test(fs.readFileSync(path.join(MIG_DIR, f), 'utf8')));
+  const last = hits[hits.length - 1];
+  return last
+    ? { file: last, sql: stripSqlComments(fs.readFileSync(path.join(MIG_DIR, last), 'utf8')) }
+    : null;
+}
+
+// Signature + body of one function, stopping at its dollar-quote terminator, so an
+// assertion cannot be satisfied by a neighbouring definition in the same file.
+function bodyOf(sql, name) {
+  const start = sql.search(new RegExp(`create or replace function public\\.${name}\\b`, 'i'));
+  if (start === -1) return '';
+  const tagM = sql.slice(start).match(/\bas\s+(\$[a-zA-Z_]*\$)/);
+  if (!tagM) return '';
+  const bodyStart = start + tagM.index + tagM[0].length;
+  const end = sql.indexOf(tagM[1], bodyStart);
+  return sql.slice(start, end === -1 ? undefined : end);
+}
+
+const feeSrc = latestDefining('platform_fee_cents');
+const feeBody = feeSrc ? bodyOf(feeSrc.sql, 'platform_fee_cents') : '';
+const rateSrc = latestDefining('fee_bps_at');
+const rateBody = rateSrc ? bodyOf(rateSrc.sql, 'fee_bps_at') : '';
+// The founding rate is seeded once, by the FIRST migration that writes the rate card;
+// later ones append new rates and must not be mistaken for it.
+const seedFile = migrationFiles.find((f) =>
+  /insert into public\.platform_rates/i.test(fs.readFileSync(path.join(MIG_DIR, f), 'utf8')));
+
+// ── The constants, parsed out of the live body ───────────────────────────────
+// Nothing here is retyped. If a future migration moves one of these numbers the mirror
+// moves with it and the parity matrix fails against shared/pricing.js — which is the
+// entire point, and is what the retyped literals could never do.
+const parsed = (() => {
+  const round = feeBody.match(/\+\s*(\d+)\s*\)\s*\/\s*(\d+)/);
+  const pct = feeBody.match(/ceil\([\s\S]*?\*\s*([0-9]*\.?[0-9]+)\s*\)/);
+  const fixed = feeBody.match(/::integer\s*\+\s*(\d+)\s*\+\s*(\d+)/);
+  const defBps = feeBody.match(/coalesce\(\s*p_fee_bps\s*,\s*(\d+)\s*\)/);
+  return {
+    roundOffset: round && Number(round[1]),
+    divisor: round && Number(round[2]),
+    stripePct: pct && Number(pct[1]),
+    stripeFixedCents: fixed && Number(fixed[1]),
+    marginCents: fixed && Number(fixed[2]),
+    defaultBps: defBps && Number(defBps[1]),
+  };
+})();
 
 describe('platform_fee_cents SQL/JS parity', () => {
-  test('the migration still defines the function this test is guarding', () => {
-    expect(sql).toMatch(/create or replace function public\.platform_fee_cents/);
+  test('the guard resolved a live definition, and it is not the superseded one', () => {
+    // The self-check on the resolver. 20260806050000's body was replaced by
+    // 20260806140000; if this file is ever pointed back at a stale definition — or the
+    // resolver silently degrades to "the first hit" — this is what says so.
+    expect(feeSrc).not.toBeNull();
+    expect(feeSrc.file).not.toBe('20260806050000_platform_rate.sql');
+    expect(feeBody).toMatch(/create or replace function public\.platform_fee_cents/);
+    expect(rateSrc).not.toBeNull();
+    expect(seedFile).toBeTruthy();
+  });
+
+  test('every constant the mirror uses was actually parsed out of the SQL', () => {
+    // A regex that stops matching must FAIL here, not quietly yield null and let the
+    // matrix below compare a JS number to a JS number.
+    expect(parsed).toEqual({
+      roundOffset: expect.any(Number),
+      divisor: expect.any(Number),
+      stripePct: expect.any(Number),
+      stripeFixedCents: expect.any(Number),
+      marginCents: expect.any(Number),
+      defaultBps: expect.any(Number),
+    });
   });
 
   test('the percentage multiply is widened to bigint — int4 overflows above ~21.47%', () => {
@@ -41,43 +169,56 @@ describe('platform_fee_cents SQL/JS parity', () => {
     //
     // sqlFee() below is JavaScript, which has no 32-bit overflow, so the parity matrix
     // passes on amount=1000000/bps=3000 — the exact pair that raised in Postgres. A
-    // behavioural mirror cannot detect an arithmetic-WIDTH defect; only reading the
-    // cast out of the migration can. Fixed in 20260806140000.
-    const fix = fs.readFileSync(
-      path.join(__dirname, '..', 'supabase', 'migrations', '20260806140000_fee_overflow_fix.sql'),
-      'utf8',
-    );
-    expect(fix).toMatch(/coalesce\(p_amount_cents,\s*0\)::bigint\s*\*\s*coalesce\(p_fee_bps,\s*1000\)/);
+    // behavioural mirror cannot detect an arithmetic-WIDTH defect; only reading the cast
+    // out of the migration can. Fixed in 20260806140000 — and asserted here against
+    // whatever the LIVE body is, so a later redefinition that drops the cast
+    // reintroduces the outage and fails. Pinning 20260806140000 by name, which is what
+    // this test used to do, could never catch that.
+    expect(feeBody).toMatch(/coalesce\(\s*p_amount_cents\s*,\s*0\s*\)::bigint\s*\*/);
   });
 
-  test('SQL rounds half up (+ 5000) — not truncating division', () => {
-    // If someone "simplifies" this back to (amount * bps) / 10000 the JS would
-    // silently over-quote by a cent on odd amounts. Pin the exact expression.
-    expect(sql).toMatch(/\+\s*5000\s*\)\s*\/\s*10000/);
+  test('SQL rounds half up — not truncating division', () => {
+    // If someone "simplifies" this back to (amount * bps) / 10000 the offset regex stops
+    // matching, the constant is null, and the parse test above fires. This pins the
+    // RELATIONSHIP: the offset must be exactly half the divisor, and the divisor must be
+    // the basis-point scale.
+    expect(parsed.divisor).toBe(10000);
+    expect(parsed.roundOffset * 2).toBe(parsed.divisor);
   });
 
   test('SQL floor constants match the JS constants', () => {
-    const pct = sql.match(/\*\s*0\.029\s*\)/);
-    expect(pct).not.toBeNull();
-    // 30c Stripe fixed + 25c platform margin
-    expect(sql).toMatch(/::integer\s*\+\s*30\s*\+\s*25/);
+    // Stripe's percentage, Stripe's fixed 30c and the 25c platform margin — read out of
+    // the live body and checked against what shared/pricing.js actually charges at
+    // 0 bps, where the fee IS the floor.
+    const amt = 100000;
+    expect(platformFeeCents(amt, 0)).toBe(
+      Math.ceil(amt * parsed.stripePct) + parsed.stripeFixedCents + parsed.marginCents,
+    );
   });
 
   test('rate is clamped to [500, 3000] and defaults to 1000 in fee_bps_at', () => {
-    expect(sql).toMatch(/greatest\(500,\s*least\(3000,/);
-    expect(sql).toMatch(/1000\)\)\)/);
+    expect(rateBody).toMatch(/greatest\(500,\s*least\(3000,/);
+    expect(rateBody).toMatch(/1000\)\)\)/);
   });
 
-  test('DEFAULT_FEE_BPS matches the seeded founding rate', () => {
+  test('DEFAULT_FEE_BPS matches the SQL fallback and the seeded founding rate', () => {
     expect(DEFAULT_FEE_BPS).toBe(1000);
-    expect(sql).toMatch(/insert into public\.platform_rates[\s\S]*?select 1000,/);
+    // coalesce(p_fee_bps, N) in the live body IS the server's fallback rate; the JS one
+    // must be the same number or a degraded path quotes a rate nobody charges.
+    expect(parsed.defaultBps).toBe(DEFAULT_FEE_BPS);
+    const seed = fs.readFileSync(path.join(MIG_DIR, seedFile), 'utf8');
+    expect(seed).toMatch(
+      new RegExp(`insert into public\\.platform_rates[\\s\\S]*?select ${DEFAULT_FEE_BPS},`),
+    );
   });
 
-  // A literal transcription of the SQL body, built from the parsed constants above.
+  // A literal transcription of the SQL body, built from the constants parsed above —
+  // never from numbers retyped here.
   const sqlFee = (amount, bps) => {
     const amt = Math.max(0, Math.trunc(amount));
-    const pct = Math.trunc((amt * bps + 5000) / 10000);
-    const floor = Math.ceil(amt * 0.029) + 30 + 25;
+    const pct = Math.trunc((amt * bps + parsed.roundOffset) / parsed.divisor);
+    const floor = Math.ceil(amt * parsed.stripePct)
+      + parsed.stripeFixedCents + parsed.marginCents;
     return Math.max(0, Math.min(amt, Math.max(pct, floor)));
   };
 
@@ -95,7 +236,8 @@ describe('platform_fee_cents SQL/JS parity', () => {
         if (js !== pg) mismatches.push(`amount=${a} bps=${r}: js=${js} sql=${pg}`);
       }
     }
-    expect(mismatches).toEqual([]);
+    // Name the file the mirror was built from, so a failure says WHICH migration moved.
+    expect(`${feeSrc.file}: ${mismatches.join(' | ')}`).toBe(`${feeSrc.file}: `);
   });
 
   test('half-up rounding specifically — the bug this was written for', () => {

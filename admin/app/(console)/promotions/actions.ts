@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireFreshAdmin, AdminAuthError } from "@/lib/guard";
 import { audit } from "@/lib/audit";
+import { isGrantableKind } from "@/lib/promoKinds";
 
 export interface ActionResult {
   ok: boolean;
@@ -128,6 +129,25 @@ export async function mintCodes(formData: FormData): Promise<ActionResult> {
 
   try {
     const ctx = await requireFreshAdmin("admin");
+
+    // The UI hides this control for a campaign nothing can spend, but a hidden control is
+    // not a check — a stale tab still posts. A code on a bonus campaign redeemed TRUE,
+    // burned a seat and minted a grant no consumer matches, permanently, because a grant
+    // is unique per (user, promotion). The database refuses the redemption since
+    // 20260906031000; refusing the MINT is what stops the codes being handed out at all.
+    const { data: promo } = await ctx.service
+      .from("promotions").select("kind").eq("id", promotionId).maybeSingle();
+    if (!promo) return { ok: false, message: "Not found." };
+    if (!isGrantableKind(promo.kind)) {
+      return {
+        ok: false,
+        message:
+          `A ${promo.kind} campaign has no code to mint — referral bonuses are paid out of ` +
+          `the referral ledger when the referred person's gig is verified. A code here would ` +
+          `tell someone it applied and buy them nothing.`,
+      };
+    }
+
     const rows = Array.from({ length: count }, () => ({
       promotion_id: promotionId,
       code: mintCode(),

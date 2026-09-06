@@ -8,7 +8,10 @@ const SUPABASE_ANON_KEY = 'sb_publishable_1jX6yS1Wlx6_SxJ_07TnIw_VsYEE_Pu';
 // state to refresh (a gig was created, a booking made, the profile changed).
 export async function askAssistant(messages, opts = {}) {
   const { data: { session } } = await supabase.auth.getSession();
-  const body = { messages };
+  // `client` tells the assistant which surface is asking, so it names screens this
+  // app actually has. The server treats anything but 'web' as the app, so older
+  // builds that predate this field still get the app's directions.
+  const body = { messages, client: 'mobile' };
   if (opts.threadId) body.thread_id = opts.threadId;
   if (opts.newThread) body.new_thread = true;
   // Set when the user taps a confirmation card. The server executes the action it

@@ -181,6 +181,14 @@ only policy (`job_locations_party_read`) exposes the exact label to the **poster
 an earner **only once their booking is `confirmed`/`completed`/`verified`** — never on an
 open application.
 
+That trigger is the ONLY thing enforcing it — no CHECK constraint, no masking view, and
+`jobs_select_all` is `USING(true)` apart from the suspended-poster carve-out. So
+`ctl_job_location_unmasked` (critical) is the canary: `mask_location` is idempotent, so
+`location = mask_location(location)` is true of every correctly masked row and false of
+exactly the leaked ones, and a second arm catches the coordinate snap in the same
+function going with it. It calls `mask_location` rather than re-deciding what an address
+looks like, and `__tests__/jobLocationUnmasked.test.js` fails if that stops being true.
+
 - **`gig_shares`** — a tokenised, expiring, revocable link an earner sends to a friend
   ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
   names only, and it re-applies the same accepted-booking condition before revealing the
@@ -223,7 +231,7 @@ open application.
 Read `RUNBOOK_SAFETY.md` before changing any of it.
 
 ## Location, tips & disputes
-- **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build).
+- **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build). ⚠️ **The map is iOS-only right now**: Android needs a `com.google.android.geo.API_KEY` in the manifest, and the only thing that puts one there is a `["react-native-maps", { "androidGoogleMapsApiKey" }]` entry in app.json's `plugins` — `android.config.googleMaps.apiKey` is dead config here, because the package ships its own plugin that beats the Expo fallback and strips the meta-data when given no props. `mapsAvailable()` (`src/lib/mapsConfig.js`) is the single gate the three render sites consult, so adding the key turns the map on with no code change; `__tests__/androidMapsKey.test.js` holds both halves together.
 - **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`. ⚠️ **The earner gets 100% and the platform pays Stripe's 2.9%+30¢ — a DECISION, not an oversight** (KNOWN_RISKS T-1, decided 2026-08-17). `stripe-tip` sets `transfer_data.destination` with no `application_fee_amount` on purpose: every marketplace that has taken a cut of tips has turned it into a public scandal, and on a platform selling "keep what you earn" it is the most expensive dollar available. Do not "fix" the missing application fee.
 - **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `stripe-capture-payment` partial capture; a `disputes` row is recorded. `verifyAndRate(..., { pct, disputeReason })`.
   ⚠️ **A `disputes` row is a claim about the GIG payment, and `stripe-webhook`'s `recordReversal` must never file one for a reversal that touched no `payments` row.** A tip has no `payments` row at all, so from 2026-08-14 to 2026-09-06 a refunded or charged-back TIP wrote a row carrying the tip's charge id in the machine template on the gig's booking — and `ctl_external_reversal_not_ledgered` anchors on that template and joins `disputes` to `payments` on `booking_id`, so it reported the gig's captured, never-refunded payment as unledgered and told the operator to "Record chargeback", which writes `refunded_cents` onto a charge nobody refunded and makes `vest_bonuses` void the referral bonus. The tip branch now returns its own `booking_id` before the insert is reachable (`__tests__/tipCaps.test.js`); a reversed tip is ledgered in `tip_ledger.reversed_cents` and nowhere else.
@@ -322,7 +330,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
 | `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), the money hub (→ `PayoutSetup`), Tax Center, TrophyCase, Reviews, Alerts, Notification settings, Availability, Find People, identity + student verification, Settings link. **The Saved gigs/people rows are NOT here** — they were deliberately deleted as duplicates and live only in Settings; and the money row goes to `PayoutSetup`, not to `Payments` (Transactions), which this screen does not link to at all. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (platform earnings + card tips + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. ⚠️ **Platform income comes from `platformIncomeForYear` in `shared/taxFormat.js`, which values each verified booking at its PINNED `amount_cents_quoted` and nets it at that booking's own `fee_bps_quoted`** — never the list pay (that valued every hourly gig at one hour) and never the current rate card. A failed read is an error state with a retry, not an empty year: the totals show a dash and Export refuses. The web Tax Center (`web/app/(app)/profile/taxes/page.tsx`) shares all of it. Nested in ProfileStack as `Expenses`. |
-| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks — but **only Earn and Profile have an entry point** (`EarnScreen`, `PayoutSetupScreen`, `SettingsScreen`); nothing in GigsStack navigates here, so a poster cannot reach their own ledger from the Hire tab. That is a gap, not a design. |
+| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks, and **all three now have an entry point** — `EarnScreen`, `PayoutSetupScreen`/`SettingsScreen`, and (since 2026-09-06) the Transactions row at the top of `GigsScreen`'s **Past** segment. Until then GigsStack registered the route and nothing in the stack navigated to it, so the poster — the party who was *charged* — could not reach their own ledger from the tab where they hire. `__tests__/ledgerEntryPoints.test.js` now fails on any route a stack registers that nothing in that stack navigates to, unless it is excused there with a reason. |
 | `PayoutSetupScreen` (route `PayoutSetup`) | The **money hub**, and the one screen that carries both sides: "Get paid for work" (connect/manage a Connect bank for earners) and "Pay for gigs" (add/change/remove the card on file for posters). Stripe is surfaced only as a trust line. Entry points: ProfileScreen, GigsScreen, EarnScreen. Connect onboarding from here is step-up gated — see **Two-factor**. |
 | `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
 | `SecurityScreen` (route `Security`) | Two-factor: enroll (deep-link first), recovery codes, disable (requires a current code). Prompted from PayoutSetup once a bank is connected. |
@@ -495,9 +503,26 @@ rate limiting and staging.
   from the SERVER's summary. Injected gig text can make the model stage something; it
   cannot produce the tap. Do not "simplify" this back into a prompt instruction.
 - **Its system prompt is a parity-tested artifact.** `__tests__/parity.test.js` fails if
-  the prompt does not name every tab as the app names it, or cannot point at
-  Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
-  pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
+  the prompt does not name every tab as the app names it, or cannot point at every
+  destination `MUST_KNOW` pins — Transactions, bank-deposit timing, Tax Center, Support,
+  two-factor, escrow, who pays the fee, and (added 2026-09-06) claiming payment on a gig
+  the poster never verified, redeeming a code, the on-gig safety tools, report/block,
+  identity + student verification, invites, saved gigs and people, the alerts inbox and
+  its settings, availability, Insights, and closing an account. **Adding a user-facing
+  feature means adding it to `MUST_KNOW` there.** The twelve added at once were not new
+  features: they had shipped on both clients and the prompt had never been told, so the
+  assistant answered "I'm not sure — ask Support" to questions one tap answers, and
+  answered a ghosted earner with the escrow line instead of the button that pays them.
+- ⚠️ **Two clients, two "where to find it" blocks.** The request body carries
+  `client: 'web' | 'mobile'` (anything else, including an older app build that sends
+  nothing, is treated as the app) and the prompt swaps `PLACES_MOBILE` for `PLACES_WEB`.
+  This exists because ONE block, written for the phone, was served to gohustlr.com as
+  well: "You → Payments & payouts → Transactions" and "Messages → GoHustlr Support"
+  name screens the website does not have, so the prompt's own "never invent a screen"
+  rule was broken on one of the two surfaces. The parity suite runs every `MUST_KNOW`
+  check against BOTH blocks, checks each `Settings → …` row it names against that
+  client's own Settings rows, and fails if the web block hands out an app-only screen.
+  **When the website gains one of the app-only screens, move it out of the web block.**
 
 ## Edge functions (`supabase/functions/`) — 32, each deployed by hand
 
@@ -521,7 +546,11 @@ It writes into the same `client_errors` table the console renders at `/errors`, 
 `platform='edge'` with the function name in `app_version`, and it never throws. Supabase's
 own function logs exist, but nobody watches them and they are not searchable next to the
 rest of the console — which is how "the poster pressed pay and it silently didn't work"
-stayed invisible until someone complained.
+stayed invisible until someone complained. **The sink is now watched on a schedule too**:
+until 20260906051000 its only readers were the `/errors` page and a dashboard tile, both
+of which run when a human opens them, so a rotated Stripe key on a Friday evening was
+found on Monday. `ctl_edge_errors_burst` pages when one edge function writes 3+ fatal or
+10+ total rows inside 90 minutes.
 
 **Money & escrow**
 
@@ -670,14 +699,16 @@ it is the second half of a change that has not been done yet.
 
 | Guard | Stops |
 |---|---|
-| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point at Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow, and who pays the fee · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
+| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point — on BOTH clients — at every destination `MUST_KNOW` pins · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
 | `categories.test.js` | JS `categorySlug()` ≠ SQL `category_slug()` |
 | `pricing.test.js` | `shared/pricing.js` ≠ the fee migration |
 | `supportGuardDrift.test.js` | a guard rewrite dropping the `app.support_reopen` exemption (has happened twice; makes customer replies invisible to the support queue) |
 | `importIntegrity.test.js` | a JSX component used but never imported — Metro does not resolve free identifiers, so this passes `expo export` and crashes on open |
 | `headerDuplication.test.js` | a screen printing its nav-bar title a second time in its own header |
 | `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
+| `partyPoliciesSuspensionAgnostic.test.js` | a party-scoped policy going back to `join public.jobs` to decide who is a party. A policy subquery runs as the QUERYING role, so it inherits `jobs_select_all` — which hides a suspended poster's job — and suspending someone then erased their counterparty's message thread, chat photos, completion photos and dispute, from the counterparty only. Use `private.is_booking_party` (20260906041000) |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
+| `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
 Add the destination to `MUST_KNOW` in `parity.test.js` and it fails until Hustlr AI
@@ -784,6 +815,12 @@ keyed on verified-booking count) · an active `fee_override` promotion grant.
 **Display**: `shared/pricing.js` (`platformFeeCents`, `earnerNetCents`, `feeLabel`,
 `bookingNetDollars`) with `__tests__/pricing.test.js` **parsing the migration off disk**
 so JS/SQL cannot drift — the same guard `categories.test.js` applies to `category_slug`.
+⚠️ It resolves the LAST migration defining `platform_fee_cents` and builds its mirror
+from constants **parsed** out of that body. Until 2026-09-06 it did neither: it opened
+20260806050000 by name — a body 20260806140000 had already replaced — and retyped
+5000/0.029/30/25 as JS literals, so a third `create or replace` moving the 25c margin or
+dropping the half-up offset would have shipped with the suite green. Never name a
+migration by hand in a drift guard; resolve it, as `supportGuardDrift`/`tipCaps` do.
 Quote screens use `getFeeBps()` (the current rate); anything showing an existing booking
 uses **that booking's `feeBpsQuoted`**. Using the wrong one is a disclosure bug.
 `SERVICE_FEE_PCT` still exists in both clients but has **no consumers** and resolves to
@@ -845,7 +882,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **61 controls are registered**: 59 run in-database and 2 are `external`. Every
+- **69 controls are registered**: 67 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -858,11 +895,40 @@ only runs when a human opens a page.
 - **`pg_cron`**: `controls_sweep_and_page` hourly at `:05` (vesting, then all controls,
   then pages **only if something newly needs a human**), `controls_digest` daily 13:05
   UTC (always emails, with Claude triage via `controls-alert`).
+- ⚠️ **Every alert leaves the database from inside those two cron jobs, so pg_cron is a
+  single point of silence — and it is watched from OUTSIDE, by a Vercel cron.** Stop the
+  scheduler and nothing errors: `controls.last_run_at` freezes, no finding is written, no
+  email is sent, and the only tell is an amber banner on `/controls`. No control can
+  catch that, because a control is run by the thing that stopped. So the check lives in
+  `admin/app/api/controls-heartbeat` (scheduled `35 * * * *` in `admin/vercel.json`,
+  authenticated with `CRON_SECRET`): it calls the `controls_heartbeat()` RPC and emails
+  through **its own Resend transport**, never through `controls-alert` and never gated on
+  `app_flags.controls_alert` — a watcher sharing a transport with what it watches watches
+  nothing. A failed RPC pages too; only a clean `ok` is silent. **Routes under `/api` are
+  excluded from `proxy.ts`'s matcher** because a cron carries no session cookie and the
+  signed-out redirect would 307 it to `/login`, which Vercel records as a successful
+  invocation — so every `/api` handler must authenticate itself. The database watches
+  that end back: `ctl_heartbeat_absent` fires when the check-ins stop, and arms itself
+  when the first one arrives (the seeded `grace_until` in `app_flags.controls_heartbeat`
+  is removed by the first successful call, and expires after 7 days so a never-wired
+  switch becomes a finding). `ctl_cron_not_scheduled` covers the half the sweep can still
+  see — the digest unscheduled, or a job left inactive.
 - Controls are **functions, never SQL text in a table** — a stored executable body would
   hand anyone with console write access arbitrary `SECURITY DEFINER` execution.
   `run_control` validates `fn_name` against `^ctl_[a-z0-9_]+$` **and** `pg_proc`.
 - Findings are unique on `(control_key, entity_id) where resolved_at is null`, so a
   persisting violation stays ONE row; anything a control stops returning **auto-resolves**.
+- **A control that names one entity twice is MERGED, not an error.** `run_control` upserts
+  findings with `on conflict (control_key, entity_id) … do update`, and Postgres refuses to
+  touch one target row twice in a single statement (SQLSTATE 21000) — so until
+  `20260906045000` a control whose arms could return one entity twice aborted its whole run
+  and filed **nothing**, while the board reported it as *errored* with a cardinality message.
+  The runner now groups by `entity_id` before the upsert and merges the duplicates into one
+  finding (`kind: multiple_rows_for_one_entity`, every original under `rows_detail`). That is
+  a net, not the target state: each row should carry its own id — `ctl_stripe_id_mode_mismatch`
+  namespaces its two arms `acct:` / `cus:` for exactly this reason, because everyone here can
+  both earn and post and one user's stale Connect account and stale customer id were the same
+  entity twice. `__tests__/controlEntityUniqueness.test.js` holds both halves.
 - **A control that errors or goes stale is reported as loudly as a violation** — both
   mean you are no longer being told the truth.
 - Alert dispatch config lives in **`app_flags`**, not a GUC. A GUC is invisible, needs
@@ -887,7 +953,29 @@ only runs when a human opens a page.
   function is why the console's "Run sweep now" once skipped both while reporting success.
 - The hourly sweep also runs `expire_stale_pending_bookings(14)` — untouched,
   never-started bookings with no live Stripe authorization become `cancelled` and their
-  slots are freed.
+  slots are freed. ⚠️ **A housekeeping step that WRITES has to claim `service_role`
+  itself.** pg_cron runs the sweep with no `request.jwt.claims`, and `SECURITY DEFINER`
+  changes the database role, not the request claim — so `auth.role()` and `auth.uid()`
+  are both NULL inside it and `guard_bookings_write` (whose fallthrough is deny-by-default)
+  raises. This function shipped without that and **never expired a single booking from
+  cron** between 2026-08-12 and 20260906042000: the guard only raises on the hours there is
+  a row to expire, and the sweep's `exception when others then raise warning` turned the
+  failure into a log line nobody reads. It now sets the claim transaction-locally around
+  its own UPDATE and hands the caller's back before `run_all_controls`;
+  `__tests__/sweepHousekeepingRunsWithoutJwt.test.js` fails if that disappears.
+  `expire_dead_listings` survives the same context only because `guard_jobs_write` pins
+  and never raises — that is luck, not a pattern to copy.
+  slots are freed. ⚠️ **The sweep must claim `service_role` for its own transaction**
+  (`set_config('request.jwt.claims', …, true)`, first statement in the body). pg_cron
+  carries no JWT, so `auth.role()`/`auth.uid()` are NULL and `guard_bookings_write` —
+  which exempts only service_role and otherwise ends in `raise exception 'not authorized
+  to modify this booking'` — aborted the whole UPDATE on the first qualifying row. The
+  sweep's own `exception when others then raise warning` hid it, so the expiry never once
+  ran on schedule; the console's "Run sweep now" calls `run_all_controls`, which does not
+  reach the expiry at all, so nothing contradicted it. Fixed 20260906034000, asserted by
+  `__tests__/sweepClaimsServiceRole.test.js` — the sweep body is copied forward by every
+  migration that adds a call to it, so the claim is exactly the kind of line a copy loses.
+  `ctl_expiry_sweep_not_clearing` watches the outcome rather than the call.
 - Console: **`/controls`**.
 
 ## Admin console roles
@@ -958,6 +1046,19 @@ When a booking is `confirmed` or `completed` and the poster needs to change core
 4. **If declined** or after editing: `clearAmendment(bookingId)` resets `amendment_status` back to `'none'`.
 
 Amendment status values: `'none'` | `'pending'` | `'accepted'` | `'declined'`.
+
+⚠️ **An amendment that silently does not appear is not a bug — it is the safety pin.**
+`guard_bookings_write`'s poster branch pins `amendment_status`, `amendment_note`,
+`review_text`, `earner_rating` and `payment_method` back to `old.*` when the poster is
+suspended or a block exists between the two parties (`20260906055000`). Those five are
+every poster-authored column the earner reads in My Jobs, and the note carries a push —
+so blocking and suspension had to cover them for the same reason they cover messaging
+(`20260730150000`): the counterparty is whoever most likely just reported them. It is a
+silent pin rather than a raise because the block is deliberately silent, and the same
+migration adds the pair to `reviews_insert_auth`, which is the PUBLIC and unredactable
+version of the same act. Lifecycle is untouched — a suspended poster can still decline,
+cancel, complete and verify, because suspension must never strand an escrow hold or
+withhold money already earned.
 
 ## Supabase Schema Notes
 

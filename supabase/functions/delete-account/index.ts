@@ -234,6 +234,74 @@ Deno.serve(async (req: Request) => {
       console.error('delete-account: escrow hold release failed (continuing)', e);
     }
 
+    // 2b. Delete the card on file, and the Connect account, AT STRIPE.
+    //
+    // Step 2 only voids open holds. Nothing anywhere deleted the Stripe CUSTOMER — an
+    // object `stripe-create-setup-intent` creates with the user's real email and name,
+    // with their card attached and off-session charging enabled. It survived deletion
+    // indefinitely, and there was no way to remove it afterwards: the account is banned,
+    // so `stripe-detach-payment-method` (the only caller of detach in the codebase) is a
+    // user-JWT function they can never reach again. Since step 4 now TOMBSTONES the
+    // profile rather than deleting it, the `stripe_customers` row that used to cascade
+    // away survives too, so the departed uuid stays mapped to a live payment method.
+    //
+    // `customers.del` detaches every attached PaymentMethod. Stripe keeps the charge
+    // history, which is exactly the retention the privacy policy carves out ("records
+    // must be retained by us or by our processors (notably Stripe) to meet legal, tax,
+    // accounting, and fraud-prevention obligations"). A card kept for future charges is
+    // not one of those records.
+    //
+    // Connect is attempted the same way but is ALLOWED to fail: Stripe refuses to delete
+    // an account holding a positive balance, and that refusal is correct — money still
+    // owed to the earner must not be stranded. In that case the local row is kept so
+    // `payout.*` webhooks stay attributable, and the reason is logged.
+    //
+    // Its own try/catch, not step 2's: a Stripe outage during the hold release must not
+    // skip this, and neither failure may block a compliance deletion.
+    try {
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+      if (stripeKey) {
+        const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
+        const [{ data: cust }, { data: acct }] = await Promise.all([
+          admin.from('stripe_customers').select('customer_id').eq('user_id', user.id).maybeSingle(),
+          admin.from('stripe_accounts').select('account_id').eq('user_id', user.id).maybeSingle(),
+        ]);
+        // Already gone at Stripe (404) counts as deleted — drop the local row either way.
+        const isMissing = (e: unknown) => (e as { statusCode?: number })?.statusCode === 404;
+
+        if (cust?.customer_id) {
+          let removed = false;
+          try {
+            await stripe.customers.del(cust.customer_id);
+            removed = true;
+          } catch (e) {
+            removed = isMissing(e);
+            if (!removed) console.error('delete-account: stripe customer delete failed', e);
+          }
+          if (removed) await admin.from('stripe_customers').delete().eq('user_id', user.id);
+        }
+
+        if (acct?.account_id) {
+          let removed = false;
+          try {
+            await stripe.accounts.del(acct.account_id);
+            removed = true;
+          } catch (e) {
+            removed = isMissing(e);
+            if (!removed) {
+              console.error(
+                'delete-account: stripe connect account kept (Stripe refused deletion — likely a positive balance)',
+                e,
+              );
+            }
+          }
+          if (removed) await admin.from('stripe_accounts').delete().eq('user_id', user.id);
+        }
+      }
+    } catch (e) {
+      console.error('delete-account: stripe object cleanup failed (continuing)', e);
+    }
+
     // 3. Scrub the support queue's copy of this person's identity. MUST run before
     // the auth delete, while support_tickets.user_id still points at them.
     //
@@ -303,6 +371,16 @@ Deno.serve(async (req: Request) => {
     // account can never be signed into again. What remains is an opaque uuid with no
     // personal data attached — the same tombstone shape already used for the profile and
     // for support_tickets above.
+    //
+    // THE IDENTITIES ARE NOT HANDLED HERE. updateUserById neither deletes nor rewrites
+    // auth.identities, so for a social account this call alone left the Google/Apple
+    // `sub` pointed at a banned user — every future "Continue with Google" resolved to
+    // it and was refused, permanently, while identity_data kept the provider's copy of
+    // their name, email and avatar. tombstone_profile() (step 4) now deletes the social
+    // identities and neutralises the address on the email one, which is why it sits on
+    // the fail-closed side of the line: a best-effort call here is exactly the kind of
+    // step that fails quietly and locks somebody out of their own sign-in button. The
+    // email identity is deliberately kept, because THIS call rewrites it.
     const { error: delErr } = await admin.auth.admin.updateUserById(user.id, {
       email: `deleted-${user.id}@removed.invalid`,
       phone: undefined,

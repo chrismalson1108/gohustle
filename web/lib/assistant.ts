@@ -30,6 +30,11 @@ export async function askAssistant(
 ): Promise<AssistantReply> {
   return callEdgeFunction<AssistantReply>("assistant", {
     messages,
+    // Which surface is asking. The website and the phone app do not have the same
+    // screens, and without this the assistant answered "where do I find it" from the
+    // app's navigation for both — sending website users to screens that only exist on
+    // a phone. The server defaults to the app when this is absent.
+    client: "web",
     ...(opts.threadId ? { thread_id: opts.threadId } : {}),
     ...(opts.newThread ? { new_thread: true } : {}),
     ...(opts.confirmActionId ? { confirm_action_id: opts.confirmActionId } : {}),
