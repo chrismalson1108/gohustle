@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AlertCircle, MapPin } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertCircle, MapPin, MapPinOff } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useUser } from "@/lib/user";
 import Button from "@/components/ui/Button";
@@ -45,8 +45,57 @@ function shareOrigin(): string {
 
 export default function SafetyBar({ bookingId }: { bookingId: string }) {
   const { showToast } = useUser();
-  const [busy, setBusy] = useState<"share" | "sos" | null>(null);
+  const [busy, setBusy] = useState<"share" | "sos" | "revoke" | null>(null);
+  const [liveShare, setLiveShare] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // Whether a link is live decides whether the "Stop sharing" control exists at all.
+  // The Terms and the Privacy Policy both tell the earner a share "can be switched off
+  // at any time"; the schema always allowed it (gig_shares_revoke_own) and until the
+  // mobile fix landed no client ever wrote the column. Shipping the web bar without
+  // this would have re-created the same broken promise on a second surface — which is
+  // what __tests__/parity.test.js caught when the two branches met.
+  const refreshLiveShare = useCallback(async () => {
+    const { data } = await supabase
+      .from("gig_shares")
+      .select("id")
+      .eq("booking_id", bookingId)
+      .is("revoked_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .limit(1);
+    setLiveShare((data?.length ?? 0) > 0);
+  }, [bookingId]);
+
+  useEffect(() => {
+    refreshLiveShare();
+  }, [refreshLiveShare]);
+
+  const revoke = async () => {
+    setBusy("revoke");
+    try {
+      // EVERY live link for this booking, not the newest one. create_gig_share hands
+      // back an existing live link rather than minting a second, but a link minted
+      // before that behaviour — or from the other client — must die here too: "stop
+      // sharing" that leaves one alive is worse than none.
+      const { error } = await supabase
+        .from("gig_shares")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("booking_id", bookingId)
+        .is("revoked_at", null);
+      if (error) throw error;
+      setLiveShare(false);
+      showToast({ icon: "🔒", title: "Sharing stopped", message: "That link no longer works." });
+    } catch (e) {
+      showToast({
+        icon: "⚠️",
+        title: "Could not stop sharing",
+        message: (e as Error)?.message ?? "Please try again.",
+      });
+    } finally {
+      setBusy(null);
+      refreshLiveShare();
+    }
+  };
 
   const share = async () => {
     setBusy("share");
@@ -69,12 +118,17 @@ export default function SafetyBar({ bookingId }: { bookingId: string }) {
       if (typeof navigator !== "undefined" && navigator.share) {
         try {
           await navigator.share({ text, url });
+          setLiveShare(true);
           return;
         } catch (e) {
-          if ((e as { name?: string })?.name === "AbortError") return;
+          if ((e as { name?: string })?.name === "AbortError") {
+            setLiveShare(true);
+            return;
+          }
         }
       }
       await navigator.clipboard.writeText(url);
+      setLiveShare(true);
       showToast({
         icon: "📍",
         title: "Link copied",
@@ -141,6 +195,18 @@ export default function SafetyBar({ bookingId }: { bookingId: string }) {
           Get help
         </button>
       </div>
+
+      {liveShare && (
+        <button
+          type="button"
+          onClick={revoke}
+          disabled={busy === "revoke"}
+          className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft underline underline-offset-2 disabled:opacity-50"
+        >
+          <MapPinOff className="size-4 shrink-0" />
+          {busy === "revoke" ? "Stopping…" : "Stop sharing my location"}
+        </button>
+      )}
 
       <Modal
         open={confirming}
