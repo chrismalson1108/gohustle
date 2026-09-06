@@ -18,14 +18,20 @@ export default function InterventionPanel({
   startedAt,
   paymentStatus,
   refundableCents,
-  isAdmin,
+  canIntervene,
 }: {
   bookingId: string;
   status: string;
   startedAt: string | null;
   paymentStatus: string | null;
   refundableCents: number;
-  isAdmin: boolean;
+  /**
+   * roleSatisfies(ctx.role, "finance"), computed by the page — the same predicate
+   * every action in ../actions.ts enforces via requireFreshAdmin("finance"). It was
+   * role === "admin", which hid the whole panel from the finance tier, whose entire
+   * remit is payments, refunds, escrow and payout intervention.
+   */
+  canIntervene: boolean;
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -36,10 +42,10 @@ export default function InterventionPanel({
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
 
-  if (!isAdmin) {
+  if (!canIntervene) {
     return (
       <p className="text-sm text-[var(--muted)]">
-        Intervening on a booking requires the admin role.
+        Intervening on a booking requires the finance or admin role.
       </p>
     );
   }

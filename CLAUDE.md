@@ -817,7 +817,15 @@ and `ctl_admin_login_bruteforce` counted a table nothing wrote to. Note the hone
 the sign-in itself is client-side, so this gates the CONSOLE path and records every attempt
 (which is what makes the control work); someone POSTing straight at Supabase is bounded by
 Supabase's own limits, not ours. Nav hides what a role cannot open, but
-**the guard is the enforcement** — if they disagree the guard wins.
+**the guard is the enforcement** — if they disagree the guard wins. ⚠️ **That rule runs
+in one direction only, and three pages had it backwards:** `/moderation`, `/disputes`
+and `/bookings/:id` gated their action buttons on `ctx.role === "admin"` while the
+actions behind them accept `trust`, `trust` and `finance`, so the tiers whose whole job
+those queues are could read them and act on nothing — re-creating the money-harm control
+`trust` was created to remove. Authority props are now computed from
+`roleSatisfies(ctx.role, <the action's own tier>)`, and
+`__tests__/adminTierParity.test.js` fails on any console page whose UI hides an action
+its own `actions.ts` would have allowed.
 
 ⚠️ **`gohustlr-admin` does NOT auto-deploy.** See the Commands block.
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdminPage } from "@/lib/guard";
+import { requireAdminPage, roleSatisfies } from "@/lib/guard";
 import { auditRead } from "@/lib/audit";
 import { fmtCents, fmtDate } from "@/lib/format";
 import { Section, Pill } from "@/lib/ui";
@@ -20,6 +20,12 @@ export default async function DisputesPage({
 }) {
   const ctx = await requireAdminPage("trust");
   const showClosed = (await searchParams).filter === "closed";
+  // Match the ACTION, not the top tier. setDisputeStatus takes requireAdmin("trust")
+  // and this page is requireAdminPage("trust"), but the controls were gated on
+  // role === "admin" — so a trust operator read every dispute and saw "open · admin
+  // only" on each. Closing a dispute is what lets earner-claim-payment settle the
+  // booking, so that gap held the worker's money behind one admin's availability.
+  const canResolve = roleSatisfies(ctx.role, "trust");
   await auditRead(ctx, "disputes.view", "disputes", undefined, { closed: showClosed });
 
   let q = ctx.service
@@ -142,7 +148,7 @@ export default async function DisputesPage({
                     <DisputeControls
                       disputeId={String(d.id)}
                       status={d.status ?? "open"}
-                      isAdmin={ctx.role === "admin"}
+                      canResolve={canResolve}
                     />
                   </div>
                 </li>
