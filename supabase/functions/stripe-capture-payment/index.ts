@@ -1,7 +1,7 @@
 // Captures a previously-authorized PaymentIntent after both parties verify job completion.
 // Stripe automatically transfers earner_amount to their Connect account on capture.
-import Stripe from 'npm:stripe@22';
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
 import { payoutCapable } from '../_shared/payoutCapable.ts';

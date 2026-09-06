@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 
 export interface ActionResult {
@@ -32,7 +32,7 @@ export async function setDisputeStatus(formData: FormData): Promise<ActionResult
   try {
     ctx = await requireAdmin("trust");
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 

@@ -1,5 +1,6 @@
 import { BADGE_DEFS, BADGE_GROUPS } from '../shared/constants.js';
 import { badgeStatus, evaluateBadges, newlyEarned, BADGE_KEYS, emptyBadgeMap } from '../shared/badges.js';
+import { transformBooking } from '../shared/transforms.js';
 
 const done = (over = {}) => ({ status: 'verified', ...over });
 
@@ -269,5 +270,47 @@ describe('newlyEarned', () => {
     expect(evaluateBadges(ctx).sort()).toEqual(
       ['bigEarner', 'firstHundred', 'firstHustle', 'fiveStar'].sort(),
     );
+  });
+});
+
+// ── Big Spender counts what the hire actually cost ────────────────────────────
+// The rule was `counterOffer || job.pay`, blind to payType/estimatedHours and to the
+// pinned amount_cents_quoted, so ten verified 6-hour $25/hr hires ($1,500 paid) read
+// as $250. Built through the real transformBooking, which carries both.
+describe('bigSpender values hourly hires at their real duration', () => {
+  const hourlyHire = (over = {}) => transformBooking({
+    id: 'b',
+    job_id: 'j',
+    status: 'verified',
+    amount_cents_quoted: 15000, // 25/hr x 6h, pinned at insert
+    job: { id: 'j', title: 'Clean', pay: '25', pay_type: 'hourly', estimated_hours: '6' },
+    ...over,
+  });
+
+  it('sums the pinned amount, not the hourly rate', () => {
+    const hires = Array.from({ length: 7 }, () => hourlyHire()); // 7 x $150 = $1,050
+    // The old rule summed 7 x $25 = $175 and reported this poster as locked.
+    expect(badgeStatus('bigSpender', { posterBookings: hires })).toMatchObject({
+      earned: true, current: 1000, target: 1000,
+    });
+    const six = Array.from({ length: 6 }, () => hourlyHire()); // 6 x $150 = $900
+    expect(badgeStatus('bigSpender', { posterBookings: six })).toMatchObject({
+      earned: false, current: 900,
+    });
+  });
+
+  it('falls back to pay x hours on hires that predate the amount pin', () => {
+    const hires = Array.from({ length: 7 }, () => hourlyHire({ amount_cents_quoted: null }));
+    expect(badgeStatus('bigSpender', { posterBookings: hires })).toMatchObject({ earned: true });
+  });
+
+  it('does not multiply a flat gig by its estimated hours', () => {
+    const flat = Array.from({ length: 7 }, () => hourlyHire({
+      amount_cents_quoted: null,
+      job: { id: 'j', title: 'Clean', pay: '25', pay_type: 'flat', estimated_hours: '6' },
+    }));
+    expect(badgeStatus('bigSpender', { posterBookings: flat })).toMatchObject({
+      earned: false, current: 175,
+    });
   });
 });

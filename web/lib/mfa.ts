@@ -34,6 +34,43 @@ export interface MfaFactorSummary {
   createdAt: string | null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE ACCOUNT CAN HOLD TWO VERIFIED FACTORS, AND THAT IS THE STEADY STATE.
+//
+// This page and the app enrol as "GoHustlr"; the admin console enrols as
+// "GoHustlr Admin". /team already refuses to alert on two factors for that reason. So
+// "the factor" is the wrong model: unenrolling factors[0] and announcing "password-only"
+// leaves the OTHER one still gating every sign-in, and a code from the wrong entry is
+// rejected outright, because challengeAndVerify is scoped to the factorId it is handed.
+//
+// Mirrors factorLabel / factorOrigin / preferredFactor in src/lib/mfa.js.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** What the app and the website enrol as — the entry a normal user has. */
+export const APP_FACTOR_NAME = "GoHustlr";
+/** What the admin console enrols as. Present only on staff accounts. */
+export const ADMIN_FACTOR_NAME = "GoHustlr Admin";
+
+/** The name the entry carries in the authenticator's list. */
+export function factorLabel(factor: { name?: string | null } | null | undefined): string {
+  return String(factor?.name ?? "").trim() || APP_FACTOR_NAME;
+}
+
+/** Which surface enrolled it, in words a person can act on. */
+export function factorOrigin(factor: { name?: string | null } | null | undefined): string {
+  return factorLabel(factor) === ADMIN_FACTOR_NAME
+    ? "set up on the admin console"
+    : "set up in the app or here";
+}
+
+/** The factor a surface should act on by default — this one's own entry, not the console's. */
+export function preferredFactor<T extends { name?: string | null }>(
+  factors: readonly T[] | null | undefined,
+): T | null {
+  const list = (factors ?? []).filter(Boolean);
+  return list.find((f) => factorLabel(f) === APP_FACTOR_NAME) ?? list[0] ?? null;
+}
+
 export interface MfaStatus {
   enabled: boolean;
   factors: MfaFactorSummary[];
@@ -131,7 +168,13 @@ export async function confirmEnrollment(factorId: string, code: string): Promise
   if (error) throw new MfaError("That code wasn't accepted. Codes expire quickly — try the current one.", "verify_failed");
 }
 
-/** Turn 2FA off. Requires a current code, so a stolen session alone cannot do it. */
+/**
+ * Remove ONE factor. Requires a current code from THAT factor, so a stolen session alone
+ * cannot do it — and so the caller must be deliberate about which entry it removes.
+ *
+ * Two-factor is off only once the last one is gone. Callers must re-read the status
+ * rather than announcing "password-only" on the strength of having called this.
+ */
 export async function disableMfa(factorId: string, code: string): Promise<void> {
   await confirmEnrollment(factorId, code);
   const { error } = await supabase.auth.mfa.unenroll({ factorId });

@@ -6,8 +6,8 @@
 // 'confirmed'. This is the sole confirm path: guard_bookings_write blocks a client
 // from setting status='confirmed' directly, so a poster cannot mark a booking
 // confirmed without actually funding the escrow (which would mean free work).
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
 

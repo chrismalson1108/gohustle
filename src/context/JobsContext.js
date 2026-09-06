@@ -484,7 +484,15 @@ export function JobsProvider({ children }) {
 
   // ── Earner actions ─────────────────────────────────────────────────────────
 
+  // Why a ref and not state: the caller reads this on the line after `await bookJob(…)`,
+  // and a setState would not have landed yet. Why a side channel at all: bookJob's
+  // boolean is consumed as `if (!ok)`, and widening it to an object would make every
+  // failure truthy at a call site that already exists.
+  const lastBookingErrorRef = useRef(null);
+  const getLastBookingError = useCallback(() => lastBookingErrorRef.current, []);
+
   const bookJob = async (jobId, slotId, slotLabel, counterOffer, applicationNote) => {
+    lastBookingErrorRef.current = null;
     if (!user) return false;
     // The browse feed is capped at the 200 newest non-cancelled gigs, so a gig opened
     // from a saved bookmark, a conversation link or a deep link may be absent from it.
@@ -511,6 +519,15 @@ export function JobsProvider({ children }) {
 
     if (error) {
       console.warn('Booking sync error:', error.message);
+      // 23514 is check_violation, which on this table only ever comes from OUR OWN
+      // guards raising `using errcode = 'check_violation'` with a sentence written for
+      // the person reading it — "This gig is booked through its time slots — pick an
+      // available one." (guard_booking_requires_slot, 20260906033000). Every other code
+      // carries Postgres-internal text that would be noise or a leak, so only this one
+      // is surfaced; the caller keeps its generic wording for the rest.
+      if (error.code === '23514' && error.message) {
+        lastBookingErrorRef.current = error.message;
+      }
       // Roll back the optimistic temp booking + slot flip so the UI doesn't show
       // a phantom booking on a taken slot, and signal failure to the caller.
       if (job) dispatch({ type: 'UPDATE_JOB', jobId, patch: { slots: job.slots } });
@@ -1362,6 +1379,7 @@ export function JobsProvider({ children }) {
     <JobsContext.Provider value={{
       ...state,
       bookJob,
+      getLastBookingError,
       addJob,
       updateJob,
       deleteJob,

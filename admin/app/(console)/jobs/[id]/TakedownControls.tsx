@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { setJobStatus, type ActionResult } from "../actions";
+import { setJobStatus } from "../actions";
+import ReauthPrompt from "../../ReauthPrompt";
+import { useStepUp } from "../../useStepUp";
 
 export default function TakedownControls({
   jobId,
@@ -13,7 +15,8 @@ export default function TakedownControls({
   isAdmin: boolean;
 }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [reason, setReason] = useState("");
 
   if (!isAdmin) return <p className="text-sm text-[var(--muted)]">Read-only — take-down requires the admin role.</p>;
@@ -24,11 +27,12 @@ export default function TakedownControls({
     fd.set("jobId", jobId);
     fd.set("status", status);
     fd.set("reason", reason);
-    start(async () => setResult(await setJobStatus(fd)));
+    start(async () => { await stepUp.run(() => setJobStatus(fd)); });
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <span className={`text-sm ${result.ok ? "text-emerald-700" : "text-[var(--danger)]"}`}>{result.message}</span>
       )}

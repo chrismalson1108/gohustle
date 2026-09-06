@@ -614,7 +614,7 @@
 
   <section>
     <h2>The remediation plan</h2>
-    <p>Ordered by dependency, not by severity. Deploy vectors: <span class="vec">MIGRATION</span> <code>supabase db push --linked</code> · <span class="vec">EDGE FN</span> <code>supabase functions deploy &lt;name&gt;</code> · <span class="vec">CONSOLE</span> <code>cd admin &amp;&amp; npx vercel --prod</code> (never auto-deploys) · <span class="vec">CLIENT</span> app release · <span class="vec">CONFIG</span> dashboard or flag only.</p>
+    <p>Ordered by dependency, not by severity. Deploy vectors: <span class="vec">MIGRATION</span> <code>supabase db push --linked</code> · <span class="vec">EDGE FN</span> <code>supabase functions deploy &lt;name&gt;</code> · <span class="vec">CONSOLE</span> <code>cd admin &amp;&amp; npx vercel --prod --scope go-hustlr</code> (never auto-deploys) · <span class="vec">CLIENT</span> app release · <span class="vec">CONFIG</span> dashboard or flag only.</p>
 
     <div class="phase">
       <div class="phase-head">
@@ -634,7 +634,7 @@
           <li><strong>Repair <code>ctl_stripe_id_mode_mismatch</code></strong> — replace the shape heuristic with a provenance check, seed the missing flag, add <code>controls.requires_flags</code> + <code>ctl_control_dependency_missing</code>. <span class="vec">MIGRATION</span></li>
           <li><strong>Raise the <code>controls_digest</code> pg_net timeout to 120s.</strong> Do this before items 4–7 land, or the daily false HIGH competes with real findings. <span class="vec">MIGRATION</span></li>
         </ol>
-        <p class="hazard"><strong>Hazard —</strong> item 5 is the realistic failure. <code>gohustlr-admin</code> does not auto-deploy. Pushing the migration without running <code>npx vercel --prod</code> reproduces the exact bug it fixes. The new control is deliberately written to fire on that half-deployed state.</p>
+        <p class="hazard"><strong>Hazard —</strong> item 5 is the realistic failure. <code>gohustlr-admin</code> does not auto-deploy. Pushing the migration without running <code>npx vercel --prod --scope go-hustlr</code> reproduces the exact bug it fixes. The new control is deliberately written to fire on that half-deployed state.</p>
         <p class="hazard"><strong>Hazard —</strong> re-keying <code>entity_id</code> in item 4 will auto-resolve existing findings with a misleading "no longer returned" note. Resolve them explicitly in the same migration with a truthful note; the real violations reopen under booking ids within the hour.</p>
       </div>
     </div>

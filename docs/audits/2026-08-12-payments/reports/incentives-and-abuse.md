@@ -492,11 +492,11 @@ Grouped by deploy vector. **Ordering hazards are called out inline.**
  ⚠️ **Hazard:** re-keying `entity_id` from payment to booking will auto-resolve the existing findings with a misleading "no longer returned" note. Resolve them explicitly in the same migration with a truthful note; the same violations reopen under booking ids within the hour.
 
 2. **F5 — `ctl_alert_not_dispatching` + `alert_dispatches` liveness log + 24h expiry on the two alerting flags only.**
- → `supabase db push --linked`, then `cd admin && npx vercel --prod` for the `/flags` copy.
+ → `supabase db push --linked`, then `cd admin && npx vercel --prod --scope go-hustlr` for the `/flags` copy.
  ⚠️ Log reconcile under its **own** channel or its rows certify a dead pager as alive. ⚠️ Do **not** extend the auto-expiry to `payments_enabled`/`posting_enabled`.
 
 3. **F4 — wire the admin login throttle** (server action) + `ctl_admin_login_not_recorded`.
- → **Both halves, in either order but both.** `supabase db push --linked` **and** `cd admin && npx vercel --prod`.
+ → **Both halves, in either order but both.** `supabase db push --linked` **and** `cd admin && npx vercel --prod --scope go-hustlr`.
  ⚠️ **Hazard, and it is the realistic failure:** `gohustlr-admin` does not auto-deploy. Pushing the migration without deploying the console reproduces the exact bug. The new control is written to fire on precisely that half-deployed state — which is the point.
 
 4. **F21 — `controls_digest` timeout → 120000ms** + teach `ctl_alert_dispatch_failing` to rank client-side timeouts lower.
@@ -511,7 +511,7 @@ Grouped by deploy vector. **Ordering hazards are called out inline.**
  → `supabase db push --linked`. Signature unchanged ⇒ **no edge-function redeploy needed**.
 
 7. **F3 — `capped_promo_bps`; charge what is delivered** + expose `max_benefit_cents` in the console.
- → migration + `cd admin && npx vercel --prod`.
+ → migration + `cd admin && npx vercel --prod --scope go-hustlr`.
  ⚠️ Drop the superseded `consume_promo_grant` overload **in the same transaction** as the new one — a resolvable stale signature silently restores the bug. ⚠️ Copy change on any live "0% fee" campaign.
 
 8. **F7 — pass the pinned baseline into `consume_promo_grant`;** snapshot `baseline_bps` on the redemption; return `null` when the grant can't beat the baseline or `hit <= 0`.
@@ -523,7 +523,7 @@ Grouped by deploy vector. **Ordering hazards are called out inline.**
  ⚠️ Order: migration first (the function calls the RPC), then the function.
 
 10. **F12 — post-vest void/reverse pass; return budget on void; fix the partial index predicate; add an admin `revokeBonus` with an audit row.**
- → migration + `cd admin && npx vercel --prod`.
+ → migration + `cd admin && npx vercel --prod --scope go-hustlr`.
 
 11. **F13 + F14 — fix `ctl_discount_without_grant`'s predicate; move poster-discount consumption to accept.**
  → `supabase db push --linked`. Do F13 **before** any poster_discount campaign goes live or the pager becomes noise on day one.
@@ -531,7 +531,7 @@ Grouped by deploy vector. **Ordering hazards are called out inline.**
 ### Phase 2 — Authorization and audit hygiene (console-only, one deploy)
 
 12. **F17** step-up on all seven promotions actions + budget/uses ceilings; **F19** audit-before-mutate on the five surfaces; **F20** `addTeamMember` guards + `setTeamRole` role check; **L11** `saveTier` confirmation; **L12** pick one truth layer for `finance`; **L13** gate the email column.
- → `cd admin && npx vercel --prod`. **Single deploy.**
+ → `cd admin && npx vercel --prod --scope go-hustlr`. **Single deploy.**
 
 13. **F18 — `admin-payment-action` writes its own audit row.**
  → `supabase functions deploy admin-payment-action`.

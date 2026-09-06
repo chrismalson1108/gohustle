@@ -48,10 +48,38 @@ export class AdminAuthError extends Error {
   }
 }
 
+/**
+ * THE mapping from a denial to something a server action can return. Every actions.ts
+ * catch block goes through this, because there is only one right answer and it had three
+ * wrong ones in the tree at once.
+ *
+ * `stale_mfa` is RECOVERABLE — the session is valid, the role is right, the second factor
+ * is just old (the 12h session cap in requireAdmin, or the 5-minute step-up window) — and
+ * useStepUp on the client keys on this exact string to offer a code prompt and replay the
+ * call. So it has to survive as itself.
+ *
+ * Collapsing it into "Not authorized.", which six surfaces did, tells an operator their
+ * access was revoked when it was not, and offers nothing to do about it: only a page
+ * navigation would have reached requireAdminPage's redirect to /mfa?reauth=1. Returning
+ * `e.reason` raw, which three others did, prints "stale_mfa" (or "forbidden") at a human.
+ *
+ * Everything else IS a plain denial and reads as one — a real forbidden must not look
+ * like a prompt for a code, or the prompt stops meaning anything.
+ */
+export function denyResult(e: AdminAuthError): { ok: false; message: string } {
+  return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
+}
+
 // Read the AAL claim straight from the access-token JWT (local decode, no
 // network round-trip). The token in the cookie is re-issued at aal2 after
 // mfa.verify, so its claim is authoritative for "did this session pass MFA".
-function aalFromToken(token: string | undefined): string | null {
+//
+// EXPORTED because /denied has to answer the same question before it says anything
+// about the caller's own membership. One decode, one definition of "did this session
+// present the second factor" — a second copy is the drift this file keeps removing.
+// It is a claim READER, not a gate: sound only after getUser() has proved the token
+// authentic, which is what both callers do first.
+export function aalFromToken(token: string | undefined): string | null {
   if (!token) return null;
   try {
     const part = token.split(".")[1];

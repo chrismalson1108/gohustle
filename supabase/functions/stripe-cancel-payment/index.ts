@@ -1,7 +1,8 @@
 // Cancels a PaymentIntent when a booking is declined or cancelled, releasing the card hold.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { one } from '../_shared/pgrest.ts';
+import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,13 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Carried outside the try so the terminal catch can name WHICH hold failed to
+  // release. Every other money function does the same (accept-booking's
+  // errBookingId/errUserId); without it the sink row says only "it threw".
+  let errBookingId: string | null = null;
+  let errUserId: string | null = null;
+  let errIntentId: string | null = null;
+
   try {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
@@ -23,9 +31,11 @@ Deno.serve(async (req: Request) => {
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+    errUserId = user.id;
 
     const { bookingId } = await req.json();
     if (!bookingId) return json({ error: 'bookingId required' }, 400);
+    errBookingId = typeof bookingId === 'string' ? bookingId : null;
 
     // Authorization (IDOR guard): releasing a card hold may only be done by the
     // poster (on decline/cancel) or the earner (on withdraw) of this booking.
@@ -87,6 +97,7 @@ Deno.serve(async (req: Request) => {
 
     // No payment record means booking was never paid — nothing to cancel
     if (pErr || !payment) return json({ success: true, noPayment: true });
+    errIntentId = payment.payment_intent_id ?? null;
 
     if (payment.status === 'cancelled') {
       return json({ success: true, alreadyCancelled: true });
@@ -97,16 +108,104 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Payment already captured; issue a refund instead.' }, 400);
     }
 
-    await stripe.paymentIntents.cancel(payment.payment_intent_id);
+    // Ask Stripe to void the hold. `payment_intent_unexpected_state` means the intent
+    // is no longer cancellable, and there are TWO very different reasons for that:
+    //
+    //   * It is already void — Stripe expired the 7-day authorization, delete-account
+    //     cancelled it, or a concurrent decline/cancel got there first. The goal state
+    //     is "no hold", so that IS success; throwing here left the row reading
+    //     'authorized' against a dead intent until the webhook eventually landed, and
+    //     both clients swallow this function's errors (JobsContext.declineBooking
+    //     ignores outright, cancelBooking retries once and ignores), so nothing else
+    //     would have retried it.
+    //   * It already SUCCEEDED — a capture won the race with our read. Stamping the row
+    //     'cancelled' there would tell every tool in the console that the poster was
+    //     never charged when they were. admin-payment-action's release_hold draws the
+    //     same distinction for the same reason, so probe before concluding.
+    //
+    // Unlike the console path this does NOT rewrite the row to 'captured': that
+    // correction belongs to stripe-webhook and reconcile-stripe, which have the amounts.
+    // It logs the disagreement and refuses.
+    let alreadyVoid = false;
+    try {
+      await stripe.paymentIntents.cancel(payment.payment_intent_id);
+    } catch (e: any) {
+      if (e?.code !== 'payment_intent_unexpected_state') throw e;
+      const pi = await stripe.paymentIntents.retrieve(payment.payment_intent_id);
+      if (pi.status === 'succeeded' || (pi.amount_received ?? 0) > 0) {
+        await logServerError('stripe-cancel-payment',
+          'Refused to void a hold that Stripe has already CAPTURED — the poster has been '
+          + 'charged while our row still reads authorized; this needs a refund, not a release.',
+          {
+            booking_id: bookingId,
+            booking_status: booking.status,
+            payment_id: payment.id,
+            payment_intent_id: payment.payment_intent_id,
+            payment_status: payment.status,
+            stripe_status: pi.status,
+            stripe_amount_received: pi.amount_received ?? 0,
+          },
+          { fatal: true, userId: user.id });
+        return json({ error: 'Payment already captured; issue a refund instead.' }, 400);
+      }
+      // Genuinely already void. Not fatal — no money is at risk — but record it, because
+      // a hold that keeps arriving here pre-voided means something upstream is releasing
+      // holds we never hear about.
+      alreadyVoid = true;
+      await logServerError('stripe-cancel-payment',
+        'Hold was already void at Stripe; reconciling the ledger row instead of failing.',
+        {
+          booking_id: bookingId,
+          booking_status: booking.status,
+          payment_id: payment.id,
+          payment_intent_id: payment.payment_intent_id,
+          payment_status: payment.status,
+          stripe_status: pi.status,
+        },
+        { fatal: false, userId: user.id });
+    }
 
-    await supabase.from('payments').update({
+    const { error: updErr } = await supabase.from('payments').update({
       status: 'cancelled',
       cancelled_at: new Date().toISOString(),
     }).eq('id', payment.id);
+    if (updErr) {
+      // The hold is gone at Stripe but the ledger still says 'authorized'. Nothing here
+      // retries, so ctl_money_exposed_on_dead_booking would raise it six hours later as
+      // 'hold_never_released' with no cause attached. Name the cause now.
+      await logServerError('stripe-cancel-payment',
+        `ledger_desync: the hold was released at Stripe but the payments row still reads `
+        + `'${payment.status}': ${updErr.message}`,
+        {
+          booking_id: bookingId,
+          booking_status: booking.status,
+          payment_id: payment.id,
+          payment_intent_id: payment.payment_intent_id,
+          payment_status: payment.status,
+          already_void_at_stripe: alreadyVoid,
+        },
+        { fatal: true, userId: user.id });
+      return json({
+        error: 'ledger_desync',
+        message: 'The hold was released but the ledger update failed. This is logged.',
+      }, 500);
+    }
 
-    return json({ success: true });
+    return json({ success: true, alreadyVoid: alreadyVoid || undefined });
   } catch (err: any) {
     console.error('stripe-cancel-payment:', err);
+    // Land it where an operator will actually see it (/errors). This used to stop at
+    // console.error, and both clients swallow the 500 — so a failed hold release left
+    // the poster's money tied up on a dead booking with no trace of WHY anywhere.
+    await logServerError('stripe-cancel-payment',
+      `Hold release failed — the poster's money may still be held on a dead booking: ${errMessage(err)}`,
+      {
+        booking_id: errBookingId,
+        payment_intent_id: errIntentId,
+        stripe_error_code: err?.code ?? null,
+        stripe_error_type: err?.type ?? null,
+      },
+      { fatal: true, userId: errUserId });
     return json({ error: 'Something went wrong. Please try again.' }, 500);
   }
 });

@@ -5,8 +5,8 @@
 //
 // Resumable: if a session is already pending we re-use its hosted URL rather
 // than creating a duplicate.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

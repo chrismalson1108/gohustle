@@ -35,7 +35,7 @@
 //                        nothing to say.)
 //   CONTROLS_EMAIL     — recipient (defaults to the support inbox).
 //   ANTHROPIC_API_KEY  — optional; enables triage. Absent = plain digest, no failure.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

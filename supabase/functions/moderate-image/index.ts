@@ -9,7 +9,7 @@
 //
 // It fails CLOSED on the two conditions a user can arrange for themselves: an
 // object too large to scan, and their own rate limit. See those branches.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

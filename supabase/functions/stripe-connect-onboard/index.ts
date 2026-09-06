@@ -1,7 +1,7 @@
 // Creates a Stripe Connect Express account for an earner and returns the onboarding URL.
 // Called from PayoutSetupScreen. Idempotent — resumable if onboarding was interrupted.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { requireStepUp } from '../_shared/stepUp.ts';
 import { deriveConnectStatus } from '../_shared/connectStatus.ts';
 

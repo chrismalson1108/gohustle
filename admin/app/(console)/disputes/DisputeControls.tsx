@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { setDisputeStatus, type ActionResult } from "./actions";
+import { setDisputeStatus } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 // `canResolve` comes from the PAGE as roleSatisfies(ctx.role, "trust") — the same
 // predicate setDisputeStatus enforces. It used to be role === "admin", which rendered
@@ -16,7 +18,12 @@ export default function DisputeControls({
   canResolve: boolean;
 }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // requireAdmin itself throws stale_mfa once the console session passes its 12h
+  // re-verification point, so even an action with no step-up of its own can come back
+  // recoverable. Without this the operator read "Not authorized." on a dispute they are
+  // allowed to resolve, and only a page navigation would have offered the code prompt.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [note, setNote] = useState("");
 
   if (!canResolve) {
@@ -28,10 +35,13 @@ export default function DisputeControls({
     fd.set("disputeId", disputeId);
     fd.set("status", next);
     fd.set("note", note);
+    // Clear inside the thunk: useStepUp replays this same call after a fresh code.
     start(async () => {
-      const r = await setDisputeStatus(fd);
-      setResult(r);
-      if (r.ok) setNote("");
+      await stepUp.run(async () => {
+        const r = await setDisputeStatus(fd);
+        if (r.ok) setNote("");
+        return r;
+      });
     });
   };
 
@@ -73,6 +83,7 @@ export default function DisputeControls({
           </button>
         )}
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <span className={`max-w-xs text-right text-xs ${result.ok ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}>
           {result.message}

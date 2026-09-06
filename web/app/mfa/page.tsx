@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+import { factorLabel, preferredFactor } from "@/lib/mfa";
 
 // /browse, not "/". The root route is the MARKETING landing page — it has no session
 // check and renders the signed-out hero — so every navigation on this screen dropped a
@@ -42,6 +43,9 @@ export default function MfaPage() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Which entry in the authenticator we are about to challenge, so the copy can NAME it.
+  // Presentational only — submitCode does its own authoritative, fail-closed lookup.
+  const [entry, setEntry] = useState<{ label: string; count: number } | null>(null);
 
   const recovery = mode === "recovery";
 
@@ -56,6 +60,22 @@ export default function MfaPage() {
     if (!session) router.replace("/login");
     else if (!needsMfaChallenge) router.replace(HOME);
   }, [session, needsMfaChallenge, router]);
+  // Names the entry BEFORE the first attempt, so an admin holding two is not left
+  // guessing which of them this gate wants. A failed lookup simply leaves the copy
+  // generic; it must not change what the screen does, and the gate holds either way.
+  useEffect(() => {
+    if (stranded) return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (!alive || error) return;
+      const verified = (data?.totp ?? []).filter((f) => f.status === "verified");
+      const picked = preferredFactor(verified.map((f) => ({ ...f, name: f.friendly_name ?? null })));
+      if (picked) setEntry({ label: factorLabel(picked), count: verified.length });
+    })();
+    return () => { alive = false; };
+  }, [stranded]);
+
   if (stranded) return null;
 
   const submitCode = async () => {
@@ -72,8 +92,20 @@ export default function MfaPage() {
         setErr("Couldn't reach the server. Check your connection and try again.");
         return;
       }
-      const factor = (factors?.totp ?? []).find((f: { id: string; status: string }) => f.status === "verified");
+      // preferredFactor, not "whichever GoTrue listed first". An account can hold two
+      // verified TOTP factors — this site and the app enrol as "GoHustlr", the admin
+      // console as "GoHustlr Admin" — and the copy above names the entry to open, so
+      // picking by list order challenged one entry while naming the other. The code only
+      // verifies against the factor it is challenged with, so the result was a correct
+      // code reading as wrong.
+      const verified = (factors?.totp ?? []).filter(
+        (f: { id: string; status: string }) => f.status === "verified",
+      );
+      const factor = preferredFactor(
+        verified.map((f: { id: string; friendly_name?: string | null }) => ({ ...f, name: f.friendly_name ?? null })),
+      );
       if (!factor) { clearMfaPending(); router.replace(HOME); return; }
+      setEntry({ label: factorLabel(factor), count: verified.length });
 
       const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId: factor.id });
       if (chErr || !ch) { setErr("Couldn't start the check. Please try again."); return; }
@@ -138,8 +170,17 @@ export default function MfaPage() {
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         {recovery
           ? "Enter one of the codes you saved when you turned on two-factor. Each works once, and using one turns two-factor off so you can set it up again on your new phone."
-          : "Open your authenticator app and enter the 6-digit code for GoHustlr."}
+          : `Open your authenticator app and enter the 6-digit code for “${entry?.label ?? "GoHustlr"}”.`}
       </p>
+
+      {/* Only when there IS more than one entry — saying it to everyone sends a normal
+          user hunting for a second GoHustlr they do not have. */}
+      {!recovery && (entry?.count ?? 0) > 1 && (
+        <p className="mt-2 text-sm font-semibold leading-relaxed text-ink-soft">
+          You have more than one GoHustlr entry — this sign-in needs the one named
+          “{entry?.label}”.
+        </p>
+      )}
 
       <input
         value={code}

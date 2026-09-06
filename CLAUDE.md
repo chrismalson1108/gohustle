@@ -15,7 +15,7 @@ npm run android                 # expo run:android — build & launch the dev cl
 npm run web                     # expo start --web
 npm install --legacy-peer-deps  # Always use this flag when installing packages
 deno check --node-modules-dir=none supabase/functions/<fn>/index.ts   # type-check an edge fn (see below)
-npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 54 version)
+npx expo install <package>      # Use instead of npm install for Expo packages (auto-picks SDK 55 version)
 npm test                        # Jest — the pure-logic + drift-guard suite in __tests__/ (~1s)
 npm run brand:sync              # Distribute shared/assets/brand → the paths web + app.json expect
 supabase db push --linked       # Apply supabase/migrations/ to production (the canonical path)
@@ -158,7 +158,13 @@ cd admin && npx vercel --prod --scope go-hustlr
 CLI logs in as the personal account `mainmail-1145`, so the bare command documented here
 until 2026-08-14 fails with a flat `"Not authorized"` / `deploy_failed` — which reads like
 an expired login rather than a missing flag, and the obvious response (re-authenticate)
-fixes nothing.
+fixes nothing. **`cd admin` is the other load-bearing half**: the CLI picks its project
+from the `.vercel/` link in the directory it runs in, and the repo root's link is
+`gohustle` — the **website** — so the same command run from there deploys the wrong
+project and prints a success URL. Fixing this file on 2026-08-14 fixed only this file:
+`DEPLOY.md`, `admin/README.md` (which positively instructed the repo-root run) and the
+2026-08-12 audit runbooks all still printed the bare command until 2026-09-06.
+`__tests__/adminDeployCommand.test.js` now holds every document to the hook's version.
 
 The app runs in the **custom GoHustlr dev client, not Expo Go** — `expo-dev-client` is
 installed and the app's native modules (Stripe, maps, notifications, Google sign-in)
@@ -241,11 +247,13 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 
 ## SDK & Backend
 
-- **Expo SDK 54**, React Native 0.81.5, React 19.1.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
+- **Expo SDK 55**, React Native 0.83.10, React 19.2.0. **The app cannot run in Expo Go at all** — Stripe, maps, notifications and Google sign-in are native modules Expo Go does not contain. Use the custom dev client (`npm run ios` / `npm run android`, or an EAS `development` build).
 - **Supabase** at `https://nfioebqsgmmzhbksxozc.supabase.co` — PostgreSQL, Auth (email/password), Realtime, RLS.
 - Client is in `src/lib/supabase.js` (uses AsyncStorage for session persistence).
 - Base schema + feature migrations live in `supabase/` (run `schema.sql` first, then the `migration_*.sql` files) and were applied manually in the Supabase SQL Editor. **`supabase/migrations/` is the source of truth for the live schema's BEHAVIOUR** — every guard, policy, trigger and RPC — though not for every `create table`: roughly half of those still live in the legacy `supabase/*.sql` files (see the schema-inventory note below). It covers including the fee pinning, controls, promotions, support, payouts and MFA systems — applied with `supabase db push --linked`. 188 files as of 2026-08-14; production's `supabase_migrations.schema_migrations` was verified to match file-for-file on 2026-08-13 at 166 files, so **the tail is only as applied as your last `db push`** — re-verify rather than trusting this line. Never hand-apply SQL in the dashboard; that is how the two drift.
-- ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` from realtime** (added by `migration_stripe.sql`). Neither failure errors; the policy just gets weaker.
+- ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` from realtime** (added by `migration_stripe.sql`). Neither failure errors; the policy just gets weaker. The messaging half is now watched against DATA — `ctl_suspended_user_active` (registry `suspended_user_active`) files a finding for any message, booking or review written after its author's `suspended_at`, which is impossible while the three suspension clauses hold. It is a canary, not a guard: it reports the weakening after the fact, it does not prevent it.
+- ⚠️ **`migration_fix_lifecycle.sql` is a LEGACY file — do NOT re-run it against production.** This line used to recommend exactly that, and following it would silently weaken two live controls. Verified 2026-08-13: production's `messages_insert` carries `NOT private.is_suspended(auth.uid())` (added by `20260730150000_suspension_blocks_messages.sql`); the legacy file recreates the policy with only the block check, so re-running it **re-opens messaging for suspended accounts** — and because messaging is party-scoped, the people a suspended account can then reach are its existing booking counterparties, i.e. whoever most likely just reported them. It also does `DROP PUBLICATION supabase_realtime; CREATE PUBLICATION … FOR TABLE bookings, jobs, messages`, which **drops `payments` and `notifications` from realtime** (added by `migration_stripe.sql` and `20260906110000` respectively). Neither failure errors; the policy just gets weaker.
+  ⚠️ **Those three statements ARE the publication — there is no other definition of it in the repo**, so a `postgres_changes` subscription on a table none of them names is a live connection that can never fire. That is what the web alerts badge and the alerts inbox were: both subscribe to `notifications`, nothing ever published it, and the badge only moved because `AppShell` re-fetches on every navigation. `20260906110000` adds it and `__tests__/realtimePublication.test.js` replays every publication statement across the legacy files and `migrations/` and fails on the next subscriber written against an unpublished table.
   **If a booking action returns a permission error, run `supabase db push --linked`.** The tracked `supabase/migrations/` files are the only reproducible hardened state.
 
 ## App Flow
@@ -277,7 +285,7 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
                                                                     Payments/Security/Support/AssistantMemory
 ```
 
-**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. Opening a chat pushes the full-screen `ChatScreen` (route `Chat`, registered in every stack); `MessageSheet` is the shared chat body, also hosted as a modal from JobDetail/Earn/Gigs. Opening marks the conversation read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
+**Messages hub**: `MessagesScreen` lists conversations (one per booking with messages) built from `bookings`+`posterBookings`, with last-message preview, unread dots, and an Inbox/Archived split. Per-user `conversation_state` table (`last_read_at`, `archived`); helpers in `src/lib/messages.js`. ⚠️ **`last_read_at` is stamped by the SERVER, not by the value the client sends** — `trg_guard_conversation_state_read_at` (20260906094000) rewrites it to `now()` on any write that changes it, because `isUnread` compares it against `messages.created_at` (server `now()`) and both clients send the handset's clock: a phone running fast marked replies read before they were written, a slow one left read threads badged. The trigger deliberately leaves the column alone when a write does not change it — `setConversationArchived` upserts only `archived` — so archiving never counts as reading. Opening a chat pushes the full-screen `ChatScreen` (route `Chat`, registered in every stack); `MessageSheet` is the shared chat body, also hosted as a modal from JobDetail/Earn/Gigs. Opening marks the conversation read; `JobsContext.unreadMessages` drives the tab badge (`refreshUnread`). Conversations link out: the row avatar and the sheet's header person open `UserProfile`; the sheet's "re: job" line opens `JobDetail` (works for past/soft-deleted listings via `JobsContext.fetchJobById`, the fallback JobDetail uses when the job isn't in the browse list). **Messaging is booking-scoped** (party-scoped RLS) — `PublicProfileScreen` shows a "Message" button only when a booking connects the two users. `FindPeopleScreen` (`FindPeople` route in Messages+Profile stacks; entry points: Messages header search icon, Profile → Grow → Find People) searches profiles by name/username (`ilike`, respects `blockedIds`).
 
 - **Tab route names (`HomeTab`/`EarnTab`/`GigsTab`/`MessagesTab`/`ProfileTab`) are intentionally kept even though display labels are Browse / My Jobs / Hire / Messages / You** — the route names are a wire protocol, not just internal: `send-push`'s `KNOWN_TABS` and the `data.tab` field of every push notification depend on them, so renaming a route silently breaks notification deep-links. Many `navigation.navigate('EarnTab'|'GigsTab'|'ProfileTab', …)` calls depend on them too.
 - **The five stack ROOTS are `HomeMain`/`EarnMain`/`GigsMain`/`MessagesMain`/`ProfileMain`, not the component names.** This fence used to write them as `HomeScreen`/`ProfileScreen`/… — the components — and `navigate('ProfileScreen')` matches no route and fails silently. They are load-bearing the same way the tab names are: `FloatingTabBar`'s `HUB_ROUTES` decides whether the tab bar shows by testing the nested route against this exact set, and `PostJobScreen`/`PayoutSetupScreen` both navigate to one by name.
@@ -315,7 +323,7 @@ Jobs, bookings (earner view), posterBookings (poster view), myPostedIds. Cache-f
 Realtime: three Supabase channels per session — `bookings-user-${user.id}` (earner), `poster-bookings-${user.id}` (poster; broad subscription that calls `loadPosterBookings()` on any change), and `messages-unread-${user.id}` (feeds `unreadMessages` and the Messages tab badge).
 
 ### Push notifications (`src/lib/push.js`)
-Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab (the values must match `send-push`'s `KNOWN_TABS` — see the tab-route-name note above). `expo-notifications` is a dependency **and** a registered config plugin in `app.json`, so the native module **is** compiled into the current dev-client / TestFlight binary — no rebuild is outstanding. Remote push still needs a real device: `push.js` returns `null` on simulators via `Device.isDevice`, and plain Expo Go on SDK 54 cannot receive Android remote push.
+Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on login) requests permission, gets the Expo token via `extra.eas.projectId`, and upserts into the `push_tokens` table (owner RLS). `unregisterPushToken` runs on sign-out. `notify(userId, title, body, data)` POSTs to the `send-push` edge function (service-role lookup of the recipient's tokens → Expo push API, prunes dead tokens). Triggers live at the booking/message events in `JobsContext` (book/accept/decline/mark-done/verify/rate/amend) and `MessageSheet.sendMessage`; `data.tab` routes the tap to a tab (the values must match `send-push`'s `KNOWN_TABS` — see the tab-route-name note above). `expo-notifications` is a dependency **and** a registered config plugin in `app.json`, so the native module **is** compiled into the current dev-client / TestFlight binary — no rebuild is outstanding. Remote push still needs a real device: `push.js` returns `null` on simulators via `Device.isDevice`, and plain Expo Go on SDK 55 cannot receive Android remote push.
 
 ## Key Screens
 
@@ -474,6 +482,19 @@ Optional for users, enforced where it protects money.
 - **Recovery codes are generated AT enrollment, not offered later** — 2FA without a way
   back in turns a lost phone into a lost account. Redeeming one REMOVES the factor
   (a code cannot mint aal2), dropping the account to password-only.
+- ⚠️ **ONE ACCOUNT CAN HOLD TWO VERIFIED FACTORS, AND THAT IS THE STEADY STATE.** The
+  app and the website enrol as `GoHustlr`, the admin console as `GoHustlr Admin`, and
+  `/team` deliberately refuses to alert on two for that reason. Both screens said "the
+  factor" until 2026-09-06 and both were wrong for staff accounts: `turnOff` unenrolled
+  `status.factors[0]` and toasted "your account is password-only again" unconditionally,
+  so the other authenticator kept gating every sign-in with the card reading **On**
+  directly under that toast; and the challenge took whichever factor GoTrue listed first
+  while the copy named `GoHustlr`, so a code from the entry the screen NAMED was rejected
+  as wrong — `challengeAndVerify` is scoped to the factorId it is handed. `factorLabel` /
+  `factorOrigin` / `preferredFactor` (`src/lib/mfa.js`, mirrored in `web/lib/mfa.ts`) are
+  the shared answer: every verified factor is listed by name and enrolment date, disabling
+  picks one and derives its toast from the **reloaded** status, and the challenge prefers
+  the app's own entry and names it. `mfa.test.js` covers all four screens.
 - **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link, starting
   Connect onboarding, or **deleting the account** requires aal2 **if the account has a
   factor**; no factor ⇒ allowed, because locking someone out of their own bank details
@@ -540,6 +561,20 @@ kills safety paging and the control digest. The file's comments also record what
 deliberately *absent* and why (`support-reply`/`support-ai-draft` keep `verify_jwt =
 true` because the console calls them with a real admin JWT); read it before adding a
 function that anything other than the app calls.
+
+⚠️ **Every dependency specifier is an EXACT version — `npm:@supabase/supabase-js@2.112.3`,
+`npm:stripe@22.5.0` — and all the import sites must agree.** They were floating majors
+(`@2`, `@22`) until 2026-09-06, and `deno.lock` is gitignored, so nothing recorded a
+resolution: each hand-deploy resolved the newest matching release at that moment, and the
+functions are deployed one at a time on the day each is touched. The fleet therefore ran
+whatever minor was current when each function last shipped, and `deno check
+--node-modules-dir=none` — which resolves through Deno's GLOBAL cache — could not see it,
+so the first symptom would have been one function failing in production with no diff that
+explains it. `__tests__/edgeDepsPinned.test.js` fails on any `npm:`/`jsr:` specifier
+without a full `x.y.z`, on two sites disagreeing about a package, and on a raw `https://`
+module import. This is NOT what `stripeApiVersion.test.js` pins: that one fixes the wire
+API version and asserts only the stripe MAJOR, so the library underneath it drifted
+exactly as supabase-js did.
 
 ⚠️ **Edge failures go to `logServerError` (`_shared/logError.ts`), not `console.error`.**
 It writes into the same `client_errors` table the console renders at `/errors`, tagged
@@ -672,7 +707,7 @@ root is not listed here, which is what stops that happening again.
 | `CLAUDE_MD_DRIFT.md` | **When editing CLAUDE.md, or wondering why a new session got something wrong.** The measured diff between this file's claims and the code: 79 undocumented surfaces, 33 assertions that are false. Every surface is mechanically enumerable, so it is the spec for a drift test, not a cleanup list. |
 | `ATTACK_FINDINGS.md` | **Before trusting any money path.** 23 UNVERIFIED candidates from an adversarial attack on promotions, referrals, refunds, capture and the admin console after the stripe@22 upgrade. The refutation pass did not finish — verify before acting. One is confirmed and fixed. |
 | `OPEN_WORK.md` | **Every session, first.** Confirmed-but-unfixed findings, worked highest-severity-first without being asked. |
-| `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 54 docs before writing Expo code. |
+| `AGENTS.md` | Three lines, and they matter: read the **versioned** Expo SDK 55 docs before writing Expo code. The version in that URL is derived from `package.json` by `__tests__/agentsSdkPointer.test.js`, so it cannot go stale across an SDK move again — it pointed at v54 for the whole of the 55 upgrade. |
 | `RUNBOOK_MONEY.md` | **What to do when money goes wrong.** Read before touching payments, and follow it when something has already broken. |
 | `RUNBOOK_SAFETY.md` | What to do when a person is at risk, or a person *is* the risk. |
 | `ROLE_PERMISSION_MATRIX.md` | Who may do what to which object — check before changing any policy, guard or admin tier. |
@@ -707,7 +742,10 @@ it is the second half of a change that has not been done yet.
 | `headerDuplication.test.js` | a screen printing its nav-bar title a second time in its own header |
 | `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
 | `partyPoliciesSuspensionAgnostic.test.js` | a party-scoped policy going back to `join public.jobs` to decide who is a party. A policy subquery runs as the QUERYING role, so it inherits `jobs_select_all` — which hides a suspended poster's job — and suspending someone then erased their counterparty's message thread, chat photos, completion photos and dispute, from the counterparty only. Use `private.is_booking_party` (20260906041000) |
+| `definerAnonExecute.test.js` | a new `SECURITY DEFINER` function shipping with the grant line everyone writes — `grant execute … to authenticated;` and nothing else. The 2026-07-26 sweep was one statement, not a default-privilege change, so every function created after it inherits anon's EXECUTE (and PUBLIC's) again; both roles must be revoked, or the anon key calls it. Two had drifted (`resolve_category_slug`, the 4-arg `capped_override_bps`) before this replay existed. `view_gig_share` is the one allowed exception |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
+| `edgeDepsPinned.test.js` | an edge function importing a floating dependency range — 32 hand-deploys on 32 days each resolved their own supabase-js, and the local type-check reads the developer's cache rather than production |
+| `adminDeployCommand.test.js` | a document printing an admin-console deploy command that cannot work as written — no `--scope go-hustlr` (flat "Not authorized"), or run from the repo root (deploys the website instead). The console only ships by hand, so the command in the doc IS the deploy mechanism |
 | `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
@@ -860,6 +898,19 @@ which booking). `kind` is `fee_override`, `bonus` or `poster_discount` (the firs
   `promo_redeem_attempts` — **attempts, not successes**, or a brute-force sweep that
   only ever fails would never register.
 - An exhausted budget **still lets the booking succeed** at the standing rate.
+- ⚠️ **The `/promotions` cost preview is an UPPER BOUND, and it priced at 10% until
+  2026-09-06.** `estimate_campaign_cost` is the only number an operator has when they
+  choose `budget_cents` and `max_redemptions`, and it handed the literal `1000` to
+  `platform_fee_cents`/`poster_discount_headroom` in four places — the same founding-rate
+  literal the charge path was corrected off TWICE (`20260806220000`, `20260813140000`).
+  At the live 700 bps it overstated a fee waiver and a poster discount by 2x on the $50
+  default gig, so a budget sized from it funded twice the uses it promised (a rate RISE
+  inverts that and exhausts the budget early). It now reads `fee_bps_at(now())`. It stays
+  an upper bound for `fee_override`: the real charge is measured against the booking's
+  PINNED baseline, `least(standing, tier_fee_bps(earner))`, and a per-campaign preview has
+  no earner to resolve a tier for — the returned `note` the console renders says so and
+  names the rate it used. `__tests__/campaignCostPreviewRate.test.js` fails if any of the
+  three benefit-costing functions goes back to a literal rate.
 
 ### Referral bonuses
 `bonus_ledger`, **vest-on-outcome**: created when the *referred* person's gig reaches
@@ -882,7 +933,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **69 controls are registered**: 67 run in-database and 2 are `external`. Every
+- **73 controls are registered**: 71 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -946,6 +997,33 @@ only runs when a human opens a page.
   four weeks. `ctl_alert_not_dispatching` now names each dark channel and the shape that
   broke it, resolving url/secret exactly as each dispatcher does — including the GUC
   fallback only `notify_safety_report` has, so it cannot report a live channel dark.
+- ⚠️ **The PRODUCT kill switches get the watcher but NOT the deadline, and that split is
+  deliberate.** `payments_enabled`, `posting_enabled`, `signups_enabled`, `tips_enabled`,
+  `assistant_enabled`, `promotions_enabled` are excluded from the alert flags' auto-expiry
+  on purpose — re-enabling a pager resumes telling you things, re-enabling payments
+  resumes taking money 24 hours into a Stripe incident. Until 20260906085000 that was the
+  only half anyone scoped, so a pause was visible on exactly one surface (a red pill on
+  `/flags`) while the digest, the page and `/controls` read clean. `ctl_feature_flag_off`
+  (medium, so it reaches the daily digest rather than paging an operator an hour after
+  they flipped the switch themselves) now reports every off flag for as long as it lasts,
+  and **never re-enables anything**. It watches every `app_flags` row rather than a list
+  of today's six, so the next kill switch is covered the moment it is added; a row that is
+  MEANT to sit off carries `value.off_is_normal` — today only
+  `bonus_cash_payout_enabled`.
+  ⚠️ **`app_flags` holds THREE kinds of row and `/flags` must not render them alike.**
+  Feature kill switches · the two alert channels · CONFIG rows (`stripe_mode`,
+  `storage_public_origin`, `controls_heartbeat`) whose payload is `value` and whose
+  `enabled` bit is read by nothing. Until 2026-09-06 all twelve shared one toggle, one
+  confirm dialog and one success sentence written for the first kind, so muting the safety
+  pager mid-incident told the operator that *users* were now seeing a "temporarily paused"
+  message — the opposite of what had happened — and never mentioned that the mute lapses by
+  itself in 24 hours. `admin/app/(console)/flags/guide.ts` is now the one place the console
+  says what a flag is and what flipping it does; the enforcement list is rendered from it,
+  muting a pager demands a written reason (`disabled_reason`, a column nothing wrote), and
+  `stripe_mode` is edited BY VALUE with a typed confirmation — which is what 20260814080000
+  meant by "/flags can flip it at cutover" and what no code did.
+  `__tests__/flagsConsoleDescribesEveryKey.test.js` reads the seeds off disk and fails if a
+  new flag arrives undescribed.
 - TWO registry rows are `external = true` — `stripe_reconciliation` and `stripe_webhook_config`,
   both `fn_name = 'external:reconcile-stripe'`. `run_all_controls` filters them out (it iterates
   `where enabled and not external`), so they run only via `controls_sweep_and_page`'s HTTP dispatch
@@ -989,7 +1067,7 @@ promotions). **`trust` and `finance` are peers**, neither outranks the other.
 `earner-claim-payment` refuses to settle a booking with an open report — one person's
 availability was a money-harm control.
 
-MFA (AAL2) is re-verified **on every request** from the JWT claim, and money- or privilege-moving actions additionally require **step-up** (`requireFreshAdmin`, factor satisfied within 5 minutes). Membership lives in `admin_users`; **`status` gates, not just membership** — a row starts `pending` and grants nothing until approved. Login throttle:
+MFA (AAL2) is re-verified **on every request** from the JWT claim, and money- or privilege-moving actions additionally require **step-up** (`requireFreshAdmin`, factor satisfied within 5 minutes) — including **`/access`**, whose `'*'` row is the difference between a private beta and public signup and which ran on plain `requireAdmin` until 2026-09-06. ⚠️ **A denial is not always a denial, and every `actions.ts` must say so through `denyResult` (`admin/lib/guard.ts`) — never by hand.** `requireAdmin` itself throws `stale_mfa` at the 12h session cap, so ANY action can come back recoverable; `denyResult` keeps that as the bare `"stale_mfa"` sentinel `useStepUp` keys on and flattens everything else to "Not authorized.". The two wrong answers both shipped — six surfaces collapsed it into "Not authorized." (an operator told their access was revoked, with nothing to press) and three returned `e.reason` raw (printing the word `stale_mfa` at a human). `__tests__/stepUpCoverage.test.js` enumerates both directions: every `actions.ts` under `(console)`, and every client component that calls one, which must render `ReauthPrompt` off its step-up state. Membership lives in `admin_users`; **`status` gates, not just membership** — a row starts `pending` and grants nothing until approved. Login throttle:
 5 failures per account / 15 min, or 20 per IP — enforced from `admin/app/login/actions.ts`,
 which is **new as of 2026-08-14**: `admin_login_blocked` and `admin_login_attempts` existed
 in SQL from 20260806090000 with ZERO callers, so this line described nothing for two months

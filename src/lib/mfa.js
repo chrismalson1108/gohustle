@@ -37,6 +37,53 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE ACCOUNT CAN HOLD TWO VERIFIED FACTORS, AND THAT IS THE STEADY STATE.
+//
+// The app and the website enrol as "GoHustlr"; the admin console enrols as
+// "GoHustlr Admin" (admin/app/mfa/page.tsx). An admin therefore has two entries in
+// their authenticator, permanently — /team already refuses to alert on it for exactly
+// that reason. Any screen that says "the factor" is wrong for those accounts:
+//   • turning 2FA "off" by unenrolling factors[0] leaves the OTHER one still signing
+//     them in, under a toast that says the account is password-only,
+//   • and a code typed from the wrong entry is REJECTED, because challengeAndVerify is
+//     scoped to the factorId it was handed — a correct code that reads as wrong.
+//
+// So the label is not decoration. It is which entry in the list to open.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** What the app and the website enrol as — the entry a normal user has. */
+export const APP_FACTOR_NAME = 'GoHustlr';
+/** What the admin console enrols as. Present only on staff accounts. */
+export const ADMIN_FACTOR_NAME = 'GoHustlr Admin';
+
+/** The name the entry carries in the authenticator's list. */
+export function factorLabel(factor) {
+  const name = factor?.name ?? factor?.friendly_name ?? null;
+  const clean = String(name ?? '').trim();
+  return clean || APP_FACTOR_NAME;
+}
+
+/** Which surface enrolled it, in words a person can act on. */
+export function factorOrigin(factor) {
+  return factorLabel(factor) === ADMIN_FACTOR_NAME
+    ? 'set up on the admin console'
+    : 'set up in the app or on the website';
+}
+
+/**
+ * The factor a sign-in challenge should ask for.
+ *
+ * Prefer the app's own entry over the console's: this gate is the APP's, its copy names
+ * the entry, and GoTrue's list order is not ours to rely on — an admin who enrolled on
+ * the console first would otherwise be challenged for "GoHustlr Admin" while being told
+ * to open "GoHustlr", with a rejection as the only feedback.
+ */
+export function preferredFactor(factors) {
+  const list = (factors ?? []).filter(Boolean);
+  return list.find((f) => factorLabel(f) === APP_FACTOR_NAME) ?? list[0] ?? null;
+}
+
 export class MfaError extends Error {
   constructor(message, code) {
     super(message);
@@ -132,7 +179,14 @@ export async function verifyChallenge(factorId, code) {
   return confirmEnrollment(factorId, code);
 }
 
-/** Turn 2FA off. Requires a current code, so a borrowed session cannot do it. */
+/**
+ * Remove ONE factor. Requires a current code from THAT factor, so a borrowed session
+ * cannot do it — and so a caller must be deliberate about which entry it is removing.
+ *
+ * Two-factor is off only once the last one is gone: an account with a second verified
+ * factor is still gated after this returns. Callers must re-read the status rather than
+ * announcing "password-only" on the strength of having called this.
+ */
 export async function disableMfa(factorId, code) {
   await confirmEnrollment(factorId, code);
   const { error } = await supabase.auth.mfa.unenroll({ factorId });

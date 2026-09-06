@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, requireFreshAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, requireFreshAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 import { isGrantableKind } from "@/lib/promoKinds";
 
@@ -87,7 +87,7 @@ export async function createPromotion(formData: FormData): Promise<ActionResult>
     // activates it, so a mistyped budget is caught before it can cost anything.
     return { ok: true, message: `Created as a draft. Review the budget, then activate.` };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not create that promotion." };
   }
 }
@@ -116,7 +116,7 @@ export async function setPromotionStatus(formData: FormData): Promise<ActionResu
           : `Set to ${status}. Bookings already pinned keep the rate they were given.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not change that promotion." };
   }
 }
@@ -160,7 +160,7 @@ export async function mintCodes(formData: FormData): Promise<ActionResult> {
     revalidatePath("/promotions");
     return { ok: true, message: `Minted ${count} code${count === 1 ? "" : "s"}, ${seatsEach} use(s) each.` };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not mint codes." };
   }
 }
@@ -225,7 +225,7 @@ export async function editPromotion(formData: FormData): Promise<ActionResult> {
     revalidatePath("/promotions");
     return { ok: true, message: "Updated. Grants already held keep the benefit they were given." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not update that promotion." };
   }
 }
@@ -255,7 +255,7 @@ export async function clonePromotion(formData: FormData): Promise<ActionResult> 
     revalidatePath("/promotions");
     return { ok: true, message: "Cloned as a fresh draft with a clean budget and a 30-day window." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not clone that promotion." };
   }
 }
@@ -280,7 +280,7 @@ export async function revokeGrant(formData: FormData): Promise<ActionResult> {
     revalidatePath("/promotions");
     return { ok: true, message: "Revoked. Bookings already made with it are untouched." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not revoke that grant." };
   }
 }

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { useUser } from "@/lib/user";
 import {
-  getNotificationPrefs, saveNotificationPrefs, DEFAULT_NOTIF_PREFS, NOTIF_CATEGORIES, type NotifPrefs,
+  getNotificationPrefs, saveNotificationPref, NOTIF_CATEGORIES, type NotifPrefs,
 } from "@/lib/notifications";
 import { classNames } from "@/lib/format";
 
@@ -33,28 +33,59 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 export default function NotificationSettingsPage() {
   const { showToast } = useUser();
-  const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
+  const [prefs, setPrefs] = useState<NotifPrefs | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
+  // A failed load renders a retry, never the defaults: showing the defaults says
+  // the user's opt-outs are gone, and the next toggle used to make that true.
+  const load = useCallback(() => {
     getNotificationPrefs()
-      .then((p) => setPrefs(p))
-      .catch(() => {})
+      .then((p) => { setPrefs(p); setLoadFailed(false); })
+      .catch(() => { setPrefs(null); setLoadFailed(true); })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
+  const retry = () => { setLoading(true); load(); };
+
   const toggle = async (key: keyof NotifPrefs, value: boolean) => {
-    const next = { ...prefs, [key]: value };
-    setPrefs(next); // optimistic
+    if (!prefs) return;
+    const previous = prefs;
+    setPrefs({ ...prefs, [key]: value }); // optimistic
     try {
-      await saveNotificationPrefs(next);
+      await saveNotificationPref(key, value);
     } catch {
-      setPrefs(prefs); // revert
+      setPrefs(previous); // revert
       showToast({ icon: "⚠️", title: "Couldn't update", message: "Please try again." });
     }
   };
 
   if (loading) return <FullPageSpinner />;
+
+  if (loadFailed || !prefs) {
+    return (
+      <div>
+        <PageHeader title="Notifications" subtitle="Choose how you hear about activity" width="form" back="/profile" />
+        <PageContainer width="form">
+          <div className="rounded-2xl bg-white p-5 shadow-[var(--shadow-card)]">
+            <p className="text-base font-bold tracking-[-0.2px] text-ink">Couldn&apos;t load your delivery settings</p>
+            <p className="mt-2 text-sm leading-5 text-ink-soft">
+              Nothing has changed — your saved choices are untouched. Check your connection and try again.
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-4 min-h-11 rounded-full bg-primary px-5 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
+          </div>
+        </PageContainer>
+      </div>
+    );
+  }
 
   return (
     <div>

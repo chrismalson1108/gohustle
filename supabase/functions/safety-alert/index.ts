@@ -23,7 +23,7 @@
 //                          which no safety report is ever emailed looked identical to
 //                          a quiet week. That is the 2026-07-10 shape — four weeks of
 //                          silent non-delivery. A 503 surfaces within the hour.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

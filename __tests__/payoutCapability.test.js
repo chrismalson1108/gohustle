@@ -46,6 +46,24 @@ describe('both settle paths verify payout capability against Stripe', () => {
     expect(codeOnly(helper)).toMatch(/unverifiable: true/);
   });
 
+  it('a FAILED stripe_accounts lookup is "could not ask", not "no account"', () => {
+    // The helper used to destructure only `data` from the lookup. A transient PostgREST
+    // error then arrived as acct === null, which is indistinguishable from "this earner
+    // never connected an account" — so both settle callers took the hard-refusal branch
+    // and told a solvent earner their payout account was no longer active.
+    const code = codeOnly(helper);
+    const read = code.indexOf("from('stripe_accounts')");
+    expect(read).toBeGreaterThan(-1);
+    const decl = code.slice(0, read);
+    // The error member is read at all...
+    expect(decl).toMatch(/const \{[^}]*error:\s*(\w+)[^}]*\}\s*=\s*await supabase$/m);
+    const errVar = decl.match(/const \{[^}]*error:\s*(\w+)[^}]*\}\s*=\s*await supabase$/m)[1];
+    // ...and it short-circuits to unverifiable BEFORE the missing-account refusal.
+    const guard = new RegExp(`if \\(${errVar}\\) return \\{[^}]*unverifiable: true`);
+    expect(guard.test(code)).toBe(true);
+    expect(code.search(guard)).toBeLessThan(code.indexOf('if (!accountId) return { capable: false }'));
+  });
+
   for (const [name, src] of [['stripe-capture-payment', capture], ['earner-claim-payment', claim]]) {
     it(`${name} uses the helper rather than reading the flag directly`, () => {
       expect(`${name}: ${/payoutCapable\(/.test(src)}`).toBe(`${name}: true`);

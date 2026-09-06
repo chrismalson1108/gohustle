@@ -12,11 +12,19 @@ frontend. Recommended host: **Vercel** (built for Next.js, free tier, automatic 
 > console was 7 days behind master. After any change under `admin/`:
 >
 > ```bash
-> cd admin && npx vercel --prod
+> cd admin && npx vercel --prod --scope go-hustlr
 > ```
 >
-> This asymmetry is the reason to check `npx vercel ls` before concluding a console fix
-> "didn't work".
+> ⚠️ **`--scope go-hustlr` is not optional and `cd admin` is not cosmetic.**
+> `gohustlr-admin` belongs to the `go-hustlr` **team** (`admin/.vercel/project.json` →
+> `orgId: team_…`) while the CLI signs in as the personal account `mainmail-1145`, so the
+> bare command fails with a flat `"Not authorized"` / `deploy_failed` — which reads like an
+> expired login, and re-authenticating fixes nothing. And the repo root's own `.vercel/`
+> is linked to `gohustle`, the **website**, so a deploy run from there ships the wrong
+> project and reports success. Same rule in CLAUDE.md and `.githooks/pre-push`.
+>
+> This asymmetry is the reason to check `npx vercel ls --scope go-hustlr` before concluding
+> a console fix "didn't work".
 
 ---
 

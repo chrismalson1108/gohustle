@@ -182,8 +182,27 @@ export function MemberControls({
             Revoke
           </button>
         )}
+        {/* Restore used to ask "Restore access for X?" and nothing else, while the
+            server treated it as the human confirmation and stamped factors_confirmed_at
+            — so the control that watches for a factor nobody vouched for went quiet on
+            the account nobody was watching. A revoked row grants nothing, so no alarm
+            fires while it sits there, /mfa still enrols for whoever holds the password,
+            and a reset on a disabled member does not demote it. Restoring now vouches
+            for nothing; the dialog says which factors are on the row and what is still
+            owed. */}
         {status === "disabled" && (
-          <button className={btn} disabled={pending} onClick={() => fire(setTeamStatus, { status: "active" }, `Restore access for ${email}?`)}>
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() =>
+              fire(setTeamStatus, { status: "active" },
+                `Restore console access for ${email}?\n\n` +
+                (mfaFactorCount === 0
+                  ? "They have NO authenticator. The next person to sign in with their password enrols one, so restoring before they have enrolled re-opens the window revoking closed."
+                  : `This account has ${mfaFactorCount} authenticator${mfaFactorCount === 1 ? "" : "s"}, the newest added ${mfaEnrolledAt ? new Date(mfaEnrolledAt).toLocaleString() : "at an unknown time"}. A factor can have been enrolled WHILE access was revoked — nobody is watching a disabled row.`) +
+                "\n\nRestoring does not vouch for any of them. Confirm that time with them directly, then press Confirm authenticators.")
+            }
+          >
             Restore
           </button>
         )}
