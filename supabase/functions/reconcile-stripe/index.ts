@@ -82,6 +82,11 @@ Deno.serve(async (req: Request) => {
     if (!expected) return json({ error: "not_configured" }, 503);
     if (req.headers.get("x-controls-secret") !== expected) return json({ error: "forbidden" }, 403);
 
+    // Anything this run could not measure or could not record. It ends up on the
+    // registry row as last_error, because a reconciliation that quietly did less than
+    // it says it did is the same failure as one that stopped running.
+    const warnings: string[] = [];
+
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
       // No key = we cannot reconcile. That is itself a finding: silently returning
@@ -89,7 +94,7 @@ Deno.serve(async (req: Request) => {
       await writeFinding(supabase, "config", {
         kind: "no_stripe_key",
         detail: "STRIPE_SECRET_KEY is unset — reconciliation cannot run at all.",
-      });
+      }, warnings);
       return json({ ok: false, reason: "no_stripe_key" }, 503);
     }
     const stripe = new Stripe(stripeKey, { apiVersion: '2026-07-29.dahlia' });
@@ -112,11 +117,6 @@ Deno.serve(async (req: Request) => {
 
     const since = new Date(Date.now() - days * 86400_000).toISOString();
     const sinceUnix = Math.floor(Date.parse(since) / 1000);
-
-    // Anything this run could not measure. It ends up on the registry row as
-    // last_error, because a reconciliation that quietly scanned less than it says it
-    // did is the same failure as one that stopped running.
-    const warnings: string[] = [];
 
     // ── SCOPE, in three passes that catch three different things ─────────────
     //
@@ -222,13 +222,12 @@ Deno.serve(async (req: Request) => {
       } catch (e) {
         // A PaymentIntent our ledger references that Stripe does not have is a
         // serious discrepancy, not a transient error worth swallowing.
-        const id = await writeFinding(supabase, p.id, {
+        seen.push(await writeFinding(supabase, p.id, {
           kind: "payment_intent_missing_at_stripe",
           booking_id: p.booking_id,
           payment_intent_id: p.payment_intent_id,
           error: String((e as Error)?.message ?? e).slice(0, 200),
-        });
-        if (id) seen.push(id);
+        }, warnings));
         continue;
       }
 
@@ -402,14 +401,13 @@ Deno.serve(async (req: Request) => {
       }
 
       if (problems.length) {
-        const id = await writeFinding(supabase, p.id, {
+        seen.push(await writeFinding(supabase, p.id, {
           booking_id: p.booking_id,
           payment_intent_id: p.payment_intent_id,
           our_status: p.status,
           stripe_status: pi.status,
           problems,
-        });
-        if (id) seen.push(id);
+        }, warnings));
       }
     }
 
@@ -465,10 +463,6 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Goes through an RPC rather than a PostgREST upsert: the findings uniqueness index is
-// PARTIAL (`where resolved_at is null`), which cannot be named as an ON CONFLICT target
-// over PostgREST. The RPC performs the same upsert-then-refresh contract run_control
-// uses, so an externally-checked control behaves exactly like a SQL one.
 // Add payments named by something OTHER than the time window — a Stripe-side reversal,
 // or an already-open finding — into the set this run examines, without duplicating a row
 // the window already produced. Batched in chunks because an `in` filter is a URL.
@@ -499,11 +493,28 @@ async function pullIn(
   }
 }
 
+// Goes through an RPC rather than a PostgREST upsert: the findings uniqueness index is
+// PARTIAL (`where resolved_at is null`), which cannot be named as an ON CONFLICT target
+// over PostgREST. The RPC performs the same upsert-then-refresh contract run_control
+// uses, so an externally-checked control behaves exactly like a SQL one.
+//
+// It ALWAYS returns the entity, even when the write failed, and that is the whole
+// point. It used to return null on an RPC error — and the caller then left the entity
+// out of `seen` while it stayed in `examined`, which is exactly the predicate
+// resolve_reconciliation_findings uses to CLOSE an open finding with the note
+// "auto-resolved: reconciles against Stripe". So one transient statement timeout turned
+// a real, already-detected money discrepancy into a resolved one, and the queue then
+// claimed a reconciliation that had never happened.
+//
+// A failed write is not evidence of health. The entity is still broken, so it stays in
+// the still-open list, and the failure goes on the registry row where a human sees the
+// control as ERRORING rather than clean.
 async function writeFinding(
   supabase: SupabaseClient,
   entityId: string,
   detail: Record<string, unknown>,
-): Promise<string | null> {
+  warnings: string[],
+): Promise<string> {
   const { error } = await supabase.rpc("record_reconciliation_finding", {
     p_entity: entityId,
     p_detail: detail,
@@ -511,7 +522,7 @@ async function writeFinding(
   });
   if (error) {
     console.error("[reconcile-stripe] could not write finding:", error.message);
-    return null;
+    warnings.push(`could not write finding for ${entityId}: ${error.message.slice(0, 120)}`);
   }
   return entityId;
 }
@@ -564,6 +575,13 @@ async function checkWebhookConfig(
   stripe: Stripe,
   stripeKey: string,
 ): Promise<void> {
+  // Every record_external_finding error lands here. Unlike the reconciliation half,
+  // this one cannot auto-resolve a live finding by failing — the entity is pushed into
+  // `open` BEFORE the write, so resolve_external_findings leaves it alone. What it CAN
+  // do is report clean: resolve_external_findings ends by setting last_error = null, so
+  // a misconfiguration whose finding could not be written leaves the board green with
+  // no row to look at. These are re-stamped onto the registry row afterwards.
+  const writeErrors: string[] = [];
   // The key decides which mode Stripe answers for, so this check always describes the
   // mode we are actually operating in — which is the whole point: live mode having no
   // endpoints is invisible from test mode.
@@ -576,7 +594,7 @@ async function checkWebhookConfig(
 
   if (enabled.length === 0) {
     open.push(`${mode}:no_endpoint`);
-    await supabase.rpc("record_external_finding", {
+    const { error: wErr } = await supabase.rpc("record_external_finding", {
       p_control_key: CONTROL_WEBHOOK,
       p_entity: `${mode}:no_endpoint`,
       p_detail: {
@@ -590,6 +608,7 @@ async function checkWebhookConfig(
       },
       p_severity: "critical",
     });
+    if (wErr) writeErrors.push(`no_endpoint: ${wErr.message.slice(0, 100)}`);
   } else {
     for (const [kind, required] of [
       ["account", REQUIRED_ACCOUNT_EVENTS],
@@ -600,7 +619,7 @@ async function checkWebhookConfig(
 
       if (eps.length === 0) {
         open.push(`${entity}:missing`);
-        await supabase.rpc("record_external_finding", {
+        const { error: wErr } = await supabase.rpc("record_external_finding", {
           p_control_key: CONTROL_WEBHOOK,
           p_entity: `${entity}:missing`,
           p_detail: {
@@ -614,6 +633,7 @@ async function checkWebhookConfig(
           },
           p_severity: "critical",
         });
+        if (wErr) writeErrors.push(`${entity}:missing: ${wErr.message.slice(0, 100)}`);
         continue;
       }
 
@@ -626,7 +646,7 @@ async function checkWebhookConfig(
 
       if (missing.length > 0) {
         open.push(entity);
-        await supabase.rpc("record_external_finding", {
+        const { error: wErr } = await supabase.rpc("record_external_finding", {
           p_control_key: CONTROL_WEBHOOK,
           p_entity: entity,
           p_detail: {
@@ -641,6 +661,7 @@ async function checkWebhookConfig(
           },
           p_severity: "high",
         });
+        if (wErr) writeErrors.push(`${entity}: ${wErr.message.slice(0, 100)}`);
       }
     }
   }
@@ -650,4 +671,12 @@ async function checkWebhookConfig(
     p_control_key: CONTROL_WEBHOOK,
     p_still_open: open,
   });
+
+  // AFTER the resolve, because that RPC ends by clearing last_error. A check whose
+  // findings could not be recorded has not passed; it has failed to report.
+  if (writeErrors.length) {
+    await supabase.from("controls")
+      .update({ last_error: writeErrors.join(" | ").slice(0, 300) })
+      .eq("key", CONTROL_WEBHOOK);
+  }
 }
