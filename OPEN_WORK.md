@@ -27,16 +27,23 @@ _Last reconciled: 2026-09-06 (three fix waves + a live-board pass; everything de
 > **2026-09-06, after the deploy.** All three waves are live: 51 migrations applied, 32
 > edge functions deployed, the console and website shipped, and two OTAs published at
 > the runtime build 34 carries. What remains open below is the 13 rows needing a product
-> decision plus low-severity polish. **Two live-board items need a human, not a commit:**
-> four unanswered support tickets and one failed payout. **One needs a Stripe dashboard
-> change:** the test-mode account endpoint is not subscribed to
-> `payment_intent.amount_capturable_updated`, so the handler added in wave 3 receives
-> nothing (no functional gap — accept-booking still promotes the row after verifying the
-> hold — but the faster observation path is dark until the event is added).
-> **One is money already moved:** a $5.00 gig captured 2026-07-02 was charged a flat 10%
-> (50c) without the Stripe-cost floor, so the platform under-collected 20c and the earner
-> was over-credited by the same. `ctl_captured_fee_off_pin` — added by this audit — found
-> it. Deliberately left alone: correcting money that already moved is Chris's call.
+> decision plus low-severity polish.
+>
+> **All four live-board items are now closed.** The four unanswered support tickets and
+> the failed payout turned out to be TEST data and went with the pre-beta purge (see
+> PRE_LAUNCH_DATA_RESET.md), as did the 20c fee under-collection from 2026-07-02 that
+> `ctl_captured_fee_off_pin` had found. And the Stripe subscription is done: the
+> test-mode account endpoint `we_1To5Y2E0UZFlVCOpeQsXtqFA` now carries
+> `payment_intent.amount_capturable_updated` alongside its original nine, still
+> `livemode: false`.
+>
+> That last one was NOT the minor thing I first called it. `accept-booking` only promotes
+> a booking still `pending`, so on a RECOVERY re-hold against an already-confirmed
+> booking nothing wrote the promotion back: the row sat at `pending` naming real money
+> while both capture and earner-claim refused it with HOLD_EXPIRED — the earner unpaid on
+> funds Stripe was genuinely holding. This webhook is the only thing that closes it.
+>
+> **The control board is clean: 0 open findings, 0 controls errored, 73 registered.**
 
 ## Open (22)
 
