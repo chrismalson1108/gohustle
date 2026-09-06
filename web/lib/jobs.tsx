@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   useRef,
 } from "react";
 import { transformJob, transformBooking, findProhibited, enteredStatus, bookingPosterId } from "@gohustlr/shared";
@@ -315,13 +316,37 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     setBlockedIds((prev) => new Set([...prev, blockedId]));
   };
 
+  // Who is on the other end of each booking's conversation, resolved exactly the way
+  // the Messages hub resolves it (poster bookings → the earner; earner bookings → the
+  // job's poster). The hub HIDES a conversation whose other party I've blocked, so the
+  // badge has to drop the same ones: a message that was unread at the moment of the
+  // block otherwise stays counted forever, because a conversation the hub hides can
+  // never be opened to mark it read — a permanent phantom badge, and the web has no
+  // unblock affordance at all. Mobile's refreshUnread already does this
+  // (src/context/JobsContext.js); this is the half the web port never received.
+  const counterparties = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    state.bookings.forEach((b) => {
+      map[b.id] = state.jobs.find((j) => j.id === b.jobId)?.posterId ?? b.job?.posterId ?? null;
+    });
+    state.posterBookings.forEach((b) => {
+      map[b.id] = b.earner?.id ?? null;
+    });
+    return map;
+  }, [state.bookings, state.posterBookings, state.jobs]);
+
   const refreshUnread = useCallback(async () => {
     if (!user) {
       setUnreadMessages(0);
       return;
     }
     try {
-      const ids = [...new Set([...state.bookings.map((b) => b.id), ...state.posterBookings.map((b) => b.id)])];
+      const ids = [...new Set([...state.bookings.map((b) => b.id), ...state.posterBookings.map((b) => b.id)])].filter(
+        (id) => {
+          const otherId = counterparties[id];
+          return !(otherId && blockedIds.has(otherId));
+        },
+      );
       if (!ids.length) {
         setUnreadMessages(0);
         return;
@@ -336,7 +361,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
-  }, [user?.id, state.bookings, state.posterBookings]);
+    // blockedIds is a dependency so a fresh block re-counts immediately — the badge
+    // has to clear the moment the conversation leaves the inbox, not on next login.
+  }, [user?.id, state.bookings, state.posterBookings, counterparties, blockedIds]);
 
   useEffect(() => {
     refreshUnread();
