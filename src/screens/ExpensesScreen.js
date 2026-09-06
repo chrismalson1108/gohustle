@@ -7,16 +7,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAuth } from '../context/AuthContext';
-import { useJobs, computeEffectivePay } from '../context/JobsContext';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import {
   EXPENSE_CATEGORIES, categoryMeta, fetchExpenses, addExpense, deleteExpense,
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
-  expensesByJob,
+  expensesByJob, platformIncomeForYear,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
-import { bookingNetDollars } from '../../shared/pricing';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
@@ -34,7 +33,7 @@ const totalMilesFor = (milesText, roundTrip) => {
 
 export default function ExpensesScreen() {
   const { user } = useAuth();
-  const { bookings, posterBookings } = useJobs();
+  const { bookings, posterBookings, jobs } = useJobs();
   const haptic = useHaptic();
 
   // The user's gigs available to tie an expense to: their booked work + gigs they
@@ -94,29 +93,28 @@ export default function ExpensesScreen() {
   const yearIncome = income.filter(inYear);
   const expTotal = yearExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const cashTotal = yearIncome.reduce((s, e) => s + Number(e.amount || 0), 0);
-  // Platform earnings for the SELECTED YEAR.
+  // Platform income for the SELECTED YEAR: fee-net gig earnings plus card tips.
   //
-  // This previously used profiles.earnings_total, which is the LIFETIME counter, while
-  // every other figure on this screen is filtered to `year`. From the second tax year
-  // onward that silently inflated the year's gross income, the net profit, and the ~27%
-  // set-aside — on a screen people use to decide how much tax to put away, and which
-  // feeds the year-end CSV export. In year 3 it reported all three years of platform
-  // income as if it were earned in the selected one.
+  // This previously used profiles.earnings_total, the LIFETIME counter, while every
+  // other figure here is filtered to `year` — from the second tax year onward that
+  // inflated gross income, net profit and the ~27% set-aside, on the screen people use
+  // to decide how much tax to put away and which feeds the year-end CSV.
   //
-  // Derived instead from the user's own verified EARNER bookings completed in that
-  // year, net of the platform fee — the same basis the earnings dashboard uses.
-  // Approximate by nature (the authoritative per-booking net is payments
-  // .earner_amount_cents, which this screen does not load), but a year-scoped estimate
-  // is strictly better than a lifetime total presented as a single year's income.
-  // Note: for hourly gigs the booking embed carries no estimatedHours, so those are
-  // valued at one hour here — under- rather than over-stating income, which is the
-  // safer direction for a tax set-aside prompt.
-  const platformIncome = (bookings || [])
-    .filter((b) => b?.status === 'verified' && String(b?.completedAt || '').startsWith(String(year)))
-    .reduce((sum, b) => {
-      const gross = computeEffectivePay(b, null);
-      return sum + bookingNetDollars(gross, b?.feeBpsQuoted);
-    }, 0);
+  // Then it valued each booking with `computeEffectivePay(b, null)`, which reads hours
+  // only from a full job row: with none to give it, every HOURLY gig counted as ONE
+  // hour. A 6-hour $25/hr gig went in as $25. The comment here rationalised that as
+  // "under- rather than over-stating income, the safer direction for a tax set-aside" —
+  // the same excuse MoneyGoalCard's comment already repudiates. Undercounting someone's
+  // taxable income six-fold is not conservative, it is wrong, and it is wrong in the
+  // direction that gets a person a bill they did not save for.
+  //
+  // platformIncomeForYear values each booking at bookings.amount_cents_quoted, the
+  // amount PINNED at insert, and nets it at that booking's OWN pinned rate. Card tips
+  // are added separately: stripe-tip pays them to the earner through the platform, so
+  // "card payments are already counted" has to be true of them too.
+  const jobById = new Map((jobs || []).map((j) => [j.id, j]));
+  const { earnings: platformEarnings, tips: platformTips, total: platformIncome } =
+    platformIncomeForYear({ bookings, year, jobById });
 
   const grossIncome = platformIncome + cashTotal;
   const net = grossIncome - expTotal;
@@ -190,7 +188,7 @@ export default function ExpensesScreen() {
     if (!yearExpenses.length && !yearIncome.length && !platformIncome) {
       Alert.alert('Nothing to export', `No income or expenses recorded for ${year} yet.`); return;
     }
-    const csv = buildTaxSummaryCSV({ year, stripeIncome: platformIncome, income: yearIncome, expenses: yearExpenses });
+    const csv = buildTaxSummaryCSV({ year, stripeIncome: platformEarnings, tipIncome: platformTips, income: yearIncome, expenses: yearExpenses });
     try { await Share.share({ title: `GoHustlr tax summary ${year}`, message: csv }); } catch (_) {}
   };
 
@@ -249,7 +247,7 @@ export default function ExpensesScreen() {
 
         <Text style={styles.disclaimer}>
           {tab === 'income'
-            ? 'Card payments are already counted from your platform earnings. Log cash and tips here so your income is complete.'
+            ? 'Card payments and card tips are already counted from your platform earnings. Log cash payments and cash tips here so your income is complete.'
             : 'Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)'}
         </Text>
 
@@ -273,7 +271,7 @@ export default function ExpensesScreen() {
             <Ionicons name={tab === 'expenses' ? 'receipt-outline' : 'cash-outline'} size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
             <Text style={styles.emptyTitle}>{tab === 'expenses' ? 'No expenses yet' : 'No cash income logged'}</Text>
             <Text style={styles.emptyText}>
-              {tab === 'expenses' ? 'Tap "Add expense" to start tracking write-offs.' : 'Tap "Add income" to log cash payments and tips.'}
+              {tab === 'expenses' ? 'Tap "Add expense" to start tracking write-offs.' : 'Tap "Add income" to log cash payments and cash tips.'}
             </Text>
           </View>
         ) : tab === 'expenses' ? (

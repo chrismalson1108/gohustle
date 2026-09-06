@@ -99,6 +99,11 @@ export interface BookingJobMini {
   categorySlug: string | null;
   posterId: string | null;
   createdAt: string | null;
+  // Same omission, same consequence: transformBooking has mapped this since the
+  // booking selects started asking for estimated_hours, but it was undeclared, so
+  // TypeScript could not see the one field that stops an hourly booking being valued
+  // at ONE hour when no full job row is available.
+  estimatedHours: number | null;
 }
 
 export interface Booking {

@@ -28,11 +28,11 @@ import {
   INCOME_SOURCES,
   sourceMeta,
   buildTaxSummaryCSV,
+  platformIncomeForYear,
 } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
-import { useJobs, computeEffectivePay } from "@/lib/jobs";
-import { bookingNetDollars } from "@gohustlr/shared";
+import { useJobs } from "@/lib/jobs";
 import {
   fetchExpenses,
   addExpense,
@@ -78,7 +78,7 @@ type Tab = "expenses" | "income";
 export default function TaxesPage() {
   const { user } = useAuth();
   const { earningsTotal, showToast } = useUser();
-  const { bookings, posterBookings } = useJobs();
+  const { bookings, posterBookings, jobs } = useJobs();
 
   // The user's gigs available to tie an expense to: booked work + posted gigs,
   // de-duped by booking id.
@@ -153,22 +153,24 @@ export default function TaxesPage() {
 
   const year = new Date().getFullYear();
 
-  // Year-scoped, fee-net platform income — NOT profiles.earnings_total, which is a
-  // LIFETIME figure and was being labelled as this year's income (and driving the
-  // "set aside ~27%" prompt off it). Mobile's Tax Center was fixed for exactly this
-  // and web was left behind; its comment names the bug: "a year-scoped estimate is
-  // strictly better than a lifetime total presented as a single year's income."
+  // Year-scoped platform income — NOT profiles.earnings_total, which is a LIFETIME
+  // figure and was being labelled as this year's income (and driving the "set aside
+  // ~27%" prompt off it).
   //
-  // Approximate by nature — the authoritative per-booking net is
-  // payments.earner_amount_cents, which this screen does not load. Hourly gigs are
-  // valued at one hour because the booking embed carries no estimatedHours, so this
-  // under- rather than over-states income, the safer direction for a tax set-aside.
-  const platformIncome = useMemo(
+  // It then valued each booking with computeEffectivePay and no full job row, which
+  // reads hours only from that row: every HOURLY gig counted as ONE hour, so a 6-hour
+  // $25/hr gig went in as $25. platformIncomeForYear values each booking at
+  // bookings.amount_cents_quoted — the amount PINNED at insert — nets it at that
+  // booking's own pinned rate, and adds card tips, which stripe-tip pays to the earner
+  // through the platform and which the copy below claims are already counted.
+  const { earnings: platformEarnings, tips: platformTips, total: platformIncome } = useMemo(
     () =>
-      (bookings || [])
-        .filter((b) => b?.status === "verified" && String(b?.completedAt || "").startsWith(String(year)))
-        .reduce((sum, b) => sum + bookingNetDollars(computeEffectivePay(b), b.feeBpsQuoted), 0),
-    [bookings, year],
+      platformIncomeForYear({
+        bookings,
+        year,
+        jobById: new Map((jobs || []).map((j) => [j.id, j])),
+      }),
+    [bookings, jobs, year],
   );
 
   const summary = useMemo(
@@ -296,10 +298,11 @@ export default function TaxesPage() {
     }
     const csv = buildTaxSummaryCSV({
       year,
-      // Same year-scoped figure the screen shows. This one ends up in front of an
+      // Same year-scoped figures the screen shows. This one ends up in front of an
       // accountant, so a lifetime total under a "2026" heading is the worst place
-      // for it.
-      stripeIncome: platformIncome,
+      // for it. Tips get their own row: they are not fee-bearing.
+      stripeIncome: platformEarnings,
+      tipIncome: platformTips,
       income: yearIncome as unknown as Array<Record<string, unknown>>,
       expenses: yearExpenses as unknown as Array<Record<string, unknown>>,
     });
@@ -361,7 +364,7 @@ export default function TaxesPage() {
 
         <p className="text-xs leading-5 text-ink-muted">
           {tab === "income"
-            ? "Card payments are already counted from your platform earnings. Log cash and tips here so your income is complete."
+            ? "Card payments and card tips are already counted from your platform earnings. Log cash payments and cash tips here so your income is complete."
             : "Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)"}
         </p>
 
@@ -454,7 +457,7 @@ export default function TaxesPage() {
           <EmptyState
             icon={<Wallet className="size-10" />}
             title="No cash income logged"
-            body='Tap "Add Income" to log cash payments and tips.'
+            body='Tap "Add Income" to log cash payments and cash tips.'
           />
         ) : (
           <ul className="space-y-2">

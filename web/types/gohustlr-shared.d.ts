@@ -286,9 +286,20 @@ declare module "@gohustlr/shared" {
   export function buildTaxSummaryCSV(args: {
     year: number | string;
     stripeIncome: number;
+    // Card tips paid through the platform. Optional: they get their own CSV row and
+    // are not fee-bearing, so they cannot be folded into stripeIncome.
+    tipIncome?: number;
     income: Array<Record<string, unknown>>;
     expenses: Array<Record<string, unknown>>;
   }): string;
+  // Booking-shaped inputs stay structural here: the concrete Booking type lives in
+  // web/lib/types.ts and the shared package cannot import it.
+  export function bookingGrossDollars(booking: unknown, fullJob?: unknown): number;
+  export function platformIncomeForYear(args?: {
+    bookings?: unknown[] | null;
+    year: number | string;
+    jobById?: { get(id: string): unknown } | null;
+  }): { earnings: number; tips: number; total: number };
 
   // ── contentFilter ──
   export function findProhibited(text: string): string | null;
