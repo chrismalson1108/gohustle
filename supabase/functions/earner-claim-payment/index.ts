@@ -247,11 +247,22 @@ Deno.serve(async (req: Request) => {
     // UNDER-credit if a racing webhook credits from a not-yet-reconciled row.)
     const pi = await stripe.paymentIntents.retrieve(payment.payment_intent_id);
     const capturedOnStripe = pi.status === 'succeeded' || (pi.amount_received ?? 0) > 0;
+    // KEEP the reason capture() refused. Discarding it was the bug: a lost race to the
+    // poster's own capture is only ONE of the things that throws here, and it is the
+    // only benign one. A hold Stripe already voided, or a recovery re-hold that was
+    // written 'authorized' at PI creation and never confirmed, throw exactly the same
+    // way — and the reconcile below then reads amount_received = 0 and answered a flat
+    // 502 "please try again" with nothing in /errors. The earner does what the message
+    // says, retries daily, and no operator ever learns the worker is unpaid.
+    let captureErr: unknown = null;
     if (!capturedOnStripe) {
       try {
         await stripe.paymentIntents.capture(payment.payment_intent_id);
-      } catch (_capErr) {
-        // Lost a capture race to a concurrent poster capture — reconcile from Stripe below.
+      } catch (capErr) {
+        // MAY be a lost capture race to a concurrent poster capture — the reconcile
+        // below is authoritative on that, because a race leaves money captured. If it
+        // does not, this error is the only thing that says why.
+        captureErr = capErr;
       }
     }
 
@@ -269,7 +280,35 @@ Deno.serve(async (req: Request) => {
       ? settledCharge.application_fee_amount
       : null;
     if (capturedCents <= 0) {
-      return json({ error: 'CAPTURE_FAILED', message: 'Could not release the payment. Please try again.' }, 502);
+      // Nothing was captured, so this was NOT the benign race — the capture genuinely
+      // failed and an earner is still unpaid on work they did. Name it where an
+      // operator looks (/errors), with the Stripe code and the intent's real status, and
+      // answer with something the earner can act on instead of an endless "try again".
+      const stripeErr = captureErr as { code?: string; type?: string; message?: string } | null;
+      const piStatus = settled.status ?? null;
+      // Terminal at Stripe: the money can never be captured from this intent, so the
+      // claim did not merely fail to land — it cannot. That is a fatal money event.
+      // Anything else (a transient Stripe error, an intent still mid-flight) is logged
+      // but not paged, because a retry may genuinely settle it.
+      const deadAtStripe = piStatus === 'canceled' || piStatus === 'requires_payment_method';
+      await logServerError('earner-claim-payment',
+        `claim capture released nothing — earner unpaid (pi ${piStatus ?? 'unknown'}, stripe ${stripeErr?.code ?? stripeErr?.type ?? 'no error thrown'}): ${captureErr ? errMessage(captureErr) : 'capture returned without capturing'}`,
+        {
+          booking_id: bookingId,
+          payment_id: payment.id,
+          payment_intent_id: payment.payment_intent_id,
+          payment_row_status: payment.status,
+          pi_status: piStatus,
+          stripe_code: stripeErr?.code ?? null,
+        },
+        { fatal: deadAtStripe, userId: errUserId });
+      if (piStatus === 'canceled') {
+        return json({ error: 'HOLD_EXPIRED', message: 'The card hold has expired, so there is nothing left to release. Support has been notified — contact the poster or support to re-place a hold.' }, 409);
+      }
+      if (piStatus === 'requires_payment_method' || piStatus === 'requires_confirmation' || piStatus === 'requires_action') {
+        return json({ error: 'HOLD_NOT_AUTHORIZED', message: 'The card hold was never completed, so there is nothing to release. Support has been notified — contact the poster or support to re-place a hold.' }, 409);
+      }
+      return json({ error: 'CAPTURE_FAILED', message: 'Could not release the payment. Support has been notified.' }, 502);
     }
     // Platform fee on the amount ACTUALLY captured — proportional, matching
     // stripe-capture-payment's partial-fee basis. The RATE comes from payments.fee_bps,
