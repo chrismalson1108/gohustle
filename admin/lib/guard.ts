@@ -73,7 +73,13 @@ export function denyResult(e: AdminAuthError): { ok: false; message: string } {
 // Read the AAL claim straight from the access-token JWT (local decode, no
 // network round-trip). The token in the cookie is re-issued at aal2 after
 // mfa.verify, so its claim is authoritative for "did this session pass MFA".
-function aalFromToken(token: string | undefined): string | null {
+//
+// EXPORTED because /denied has to answer the same question before it says anything
+// about the caller's own membership. One decode, one definition of "did this session
+// present the second factor" — a second copy is the drift this file keeps removing.
+// It is a claim READER, not a gate: sound only after getUser() has proved the token
+// authentic, which is what both callers do first.
+export function aalFromToken(token: string | undefined): string | null {
   if (!token) return null;
   try {
     const part = token.split(".")[1];

@@ -293,6 +293,43 @@ describe('/denied distinguishes the four ways requireAdmin says no', () => {
     expect(denied).toMatch(/\} catch \{[\s\S]{0,300}?return "none";/);
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // The four-way copy justifies itself with "only after they have already presented a
+  // password and a TOTP code for that account". That was an assumption about the route
+  // in, not a check: proxy.ts whitelists /denied as an auth route beside /login and
+  // /mfa, so an aal1 session that never passed the code prompt reaches it by typing the
+  // URL. Without an assurance check, a phished password alone is answered with "Waiting
+  // on approval" or "Your account can reach the console, but not this page" — an oracle
+  // confirming the credential belongs to a live console member.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('the assurance level is CHECKED, not assumed from the route in', () => {
+    expect(denied).toMatch(/aalFromToken\(session\?\.access_token\) !== "aal2"/);
+    // Short of aal2 it must fall to the copy that gives nothing away.
+    expect(denied).toMatch(/aalFromToken\(session\?\.access_token\) !== "aal2"\) return "none";/);
+  });
+
+  it('the check comes BEFORE the membership lookup, so aal1 never reaches it', () => {
+    const aal = denied.indexOf('!== "aal2"');
+    const lookup = denied.indexOf('.from("admin_users")');
+    expect(aal).toBeGreaterThan(-1);
+    expect(lookup).toBeGreaterThan(-1);
+    expect(aal).toBeLessThan(lookup);
+  });
+
+  it('it reuses the guard’s own decoder rather than a second copy', () => {
+    // Two decoders drift, and the one that drifts is the one nobody gates on.
+    expect(denied).toMatch(/import \{ aalFromToken \} from "@\/lib\/guard"/);
+    expect(guard).toMatch(/export function aalFromToken\(/);
+    expect(denied).not.toMatch(/JSON\.parse|Buffer\.from/);
+  });
+
+  it('proxy.ts still lets an unauthenticated visitor see /denied — this is copy, not a gate', () => {
+    // If /denied stopped being an auth route, signing out from it would bounce to
+    // /login mid-POST. The fix is the aal branch above, NOT closing the route.
+    const proxy = clean(fs3.readFileSync(path3.join(R3, 'admin', 'proxy.ts'), 'utf8'));
+    expect(proxy).toMatch(/path === "\/denied"/);
+  });
+
   it('the GUARD itself is unchanged — this is copy, not access', () => {
     // If softening the message ever softened the check, the trust-on-first-use window
     // that pending exists to close would be open again.
@@ -349,7 +386,51 @@ describe('a console factor is confirmed, not assumed', () => {
   });
 
   it('Activate stamps the confirmation, because Activate IS the confirmation', () => {
-    expect(acts).toMatch(/factors_confirmed_at: status === "active" \? new Date\(\)\.toISOString\(\) : null/);
+    // pending → active, and ONLY that transition. The old test pinned
+    // `status === "active" ? now : null`, which is where the next one comes from.
+    expect(acts).toMatch(/const vouches = status === "active" && before\.status === "pending";/);
+    expect(acts).toMatch(/if \(vouches\) \{\s*patch\.factors_confirmed_at = new Date\(\)\.toISOString\(\);/);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // setTeamStatus also serves RESTORE, whose dialog said only "Restore access for X?".
+  // Stamping there vouched for authenticators nobody had been shown — and a disabled row
+  // is the account nobody is watching: it grants nothing so no alarm fires, /mfa still
+  // enrols for whoever holds the password, ctl_admin_unconfirmed_factor filters to
+  // status='active' so it cannot see the row, and a reset does not demote a disabled
+  // member. Restore then wrote a stamp NEWER than that factor and the control went quiet
+  // on the one account it existed for.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('Restore does NOT vouch — it restores access and leaves the stamp alone', () => {
+    const fn = acts.slice(acts.indexOf('export async function setTeamStatus'));
+    // The transition is read before the write; landing on "active" is not enough.
+    expect(fn).toMatch(/\.select\("status"\)\.eq\("user_id", userId\)\.maybeSingle\(\)/);
+    // Cleared on the way OUT of active, untouched on the way back IN.
+    expect(fn).toMatch(/else if \(status !== "active"\) \{\s*patch\.factors_confirmed_at = null;/);
+    // The one shape that must never come back.
+    expect(fn).not.toMatch(/factors_confirmed_at: status === "active" \?/);
+  });
+
+  it('the trigger holds it even if the console forgets', () => {
+    // The console is not the only writer — service_role is — and this stamp has already
+    // been written by a click that did not ask once.
+    expect(allMigrations).toMatch(/create or replace function public\.admin_restore_never_vouches\(\)/);
+    expect(allMigrations).toMatch(/create trigger trg_admin_restore_never_vouches\s+before update on public\.admin_users/);
+    expect(allMigrations).toMatch(/old\.status = 'disabled'\s*\n\s*and new\.status = 'active'/);
+    // It PINS rather than raising: restoring access is an availability path.
+    expect(allMigrations).toMatch(/new\.factors_confirmed_at := old\.factors_confirmed_at;/);
+    // And the probe proves it discriminates on the transition, not on the landing state.
+    expect(allMigrations).toMatch(/FIX TOO BROAD: pending -> active no longer records the confirmation/);
+    expect(allMigrations).toMatch(/FIX FAILED: disabled -> active still stamped/);
+    expect(allMigrations).toMatch(/Confirm authenticators can no longer vouch/);
+  });
+
+  it('the Restore dialog says what it is and is not doing', () => {
+    const restore = ctrls.slice(ctrls.indexOf('status === "disabled" &&'));
+    expect(restore).toMatch(/Restore console access for/);
+    expect(restore).toMatch(/authenticator/);
+    expect(restore).toMatch(/Restoring does not vouch for any of them/);
+    expect(restore).toMatch(/Confirm authenticators/);
   });
 
   it('a reset clears it — the factors it vouched for are gone', () => {
