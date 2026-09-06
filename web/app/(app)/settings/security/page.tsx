@@ -9,6 +9,7 @@ import { useUser } from "@/lib/user";
 import {
   fetchMfaStatus, startEnrollment, confirmEnrollment, disableMfa,
   generateRecoveryCodes, confirmRecoveryCodes,
+  factorLabel, factorOrigin, preferredFactor,
   type Enrollment, type MfaStatus,
 } from "@/lib/mfa";
 
@@ -62,12 +63,23 @@ export default function SecurityPage() {
   const [codes, setCodes] = useState<string[] | null>(null);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Which authenticator the disable step is aimed at. The entered code only verifies
+  // against the factor it is challenged with, so on an account holding two this choice
+  // is the difference between working and "that code wasn't accepted".
+  const [targetId, setTargetId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Returns what it just read. turnOff has to decide between "two-factor is off" and
+  // "one of your authenticators is gone" from the RELOADED state — the previous code
+  // announced password-only from having called disableMfa, which is a different question
+  // on an account that holds two factors.
+  const load = useCallback(async (): Promise<MfaStatus | null> => {
     try {
-      setStatus(await fetchMfaStatus());
+      const s = await fetchMfaStatus();
+      setStatus(s);
+      return s;
     } catch {
       setStatus(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -143,16 +155,31 @@ export default function SecurityPage() {
     }
   };
 
+  // Removes ONE authenticator, and says which — then reads the status back to find out
+  // whether that actually turned two-factor off. It used to unenrol factors[0] and toast
+  // "password-only" unconditionally, which on an account holding both entries removed
+  // whichever GoTrue listed first and left the other one still gating every sign-in.
   const turnOff = async () => {
-    if (!status?.factors[0]) return;
+    const target = status?.factors.find((f) => f.id === targetId) ?? preferredFactor(status?.factors);
+    if (!target) return;
     setErr(null);
     setBusy(true);
     try {
-      await disableMfa(status.factors[0].id, code);
+      await disableMfa(target.id, code);
       setStep("idle");
       setCode("");
-      showToast({ icon: "🔓", title: "Two-factor is off", message: "Your account is password-only again." });
-      await load();
+      setTargetId(null);
+      const fresh = await load();
+      const left = fresh?.factors.length ?? 0;
+      showToast(
+        left > 0
+          ? {
+              icon: "🔐",
+              title: `“${factorLabel(target)}” removed`,
+              message: `Two-factor is still on — ${left} other authenticator${left === 1 ? "" : "s"} can still sign you in.`,
+            }
+          : { icon: "🔓", title: "Two-factor is off", message: "Your account is password-only again." },
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -176,6 +203,11 @@ export default function SecurityPage() {
 
   const on = Boolean(status?.enabled);
   const remaining = status?.recovery.remaining ?? 0;
+  const factors = status?.factors ?? [];
+  // Two verified factors is a legitimate permanent state, not an anomaly: this page and
+  // the app enrol as "GoHustlr", the admin console as "GoHustlr Admin".
+  const multi = factors.length > 1;
+  const target = factors.find((f) => f.id === targetId) ?? preferredFactor(factors);
 
   return (
     <>
@@ -198,11 +230,17 @@ export default function SecurityPage() {
                   ? "Signing in needs a code from your authenticator as well as your password."
                   : "Your account is protected by a password alone. Turning this on means a stolen password isn't enough to reach your earnings or your payout account."}
               </p>
-              {on && status?.factors.map((f) => (
+              {on && factors.map((f) => (
                 <p key={f.id} className="mt-2 text-xs text-ink-soft">
-                  ↳ {f.name === "GoHustlr Admin" ? "set up on the admin console" : "set up in the app or here"}, {fmt(f.createdAt)}
+                  ↳ “{factorLabel(f)}” — {factorOrigin(f)}, {fmt(f.createdAt)}
                 </p>
               ))}
+              {on && multi && (
+                <p className="mt-2 text-xs text-ink-soft">
+                  Two entries is normal if you also use the admin console. Either one signs
+                  you in, so removing one does not turn two-factor off.
+                </p>
+              )}
             </div>
           </div>
 
@@ -295,10 +333,44 @@ export default function SecurityPage() {
         {/* ── Turn off ───────────────────────────────────────────────────── */}
         {step === "disable" && (
           <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-line">
-            <p className="font-extrabold text-ink">Turn off two-factor</p>
-            <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-              Enter a current code to confirm it&apos;s you. A stolen session on its own
-              must not be able to switch this off.
+            <p className="font-extrabold text-ink">
+              {multi ? "Remove an authenticator" : "Turn off two-factor"}
+            </p>
+
+            {/* With two entries the choice is the whole point: the code only verifies
+                against the factor it is challenged with, so a code from the other entry
+                is rejected as if it were wrong. */}
+            {multi && (
+              <div className="mt-3 space-y-2">
+                {factors.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => { setTargetId(f.id); setErr(null); }}
+                    className={`flex w-full items-start gap-3 rounded-xl p-3 text-left ring-1 ${
+                      f.id === target?.id ? "bg-primary/5 ring-primary" : "ring-line"
+                    }`}
+                  >
+                    <span
+                      className={`mt-1 size-3 shrink-0 rounded-full ring-2 ${
+                        f.id === target?.id ? "bg-primary ring-primary" : "bg-transparent ring-line"
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-ink">{factorLabel(f)}</span>
+                      <span className="block text-xs text-ink-soft">
+                        {factorOrigin(f)}, {fmt(f.createdAt)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+              {multi
+                ? `Enter a current code from the “${factorLabel(target)}” entry in your authenticator — a code from the other entry will not be accepted. Your other authenticator keeps working, so two-factor stays on.`
+                : "Enter a current code to confirm it's you. A stolen session on its own must not be able to switch this off."}
             </p>
             <input
               value={code}
@@ -310,9 +382,9 @@ export default function SecurityPage() {
               className="mt-4 w-full rounded-xl bg-canvas py-3 text-center text-xl tracking-[0.4em] text-ink outline-none ring-1 ring-line focus:ring-2 focus:ring-primary"
             />
             <Button className="mt-4" variant="danger" fullWidth loading={busy} disabled={code.length !== 6} onClick={turnOff}>
-              Turn it off
+              {multi ? "Remove it" : "Turn it off"}
             </Button>
-            <Button className="mt-2" variant="ghost" fullWidth onClick={() => { setStep("idle"); setCode(""); setErr(null); }}>
+            <Button className="mt-2" variant="ghost" fullWidth onClick={() => { setStep("idle"); setCode(""); setTargetId(null); setErr(null); }}>
               Keep it on
             </Button>
           </div>
@@ -331,8 +403,12 @@ export default function SecurityPage() {
                 <Button variant="secondary" fullWidth loading={busy} onClick={regenerate}>
                   {remaining > 0 ? "New recovery codes" : "Create recovery codes"}
                 </Button>
-                <Button variant="ghost" fullWidth onClick={() => { setStep("disable"); setErr(null); }}>
-                  Turn off two-factor
+                <Button
+                  variant="ghost"
+                  fullWidth
+                  onClick={() => { setTargetId(preferredFactor(factors)?.id ?? null); setStep("disable"); setErr(null); }}
+                >
+                  {multi ? "Remove an authenticator" : "Turn off two-factor"}
                 </Button>
                 {remaining > 0 && (
                   <p className="pt-1 text-center text-xs text-ink-soft">

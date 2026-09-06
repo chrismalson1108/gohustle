@@ -1,5 +1,9 @@
 jest.mock('../src/lib/supabase', () => ({ supabase: {} }));
-const { formatRecoveryCode, MfaError } = require('../src/lib/mfa');
+const {
+  formatRecoveryCode, MfaError,
+  factorLabel, factorOrigin, preferredFactor,
+  APP_FACTOR_NAME, ADMIN_FACTOR_NAME,
+} = require('../src/lib/mfa');
 const fs = require('fs');
 const path = require('path');
 
@@ -202,4 +206,126 @@ describe('the gate does not unmount the app on every token refresh', () => {
     // prevUserId is null before the first session, so a real sign-in still closes it.
     expect(ctx).toMatch(/const prevUserId = lastUserId\.current/);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AN ACCOUNT CAN HOLD TWO VERIFIED FACTORS, AND BOTH SCREENS ASSUMED ONE.
+//
+// The app and the website enrol as "GoHustlr"; the admin console enrols as "GoHustlr
+// Admin". /team deliberately refuses to alert on two factors because two is a legitimate
+// permanent steady state for a staff account. Two consequences followed from the screens
+// not knowing that:
+//
+//   • SecurityScreen.turnOff unenrolled `status.factors[0]` and then toasted "Two-factor
+//     is off — Your account is password-only again" unconditionally. With a second
+//     verified factor, `enabled` recomputes true, the status card reads "On" directly
+//     under that toast, and the next sign-in still challenges.
+//   • MfaChallengeScreen took `factors.totp.find(f => f.status === 'verified')` — GoTrue's
+//     list order — while the copy said "the 6-digit code for GoHustlr". challengeAndVerify
+//     is scoped to the factorId it is handed, so an admin whose console factor was listed
+//     first typed the code from the entry the screen NAMED and had it rejected, with
+//     nothing on screen saying the other entry was the one being asked for.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('two verified factors are a steady state, not an anomaly', () => {
+  it('names an entry the way the authenticator lists it, falling back to the app name', () => {
+    expect(factorLabel({ name: 'GoHustlr Admin' })).toBe(ADMIN_FACTOR_NAME);
+    expect(factorLabel({ friendly_name: 'GoHustlr Admin' })).toBe(ADMIN_FACTOR_NAME);
+    // An unnamed factor is one of ours; guessing "GoHustlr" is better than rendering
+    // “null” at the person trying to find it in a list of twenty.
+    expect(factorLabel({ name: null })).toBe(APP_FACTOR_NAME);
+    expect(factorLabel({ name: '   ' })).toBe(APP_FACTOR_NAME);
+    expect(factorLabel(undefined)).toBe(APP_FACTOR_NAME);
+  });
+
+  it('says which surface enrolled it, because that is what makes it recognisable', () => {
+    expect(factorOrigin({ name: ADMIN_FACTOR_NAME })).toMatch(/admin console/);
+    expect(factorOrigin({ name: APP_FACTOR_NAME })).toMatch(/app|website/);
+  });
+
+  it("challenges the APP's entry, never whichever GoTrue happened to list first", () => {
+    // The case that produced the bug: an invited admin enrols on the console before ever
+    // using the app, so the console factor is listed first.
+    const admin = { id: 'f_admin', name: ADMIN_FACTOR_NAME };
+    const app = { id: 'f_app', name: APP_FACTOR_NAME };
+    expect(preferredFactor([admin, app]).id).toBe('f_app');
+    expect(preferredFactor([app, admin]).id).toBe('f_app');
+    // A console-only account still has to be able to sign in.
+    expect(preferredFactor([admin]).id).toBe('f_admin');
+    expect(preferredFactor([])).toBeNull();
+    expect(preferredFactor(null)).toBeNull();
+  });
+});
+
+describe('turning one authenticator off does not claim the account is password-only', () => {
+  const screen = read('src/screens/SecurityScreen.js');
+  const web = read('web/app/(app)/settings/security/page.tsx');
+
+  for (const [name, src] of [['the app', screen], ['the web', web]]) {
+    it(`${name} removes a CHOSEN factor, not factors[0]`, () => {
+      // factors[0] is GoTrue's list order. On an account with both entries it removes
+      // whichever happened to come back first — and the code the user typed only
+      // verifies against the factor it was challenged with.
+      expect(src).not.toMatch(/status\??\.factors\[0\]/);
+      expect(src).toMatch(/preferredFactor\(/);
+      const off = src.slice(src.indexOf('const turnOff'));
+      const body = off.slice(0, 1400);
+      expect(body).toMatch(/disableMfa\(target\.id, code\)/);
+    });
+
+    it(`${name} derives the toast from the RELOADED status`, () => {
+      // The whole defect in one line: the old code announced "password-only" from having
+      // called disableMfa, which answers a different question than "is anything left".
+      const off = src.slice(src.indexOf('const turnOff'));
+      const body = off.slice(0, 1400);
+      const reload = body.search(/(const fresh = await load\(\))/);
+      const toast = body.indexOf('showToast(');
+      expect(reload).toBeGreaterThan(-1);
+      expect(toast).toBeGreaterThan(reload);
+      expect(body).toMatch(/left > 0/);
+      expect(body).toMatch(/still (ON|on)/);
+    });
+
+    it(`${name} lists every verified authenticator by name`, () => {
+      // You cannot act on a factor you cannot see, and "two entries" is the explanation
+      // for a card that still reads On after you turned one off.
+      expect(src).toMatch(/factors\.map\(/);
+      expect(src).toMatch(/factorLabel\(f\)/);
+      expect(src).toMatch(/factorOrigin\(f\)/);
+    });
+  }
+});
+
+describe('the challenge names the entry it is actually challenging', () => {
+  const challenge = read('src/screens/MfaChallengeScreen.js');
+  const web = read('web/app/mfa/page.tsx');
+
+  for (const [name, src] of [['the app', challenge], ['the web', web]]) {
+    it(`${name} picks the factor deliberately rather than by list order`, () => {
+      expect(src).toMatch(/preferredFactor\(/);
+      // The old selection, which took whatever GoTrue listed first.
+      expect(src).not.toMatch(/\)\s*\.find\(\(f[^)]*\)\s*=>\s*f\.status === ['"]verified['"]\)/);
+    });
+
+    it(`${name} puts the entry's own name in the copy instead of hardcoding GoHustlr`, () => {
+      // "enter the code for GoHustlr" is actively wrong when the factor being verified is
+      // the console's, and a rejection is the only feedback the user gets.
+      expect(src).toMatch(/entry\?\.label/);
+      expect(src).toMatch(/factorLabel\(/);
+    });
+
+    it(`${name} mentions the second entry ONLY when there is one`, () => {
+      // Told to everyone, it sends a normal user hunting for a GoHustlr entry they do
+      // not have.
+      expect(src).toMatch(/count \?\? 0\) > 1|count > 1/);
+      expect(src).toMatch(/more than one GoHustlr entry/);
+    });
+
+    it(`${name} still fails CLOSED when the factor lookup errors`, () => {
+      // The naming lookup must not become a second way into the app. The authoritative
+      // path keeps its own listFactors + error check, and the presentational one returns
+      // without touching the gate.
+      expect(src).toMatch(/if \(!alive \|\| error\) return;/);
+      expect(src).toMatch(/listErr/);
+    });
+  }
 });

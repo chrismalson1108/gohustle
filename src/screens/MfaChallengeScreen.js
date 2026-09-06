@@ -10,7 +10,7 @@
 // the single most common reason people are locked out of their own money, and a 2FA
 // screen with no exit is how a support queue fills with cases nobody can verify.
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView,
@@ -20,7 +20,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { supabase } from '../lib/supabase';
-import { verifyChallenge, redeemRecoveryCode, formatRecoveryCode } from '../lib/mfa';
+import {
+  verifyChallenge, redeemRecoveryCode, formatRecoveryCode,
+  factorLabel, preferredFactor,
+} from '../lib/mfa';
 import { colors, radii, shadows } from '../theme';
 
 export default function MfaChallengeScreen() {
@@ -32,6 +35,26 @@ export default function MfaChallengeScreen() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  // Which entry in the authenticator we are about to challenge, so the copy can NAME it.
+  // An admin holds two — the app's "GoHustlr" and the console's "GoHustlr Admin" — and
+  // being told to open "GoHustlr" while the code is verified against the other one turns
+  // a correct code into "that code was not accepted", with nothing on screen to explain
+  // it. Purely presentational: submitCode does its own authoritative, fail-closed lookup.
+  const [entry, setEntry] = useState(null);   // { label, count } | null
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      // A failed lookup means we simply cannot name the entry. It must not change what
+      // the screen DOES — the gate holds either way — so fall back to the generic copy.
+      if (!alive || error) return;
+      const verified = (data?.totp ?? []).filter((f) => f.status === 'verified');
+      const picked = preferredFactor(verified);
+      if (picked) setEntry({ label: factorLabel(picked), count: verified.length });
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const submitCode = async () => {
     setBusy(true); setErr(null);
@@ -51,8 +74,15 @@ export default function MfaChallengeScreen() {
         setErr("Couldn't reach the server. Check your connection and try again.");
         return;
       }
-      const factor = (factors?.totp ?? []).find((f) => f.status === 'verified');
+      // preferredFactor, not "whichever GoTrue listed first": an account can hold two
+      // verified TOTP factors (the app's "GoHustlr" and the console's "GoHustlr Admin"),
+      // and this screen's copy tells the user which entry to open. Picking by list order
+      // meant an admin who enrolled on the console first was challenged for one entry
+      // while being told to use the other.
+      const verified = (factors?.totp ?? []).filter((f) => f.status === 'verified');
+      const factor = preferredFactor(verified);
       if (!factor) { clearMfaPending(); return; }
+      setEntry({ label: factorLabel(factor), count: verified.length });
       await verifyChallenge(factor.id, code);
       haptic.success();
       clearMfaPending();
@@ -99,8 +129,18 @@ export default function MfaChallengeScreen() {
         <Text style={styles.sub}>
           {recovery
             ? 'Enter one of the codes you saved when you turned on two-factor. Each works once, and using one turns two-factor off so you can set it up again on your new phone.'
-            : 'Open your authenticator app and enter the 6-digit code for GoHustlr.'}
+            : `Open your authenticator app and enter the 6-digit code for “${entry?.label ?? 'GoHustlr'}”.`}
         </Text>
+
+        {/* Only when there IS more than one entry. Saying it to everyone would send a
+            normal user hunting through their authenticator for a second GoHustlr they
+            do not have. */}
+        {!recovery && entry?.count > 1 ? (
+          <Text style={styles.entryHint}>
+            You have more than one GoHustlr entry — this sign-in needs the one named
+            “{entry.label}”.
+          </Text>
+        ) : null}
 
         <TextInput
           style={[styles.input, recovery && styles.inputWide]}
@@ -160,6 +200,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16, ...shadows.sm,
   },
   inputWide: { fontSize: 22, letterSpacing: 4 },
+  entryHint: {
+    fontSize: 13, color: colors.textSecondary, textAlign: 'center',
+    lineHeight: 20, marginTop: -16, marginBottom: 22, fontWeight: '600',
+  },
   err: { fontSize: 13.5, color: colors.urgent, textAlign: 'center', marginTop: 14, lineHeight: 20 },
   primaryBtn: {
     width: '100%', backgroundColor: colors.primary, borderRadius: radii.pill,
