@@ -23,8 +23,16 @@
 // not.
 //
 // Secrets:
-//   RESEND_API_KEY     — email transport. If unset, logs and returns ok (never wedges
-//                        the sweep) but reports emailed:false so a control can catch it.
+//   RESEND_API_KEY     — email transport. If unset the function answers 503
+//                        `email_not_configured`. It used to answer 200 emailed:false
+//                        "so a control can catch it" — but nothing could: the only
+//                        check on this last mile, ctl_alert_dispatch_failing, reads
+//                        net._http_response for a NON-2xx, and the sweep dispatches
+//                        over asynchronous pg_net, so a 200 is discarded unread. A
+//                        digest that silently stopped being sent looked exactly like
+//                        a quiet week. (The `nothing_new` 200 below is different and
+//                        stays a 200 — there the channel is fine and there was simply
+//                        nothing to say.)
 //   CONTROLS_EMAIL     — recipient (defaults to the support inbox).
 //   ANTHROPIC_API_KEY  — optional; enables triage. Absent = plain digest, no failure.
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -218,7 +226,10 @@ Deno.serve(async (req: Request) => {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
       console.error(`[controls-alert] RESEND_API_KEY unset — cannot email ${to}; ${open.length} open findings`);
-      return json({ ok: true, emailed: false, reason: 'no_transport', open: totalOpen });
+      // 503, not 200: the digest has findings to report and no way to report them.
+      // ctl_alert_dispatch_failing only sees non-2xx, so this is the one status that
+      // turns a dark channel into a finding.
+      return json({ error: 'email_not_configured', emailed: false, reason: 'no_transport', open: totalOpen }, 503);
     }
 
     const res = await fetch('https://api.resend.com/emails', {

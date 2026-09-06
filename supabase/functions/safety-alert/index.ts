@@ -9,8 +9,20 @@
 // Secrets:
 //   SAFETY_ALERT_SECRET  — shared secret; must match the app.safety_alert_secret GUC.
 //   SAFETY_ONCALL_EMAIL  — recipient (defaults to the support inbox).
-//   RESEND_API_KEY       — email transport (if unset: logs + 200, never wedges the
-//                          trigger so the report insert always succeeds).
+//   RESEND_API_KEY       — email transport. If unset the function answers 503
+//                          `email_not_configured`, exactly as the missing shared
+//                          secret does. It used to answer 200 {ok:true,emailed:false}
+//                          "so the trigger is never wedged" — but the trigger
+//                          dispatches through pg_net, which is ASYNCHRONOUS and
+//                          swallows every error (notify_safety_report wraps
+//                          net.http_post in `exception when others then raise
+//                          warning`), so this status code can never reach the insert.
+//                          What the 200 actually did was hide the outage: the only
+//                          check watching this last mile, ctl_alert_dispatch_failing,
+//                          reads net._http_response for non-2xx, so a config state in
+//                          which no safety report is ever emailed looked identical to
+//                          a quiet week. That is the 2026-07-10 shape — four weeks of
+//                          silent non-delivery. A 503 surfaces within the hour.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -112,9 +124,12 @@ Deno.serve(async (req: Request) => {
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
-      // No transport yet — log loudly and succeed so the trigger/insert isn't wedged.
+      // No transport: FAIL LOUDLY. A 200 here is a silent pager outage — see the
+      // RESEND_API_KEY note in the header. The insert is safe either way because the
+      // dispatch is asynchronous pg_net, so nothing downstream reads this status but
+      // ctl_alert_dispatch_failing, which is exactly who should read it.
       console.error(`[safety-alert] report ${r.id} (${r.reason}) — RESEND_API_KEY unset, cannot email ${to}`);
-      return json({ ok: true, emailed: false });
+      return json({ error: 'email_not_configured', emailed: false, report_id: r.id }, 503);
     }
 
     const res = await fetch('https://api.resend.com/emails', {

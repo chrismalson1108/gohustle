@@ -95,3 +95,55 @@ describe('the surfaces that page a human can say WHERE the worker is', () => {
     expect(mod).toMatch(/source === "emergency"/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A pager that cannot page must SAY SO in its status code.
+//
+// safety-alert used to answer 200 {ok:true,emailed:false} when RESEND_API_KEY was
+// unset, on the stated reasoning that a non-2xx would "wedge the trigger". It cannot:
+// notify_safety_report dispatches through pg_net, which is asynchronous and wraps the
+// post in `exception when others then raise warning`, so the response status never
+// reaches the insert. The only thing that reads it is ctl_alert_dispatch_failing,
+// which scans net._http_response for a NON-2xx — so the 200 made a config state in
+// which no safety report is ever emailed look exactly like a quiet week. That is the
+// 2026-07-10 shape: four weeks of a dead safety channel above a green board.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a dark email transport answers non-2xx so a control can see it', () => {
+  const safety = read('supabase/functions/safety-alert/index.ts');
+  const controls = read('supabase/functions/controls-alert/index.ts');
+  // The `if (!RESEND_API_KEY) { … }` block — the branch taken when there is no transport.
+  const noTransportBlock = (src) => {
+    const start = src.indexOf('if (!RESEND_API_KEY) {');
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('\n    }', start);
+    expect(end).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  test('safety-alert returns 503 email_not_configured, never ok:true', () => {
+    const block = noTransportBlock(safety);
+    expect(block).toContain("'email_not_configured'");
+    expect(block).toMatch(/,\s*503\s*\)/);
+    expect(block).not.toMatch(/ok:\s*true/);
+  });
+
+  test('controls-alert reports a dark digest channel the same way', () => {
+    const block = noTransportBlock(controls);
+    expect(block).toContain("'email_not_configured'");
+    expect(block).toMatch(/,\s*503\s*\)/);
+    expect(block).not.toMatch(/ok:\s*true/);
+  });
+
+  test('controls-alert still answers 200 when there was simply nothing to send', () => {
+    // The channel is healthy in that case; only a BROKEN channel may answer 503, or
+    // the sweep would open a finding every hour on a quiet platform.
+    expect(controls).toContain("json({ ok: true, emailed: false, reason: 'nothing_new' })");
+  });
+
+  test('the control that reads this status still looks for non-2xx', () => {
+    const ctl = read('supabase/migrations/20260806160000_dispatch_monitoring.sql');
+    expect(ctl).toContain('net._http_response');
+    expect(ctl).toMatch(/status_code\s*<\s*200\s*or\s*r\.status_code\s*>=\s*300/);
+  });
+});
