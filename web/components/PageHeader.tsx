@@ -99,12 +99,26 @@ export function PageContainer({
   );
 }
 
-export function EmptyState({ icon, title, body }: { icon?: React.ReactNode; title: string; body?: string }) {
+// `action` is optional and exists for the empty states that are NOT empty: a screen
+// that could not load its rows needs a way back, or the user's only recourse is to
+// believe the blank page.
+export function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col items-center gap-2 py-16 text-center">
       {icon && <div className="text-ink-muted">{icon}</div>}
       <p className="font-bold text-ink">{title}</p>
       {body && <p className="max-w-xs text-sm text-ink-soft">{body}</p>}
+      {action && <div className="mt-2">{action}</div>}
     </div>
   );
 }

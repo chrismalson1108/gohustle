@@ -21,6 +21,8 @@ import {
   Gift,
   Loader2,
   Briefcase,
+  AlertCircle,
+  CloudOff,
 } from "lucide-react";
 import {
   EXPENSE_CATEGORIES,
@@ -123,12 +125,36 @@ export default function TaxesPage() {
     { kind: "expense"; row: Expense } | { kind: "income"; row: IncomeEntry } | null
   >(null);
 
+  // Three states, not two. `loaded` is what separates "you have logged nothing" from
+  // "we could not read what you logged" — see the load() comment below.
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // fetchExpenses/fetchIncome both THROW on a Supabase error, and this used to
+  // swallow it — the comment said so out loud: "empty state will show". A failed read
+  // then rendered exactly like an empty account: "No expenses yet", Expenses $0.00,
+  // and a net profit and ~27% set-aside computed as though the user had claimed no
+  // deductions, with Export still willing to write that into a CSV for an accountant.
+  //
+  // The receipt-signing pass is deliberately in its OWN try: the rows are already in
+  // state by then, and a thumbnail that would not sign is not a reason to tell someone
+  // their books failed to load.
   const load = useCallback(async () => {
     if (!user) return;
+    let ex: Expense[] = [];
     try {
-      const [ex, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
-      setExpenses(ex);
+      setError(null);
+      const [rows, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
+      ex = rows;
+      setExpenses(rows);
       setIncome(inc);
+      setLoaded(true);
+    } catch (e) {
+      setError((e as Error)?.message || "Could not load your expenses and income.");
+      setLoading(false);
+      return;
+    }
+    try {
       // Sign private receipt paths for display.
       const map: Record<string, string> = {};
       await Promise.all(
@@ -141,7 +167,7 @@ export default function TaxesPage() {
       );
       setReceiptUrls(map);
     } catch {
-      // swallow — empty state will show
+      // A receipt thumbnail that would not sign is cosmetic; the ledger stands.
     }
     setLoading(false);
   }, [user]);
@@ -177,6 +203,13 @@ export default function TaxesPage() {
     () => yearSummary({ year, stripeIncome: platformIncome, expenses, income }),
     [year, platformIncome, expenses, income],
   );
+
+  // The read failed and we never had rows to fall back on, so expTotal/cashTotal are
+  // zero because we do not KNOW, not because they are zero. Printing them as money is
+  // the lie; print a dash. A failed REFRESH over data we already hold keeps the
+  // numbers and shows the banner — stale is not unknown.
+  const unknownTotals = Boolean(error) && !loaded;
+  const stat = (n: number) => (unknownTotals ? "—" : money(n));
 
   // Per-job expense breakdown for the current year.
   const jobGroups = useMemo(
@@ -292,6 +325,16 @@ export default function TaxesPage() {
 
   const handleExport = () => {
     const { yearExpenses, yearIncome } = summary;
+    // Exporting on top of a failed read produces a CSV with no expense lines and a
+    // NET PROFIT that ignores every deduction — handed to an accountant as fact.
+    if (unknownTotals) {
+      showToast({
+        icon: "⚠️",
+        title: "Not loaded yet",
+        message: "We could not load your expenses and income. Retry, then export.",
+      });
+      return;
+    }
     if (!yearExpenses.length && !yearIncome.length && !platformIncome) {
       showToast({ icon: "📄", title: "Nothing to export", message: `No income or expenses recorded for ${year} yet.` });
       return;
@@ -328,19 +371,32 @@ export default function TaxesPage() {
             row that left each stat ~82px at 375px ("Set aside ~27%" barely fit).
             Same numbers, same order, no gradient and no dividers. */}
         <section>
+          {error && (
+            <div className="mb-3 flex items-center gap-2 rounded-2xl bg-urgent/10 p-3">
+              <AlertCircle className="size-4 shrink-0 text-urgent" />
+              <p className="min-w-0 flex-1 text-[13px] font-semibold text-urgent">
+                {unknownTotals
+                  ? "Couldn't load your expenses and income — these totals are incomplete."
+                  : "Couldn't refresh — showing what we last loaded."}
+              </p>
+              <button onClick={load} className="shrink-0 text-[13px] font-extrabold text-urgent">
+                Retry
+              </button>
+            </div>
+          )}
           <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
             <p className="text-xs font-medium text-ink-muted">{year} net profit</p>
             <p className="mt-1 truncate text-[32px] font-bold leading-10 tracking-[-0.6px] text-ink">
-              {money(summary.net)}
+              {stat(summary.net)}
             </p>
           </div>
           {/* Container query, not a viewport one: this column is capped at the form
               measure, so it stacks on a phone and goes 3-up as soon as the content
               box — not the window — has room for it. */}
           <div className="mt-3 grid grid-cols-1 gap-3 @lg:grid-cols-3">
-            <SummaryStat label="Income" value={money(summary.grossIncome)} />
-            <SummaryStat label="Expenses" value={money(summary.expTotal)} />
-            <SummaryStat label="Set aside ~27%" value={money(summary.setAside)} />
+            <SummaryStat label="Income" value={stat(summary.grossIncome)} />
+            <SummaryStat label="Expenses" value={stat(summary.expTotal)} />
+            <SummaryStat label="Set aside ~27%" value={stat(summary.setAside)} />
           </div>
         </section>
 
@@ -389,6 +445,17 @@ export default function TaxesPage() {
           <div className="flex justify-center py-16 text-ink-muted">
             <Loader2 className="size-6 animate-spin" />
           </div>
+        ) : unknownTotals ? (
+          <EmptyState
+            icon={<CloudOff className="size-10" />}
+            title="Couldn't load your records"
+            body="This is a connection problem, not an empty year — nothing you logged has been lost."
+            action={
+              <Button variant="outline" onClick={load}>
+                Try again
+              </Button>
+            }
+          />
         ) : tab === "expenses" ? (
           expenses.length === 0 ? (
             <EmptyState
