@@ -172,6 +172,8 @@ declare module "@gohustlr/shared" {
   };
 
   // ── transforms (return `any` at the JS/TS boundary; callers cast to Job/Booking) ──
+  // Returns the url only when it is an object in our own public bucket; null otherwise.
+  export function safeStorageUrl(url: string | null | undefined, bucket: string): string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function transformJob(dbJob: Record<string, unknown>): any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

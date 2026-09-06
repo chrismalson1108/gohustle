@@ -342,6 +342,19 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 
 All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadImage.js`.
 
+⚠️ **The COLUMNS that point at images are guarded too, not just the buckets** —
+`profiles.avatar_url` and `jobs.photos` were owner-writable free text until
+`20260906014100`, so one `PATCH /rest/v1/profiles` could put an arbitrary external image
+on a public profile and every browse card. Image moderation cannot see that: it takes a
+`(bucket, path)` and only ever looks at objects that were actually uploaded.
+`guard_profile_avatar_url` / `guard_job_photo_urls` now require each value to be an
+object under the writer's own folder at **this project's** storage origin (in
+`app_flags.storage_public_origin` — pinned to the project, because anyone can create a
+supabase.co one), service_role exempt; `ctl_foreign_image_url` reports the rows that
+predate them; and both clients drop anything else at render time via `safeStorageUrl`
+(`shared/transforms.js`, used by `Avatar` on both platforms and by `transformJob`). The
+same rule as `safeCertUrl`, which had covered `certifications.image_url` alone.
+
 ⚠️ **`web/public/brand/wordmark-cream.png` looks unused and is not.** 15 Supabase auth email templates and `student-verify-start` hotlink it as `https://gohustlr.com/brand/wordmark-cream.png`. An import grep cannot see it; deleting it 404s the logo in every transactional email.
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
@@ -747,7 +760,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
+- **59 controls are registered**: 57 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and

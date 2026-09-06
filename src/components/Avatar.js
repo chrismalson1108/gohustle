@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { colors, radii } from '../theme';
+import { safeStorageUrl } from '../../shared/transforms.js';
 
 // Renders a user's photo when `url` is set, otherwise the initial-letter circle.
 // Drop-in for every avatar site (sizes/colors vary by caller).
@@ -24,8 +25,15 @@ export default function Avatar({
     borderWidth: Math.min(borderWidth, 1),
   };
 
-  if (url) {
-    return <Image source={{ uri: url }} style={[base, styles.img, style]} />;
+  // Never render a URL that is not an object in our own avatars bucket. avatar_url is
+  // owner-writable free text, so a direct API write could point this at any host —
+  // unmoderated (moderate-image only ever sees bucket objects) and a beacon that logs
+  // every viewer's IP. 20260906014100 refuses such writes; this refuses to render the
+  // rows that predate it. Falls back to the initial circle, which is what an empty
+  // avatar has always looked like.
+  const safeUrl = safeStorageUrl(url, 'avatars');
+  if (safeUrl) {
+    return <Image source={{ uri: safeUrl }} style={[base, styles.img, style]} />;
   }
   return (
     <View style={[base, styles.fallback, { backgroundColor: bg }, style]}>
