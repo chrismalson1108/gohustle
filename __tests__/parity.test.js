@@ -63,6 +63,36 @@ describe('push deep-links still point at real tabs', () => {
     const stale = known.filter((k) => !routes.includes(k));
     expect(`stale: ${stale.join(', ') || 'none'}`).toBe('stale: none');
   });
+
+  // The SAME set again, twice more: the in-app inboxes route a tapped alert by the
+  // same data.tab. A tab missing from one of these does not fail loudly — the row
+  // resolves to "nowhere", is marked read, and becomes a dead button. That is how
+  // ProfileTab (the "Two-factor authentication was turned off" alert, the payout
+  // alerts, every admin notice) was unroutable on mobile, and then, after mobile was
+  // fixed, on the website.
+  const inboxRouters = {
+    'the app inbox (src/lib/notifications.js)': [
+      read('src/lib/notifications.js'),
+      /const TABS = \{([^}]*)\}/,
+      /(\w+):/g,
+    ],
+    'the website inbox (web/lib/notifications.ts)': [
+      read('web/lib/notifications.ts'),
+      /const TAB_ROUTE: Record<string, string> = \{([^}]*)\}/,
+      /(\w+):/g,
+    ],
+  };
+
+  Object.entries(inboxRouters).forEach(([who, [src, block, key]]) => {
+    it(`${who} routes every tab send-push will send`, () => {
+      const body = src.match(block);
+      expect(`${who} has a tab table: ${body ? 'yes' : 'NO'}`).toBe(`${who} has a tab table: yes`);
+      const tabs = [...body[1].matchAll(key)].map((m) => m[1]);
+      const unroutable = known.filter((k) => !tabs.includes(k));
+      expect(`${who} cannot route: ${unroutable.join(', ') || 'none'}`)
+        .toBe(`${who} cannot route: none`);
+    });
+  });
 });
 
 // ── 2. Hustlr AI's picture of the app ───────────────────────────────────────
