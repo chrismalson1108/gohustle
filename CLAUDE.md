@@ -185,11 +185,40 @@ open application.
   ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
   names only, and it re-applies the same accepted-booking condition before revealing the
   exact label — a definer function that skipped that would be a way to read addresses off
-  unaccepted applications.
+  unaccepted applications. **"Revocable" was only true of the schema until 20260905** —
+  the Terms and Privacy Policy have promised since 2026-08-06 that the earner can switch
+  a link off at any time, `gig_shares_revoke_own` allowed it, and no client ever wrote
+  `revoked_at`. `SafetyBar` now shows "Stop sharing my location" whenever a live link
+  exists; `parity.test.js` fails if a client that calls `create_gig_share` has no path
+  to `revoked_at`.
 - **`safety_checkins`** — `due_at` / `nudged_at` / `escalated_at` / `resolved_at` per
   booking: the "are you OK?" timer, its nudge, and escalation when it goes unanswered.
+  ⚠️ Both middle columns were written by **nothing** until 20260905002200 — the nudge
+  stage was designed and never built, so every forgotten "done" tap paged the on-call
+  directly. `run_safety_checkin_stages()` (first step of the hourly sweep) now writes an
+  Alerts-inbox notification to the earner and stamps `nudged_at`, then stamps
+  `escalated_at` 30 minutes later if the check-in is still open;
+  `ctl_safety_checkin_overdue` fires on `escalated_at` **or** on any check-in more than
+  3 hours past due — that second arm is the backstop, and it is deliberate: gating a
+  safety control on a column another function writes would let a broken nudge turn the
+  board green. The nudge is **in-app only**; `send-push` authenticates a signed-in
+  user's token, so there is no database→push rail. The control's finding carries the
+  gig's **exact** address from `job_locations` (LEFT joined — a remote gig has no row
+  and must still be reported), as do the `safety-alert` email and the console's
+  `/bookings/[id]`.
 - `trg_notify_safety_report` dispatch config lives in `app_flags`, **not a GUC** — that is
   why it sat dead from 2026-07-10 to 2026-08-06 without firing once.
+- **The two user-initiated controls are `SafetyBar`, and there are TWO of them** —
+  `src/components/SafetyBar.js` and `web/components/SafetyBar.tsx`, both rendered only on
+  a booking the earner has STARTED (mobile `EarnScreen`, web `my-jobs`). Both call
+  `create_gig_share` and `raise_gig_emergency` and nothing else does; `__tests__/parity.test.js`
+  fails if either client loses one. The web half is new as of 2026-09-06 — until then the
+  website could START a gig and could not share it or raise an alarm on it, so an earner
+  on a phone browser had only the generic Support form. The AUTOMATIC half was never
+  one-sided: `open_safety_checkin` fires on any `started_at` write regardless of client,
+  so the check-in timer, nudge and escalation always covered web too. **A new safety
+  control must ship on both, and the assistant prompt must be able to name it** — see the
+  `MUST_KNOW` row.
 
 Read `RUNBOOK_SAFETY.md` before changing any of it.
 
@@ -197,6 +226,7 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 - **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build).
 - **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`. ⚠️ **The earner gets 100% and the platform pays Stripe's 2.9%+30¢ — a DECISION, not an oversight** (KNOWN_RISKS T-1, decided 2026-08-17). `stripe-tip` sets `transfer_data.destination` with no `application_fee_amount` on purpose: every marketplace that has taken a cut of tips has turned it into a public scandal, and on a platform selling "keep what you earn" it is the most expensive dollar available. Do not "fix" the missing application fee.
 - **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `stripe-capture-payment` partial capture; a `disputes` row is recorded. `verifyAndRate(..., { pct, disputeReason })`.
+  ⚠️ **A `disputes` row is a claim about the GIG payment, and `stripe-webhook`'s `recordReversal` must never file one for a reversal that touched no `payments` row.** A tip has no `payments` row at all, so from 2026-08-14 to 2026-09-06 a refunded or charged-back TIP wrote a row carrying the tip's charge id in the machine template on the gig's booking — and `ctl_external_reversal_not_ledgered` anchors on that template and joins `disputes` to `payments` on `booking_id`, so it reported the gig's captured, never-refunded payment as unledgered and told the operator to "Record chargeback", which writes `refunded_cents` onto a charge nobody refunded and makes `vest_bonuses` void the referral bonus. The tip branch now returns its own `booking_id` before the insert is reachable (`__tests__/tipCaps.test.js`); a reversed tip is ledgered in `tip_ledger.reversed_cents` and nowhere else.
 - **Scheduling**: slots carry machine-readable `starts_at` (job_slots + bookings); `SlotPicker` hides past slots.
 
 **Tunnel troubleshooting** — If ngrok errors with `Cannot read properties of undefined (reading 'body')`, kill all node and ngrok processes first, then retry.
@@ -251,7 +281,7 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`, `needsMfaChallenge`, `mfaResolved`, `clearMfaPending`. Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
+`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`, `needsMfaChallenge`, `mfaResolved`, `clearMfaPending`, `requireMfaChallenge` (opens the challenge gate when the SERVER refuses an action with 403 `MFA_REQUIRED` — see **Two-factor**). Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
 
 **Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
@@ -288,10 +318,10 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `EarnScreen` (tab "My Jobs") | Earner hub — earnings dashboard + **Active / Awaiting / Completed** segmented control over booked gigs (Awaiting=pending, Active=confirmed+completed, Completed=verified+declined+cancelled). Mark-complete, message-poster, rate-poster, amendment response, weekly goals, challenges. Pull-to-refresh. |
 | `GigsScreen` (tab "Hire") | Poster hub — Post New Gig button + **Active/Past** segmented control. Active = posted listings with expandable booking sections (accept/decline/verify/delete, amendment); Past = read-only verified/declined/cancelled booking history. Pull-to-refresh. |
 | `PostJobScreen` | Post a new gig — LocationPicker + DateTimePicker + `CategoryPicker` (search the catalog, or create your own; your recent categories appear as quick chips). Times are optional: **no slots picked → a bookable "Flexible — Contact to Schedule" slot is attached** (a hint under the picker says so; EditJob applies the same fallback on save), so a gig can never end up slot-less/un-bookable. Nested in GigsStack. |
-| `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, location, description) are **locked** once a booking is confirmed/completed; they unlock only if an amendment was accepted. |
+| `EditJobScreen` | Edit/delete an existing gig (navigate with `{ jobId }` params). Core terms (title, category, pay, payType, **estimated hours**, location, description) are **locked** once a booking is confirmed/completed; title/category/location/description unlock if an amendment was accepted, but **pay, payType and estimated hours never do** — `guard_jobs_write` pins all three while a booking is live, because they are the price a Stripe hold was already authorized at. Estimated hours is shown only for hourly gigs and is what the escrow multiplies pay by; `updateJob` writes it only for `hourly`, deliberately leaving a flat gig's stored value alone (the safety check-in window reads the same column). |
 | `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
 | `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), the money hub (→ `PayoutSetup`), Tax Center, TrophyCase, Reviews, Alerts, Notification settings, Availability, Find People, identity + student verification, Settings link. **The Saved gigs/people rows are NOT here** — they were deliberately deleted as duplicates and live only in Settings; and the money row goes to `PayoutSetup`, not to `Payments` (Transactions), which this screen does not link to at all. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
-| `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (Stripe earnings + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. Nested in ProfileStack as `Expenses`. |
+| `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (platform earnings + card tips + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. ⚠️ **Platform income comes from `platformIncomeForYear` in `shared/taxFormat.js`, which values each verified booking at its PINNED `amount_cents_quoted` and nets it at that booking's own `fee_bps_quoted`** — never the list pay (that valued every hourly gig at one hour) and never the current rate card. A failed read is an error state with a retry, not an empty year: the totals show a dash and Export refuses. The web Tax Center (`web/app/(app)/profile/taxes/page.tsx`) shares all of it. Nested in ProfileStack as `Expenses`. |
 | `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks — but **only Earn and Profile have an entry point** (`EarnScreen`, `PayoutSetupScreen`, `SettingsScreen`); nothing in GigsStack navigates here, so a poster cannot reach their own ledger from the Hire tab. That is a gap, not a design. |
 | `PayoutSetupScreen` (route `PayoutSetup`) | The **money hub**, and the one screen that carries both sides: "Get paid for work" (connect/manage a Connect bank for earners) and "Pay for gigs" (add/change/remove the card on file for posters). Stripe is surfaced only as a trust line. Entry points: ProfileScreen, GigsScreen, EarnScreen. Connect onboarding from here is step-up gated — see **Two-factor**. |
 | `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
@@ -342,21 +372,45 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 
 All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadImage.js`.
 
+⚠️ **The COLUMNS that point at images are guarded too, not just the buckets** —
+`profiles.avatar_url` and `jobs.photos` were owner-writable free text until
+`20260906014100`, so one `PATCH /rest/v1/profiles` could put an arbitrary external image
+on a public profile and every browse card. Image moderation cannot see that: it takes a
+`(bucket, path)` and only ever looks at objects that were actually uploaded.
+`guard_profile_avatar_url` / `guard_job_photo_urls` now require each value to be an
+object under the writer's own folder at **this project's** storage origin (in
+`app_flags.storage_public_origin` — pinned to the project, because anyone can create a
+supabase.co one), service_role exempt; `ctl_foreign_image_url` reports the rows that
+predate them; and both clients drop anything else at render time via `safeStorageUrl`
+(`shared/transforms.js`, used by `Avatar` on both platforms and by `transformJob`). The
+same rule as `safeCertUrl`, which had covered `certifications.image_url` alone.
+
 ⚠️ **`web/public/brand/wordmark-cream.png` looks unused and is not.** 15 Supabase auth email templates and `student-verify-start` hotlink it as `https://gohustlr.com/brand/wordmark-cream.png`. An import grep cannot see it; deleting it 404s the logo in every transactional email.
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
-## Support (in-app, two-way) — `src/lib/support.js`
+## Support (in-app, two-way) — `shared/support.js`, `src/lib/support.js`, `web/lib/support.ts`
 
 Tickets live in **`support_tickets`** + **`support_ticket_messages`** (owner RLS, both
-guarded). `SupportScreen` is the conversation; the admin console queue is `/support`.
+guarded). `SupportScreen` is the conversation on mobile and `/support` is the same
+conversation on web; the admin console queue is also `/support`.
+
+⚠️ **Signed-in web was a `mailto:` until 2026-09-05** — Settings and Profile both
+opened a personal inbox, `/contact` was linked only from the marketing footer, and no
+web code read either ticket table. That is the failure mobile deleted its own three
+mailto: links to fix. **Never put one back**: `support-reply` mails the user with
+`reply_to = mainmail@` and nothing in this repo ingests inbound mail, so an emailed
+reply lands in a mailbox where `last_author` never moves and the queue stays blind.
+`__tests__/webSupportParity.test.js` is the web half of `supportIntake.test.js`.
 
 - **Threads are PER TOPIC, and that is forced by the schema** — `priority` and
   `booking_id` are both per-ticket and safety is urgent by definition, so one lifelong
   thread could not carry a routine question and a safety report without mis-routing one.
-- `pickActiveTicket` / `groupTickets` (in `src/lib/support.js`, unit-tested) decide which
-  thread is shown: **unread wins over status**, because an agent's note on a resolved
-  thread deliberately leaves it `closed`.
+- `pickActiveTicket` / `groupTickets` / `ticketHasUnread` and `SUPPORT_CATEGORIES` live
+  in **`shared/support.js`** (unit-tested), re-exported by both clients — two copies is
+  how one person gets two different "active" conversations on two devices. They decide
+  which thread is shown: **unread wins over status**, because an agent's note on a
+  resolved thread deliberately leaves it `closed`.
 - **A user reply REOPENS a closed ticket** and un-archives it. Archiving is the user's
   inbox preference; closing is the team's workflow state. Never conflate them.
 - ⚠️ **`guard_support_ticket_write` must keep the `app.support_reopen` exemption.** The
@@ -367,13 +421,33 @@ guarded). `SupportScreen` is the conversation; the admin console queue is `/supp
 - Agents can **open** a thread (`openThreadWithUser`, support tier): recipient resolved
   server-side, cold contact is in-app + push only (never branded email), never merges
   into a user's own safety report, rate-limited from the append-only `admin_audit_log`.
+- ⚠️ **The console queue's predicate, ordering and count are all in the QUERY** — the
+  "needs reply" tab used to fetch the 200 newest open tickets and then filter
+  `last_author = 'user'` in JavaScript, which drops exactly the people waiting longest
+  and under-counts the badge at the same time (the false negative `/bookings` fixed
+  first). Ordering is `priority_rank`, a **generated** column added by
+  `20260906015300` because PostgREST can only order by a column and `priority` is text
+  that sorts high, low, normal, urgent. `__tests__/supportQueueWindow.test.js` pins the
+  rank to the CHECK constraint's four values and the page to the server-side shape.
 
-## Transactions — `src/lib/payments.js`, `PaymentsScreen` (route `Payments`, title "Transactions")
+## Transactions — `shared/ledger.js`, `PaymentsScreen` (route `Payments`) + web `/profile/transactions`
 
 `payments` rows rendered as a statement for whichever side the reader is on.
 `fetchLedger` runs TWO queries on purpose: RLS exposes a row through either the earner
 or the poster policy and a single select cannot tell which side the reader is on — that
 is the difference between "you earned $54" and "you paid $60".
+
+⚠️ **The arithmetic is in `shared/ledger.js` and nowhere else.** `src/lib/payments.js`
+and `web/lib/payments.ts` are the two Supabase reads plus a re-export; only the client
+differs, the maths does not. It moved there on 2026-09-05 because the WEBSITE had no
+ledger at all — no receipts, no refunds, no pinned fee, no CSV, no deposits — while
+Hustlr AI's single prompt told web users to open "Transactions". Porting by hand would
+have meant a second copy of money maths whose fee is pinned per booking, whose refund
+share differs by side, and whose partial capture deliberately leaves `amount_cents` at
+the full authorization. `__tests__/webLedgerParity.test.js` fails if either client
+grows its own copy, and `ledger.test.js` exercises the shared module through the mobile
+re-export. Entry points on web: Settings → Money, `/profile/payouts`, `/my-jobs` and
+`/hiring` — the last of which is deliberately NOT the mobile gap noted above.
 
 - Amounts come from the payment row, **never re-derived from the current rate card**.
   A past transaction shown at today's rate misstates what the person received.
@@ -392,10 +466,22 @@ Optional for users, enforced where it protects money.
 - **Recovery codes are generated AT enrollment, not offered later** — 2FA without a way
   back in turns a lost phone into a lost account. Redeeming one REMOVES the factor
   (a code cannot mint aal2), dropping the account to password-only.
-- **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link or starting
-  Connect onboarding requires aal2 **if the account has a factor**; no factor ⇒ allowed,
-  because locking someone out of their own bank details for not enrolling is the same
-  "our posture, their cost" mistake. Opening payout settings emails the account holder.
+- **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link, starting
+  Connect onboarding, or **deleting the account** requires aal2 **if the account has a
+  factor**; no factor ⇒ allowed, because locking someone out of their own bank details
+  for not enrolling is the same "our posture, their cost" mistake. Opening payout
+  settings emails the account holder. ⚠️ **The 2FA gate at sign-in is CLIENT-SIDE** — a
+  password sign-in on an enrolled account returns a real aal1 session, so the only
+  functions where the factor is actually enforced are the ones that call
+  `requireStepUp` themselves. `delete-account` did not until 2026-09-05, which made a
+  phished password enough to tombstone an enrolled account. The roster is pinned by
+  `__tests__/stepUpEdgeCoverage.test.js`; add to it before adding a destructive function.
+  ⚠️ **The refusal is `403 { error: 'MFA_REQUIRED' }` and BOTH clients must key on that
+  CODE** — `handledStepUp` in `PayoutSetupScreen.js` and `web/app/(app)/profile/payouts`,
+  each calling `requireMfaChallenge()` on its auth context so the code prompt appears.
+  Until 2026-09-06 nothing read the string and it reached the user as a toast telling
+  them to enter a code on a screen with no field for one. `__tests__/payoutStepUpRecovery.test.js`
+  pins the server literal and both clients together.
 
 ## Hustlr AI — `supabase/functions/assistant`
 
@@ -479,13 +565,13 @@ stayed invisible until someone complained.
 | Function | |
 |---|---|
 | `safety-alert` | Pages a human when a safety report lands. Invoked by the `reports` AFTER INSERT trigger via pg_net with the `x-safety-secret` shared secret; `verify_jwt = false`. |
-| `moderate-text` | Claude context-aware moderation, called before user text is written. **Fails OPEN by design** so a provider hiccup cannot wedge posting — do not model it as authoritative. On a block it auto-files a report into the Moderation queue. |
-| `moderate-image` | Claude vision on upload; deletes the object on violation. Every path through `src/lib/uploadImage.js` goes through it, so "all writes go through uploadImage.js" also means "all writes are moderated". |
+| `moderate-text` | Claude context-aware moderation, called before user text is written. **Fails OPEN by design** so a provider hiccup cannot wedge posting — do not model it as authoritative. On a block it auto-files a report into the Moderation queue. ⚠️ **Its callers fail open on an outage and CLOSED on a 429**, which is not the same failure: the quota is per user and shared between a caller's direct calls and the ones Hustlr AI forwards on their behalf, so treating a 429 as "allowed" made the rate limiter a self-service switch for turning this layer off. Both `src/lib/moderation.js` and the assistant's `moderateViaEdge` are guarded by `__tests__/moderationRateLimitFailsClosed.test.js`. |
+| `moderate-image` | Claude vision on upload; deletes the object on violation. Every path through `src/lib/uploadImage.js` goes through it, so "all writes go through uploadImage.js" also means "all writes are moderated". It fails OPEN on system conditions (Claude down, download errored) and **CLOSED on the two a user can arrange for themselves** — an object too large to scan, and their own 20/min · 500/day rate limit. That second one used to answer HTTP 429, which supabase-js hands the wrappers as a transport error, i.e. their fail-open branch: 21 junk calls published any image unmoderated. It now answers 200 `{ allowed: false, reason: 'rate_limited' }` and both wrappers block on it (`__tests__/moderationRateLimitFailsClosed.test.js`). Images have no keyword backstop, so this layer is the whole layer. |
 | `log-moderation` | Records client-detected keyword blocks into the Moderation queue as `reports` with `source='auto'`, rate-limited so probing the filter cannot flood it. |
 | `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
 | `controls-alert` | The hourly sweep's pager and the daily triage digest. `verify_jwt = false`. |
 | `send-push` | Expo push fan-out; owns `KNOWN_TABS` (see the tab-route-name note). |
-| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted TWICE: `certificates` once left public credential scans fetchable after the account was gone, and `support-photos` was missing until 2026-08-14. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is either cleared or excused with a reason, so the next omission fails the gate instead of waiting to be noticed. |
+| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. **Step-up gated** — see Two-factor. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted THREE times: `certificates` once left public credential scans fetchable after the account was gone, `support-photos` was missing here until 2026-08-14 — and until 2026-09-05 it was still missing from the console's two copies of the same list (`admin/lib/deleteUser.ts` and the GDPR export route), because the guard read this file only and the drift recurred one directory over. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is cleared or excused **in all three lists**, and that the three agree. |
 
 ## A feature is not finished when the mobile screen works
 
@@ -703,6 +789,18 @@ uses **that booking's `feeBpsQuoted`**. Using the wrong one is a disclosure bug.
 `SERVICE_FEE_PCT` still exists in both clients but has **no consumers** and resolves to
 the founding rate.
 
+⚠️ **A booking that carries a benefit needs ALL FOUR pins to be described correctly** —
+`amount_cents_quoted` and `fee_bps_quoted` alone are not enough. The server authorizes
+`amount − poster_discount_cents` and pays the earner `amount − platform_fee_after_credit
+(amount, bps, fee_credit_cents)`, so a sheet built from two pins overstates the hold and
+understates the payout on every promoted booking. `transformBooking` exposes all four,
+and `platformFeeAfterCreditCents` / `earnerNetAfterCreditCents` / `posterChargeCents` in
+`shared/pricing.js` mirror the server (`__tests__/benefitDisplay.test.js` parses
+`20260806080000` the way `pricing.test.js` parses the fee migration). The accept sheets
+must render the edge function's **`authorizedCents`**, not its `amountCents` — that
+field is the pre-discount pin. And `effectiveFeeLabel` knows nothing about a credit or a
+discount, so the "we keep N%" parenthetical is dropped whenever either is pinned.
+
 ⚠️ **The fee comes out of the EARNER's payout**, not added to the poster's charge
 (`earnerAmountCents = amountCents - feeCents`). So a fee discount is a *supply-side*
 incentive; it does nothing for posters.
@@ -747,7 +845,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
+- **61 controls are registered**: 59 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -811,7 +909,15 @@ and `ctl_admin_login_bruteforce` counted a table nothing wrote to. Note the hone
 the sign-in itself is client-side, so this gates the CONSOLE path and records every attempt
 (which is what makes the control work); someone POSTing straight at Supabase is bounded by
 Supabase's own limits, not ours. Nav hides what a role cannot open, but
-**the guard is the enforcement** — if they disagree the guard wins.
+**the guard is the enforcement** — if they disagree the guard wins. ⚠️ **That rule runs
+in one direction only, and three pages had it backwards:** `/moderation`, `/disputes`
+and `/bookings/:id` gated their action buttons on `ctx.role === "admin"` while the
+actions behind them accept `trust`, `trust` and `finance`, so the tiers whose whole job
+those queues are could read them and act on nothing — re-creating the money-harm control
+`trust` was created to remove. Authority props are now computed from
+`roleSatisfies(ctx.role, <the action's own tier>)`, and
+`__tests__/adminTierParity.test.js` fails on any console page whose UI hides an action
+its own `actions.ts` would have allowed.
 
 ⚠️ **`gohustlr-admin` does NOT auto-deploy.** See the Commands block.
 

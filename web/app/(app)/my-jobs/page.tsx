@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
-  ChevronDown, Star, Clock, AlertCircle, Car, DollarSign,
+  ChevronDown, Star, Clock, AlertCircle, Car, DollarSign, ArrowLeftRight,
 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/Field";
 import TrackExpensesModal from "@/components/TrackExpensesModal";
 import { uploadPrivateImages } from "@/lib/uploadImage";
 import SignedPhotoStrip from "@/components/SignedPhotoStrip";
+import SafetyBar from "@/components/SafetyBar";
 import { fetchExpenses } from "@/lib/expenses";
 import { money, classNames } from "@/lib/format";
 import { canClaimEarnerPayment } from "@gohustlr/shared";
@@ -349,6 +350,12 @@ export default function MyJobsPage() {
             <Check className="size-4" /> Mark done
           </Button>
           <p className="mt-1.5 text-xs text-ink-muted">Next: mark the job done when you&apos;ve finished.</p>
+          {/* The gig is happening RIGHT NOW — this is the only state where the safety
+              controls belong, and the only one mobile shows them in. Web could start a
+              gig long before it could share it or raise an alarm, so an earner working
+              from a phone browser had the server-side check-in timer and nothing they
+              could reach for themselves. */}
+          <SafetyBar bookingId={b.id} />
           {/* The sentence owns a full line whenever the row is narrow — beside
               the button it compressed to a 3-4 line sliver at 320-360px. Basis +
               wrap rather than an `sm:` breakpoint, because this card is also a
@@ -450,6 +457,14 @@ export default function MyJobsPage() {
             </span>
             <span className="truncate text-xs font-medium text-ink-soft">this week</span>
           </span>
+          {/* The earner's way into their own ledger — mobile's EarnScreen has had
+              this and the web had no ledger to link to at all until 2026-09-05. */}
+          <Link
+            href="/profile/transactions"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-ink hover:bg-canvas"
+          >
+            <ArrowLeftRight className="size-3.5 text-primary" /> Transactions
+          </Link>
         </div>
       </PageHeader>
 

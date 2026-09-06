@@ -18,14 +18,20 @@ export default function InterventionPanel({
   startedAt,
   paymentStatus,
   refundableCents,
-  isAdmin,
+  canIntervene,
 }: {
   bookingId: string;
   status: string;
   startedAt: string | null;
   paymentStatus: string | null;
   refundableCents: number;
-  isAdmin: boolean;
+  /**
+   * roleSatisfies(ctx.role, "finance"), computed by the page — the same predicate
+   * every action in ../actions.ts enforces via requireFreshAdmin("finance"). It was
+   * role === "admin", which hid the whole panel from the finance tier, whose entire
+   * remit is payments, refunds, escrow and payout intervention.
+   */
+  canIntervene: boolean;
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -36,10 +42,10 @@ export default function InterventionPanel({
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
 
-  if (!isAdmin) {
+  if (!canIntervene) {
     return (
       <p className="text-sm text-[var(--muted)]">
-        Intervening on a booking requires the admin role.
+        Intervening on a booking requires the finance or admin role.
       </p>
     );
   }
@@ -98,9 +104,20 @@ export default function InterventionPanel({
         >
           Force complete
         </button>
+        {/* 'confirmed' means a live Stripe authorization is behind the work — that is
+            what accept-booking exists to attest. Re-opening a booking with no hold puts
+            the earner back to work against nothing, so the button follows the money,
+            not the status: pending has no hold yet, declined's was voided. The action
+            re-checks this server-side; disabling here is only so the operator is not
+            invited into a refusal. */}
         <button
           className={btn}
-          disabled={pending || settled || status === "cancelled"}
+          disabled={pending || settled || status === "cancelled" || paymentStatus !== "authorized"}
+          title={
+            paymentStatus === "authorized"
+              ? undefined
+              : "No live escrow hold behind this booking — the poster has to accept it again, which is what places the hold."
+          }
           onClick={() => fire(reopenBooking, "Re-open this booking as confirmed?")}
         >
           Re-open
@@ -112,10 +129,23 @@ export default function InterventionPanel({
         >
           Clear &ldquo;started&rdquo;
         </button>
+        {/* An operator override of a STARTED booking is a real override: the DB guard
+            trg_guard_started_booking_cancel exists to stop the two parties doing this,
+            and the action now writes the booking BEFORE it voids anything at Stripe, so
+            a refusal costs nothing. Say so in the confirm rather than hiding the button —
+            "Clear started" then Force cancel is the same override with an extra step and
+            no extra thought. */}
         <button
           className={danger}
           disabled={pending || settled || status === "cancelled"}
-          onClick={() => fire(forceCancel, "Cancel this booking and release any escrow hold?")}
+          onClick={() =>
+            fire(
+              forceCancel,
+              startedAt
+                ? "The earner marked “I’m on site” for this booking.\n\nCancel it anyway and release any escrow hold? The work may already have been done — a dispute or “Settle & pay earner” may be the honest answer."
+                : "Cancel this booking and release any escrow hold?",
+            )
+          }
         >
           Force cancel
         </button>

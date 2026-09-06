@@ -82,13 +82,43 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     expect(labels).toEqual(expect.arrayContaining(['Browse', 'My Jobs', 'Hire', 'Messages', 'You']));
   });
 
+  // ⚠️ These are checked against the prompt's TAB SENTENCE, not the whole prompt.
+  //
+  // A bare `prompt.includes(label)` was vacuous for exactly the tab whose rename this
+  // block was written after: the prompt is sliced from "You are **Hustlr AI**", so
+  // includes('You') is satisfied by its own first word — rename the tab back to
+  // "Profile" and the suite stayed green. 'Hire' was weak the same way, satisfied by the
+  // substring inside 'Hiring', which is the other stale name.
+  const tabsLine = prompt.split('\n').find((l) => /^- The tabs are /.test(l)) ?? '';
+  // Only the enumeration: the rest of the line legitimately QUOTES the old names in
+  // `do not call them "Hiring" or "Profile"`.
+  const tabsEnumeration = tabsLine.split(/They are named exactly that/)[0];
+
+  it('the prompt still enumerates the tabs in one line', () => {
+    // Everything below reads this line, so its absence must fail loudly rather than
+    // quietly making four assertions vacuous.
+    expect(`tabs line: ${tabsLine ? 'present' : 'MISSING FROM PROMPT'}`).toBe('tabs line: present');
+    expect(tabsLine).toMatch(/do not call them/i);
+  });
+
   labels.forEach((label) => {
     it(`names the "${label}" tab as the app names it`, () => {
       // Catches the exact drift that happened: a renamed tab the prompt never heard
       // about, so the assistant sends people to a tab that is not called that.
-      expect(`${label}: ${prompt.includes(label) ? 'known' : 'MISSING FROM PROMPT'}`)
+      // Word-bounded, so "Hire" cannot be satisfied by "Hiring".
+      const named = new RegExp(`(^|[^A-Za-z])${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z]|$)`)
+        .test(tabsEnumeration);
+      expect(`${label}: ${named ? 'known' : 'MISSING FROM THE PROMPT’S TAB LINE'}`)
         .toBe(`${label}: known`);
     });
+  });
+
+  it('does not enumerate a tab by a name the app retired', () => {
+    // The regression this block exists for, stated directly: "Hiring" and "Profile" are
+    // what the prompt called Hire and You for months after they were renamed.
+    const stale = ['Hiring', 'Profile'].filter((n) => tabsEnumeration.includes(n));
+    expect(`retired names in the tab line: ${stale.join(', ') || 'none'}`)
+      .toBe('retired names in the tab line: none');
   });
 
   // Curated on purpose. Not every screen belongs in the prompt — internal and
@@ -108,6 +138,15 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // the screen existed the prompt told the model there was nowhere to send them,
     // which is now false.
     ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
+    // Added 2026-09-05 with the share-link revoke control, extended when the same
+    // controls reached the website. The share/SOS bar has existed since 2026-08-06 and
+    // the prompt never mentioned it, so the assistant could not answer the two
+    // questions it most obviously generates — "how do I stop sharing my location" and
+    // "how do I get help right now" — and those are asked while someone is nervous
+    // about going to a stranger's address. "I don't think the app does that" is the
+    // worst available answer to either.
+    ['stopping a location share', /Stop sharing my location/i],
+    ['the in-gig safety controls', /Share my gig|Get help/],
   ];
 
   MUST_KNOW.forEach(([what, re]) => {
@@ -576,6 +615,76 @@ describe('the address-masking contract is documented', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A client that can START a gig must be able to raise the alarm on it.
+//
+// The web app could write bookings.started_at long before it could mint a share link
+// or raise an SOS. The server side was never the gap — open_safety_checkin fires on
+// any started_at write regardless of client, so a web earner always got the check-in
+// timer, its nudge and its escalation. What was absent is everything the person can
+// reach for THEMSELVES: an earner on a phone browser with no TestFlight build stood in
+// a stranger's house with no way to tell anyone where they were and no SOS, while the
+// public /s/[token] page existed on web the whole time. A safety feature that is
+// readable and not usable is worse than an absent one, because the product implies it.
+//
+// This is the same shape as the assistant-gate and 2FA sections above: nothing is
+// broken, nothing fails to compile, one client simply does not speak the protocol. So
+// the check has to be an explicit assertion that both clients call both RPCs.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the in-gig safety controls are wired on BOTH clients', () => {
+  // Read defensively: a client that has no safety bar at all is the exact regression
+  // this section is for, and it must report as a named failing assertion rather than
+  // throwing at describe-body time and taking the other 80 parity tests with it.
+  const readOrNull = (p) => {
+    try { return read(p); } catch { return null; }
+  };
+  const surfaces = {
+    mobile: readOrNull('src/components/SafetyBar.js'),
+    web: readOrNull('web/components/SafetyBar.tsx'),
+  };
+  const RPCS = ['create_gig_share', 'raise_gig_emergency'];
+
+  it('the RPCs the clients call actually exist server-side', () => {
+    const mig = read('supabase/migrations/20260806180000_gig_safety.sql')
+      + read('supabase/migrations/20260806300000_share_token_hardening.sql');
+    for (const rpc of RPCS) expect(mig).toMatch(new RegExp(`function public\\.${rpc}\\(`));
+  });
+
+  for (const [name, src] of Object.entries(surfaces)) {
+    describe(name, () => {
+      it('has an in-gig safety component at all', () => {
+        expect(`${name} SafetyBar: ${src === null ? 'MISSING' : 'present'}`)
+          .toBe(`${name} SafetyBar: present`);
+      });
+
+      for (const rpc of RPCS) {
+        it(`can call ${rpc}`, () => {
+          // codeOnly: both files EXPLAIN the contract in prose that names the RPCs,
+          // so a naive grep passes on a component that only talks about them.
+          expect(codeOnly(src ?? '')).toMatch(new RegExp(`rpc\\(\\s*['"]${rpc}['"]`));
+        });
+      }
+
+      it('gates the emergency behind a confirm and the share behind none', () => {
+        // Deliberately different weights: a mis-tapped SOS pages a real person, while
+        // friction on the share is how a safety feature goes unused.
+        expect(src ?? '').toMatch(/cancel/i);
+      });
+    });
+  }
+
+  it('the started-gig card on web actually renders it', () => {
+    // The component existing but never mounted is the same outage with extra steps.
+    const page = read('web/app/(app)/my-jobs/page.tsx');
+    expect(page).toMatch(/import SafetyBar from/);
+    expect(codeOnly(page)).toMatch(/<SafetyBar\b/);
+  });
+
+  it('the started-gig card on mobile actually renders it', () => {
+    expect(codeOnly(read('src/screens/EarnScreen.js'))).toMatch(/<SafetyBar\b/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A documented prop signature must match the component's real one.
 //
 // CLAUDE.md listed MessageSheet's and CompletionModal's props and omitted `visible` —
@@ -611,4 +720,115 @@ describe('documented component props exist on the component', () => {
       expect(`${name}: ${bogus.join(', ') || 'none'}`).toBe(`${name}: none`);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleting a gig is gated ONLY in the clients, so the three must say the same thing.
+//
+// deleteJob is a bare `update({ status: 'cancelled' })` (JobsContext / web jobs.tsx).
+// guard_jobs_delete fires on a hard DELETE and guard_jobs_write never reads status, so
+// nothing server-side decides whether a listing may be withdrawn — the predicate in the
+// client IS the rule. Two of the three agreed on pending/confirmed/completed;
+// EditJobScreen reused its core-terms lock (confirmed/completed/verified) instead, and
+// was wrong at both ends:
+//
+//   · 'pending' missing — Edit → Delete soft-cancelled a gig out from under live
+//     applications, leaving applicants on "Awaiting confirmation" for a listing that no
+//     longer exists until expire_stale_pending_bookings(14) catches up 14 days later.
+//   · 'verified' included — a finished, paid gig answered "Someone is actively working
+//     this gig" on Edit while the Hire tab deleted it without a word.
+//
+// Editing and deleting are different questions: 'verified' locks the TERMS (the deal is
+// done and cannot be restated) and 'pending' does not, while 'pending' blocks the
+// WITHDRAWAL and 'verified' does not. The lock predicate is deliberately left alone here.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('all three delete gates enumerate the same booking statuses', () => {
+  // The statuses named in the statement that declares the gate. Comment-stripped, since
+  // every one of these files explains the rule in prose right next to it.
+  const gateStatuses = (file, varName) => {
+    const src = codeOnly(read(file));
+    const at = src.indexOf(varName);
+    expect(`${file} declares ${varName}`).toBe(at > -1 ? `${file} declares ${varName}` : 'MISSING');
+    const stmt = src.slice(at, src.indexOf(';', at));
+    return [...stmt.matchAll(/["']([a-z]+)["']/g)].map((m) => m[1]).sort();
+  };
+
+  const EXPECTED = ['completed', 'confirmed', 'pending'];
+
+  it('the mobile Hire tab gates on pending/confirmed/completed', () => {
+    expect(gateStatuses('src/screens/GigsScreen.js', 'activeBookings')).toEqual(EXPECTED);
+  });
+
+  it('the web edit page gates on the same set', () => {
+    expect(gateStatuses('web/app/(app)/hiring/[id]/edit/page.tsx', 'hasUnresolvedBooking')).toEqual(EXPECTED);
+  });
+
+  it('the mobile edit screen gates on the same set, not on its core-terms lock', () => {
+    expect(gateStatuses('src/screens/EditJobScreen.js', 'unresolvedBooking')).toEqual(EXPECTED);
+  });
+
+  it('the mobile edit screen deletes on the delete gate, not on isLocked', () => {
+    // The defect was one identifier: handleDelete tested `isLocked`, which is the
+    // core-terms lock. Reusing it here is what produced both wrong answers.
+    const src = codeOnly(read('src/screens/EditJobScreen.js'));
+    const handler = src.slice(src.indexOf('const handleDelete'), src.indexOf('const handleDelete') + 400);
+    expect(handler).toMatch(/if \(!canDelete\)/);
+    expect(handler).not.toMatch(/if \(isLocked\)/);
+  });
+
+  it('the core-terms lock is still its own, different predicate', () => {
+    // Guarding the fix in the other direction: collapsing the two would unlock a
+    // verified booking's terms, or lock a poster out of editing a gig that only has
+    // applications.
+    const src = codeOnly(read('src/screens/EditJobScreen.js'));
+    const stmt = src.slice(src.indexOf('const lockedBooking'), src.indexOf(';', src.indexOf('const lockedBooking')));
+    expect([...stmt.matchAll(/["']([a-z]+)["']/g)].map((m) => m[1]).sort())
+      .toEqual(['completed', 'confirmed', 'verified']);
+  });
+});
+
+// ── 6. A consent document promising a control that exists ───────────────────
+// The Terms and the Privacy Policy (20260806190000, republished verbatim as the
+// 2026-08-12 versions) tell posters and earners that a gig share link "can be switched
+// off by the Earner at any time" and that "the Earner can revoke it at any time". The
+// schema always allowed it — gig_shares_revoke_own, plus a pin trigger that permits
+// revoked_at — and no client ever wrote the column. SafetyBar had exactly two actions,
+// share and SOS, so the only end to a link was its 12-hour expiry (24-hour ceiling),
+// and a link discloses the poster's exact street address, both first names and live
+// status.
+//
+// A document asserting a control that does not exist is worse than a missing feature:
+// it is what the user relied on when they consented.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the share link can be revoked, because the legal text says it can', () => {
+  const legal = read('supabase/migrations/20260806190000_safety_share_disclosure.sql');
+
+  it('the published legal text does promise revocation', () => {
+    // If this stops matching, the promise moved and the assertion below is aimed at
+    // nothing — fix the pointer rather than deleting the guard.
+    expect(legal).toMatch(/switched off by the Earner at any time|revoke it at any time/);
+  });
+
+  it('every client that mints a share also offers a way to stop it', () => {
+    const src = ['src', 'web', 'admin'];
+    const minters = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name === '.next') continue;
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) walk(rel);
+        else if (/\.(js|jsx|ts|tsx)$/.test(e.name)) {
+          const body = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+          if (body.includes('create_gig_share')) minters.push([rel, body]);
+        }
+      }
+    };
+    src.forEach(walk);
+
+    expect(minters.length).toBeGreaterThan(0);
+    const silent = minters
+      .filter(([, body]) => !codeOnly(body).includes('revoked_at'))
+      .map(([rel]) => rel);
+    expect(silent).toEqual([]);
+  });
 });

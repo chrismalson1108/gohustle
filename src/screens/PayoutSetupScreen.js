@@ -29,7 +29,26 @@ export default function PayoutSetupScreen({ navigation }) {
     createSetupIntent, getPaymentMethodStatus, detachPaymentMethod,
   } = useJobs();
   const { role, showToast } = useUser();
-  const { user } = useAuth();
+  const { user, requireMfaChallenge } = useAuth();
+
+  // Both payout functions are step-up gated (_shared/stepUp.ts): with a verified factor
+  // on the account they refuse a session that is only aal1, answering 403 MFA_REQUIRED.
+  // That is a RECOVERABLE refusal — enter a current code and the same action works — but
+  // only if this screen offers the prompt. It did not: the code fell through to the
+  // generic catch and told the user to "enter your authenticator code" in a toast, on a
+  // screen with no code field and no link to one, so the honest reading was that payouts
+  // were broken. Setting the gate makes RootNavigator render MfaChallengeScreen, which
+  // already carries the code entry and the lost-phone path.
+  const handledStepUp = (err) => {
+    if (err?.code !== 'MFA_REQUIRED') return false;
+    showToast({
+      icon: '🛡️',
+      title: 'Confirm it’s you',
+      message: err.message || 'Enter your authenticator code to change payout details.',
+    });
+    requireMfaChallenge();
+    return true;
+  };
 
   // The hub's first question is "where is my money", so it answers it in the row
   // rather than making the user open another screen to find out. Best-effort: a
@@ -108,7 +127,9 @@ export default function PayoutSetupScreen({ navigation }) {
       });
       await refresh();
     } catch (err) {
-      showToast({ icon: '⚠️', title: "Couldn't start payout setup", message: err.message || 'Please try again.' });
+      if (!handledStepUp(err)) {
+        showToast({ icon: '⚠️', title: "Couldn't start payout setup", message: err.message || 'Please try again.' });
+      }
     }
     setLoadingPayout(false);
   };
@@ -122,7 +143,9 @@ export default function PayoutSetupScreen({ navigation }) {
       await WebBrowser.openBrowserAsync(url, { toolbarColor: colors.primary, controlsColor: '#fff' });
       await refresh();
     } catch (err) {
-      showToast({ icon: '⚠️', title: "Couldn't open payout settings", message: err.message || 'Please try again.' });
+      if (!handledStepUp(err)) {
+        showToast({ icon: '⚠️', title: "Couldn't open payout settings", message: err.message || 'Please try again.' });
+      }
     }
     setLoadingPayout(false);
   };

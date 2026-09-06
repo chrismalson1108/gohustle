@@ -20,7 +20,8 @@ students.** Safety reports outrank every other queue, including money.
 | Moderation queue | `/moderation` — open vs resolved; `auto` pill = machine-filed |
 | A report's context | the report row links to `/bookings/<id>` ("view conversation") or `/users/<id>` |
 | A person | `/users/<id>` — profile, bookings both sides, reports, notes, login history |
-| Support tickets | `/support` — in-app tickets now land here (mobile + web) |
+| **Where the worker physically is** | `/bookings/<id>` → **Safety** — the exact address, whether work has started, and the check-in timer. `trust` or `admin` only. **Not `/jobs/<id>`**: `jobs.location` is masked to city level at write, so that page says "Springfield, IL" for a gig at 742 Evergreen Terrace |
+| Support tickets | `/support` — every in-app ticket lands here: the app's Support screen, the website's `/support` page (both write `support_tickets` directly and via `support-submit`), and the public `/contact` form. **Reply in the console, never by email.** `support-reply` mails the user with `reply_to = mainmail@`, and nothing ingests inbound mail — a reply to that email lands in a mailbox, `last_author` never moves, and `ctl_support_ticket_unanswered` goes on thinking the ticket is waiting on us. Until 2026-09-05 signed-in web had no thread at all, only a `mailto:`, so a web user's request never became a ticket |
 | Blocks | bottom of `/moderation` |
 
 **How a report reaches you.** `reports` INSERT → `trg_notify_safety_report` → pg_net →
@@ -31,14 +32,25 @@ students.** Safety reports outrank every other queue, including money.
 
 ## 1. Safety report on an in-person gig
 
-1. Open the alert email → it deep-links to the report.
-2. **Establish whether it is happening now.** Check the booking's `started_at` and
-   the slot time on `/bookings/<id>`. An in-progress gig is the urgent case.
-3. Read the conversation on `/bookings/<id>` — it renders the full thread with
+1. Open the alert email. It now carries the **exact address** and whether work has
+   started, and links to both `/moderation` and `/bookings/<id>`.
+2. **Establish whether it is happening now.** `/bookings/<id>` → **Safety**: work
+   started, the check-in timer, and an "in progress" pill. An in-progress gig is the
+   urgent case.
+3. **Know where they are before you do anything else.** The same Safety block carries
+   the exact street address. Do NOT read it off `/jobs/<id>` or off the gig link —
+   `trg_mask_job_location` masks `jobs.location` to city level at write, and the
+   precise label lives only in `job_locations`. If the address matters and the block
+   says "no exact address on file", the poster listed the gig at city granularity and
+   there is nothing more to find; ask the earner.
+   - Requires `trust` or `admin`. A `support` helper sees the block with the address
+     hidden. Reading it is written to `admin_audit_log` against your account.
+   - If someone is in immediate danger, the address is what the 911 operator needs.
+4. Read the conversation on `/bookings/<id>` — it renders the full thread with
    signed chat images.
-4. Contact the reporter: `/users/<id>` → **Notify user**. Acknowledge, say what
+5. Contact the reporter: `/users/<id>` → **Notify user**. Acknowledge, say what
    you're doing, and give them the 911 line if there is any physical risk.
-5. Act on the reported party:
+6. Act on the reported party:
    - Credible physical-safety risk → **Suspend** immediately (`/users/<id>`).
      Reason field is mandatory in practice — write a real one; it is what a later
      appeal or a subpoena is judged against. Suspension = GoTrue `banned_until` +
@@ -48,9 +60,18 @@ students.** Safety reports outrank every other queue, including money.
        reporter they are instantly gone.
    - Unclear → leave the report **open**, add an `admin_user_notes` entry, and
      revisit within the day.
-6. Resolve the report (`/moderation`) with a resolution string that a stranger could
-   read and understand. **Only `admin` role can resolve** — a `support` helper can
-   read the queue but not clear it.
+7. Resolve the report (`/moderation`) with a resolution string that a stranger could
+   read and understand. **`trust` or `admin` can resolve and reopen** — a `support`
+   helper can read the queue but not clear it, and `finance` cannot either (trust and
+   finance are peers, so neither inherits the other's authority).
+   `admin/app/(console)/moderation/actions.ts:19,43` both call `requireAdmin("trust")`,
+   and `admin/lib/guard.ts` admits `{admin, trust}` for that minimum.
+   > This line said **only `admin`** until 2026-09-06, which was wrong in the direction
+   > that costs someone money. The `trust` tier exists precisely because `resolveReport`
+   > used to need full `admin` while `earner-claim-payment` refuses to settle a booking
+   > with an open report — one person's availability was a money-harm control. A
+   > trust-tier on-call who believed this line would escalate and wait instead of
+   > resolving, re-creating the exact delay the tier was introduced to remove.
 
 > **An unresolved report blocks the earner's payout** (`earner-claim-payment` refuses
 > on any open non-auto report). Leaving a report open is not free — it withholds

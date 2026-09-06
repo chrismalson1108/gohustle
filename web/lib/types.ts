@@ -99,6 +99,11 @@ export interface BookingJobMini {
   categorySlug: string | null;
   posterId: string | null;
   createdAt: string | null;
+  // Same omission, same consequence: transformBooking has mapped this since the
+  // booking selects started asking for estimated_hours, but it was undeclared, so
+  // TypeScript could not see the one field that stops an hourly booking being valued
+  // at ONE hour when no full job row is available.
+  estimatedHours: number | null;
 }
 
 export interface Booking {
@@ -132,6 +137,12 @@ export interface Booking {
   // Null on rows predating the pins; fall back to the founding rate.
   feeBpsQuoted: number | null;
   amountCentsQuoted: number | null;
+  // The other two pinned inputs (20260806080000 / 20260806320000). The server
+  // authorizes amountCentsQuoted - posterDiscountCents and pays the earner
+  // amountCentsQuoted - platformFeeAfterCredit(..., feeCreditCents), so any screen
+  // stating either figure needs these. 0 when no benefit applies.
+  feeCreditCents: number;
+  posterDiscountCents: number;
   earner: EarnerMini | null;
   job: BookingJobMini | null;
 }

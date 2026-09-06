@@ -20,6 +20,43 @@ const slugOf = (row) => {
   return RESERVED_CATEGORY_SLUGS.has(derived) ? '' : derived;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Render only images that live in OUR storage, under the writer's own folder.
+//
+// profiles.avatar_url and jobs.photos are owner-writable free text: nothing stopped a
+// direct `PATCH /rest/v1/profiles {"avatar_url":"https://attacker.tld/x.jpg"}` before
+// 20260906014100, and image moderation never sees a value that was never uploaded —
+// moderate-image takes a (bucket, path) and can only ever look at bucket objects. An
+// external URL rendered to every viewer is an unmoderated image AND a beacon that
+// collects the IP and user-agent of everyone who loads it.
+//
+// The migration closes new writes; this closes the READ, which is what covers rows
+// written before it. The two are deliberately different strengths: the database pins
+// the exact project origin (anyone can create a Supabase project, so `*.supabase.co`
+// would not be a fence), while here there is no project constant to compare against —
+// so this checks the shape and the supabase.co host, and leaves the exact-origin rule
+// where it can be asserted on.
+//
+// Generalises safeCertUrl (src/lib/certifications.js), which applied this rule to
+// certifications.image_url — and to that one column only.
+export function safeStorageUrl(url, bucket) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return null;
+    if (u.hostname !== 'supabase.co' && !u.hostname.endsWith('.supabase.co')) return null;
+    const prefix = `/storage/v1/object/public/${bucket}/`;
+    if (!u.pathname.startsWith(prefix)) return null;
+    // A bucket path with nothing after it is not an object.
+    if (u.pathname.length <= prefix.length) return null;
+    return url;
+  } catch {
+    // Not a URL at all. A bare storage path cannot be rendered by either client, and
+    // guessing an origin for one would be inventing it.
+    return null;
+  }
+}
+
 export function transformJob(dbJob) {
   return {
     id: dbJob.id,
@@ -34,7 +71,7 @@ export function transformJob(dbJob) {
     urgent: dbJob.urgent,
     estimatedHours: Number(dbJob.estimated_hours),
     status: dbJob.status,
-    photos: dbJob.photos || [],
+    photos: (dbJob.photos || []).map((p) => safeStorageUrl(p, 'job-photos')).filter(Boolean),
     recurrence: dbJob.recurrence || 'none',
     tags: dbJob.tags || [],
     hazards: dbJob.hazards || [],
@@ -50,7 +87,7 @@ export function transformJob(dbJob) {
     poster: {
       name: dbJob.profiles?.name || 'Anonymous',
       avatarInitial: dbJob.profiles?.avatar_initial || 'A',
-      avatarUrl: dbJob.profiles?.avatar_url || null,
+      avatarUrl: safeStorageUrl(dbJob.profiles?.avatar_url, 'avatars'),
       rating: Number(dbJob.profiles?.rating) || 5.0,
       reviewCount: dbJob.profiles?.review_count || 0,
       verified: dbJob.profiles?.verified || false,
@@ -152,6 +189,15 @@ export function transformBooking(b) {
     // Null on rows predating the pins; callers fall back to the founding rate.
     feeBpsQuoted: b.fee_bps_quoted != null ? Number(b.fee_bps_quoted) : null,
     amountCentsQuoted: b.amount_cents_quoted != null ? Number(b.amount_cents_quoted) : null,
+    // The other TWO pinned inputs (20260806080000 / 20260806320000). A sheet that
+    // states what is held on the card and what the earner receives cannot be right
+    // without them: the server authorizes amount - posterDiscountCents and pays the
+    // earner amount - platformFeeAfterCredit(amount, bps, feeCreditCents). They were
+    // on the row all along (both clients select `*`) and simply never surfaced, so
+    // every benefit-carrying booking was described to the payer with the wrong two
+    // numbers. Default 0, matching the NOT NULL DEFAULT 0 columns.
+    feeCreditCents: b.fee_credit_cents != null ? Number(b.fee_credit_cents) : 0,
+    posterDiscountCents: b.poster_discount_cents != null ? Number(b.poster_discount_cents) : 0,
     startedAt: b.started_at || null,
     cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,

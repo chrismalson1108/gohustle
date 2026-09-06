@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
 
+// The topic vocabulary and the "which thread do I show" rules moved to
+// shared/support.js on 2026-09-05 so the WEBSITE could have the same conversation
+// instead of a mailto: to a personal inbox. Re-exported here, so this module's
+// public surface is unchanged — edit shared/support.js, not a copy.
+export { SUPPORT_CATEGORIES, ticketHasUnread, pickActiveTicket, groupTickets } from '../../shared/support';
+
 // In-app support intake.
 //
 // WHY THIS EXISTS: the mobile app's only support path was three `mailto:` links
@@ -13,15 +19,6 @@ import { supabase } from './supabase';
 // support-submit ties the ticket to the signed-in user when a JWT is present, so
 // an in-app report arrives already attributed — the admin can open the reporter's
 // account straight from the ticket.
-
-export const SUPPORT_CATEGORIES = [
-  { key: 'payment', label: 'Payments & payouts' },
-  { key: 'booking', label: 'A gig or booking' },
-  { key: 'safety', label: 'Safety or harassment' },
-  { key: 'account', label: 'My account' },
-  { key: 'bug', label: 'Something is broken' },
-  { key: 'other', label: 'Something else' },
-];
 
 export class SupportError extends Error {
   constructor(message, code) {
@@ -197,49 +194,4 @@ export async function markTicketRead(ticketId) {
     .from('support_tickets')
     .update({ user_read_at: new Date().toISOString() })
     .eq('id', ticketId);
-}
-
-/**
- * Unread iff support has said something the user has not seen. Deliberately ignores
- * the user's own messages — your own reply arriving should never light up your inbox.
- */
-export function ticketHasUnread(t) {
-  if (!t?.last_message_at) return false;
-  if (!t.user_read_at) return true;
-  return Date.parse(t.last_message_at) > Date.parse(t.user_read_at);
-}
-
-/**
- * Which conversation to show.
- *
- * Threads are per topic — forced by the schema, not chosen for taste: `priority` and
- * `booking_id` both live on the ticket, and safety is urgent by definition, so one
- * lifelong thread could not carry a routine question and a safety report without
- * mis-routing one of them.
- *
- * UNREAD WINS over status. Once support can write first, a status-only rule breaks:
- * an agent adding a note to a resolved thread deliberately leaves it 'closed' (so it
- * does not bounce back into their queue), and we would then push "support replied"
- * and open a different thread.
- */
-export function pickActiveTicket(tickets = []) {
-  return (
-    tickets.find(ticketHasUnread)
-    ?? tickets.find(t => t.status !== 'closed')
-    ?? tickets[0]
-    ?? null
-  );
-}
-
-/**
- * Split the other threads into what still wants the user's attention and what is
- * reference. Anything unread is LIVE whatever its status — burying a message we just
- * sent a push about behind an archive toggle is how it goes unanswered.
- */
-export function groupTickets(tickets = [], activeId = null) {
-  const others = tickets.filter(t => t.id !== activeId);
-  return {
-    live: others.filter(t => ticketHasUnread(t) || (t.status !== 'closed' && !t.archived_at)),
-    archived: others.filter(t => !ticketHasUnread(t) && (t.status === 'closed' || t.archived_at)),
-  };
 }

@@ -101,6 +101,22 @@ describe('storage.objects RLS — no bucket is anonymously enumerable', () => {
     expect(offenders).toEqual([]);
   });
 
+  // 20260806360000 put the POSTER's dispute evidence in this bucket, on the stated
+  // premise that "completion_party_read already lets EITHER booking party read it —
+  // so the earner can see what they are accused of". It did not: the party branch
+  // only ever unnested bookings.completion_photos/before_photos, and a dispute photo
+  // lives under the poster's own folder in disputes.photos. The one person who could
+  // not open the evidence was the person it was used against.
+  test('the final completion_party_read reaches dispute evidence, not only the booking arrays', () => {
+    const p = live.get('completion_party_read');
+    expect(p).toBeDefined();
+    expect(p.command).toBe('select');
+    // The branch added by 20260905004000.
+    expect(p.using).toMatch(/public\.disputes/i);
+    // ...and the proof-of-work branch it was originally written for survives.
+    expect(p.using).toMatch(/completion_photos/i);
+  });
+
   test('the three buckets fixed in 20260725000000 are owner-scoped in the final state', () => {
     for (const name of ['avatars_owner_list', 'job_photos_owner_list', 'certificates_owner_list']) {
       const p = live.get(name);
@@ -116,7 +132,8 @@ describe('storage.objects RLS — no bucket is anonymously enumerable', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Deleting an account must clear every bucket that account can write to.
+// Deleting an account must clear every bucket that account can write to — from
+// EITHER deletion path — and a data-access export must list every one of them.
 //
 // delete-account's BUCKETS list is hand-maintained and drifted: support-photos was
 // missing, so a departing user's own support uploads survived their deletion —
@@ -124,14 +141,25 @@ describe('storage.objects RLS — no bucket is anonymously enumerable', () => {
 // went wrong. It was found by writing the CLAUDE.md inventory guard, not by anyone
 // re-reading the list, which is the argument for asserting it instead of listing it.
 //
+// Then it drifted again in the two places this test was not looking: the console's port
+// (admin/lib/deleteUser.ts) and the GDPR export route both kept the old six-bucket list,
+// so an account deleted by an admin kept its support screenshots and a data-access
+// request came back quietly incomplete. Reading only the edge function is how the same
+// omission recurred one directory over, so all three lists are read here.
+//
 // Buckets are read from the migrations that create them, so a NEW user-writable bucket
 // fails this until it is either cleared on deletion or explicitly excused.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('account deletion clears every bucket the user can write to', () => {
-  const fnSrc = fs.readFileSync(
-    path.join(ROOT, 'supabase', 'functions', 'delete-account', 'index.ts'),
-    'utf8',
-  );
+  // Every hand-maintained copy of the list, and what it is for.
+  const LISTS = [
+    ['supabase/functions/delete-account/index.ts (self-service deletion)',
+      path.join(ROOT, 'supabase', 'functions', 'delete-account', 'index.ts')],
+    ['admin/lib/deleteUser.ts (console deletion)',
+      path.join(ROOT, 'admin', 'lib', 'deleteUser.ts')],
+    ['admin/app/(console)/users/[id]/export/route.ts (GDPR export)',
+      path.join(ROOT, 'admin', 'app', '(console)', 'users', '[id]', 'export', 'route.ts')],
+  ];
 
   // Buckets deliberately NOT cleared, each with the reason it is someone else's record.
   const EXCUSED = {
@@ -150,24 +178,36 @@ describe('account deletion clears every bucket the user can write to', () => {
       .map((m) => m[1]),
   );
 
-  const cleared = new Set(
-    (fnSrc.match(/const BUCKETS = \[([\s\S]*?)\];/) ?? [, ''])[1]
-      .match(/'([a-z0-9-]+)'/g)?.map((s) => s.replace(/'/g, '')) ?? [],
+  // Quotes differ between the Deno function (single) and the console (double).
+  const bucketsIn = (file) => new Set(
+    (fs.readFileSync(file, 'utf8').match(/const BUCKETS = \[([\s\S]*?)\];/) ?? [, ''])[1]
+      .match(/["']([a-z0-9-]+)["']/g)?.map((s) => s.replace(/["']/g, '')) ?? [],
   );
 
   it('found buckets on both sides', () => {
     expect(created.size).toBeGreaterThan(3);
-    expect(cleared.size).toBeGreaterThan(3);
+    for (const [, file] of LISTS) expect(bucketsIn(file).size).toBeGreaterThan(3);
   });
 
-  it('every created bucket is cleared on deletion, or excused with a reason', () => {
+  it.each(LISTS)('%s covers every created bucket, or excuses it with a reason', (_name, file) => {
+    const cleared = bucketsIn(file);
     const missing = [...created].filter((b) => !cleared.has(b) && !EXCUSED[b]);
     // Name the bucket — "coverage drifted" is not actionable.
     expect(missing).toEqual([]);
   });
 
-  it('clears no bucket that does not exist', () => {
-    const phantom = [...cleared].filter((b) => !created.has(b));
+  it.each(LISTS)('%s names no bucket that does not exist', (_name, file) => {
+    const phantom = [...bucketsIn(file)].filter((b) => !created.has(b));
     expect(phantom).toEqual([]);
+  });
+
+  it('the three lists agree with each other', () => {
+    // They are three copies of one fact. A future bucket added to one of them and not
+    // the others fails here even before the created-vs-cleared check can catch it.
+    const sets = LISTS.map(([name, file]) => [name, [...bucketsIn(file)].sort()]);
+    const [, first] = sets[0];
+    for (const [name, list] of sets.slice(1)) {
+      expect(`${name}: ${list.join(',')}`).toBe(`${name}: ${first.join(',')}`);
+    }
   });
 });

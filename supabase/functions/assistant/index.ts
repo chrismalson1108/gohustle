@@ -71,15 +71,27 @@ function findProhibited(text: string | null | undefined): string | null {
 // Context-aware moderation PARITY with the manual write paths. PostJob/Settings run
 // TWO layers: the keyword filter findProhibited AND the moderate-text edge function
 // (a Claude classifier that catches harassment/threats/grooming/scams and banned
-// INTENT phrased in clean words the keyword list can't). The assistant's create_gig
-// and update_profile must run the SAME second layer or "ask Hustlr AI to post…"
-// becomes a way around it. Calls moderate-text with the caller's own JWT; FAILS OPEN
-// on any error/timeout, exactly like the client wrapper (src/lib/moderation.js), so a
-// provider hiccup never wedges posting — the keyword filter + DB trigger remain the
-// hard backstop.
-async function moderateViaEdge(token: string, text: string, surface: string): Promise<boolean> {
+// INTENT phrased in clean words the keyword list can't). The assistant's create_gig,
+// update_profile and remember must run the SAME second layer or "ask Hustlr AI to
+// post…" becomes a way around it. Calls moderate-text with the caller's own JWT.
+//
+// FAILS OPEN on a provider outage or timeout — a moderation hiccup must never wedge
+// posting, and the keyword filter + DB trigger remain the hard backstop. It FAILS
+// CLOSED on a 429, which is a different animal and used to be treated as the same
+// one: this returned true for any !res.ok, and moderate-text's quota is PER USER and
+// shared between a caller's direct calls and the ones the assistant forwards on their
+// behalf. So twenty junk moderate-text calls in a minute disabled this layer for
+// everything the assistant would write for that user in that minute — a self-service
+// kill switch for the exact control that catches clean-worded scams and grooming,
+// including the `remember` text that is replayed into every future system prompt.
+// Rate limiting a safety control must not disable it. src/lib/moderation.js was fixed
+// for this same reasoning; the comment here still claimed to mirror it while doing the
+// opposite.
+type ModerationVerdict = { allowed: boolean; rateLimited?: boolean };
+
+async function moderateViaEdge(token: string, text: string, surface: string): Promise<ModerationVerdict> {
   const clean = String(text ?? '').trim();
-  if (!clean) return true;
+  if (!clean) return { allowed: true };
   try {
     const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/moderate-text`, {
       method: 'POST',
@@ -91,13 +103,25 @@ async function moderateViaEdge(token: string, text: string, surface: string): Pr
       body: JSON.stringify({ text: clean, surface }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return true; // fail open (mirror the client wrapper)
-    const data = await res.json().catch(() => ({}));
-    return (data as { allowed?: boolean })?.allowed !== false;
+    const data = (await res.json().catch(() => ({}))) as { allowed?: boolean; error?: string };
+    // Self-inflicted quota exhaustion — the caller's own, since the JWT is theirs.
+    // Both shapes checked: the status, and the body marker moderate-text sends with it.
+    if (res.status === 429 || data?.error === 'rate_limited') {
+      return { allowed: false, rateLimited: true };
+    }
+    if (!res.ok) return { allowed: true }; // fail open on a 5xx / gateway failure
+    return { allowed: data?.allowed !== false };
   } catch {
-    return true; // fail open on network/timeout
+    return { allowed: true }; // fail open on network/timeout
   }
 }
+
+// A blocked-for-quota answer must not accuse the user of writing something banned —
+// they did not, and telling them so sends them rewriting clean text forever.
+const RATE_LIMITED_REPLY = JSON.stringify({
+  error: 'rate_limited',
+  message: "I couldn't run the safety check on that — we've checked too many things in the last minute. Give it a minute and ask me again.",
+});
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 // Model routing — use the cheapest model that still nails the task (the owner
@@ -920,7 +944,9 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
   // Layer 2: context-aware moderate-text (catches clean-worded harassment/scam/etc).
-  if (!(await moderateViaEdge(token, `${title}\n${description}`, 'gig'))) {
+  const gigVerdict = await moderateViaEdge(token, `${title}\n${description}`, 'gig');
+  if (gigVerdict.rateLimited) return RATE_LIMITED_REPLY;
+  if (!gigVerdict.allowed) {
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
   // ONE staged confirmation per request. This counted 'gig_created' actions until the
@@ -1240,6 +1266,44 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
   const gigId = String(payload.gig_id ?? '');
   const slotId = payload.slot_id ? String(payload.slot_id) : null;
 
+  // The payload was staged up to ten minutes ago and NOTHING re-checked it since.
+  // In that window another earner can take the slot or the poster can close the
+  // listing — and the insert then fails on `bookings_one_active_per_slot`, which
+  // raises the SAME 23505 as the user's own (job_id, earner_id) duplicate. The
+  // handler below cannot tell those apart from the code alone, and the old default
+  // told the one user who does NOT have a request in that they already do. So
+  // re-read the listing and the staged slot first: this is the cheap, honest case,
+  // and it leaves only the true race for the constraint-name branch.
+  const { data: fresh } = await sb
+    .from('jobs')
+    .select('id, status, job_slots(id, label, taken, starts_at)')
+    .eq('id', gigId)
+    .maybeSingle();
+  if (!fresh) {
+    return JSON.stringify({ error: 'gig_not_found', message: "That gig isn't there any more — nothing was booked." });
+  }
+  const slots = (((fresh as Json).job_slots as Json[] | null) ?? []);
+  const notPast = (s: Json) => !s.starts_at || new Date(String(s.starts_at)).getTime() > Date.now();
+  const openSlots = slots.filter((s) => !s.taken && notPast(s)).map((s) => String(s.label));
+  if ((fresh as Json).status !== 'open') {
+    return JSON.stringify({
+      error: 'listing_closed',
+      message: 'That gig closed while the confirmation was waiting — nothing was booked.',
+    });
+  }
+  if (slotId) {
+    const staged = slots.find((s) => String(s.id) === slotId);
+    if (!staged || staged.taken || !notPast(staged)) {
+      return JSON.stringify({
+        error: staged && staged.taken ? 'slot_taken' : 'slot_unavailable',
+        message: staged && staged.taken
+          ? 'Someone else took that time while the confirmation was waiting — nothing was booked.'
+          : 'That time is no longer available — nothing was booked.',
+        open_slots: openSlots,
+      });
+    }
+  }
+
   const { data: booking, error } = await sb
     .from('bookings')
     .insert({
@@ -1254,7 +1318,19 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
     .single();
 
   if (error) {
-    if (String(error.message).toLowerCase().includes('duplicate') || (error as { code?: string }).code === '23505') {
+    const detail = `${error.message ?? ''} ${(error as { details?: string }).details ?? ''}`.toLowerCase();
+    const duplicate = detail.includes('duplicate') || (error as { code?: string }).code === '23505';
+    if (duplicate && detail.includes('bookings_one_active_per_slot')) {
+      // Another earner took the slot between the re-read above and this insert.
+      // The user has no request on this gig, so any "already …" wording would be a
+      // false claim — and it is persisted into the thread, so they read it later too.
+      return JSON.stringify({
+        error: 'slot_taken',
+        message: 'Someone else booked that time a moment ago — nothing was booked.',
+        open_slots: openSlots,
+      });
+    }
+    if (duplicate) {
       // "You've already requested this gig" is wrong — and confusing — when the user
       // has actually WORKED it. Read the existing booking and say what really happened.
       const { data: prior } = await sb
@@ -1266,12 +1342,21 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
         .limit(1)
         .maybeSingle();
       const st = (prior as Json | null)?.status as string | undefined;
+      if (!st) {
+        // 23505 with no booking of the user's own behind it. Whatever collided, it
+        // was not their own request, so do not tell them one exists.
+        return JSON.stringify({
+          error: 'not_booked',
+          message: "That didn't go through — nothing was booked. Want me to try again?",
+          open_slots: openSlots,
+        });
+      }
       const msg = st === 'verified' || st === 'completed'
         ? "You've already done this gig — it's in your completed work."
         : st === 'confirmed'
           ? "You're already booked on this gig."
           : "You've already requested this gig.";
-      return JSON.stringify({ error: 'already_booked', booking_status: st ?? null, message: msg });
+      return JSON.stringify({ error: 'already_booked', booking_status: st, message: msg });
     }
     return JSON.stringify({ error: error.message });
   }
@@ -1364,8 +1449,12 @@ async function updateProfile(sb: SupabaseClient, userId: string, input: Json, ac
   if (badProfile) {
     return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
   }
-  if (profileText.trim() && !(await moderateViaEdge(token, profileText, 'bio'))) {
-    return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+  if (profileText.trim()) {
+    const profileVerdict = await moderateViaEdge(token, profileText, 'bio');
+    if (profileVerdict.rateLimited) return RATE_LIMITED_REPLY;
+    if (!profileVerdict.allowed) {
+      return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+    }
   }
 
   // Try the full patch; if a suite column doesn't exist yet (42703), fall back to
@@ -1597,8 +1686,12 @@ async function remember(sb: SupabaseClient, userId: string, input: Json, actions
   if (findProhibited(fact)) {
     return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
   }
-  // Layer 2: context-aware moderate-text (fails open, exactly as the other two do).
-  if (!(await moderateViaEdge(token, fact, 'note'))) {
+  // Layer 2: context-aware moderate-text (fails open on an outage, closed on a 429,
+  // exactly as the other two do). This is the surface that needs the 429 branch most:
+  // a remembered fact outlives the conversation that produced it.
+  const noteVerdict = await moderateViaEdge(token, fact, 'note');
+  if (noteVerdict.rateLimited) return RATE_LIMITED_REPLY;
+  if (!noteVerdict.allowed) {
     return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
   }
   const { data: profile } = await sb.rpc('my_profile');
@@ -1706,7 +1799,15 @@ const STREET_SUFFIX_RE =
 function maskLocation(location: unknown): unknown {
   if (!location) return location;
   const label = String(location);
-  if (label.toLowerCase().includes('remote')) return label;
+  // NOTE: there is deliberately no "contains 'remote' -> return unmasked" shortcut.
+  // It used to be here and it leaked street addresses: the substring matches inside
+  // real labels like "1234 Remote Ridge Rd, Dallas, TX" and "123 Main St, Dallas, TX
+  // (remote possible)", both of which were published in full to every signed-in user.
+  // src/lib/address.js, web/lib/address.ts and public.mask_location all deleted it in
+  // 20260726030000; this fourth copy kept it until 2026-09-05 while still claiming to
+  // be a mirror. The shortcut was also unnecessary — a "Remote" segment carries no
+  // digits and no street suffix, so the normal filter below preserves it anyway
+  // ("Remote" -> "Remote", "Remote, Dallas, TX" -> "Remote, Dallas, TX").
   const parts = label.split(',').map((p) => p.trim()).filter(Boolean);
   const safe = parts.filter((p) => !/\d/.test(p) && !STREET_SUFFIX_RE.test(p));
   if (safe.length > 0) return safe.join(', ');
@@ -1826,6 +1927,7 @@ How GoHustlr works:
   · Taxes — You → Tax Center: expenses, mileage, cash income, and a year-end summary.
   · A human — Messages → GoHustlr Support, or Settings → Contact support. Real people answer, they can attach photos, and a reply reopens a resolved conversation. If someone is upset, out of pocket, or describing something unsafe, offer this early rather than trying to solve it yourself.
   · Two-factor authentication — Settings → Security. Worth mentioning if they ask about account safety or have just connected a bank; it also produces recovery codes they should save.
+  · Telling someone where they are, or raising an alarm, while a gig is happening — My Jobs, on the gig they have started: "Share my gig" sends a friend or parent a private expiring link showing where they are and when they are due to finish, "Stop sharing my location" kills that link immediately, and "Get help" alerts the GoHustlr safety team. All three appear only once they have tapped "Start job", and they are on the phone app and the website alike. If a gig runs long the app reminds them to tap done. If someone sounds uneasy about meeting a stranger or going to an address, say this exists BEFORE they set off — and if they are in danger right now, tell them to call their local emergency number first; we are not an emergency service.
 - Never invent a screen, a setting or a policy. If you are not certain the app does something, say you are not sure and point them at Support rather than guessing — a confident wrong answer about money is worse than no answer.
 
 The signed-in user:

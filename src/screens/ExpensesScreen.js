@@ -7,20 +7,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAuth } from '../context/AuthContext';
-import { useJobs, computeEffectivePay } from '../context/JobsContext';
+import { useJobs } from '../context/JobsContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImage, uploadPrivateImage, getSignedUrl } from '../lib/uploadImage';
 import {
   EXPENSE_CATEGORIES, categoryMeta, fetchExpenses, addExpense, deleteExpense,
   INCOME_SOURCES, sourceMeta, fetchIncome, addIncome, deleteIncome, buildTaxSummaryCSV,
-  expensesByJob,
+  expensesByJob, platformIncomeForYear, localDateISO,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
-import { bookingNetDollars } from '../../shared/pricing';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The USER's local date, not the UTC one. `toISOString().slice(0, 10)` rolls over at
+// 7pm Eastern, so an evening entry was dated tomorrow and a 31 December one landed in
+// the next tax year — while the year filter reading it uses the local clock.
+const todayISO = () => localDateISO();
 const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
@@ -34,7 +36,7 @@ const totalMilesFor = (milesText, roundTrip) => {
 
 export default function ExpensesScreen() {
   const { user } = useAuth();
-  const { bookings, posterBookings } = useJobs();
+  const { bookings, posterBookings, jobs } = useJobs();
   const haptic = useHaptic();
 
   // The user's gigs available to tie an expense to: their booked work + gigs they
@@ -56,6 +58,10 @@ export default function ExpensesScreen() {
   const [receiptUrls, setReceiptUrls] = useState({}); // expenseId -> signed URL
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Three states, not two. `loaded` is what separates "you have logged nothing" from
+  // "we could not read what you logged" — see the load() comment below.
+  const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
 
   const [adding, setAdding] = useState(false);
   const [amount, setAmount] = useState('');
@@ -69,11 +75,32 @@ export default function ExpensesScreen() {
   const [roundTrip, setRoundTrip] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // fetchExpenses/fetchIncome both THROW on a PostgREST error. This used to swallow
+  // that in an empty `catch (_) {}` and fall through, so a failed read rendered
+  // exactly like an empty account: "No expenses yet", Expenses $0.00, and a net
+  // profit and ~27% set-aside computed as though the user had claimed no deductions
+  // at all — on the screen they use to decide how much tax to put away, with Export
+  // still enabled to write that into a CSV for their accountant. The ledger screen
+  // was fixed for this same class in August; this is its sibling.
+  //
+  // The receipt-signing pass is deliberately in its OWN try: expenses and income are
+  // already in state by then, and a thumbnail that would not sign is not a reason to
+  // tell someone their books failed to load.
   const load = useCallback(async () => {
     if (!user) return;
+    let ex = [];
     try {
-      const [ex, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
-      setExpenses(ex); setIncome(inc);
+      setError(null);
+      const [rows, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
+      ex = rows;
+      setExpenses(rows); setIncome(inc);
+      setLoaded(true);
+    } catch (e) {
+      setError(e?.message || 'Could not load your expenses and income.');
+      setLoading(false);
+      return;
+    }
+    try {
       // Sign private receipt paths for display
       const map = {};
       await Promise.all(
@@ -94,33 +121,38 @@ export default function ExpensesScreen() {
   const yearIncome = income.filter(inYear);
   const expTotal = yearExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const cashTotal = yearIncome.reduce((s, e) => s + Number(e.amount || 0), 0);
-  // Platform earnings for the SELECTED YEAR.
+  // Platform income for the SELECTED YEAR: fee-net gig earnings plus card tips.
   //
-  // This previously used profiles.earnings_total, which is the LIFETIME counter, while
-  // every other figure on this screen is filtered to `year`. From the second tax year
-  // onward that silently inflated the year's gross income, the net profit, and the ~27%
-  // set-aside — on a screen people use to decide how much tax to put away, and which
-  // feeds the year-end CSV export. In year 3 it reported all three years of platform
-  // income as if it were earned in the selected one.
+  // This previously used profiles.earnings_total, the LIFETIME counter, while every
+  // other figure here is filtered to `year` — from the second tax year onward that
+  // inflated gross income, net profit and the ~27% set-aside, on the screen people use
+  // to decide how much tax to put away and which feeds the year-end CSV.
   //
-  // Derived instead from the user's own verified EARNER bookings completed in that
-  // year, net of the platform fee — the same basis the earnings dashboard uses.
-  // Approximate by nature (the authoritative per-booking net is payments
-  // .earner_amount_cents, which this screen does not load), but a year-scoped estimate
-  // is strictly better than a lifetime total presented as a single year's income.
-  // Note: for hourly gigs the booking embed carries no estimatedHours, so those are
-  // valued at one hour here — under- rather than over-stating income, which is the
-  // safer direction for a tax set-aside prompt.
-  const platformIncome = (bookings || [])
-    .filter((b) => b?.status === 'verified' && String(b?.completedAt || '').startsWith(String(year)))
-    .reduce((sum, b) => {
-      const gross = computeEffectivePay(b, null);
-      return sum + bookingNetDollars(gross, b?.feeBpsQuoted);
-    }, 0);
+  // Then it valued each booking with `computeEffectivePay(b, null)`, which reads hours
+  // only from a full job row: with none to give it, every HOURLY gig counted as ONE
+  // hour. A 6-hour $25/hr gig went in as $25. The comment here rationalised that as
+  // "under- rather than over-stating income, the safer direction for a tax set-aside" —
+  // the same excuse MoneyGoalCard's comment already repudiates. Undercounting someone's
+  // taxable income six-fold is not conservative, it is wrong, and it is wrong in the
+  // direction that gets a person a bill they did not save for.
+  //
+  // platformIncomeForYear values each booking at bookings.amount_cents_quoted, the
+  // amount PINNED at insert, and nets it at that booking's OWN pinned rate. Card tips
+  // are added separately: stripe-tip pays them to the earner through the platform, so
+  // "card payments are already counted" has to be true of them too.
+  const jobById = new Map((jobs || []).map((j) => [j.id, j]));
+  const { earnings: platformEarnings, tips: platformTips, total: platformIncome } =
+    platformIncomeForYear({ bookings, year, jobById });
 
   const grossIncome = platformIncome + cashTotal;
   const net = grossIncome - expTotal;
   const setAside = Math.max(0, net) * 0.27;
+  // The read failed and we never had rows to fall back on, so expTotal/cashTotal are
+  // zero because we do not KNOW, not because they are zero. Printing them as money is
+  // the lie; print a dash. A failed REFRESH over data we already hold keeps the
+  // numbers and shows the banner — stale is not unknown.
+  const unknownTotals = Boolean(error) && !loaded;
+  const money = (n) => (unknownTotals ? '—' : fmt(n));
 
   // Per-job expense breakdown (current year), title resolved from the user's gigs.
   const jobGroups = expensesByJob(yearExpenses, [...(bookings || []), ...(posterBookings || [])]);
@@ -187,10 +219,15 @@ export default function ExpensesScreen() {
   };
 
   const handleExport = async () => {
+    // Exporting on top of a failed read produces a CSV with no expense lines and a
+    // NET PROFIT that ignores every deduction — handed to an accountant as fact.
+    if (unknownTotals) {
+      Alert.alert('Not loaded yet', 'We could not load your expenses and income. Pull to refresh, then export.'); return;
+    }
     if (!yearExpenses.length && !yearIncome.length && !platformIncome) {
       Alert.alert('Nothing to export', `No income or expenses recorded for ${year} yet.`); return;
     }
-    const csv = buildTaxSummaryCSV({ year, stripeIncome: platformIncome, income: yearIncome, expenses: yearExpenses });
+    const csv = buildTaxSummaryCSV({ year, stripeIncome: platformEarnings, tipIncome: platformTips, income: yearIncome, expenses: yearExpenses });
     try { await Share.share({ title: `GoHustlr tax summary ${year}`, message: csv }); } catch (_) {}
   };
 
@@ -209,23 +246,34 @@ export default function ExpensesScreen() {
             <Ionicons name="receipt-outline" size={22} color={colors.textPrimary} style={{ marginRight: 8 }} />
             <Text style={styles.screenTitle} numberOfLines={1}>Tax Center</Text>
           </View>
+          {error ? (
+            <View style={styles.errorCard}>
+              <Ionicons name="alert-circle" size={18} color={colors.urgent} />
+              <Text style={styles.errorText} numberOfLines={3}>
+                {unknownTotals
+                  ? "Couldn't load your expenses and income — these totals are incomplete."
+                  : "Couldn't refresh — showing what we last loaded."}
+              </Text>
+              <TouchableOpacity onPress={load}><Text style={styles.retry}>Retry</Text></TouchableOpacity>
+            </View>
+          ) : null}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel} numberOfLines={1}>{year} net profit</Text>
-            <Text style={styles.summaryValue} numberOfLines={1}>{fmt(net)}</Text>
+            <Text style={styles.summaryValue} numberOfLines={1}>{money(net)}</Text>
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={styles.summarySub} numberOfLines={2}>Income</Text>
-                <Text style={styles.summarySubVal} numberOfLines={1}>{fmt(grossIncome)}</Text>
+                <Text style={styles.summarySubVal} numberOfLines={1}>{money(grossIncome)}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryItem}>
                 <Text style={styles.summarySub} numberOfLines={2}>Expenses</Text>
-                <Text style={styles.summarySubVal} numberOfLines={1}>{fmt(expTotal)}</Text>
+                <Text style={styles.summarySubVal} numberOfLines={1}>{money(expTotal)}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryItem}>
                 <Text style={styles.summarySub} numberOfLines={2}>Set aside ~27%</Text>
-                <Text style={styles.summarySubVal} numberOfLines={1}>{fmt(setAside)}</Text>
+                <Text style={styles.summarySubVal} numberOfLines={1}>{money(setAside)}</Text>
               </View>
             </View>
           </View>
@@ -249,7 +297,7 @@ export default function ExpensesScreen() {
 
         <Text style={styles.disclaimer}>
           {tab === 'income'
-            ? 'Card payments are already counted from your platform earnings. Log cash and tips here so your income is complete.'
+            ? 'Card payments and card tips are already counted from your platform earnings. Log cash payments and cash tips here so your income is complete.'
             : 'Log work-related purchases to deduct them. Export the year-end summary for your accountant or tax software. (Not tax advice.)'}
         </Text>
 
@@ -268,12 +316,23 @@ export default function ExpensesScreen() {
 
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+        ) : unknownTotals ? (
+          <View style={styles.empty}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={styles.emptyTitle}>Couldn't load your records</Text>
+            <Text style={styles.emptyText}>
+              This is a connection problem, not an empty year — nothing you logged has been lost.
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={load} activeOpacity={0.85}>
+              <Text style={styles.retryBtnText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
         ) : list.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name={tab === 'expenses' ? 'receipt-outline' : 'cash-outline'} size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
             <Text style={styles.emptyTitle}>{tab === 'expenses' ? 'No expenses yet' : 'No cash income logged'}</Text>
             <Text style={styles.emptyText}>
-              {tab === 'expenses' ? 'Tap "Add expense" to start tracking write-offs.' : 'Tap "Add income" to log cash payments and tips.'}
+              {tab === 'expenses' ? 'Tap "Add expense" to start tracking write-offs.' : 'Tap "Add income" to log cash payments and cash tips.'}
             </Text>
           </View>
         ) : tab === 'expenses' ? (
@@ -534,6 +593,17 @@ const styles = StyleSheet.create({
   exportBtnText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1 },
   disclaimer: { fontSize: 12, color: colors.textMuted, lineHeight: 18, paddingHorizontal: 20, marginTop: 12 },
   empty: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 48 },
+  errorCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.urgentLight,
+    borderRadius: radii.md, padding: 12, marginBottom: 12,
+  },
+  errorText: { flex: 1, fontSize: 13, color: colors.urgent, fontWeight: '600' },
+  retry: { fontSize: 13, fontWeight: '800', color: colors.urgent },
+  retryBtn: {
+    marginTop: 16, paddingVertical: 12, paddingHorizontal: 24, borderRadius: radii.pill,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   list: { paddingHorizontal: 20, marginTop: 16 },

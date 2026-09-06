@@ -176,3 +176,143 @@ describe('the admin-refund exemption cannot silence a chargeback', () => {
     expect(calls.filter((a) => /'refund'/.test(a)).length).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A payout write that fails must be REDELIVERED, not announced.
+//
+// The payout handler throws on a failed stripe_accounts lookup on purpose — its own
+// comment says "a null is a WRONG attribution … Throw instead — Stripe retries". The
+// write that actually persists the payout did the opposite: `if (poErr)
+// console.error(...)`, then fell through to the notification insert and a 200. So on a
+// transient PostgREST failure Stripe never redelivered, stripe_payouts kept the payout at
+// in_transit with the ESTIMATED arrival date, and the earner was still told "$X has
+// arrived" — the told-it-arrived / screen-says-pending split that
+// 20260813100000_payout_event_ordering.sql was written to prevent, reached from the other
+// side. Three days after the estimate ctl_payout_overdue then reports a deposit that
+// landed as overdue, which is the wrong thing to hand a human at 2am.
+//
+// Redelivery is safe by construction: guard_stripe_payout_ordering drops a stale write on
+// last_event_at, so a replayed payout.created cannot revert a paid row.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a failed payout write is redelivered rather than announced', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8');
+  // Comment-stripped, like the third block below: the prose in this handler quotes the
+  // broken `console.error` on purpose, and a guard satisfied by its own explanation is
+  // worse than no guard.
+  const stripJs = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const body = stripJs(src.slice(
+    src.indexOf("case 'payout.created':"),
+    src.indexOf("case 'charge.dispute.created':"),
+  ));
+
+  it('found the handler', () => {
+    expect(body).toContain("from('stripe_payouts')");
+    expect(body).toContain("from('notifications')");
+  });
+
+  it('throws on a failed stripe_payouts upsert, exactly as the account lookup does', () => {
+    expect(body).toMatch(/if \(poErr\) \{[\s\S]{0,400}throw new Error/);
+    // The swallow. A 200 here tells Stripe the payout state was recorded.
+    expect(body).not.toMatch(/if \(poErr\) console\.error/);
+  });
+
+  it('the throw comes BEFORE the "Money landed" notification', () => {
+    // Order is the whole fix: a notification that outlives its own row is the split
+    // state. Anything that moved the insert above the guard would recreate it.
+    const guard = body.indexOf('if (poErr)');
+    const notify = body.indexOf(".from('notifications')");
+    expect(guard).toBeGreaterThan(-1);
+    expect(notify).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(notify);
+  });
+
+  it('reports failures where a human looks, not to the function log', () => {
+    // CLAUDE.md: edge failures go to logServerError → client_errors → /errors.
+    // The function log is not somewhere anyone watches money paths from.
+    expect(body).not.toMatch(/console\.error/);
+    expect(body).toMatch(/logServerError/);
+  });
+
+  it('a 500 from any handler reaches /errors, not just the function log', () => {
+    const tail = stripJs(src.slice(src.lastIndexOf('} catch (err: any) {')));
+    expect(tail).toMatch(/logServerError/);
+    expect(tail).toMatch(/status: 500/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A second Dashboard refund on the same charge must not be invisible.
+//
+// recordReversal dedupes on the Stripe object id embedded in the reason — and for
+// charge.refunded that id is the CHARGE, which is identical for every refund taken
+// against it. Stripe fires one event per refund, each carrying the new CUMULATIVE
+// amount_refunded. The function only ever INSERTED when no row matched, so refund #2
+// wrote nothing and left refund #1's figure in the row's prose.
+//
+// ctl_external_reversal_not_ledgered parses the cents out of the newest row and fires
+// while they exceed payments.refunded_cents. So the moment an operator ledgered refund
+// #1 the comparison went 1000 > 1000 = false, and a second $20 refund sat unledgered
+// with nothing on the board — until reconcile-stripe's 14-day/200-row window happened to
+// reach that charge. The control's own comment asserted "the latest refund row already
+// carries the total refunded"; nothing in the webhook made that true.
+//
+// So: the row's figure now moves forward when Stripe's cumulative total does, over our
+// own template only, never backwards on an out-of-order redelivery.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a repeat refund on one charge updates the row the control reads', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const fn = strip(src.slice(src.indexOf('async function recordReversal'), src.indexOf('Deno.serve(')));
+
+  it('the dedupe SELECT reads the stored reason, not just the id', () => {
+    // Without the text there is nothing to compare the new cumulative figure against.
+    expect(fn).toMatch(/\.from\('disputes'\)\s*\.?\s*select\('id, reason'\)/);
+  });
+
+  it('an existing row is UPDATED, not silently skipped', () => {
+    const insertAt = fn.indexOf(".from('disputes').insert");
+    expect(insertAt).toBeGreaterThan(-1);
+    const after = fn.slice(insertAt);
+    expect(after).toMatch(/\.from\('disputes'\)[\s\S]{0,120}\.update\(\{ reason:/);
+  });
+
+  it('the update is refund-only and forward-only', () => {
+    const at = fn.search(/\.update\(\{ reason:/);
+    expect(at).toBeGreaterThan(-1);
+    const before = fn.slice(0, at);
+    // A chargeback carries no cumulative figure at all (null), so it must not reach here.
+    expect(before).toMatch(/kind === ['"]refund['"] && stripeRefundedCents !== null/);
+    // Strictly greater: a redelivered older event carries a SMALLER cumulative total and
+    // must never walk the recorded figure backwards.
+    expect(before).toMatch(/stripeRefundedCents > priorCents/);
+    expect(before).toMatch(/priorCents !== null/);
+  });
+
+  it("the figure it parses is the one this file's own template writes", () => {
+    // The parser and the template are two halves of the same contract, in one file. Pull
+    // the parser out of the source and run it against a sampled reason.
+    const parser = fn.match(/\/\^Stripe refund on charge[^/]+\//);
+    expect(parser).not.toBeNull();
+    const re = new RegExp(parser[0].slice(1, -1));
+
+    const template = src.match(/`(Stripe refund on charge [^`]*)`/);
+    expect(template).not.toBeNull();
+    const sampled = template[1]
+      .replace(/\$\{[^}]*charge\.id[^}]*\}/, 'ch_3AbCdEfGhIjKlMnO')
+      .replace(/\$\{[^}]*currency[^}]*\}/, 'usd')
+      .replace(/\$\{[^}]*refunded[^}]*\}/, '10.00');
+
+    const m = sampled.match(re);
+    expect({ sampled, cents: m ? Math.round(Number(m[1]) * 100) : null })
+      .toEqual({ sampled, cents: 1000 });
+
+    // And it must NOT claim a person's typed note as one of ours to overwrite.
+    expect(re.test('Stripe refund on charge please, they never showed (usd 10.00 refunded)'))
+      .toBe(false);
+  });
+});

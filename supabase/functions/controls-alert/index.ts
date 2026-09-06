@@ -23,8 +23,16 @@
 // not.
 //
 // Secrets:
-//   RESEND_API_KEY     — email transport. If unset, logs and returns ok (never wedges
-//                        the sweep) but reports emailed:false so a control can catch it.
+//   RESEND_API_KEY     — email transport. If unset the function answers 503
+//                        `email_not_configured`. It used to answer 200 emailed:false
+//                        "so a control can catch it" — but nothing could: the only
+//                        check on this last mile, ctl_alert_dispatch_failing, reads
+//                        net._http_response for a NON-2xx, and the sweep dispatches
+//                        over asynchronous pg_net, so a 200 is discarded unread. A
+//                        digest that silently stopped being sent looked exactly like
+//                        a quiet week. (The `nothing_new` 200 below is different and
+//                        stays a 200 — there the channel is fine and there was simply
+//                        nothing to say.)
 //   CONTROLS_EMAIL     — recipient (defaults to the support inbox).
 //   ANTHROPIC_API_KEY  — optional; enables triage. Absent = plain digest, no failure.
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -44,6 +52,26 @@ const SEV_COLOR: Record<string, string> = {
 
 function esc(s: string): string {
   return (s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
+}
+
+// The digest email goes to the on-call, who is the intended reader of everything a
+// control finds. The TRIAGE payload goes to Anthropic, and its job is prioritisation —
+// it does not need a street address to say which finding to look at first.
+//
+// ctl_safety_checkin_overdue started carrying `exact_location` (20260905003100) so the
+// person paged about a worker who never checked out is told where they are. Without
+// this, widening that detail would have quietly begun shipping posters' home addresses
+// to a third-party LLM every morning. Keys are dropped by NAME rather than by guessing
+// at values, and the masked `location` stays so the model still has geography.
+const TRIAGE_REDACT = new Set(['exact_location', 'exact_address']);
+
+function redactForTriage(detail: unknown): unknown {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(detail as Record<string, unknown>)) {
+    out[k] = TRIAGE_REDACT.has(k) ? '[redacted — see the finding in the console]' : v;
+  }
+  return out;
 }
 
 Deno.serve(async (req: Request) => {
@@ -133,7 +161,7 @@ Deno.serve(async (req: Request) => {
         const payload = {
           open_findings: open.slice(0, 60).map((f) => ({
             control: f.control_key, title: titleOf(f.control_key), severity: f.severity,
-            entity: f.entity_id, detail: f.detail, first_seen: f.first_seen_at,
+            entity: f.entity_id, detail: redactForTriage(f.detail), first_seen: f.first_seen_at,
           })),
           controls_erroring: errored.map((c) => ({ key: c.key, error: c.last_error })),
           controls_stale: stale.map((c) => c.key),
@@ -198,7 +226,10 @@ Deno.serve(async (req: Request) => {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
       console.error(`[controls-alert] RESEND_API_KEY unset — cannot email ${to}; ${open.length} open findings`);
-      return json({ ok: true, emailed: false, reason: 'no_transport', open: totalOpen });
+      // 503, not 200: the digest has findings to report and no way to report them.
+      // ctl_alert_dispatch_failing only sees non-2xx, so this is the one status that
+      // turns a dark channel into a finding.
+      return json({ error: 'email_not_configured', emailed: false, reason: 'no_transport', open: totalOpen }, 503);
     }
 
     const res = await fetch('https://api.resend.com/emails', {

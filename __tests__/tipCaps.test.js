@@ -144,9 +144,12 @@ const guardSrc = latestDefining('guard_tip_caps');
 const guard = bodyOf(guardSrc.sql, 'guard_tip_caps');
 const helperSrc = latestDefining('tip_headroom_cents');
 const helper = bodyOf(helperSrc.sql, 'tip_headroom_cents');
-const reserve = bodyOf(migration, 'reserve_tip_slot');
-const confirm = bodyOf(migration, 'confirm_tip_charge');
-const release = bodyOf(migration, 'release_tip_reservation');
+// latestDefining, not the pinned file: 20260906014000 replaced reserve_tip_slot, and
+// asserting against a body Postgres has replaced is exactly what that helper exists to
+// prevent. confirm/release still resolve to 20260814090000 — that is the point of asking.
+const reserve = bodyOf(latestDefining('reserve_tip_slot').sql, 'reserve_tip_slot');
+const confirm = bodyOf(latestDefining('confirm_tip_charge').sql, 'confirm_tip_charge');
+const release = bodyOf(latestDefining('release_tip_reservation').sql, 'release_tip_reservation');
 const reversal = bodyOf(migration, 'record_tip_reversal');
 const driftSrc = latestDefining('ctl_earnings_total_drift');
 const drift = bodyOf(driftSrc.sql, 'ctl_earnings_total_drift');
@@ -175,7 +178,7 @@ describe('the comment strippers actually strip', () => {
   it('removes TS commentary but keeps template literals', () => {
     expect(edgeRaw).toContain('// This used to be');
     expect(edge).not.toContain('This used to be');
-    expect(edge).toContain('idempotencyKey: reservationKey');
+    expect(edge).toContain('idempotencyKey: stripeKey');
   });
 });
 
@@ -212,11 +215,52 @@ describe('the pre-charge gate is a WRITE that consumes headroom', () => {
 
   it('the Stripe idempotency key is the reservation, not booking+amount', () => {
     // booking+amount is what let an attacker mint N non-colliding PaymentIntents by
-    // varying the amount a cent at a time. The reservation key is the row that consumed
+    // varying the amount a cent at a time. The reservation is the row that consumed
     // the headroom, so a second charge cannot exist without a second reservation.
-    expect(edge).toMatch(/idempotencyKey: reservationKey/);
+    expect(edge).toMatch(/idempotencyKey: stripeKey/);
     expect(edge).not.toMatch(/idempotencyKey: `tip_\$\{/);
     expect(reserve).toMatch(/'resv_' \|\| p_booking::text \|\| '_' \|\| p_cents::text/);
+  });
+
+  // ── The slot key and the Stripe key are two keys with two lifetimes ─────────
+  // They were ONE string until 20260906014000, and the reservation key is released on
+  // confirm — ours is; Stripe's is not. Stripe keeps an idempotency key for 24 hours and
+  // replays the original response, so the second legitimate tip of the same amount on the
+  // same booking (the count cap allows three) reserved a new row, got the FIRST
+  // PaymentIntent back, and confirm_tip_charge — which looks up by PI first — found the
+  // already-credited first row and returned true. stripe-tip answered success with no
+  // card charged and the earner told they had been paid.
+  it('the Stripe key is the reservation ROW, so a released slot key cannot replay a charge', () => {
+    expect(reserve).toMatch(/'stripe_key', 'resv_' \|\| v_id::text/);
+    // BOTH ok paths — the reuse (double tap) and the fresh insert. On only one of them,
+    // the other path charges with no idempotency key at all.
+    expect(reserve.match(/'stripe_key', 'resv_' \|\| v_id::text/g)).toHaveLength(2);
+    // ...while the SLOT key stays deterministic per (booking, cents), because the unique
+    // index on it is what collapses a double tap. Per-row there would remove the conflict
+    // and let two taps take two reservations, i.e. charge the poster twice.
+    expect(reserve).toMatch(/'resv_' \|\| p_booking::text \|\| '_' \|\| p_cents::text/);
+  });
+
+  it('stripe-tip never falls back to the slot key for idempotency', () => {
+    const seg = edge.slice(edge.indexOf('const stripeKey'), edge.indexOf('stripe.paymentIntents.create'));
+    expect(seg).toMatch(/reservation\.stripe_key/);
+    expect(seg).toMatch(/resv_\$\{reservation\.reservation_id\}/);
+    // A `?? reservationKey` here would silently reinstate the replay on any deploy
+    // ordering where the migration had not landed yet.
+    expect(seg).not.toMatch(/\?\?\s*reservationKey/);
+    // With no row handle it releases and refuses, rather than charging under a key
+    // Stripe may already have answered.
+    expect(seg).toMatch(/release_tip_reservation/);
+    expect(seg).toMatch(/}, 503\)/);
+  });
+
+  it('the stale-tip control prints the key the charge actually went out under', () => {
+    // The remedy sends an operator to Stripe to look the PaymentIntent up. The slot key
+    // would name the PREVIOUS tip's charge on this booking.
+    expect(staleTip).toMatch(/'stripe_idempotency_key', 'resv_' \|\| t\.id::text/);
+    // Rows written before 20260906014000 were charged under the old form, so it is
+    // carried alongside rather than rewritten into one convenient truth for both eras.
+    expect(staleTip).toContain('legacy_stripe_idempotency_key');
   });
 
   it('a definitively dead charge gives the slot back, an ambiguous one does not', () => {
@@ -611,5 +655,51 @@ describe('a refunded tip actually reaches the reversal', () => {
     const after = fn.slice(fn.indexOf('record_tip_reversal'));
     expect(after.slice(0, 700)).toMatch(/logServerError/);
     expect(after.slice(0, 700)).toMatch(/fatal:\s*true/);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // …and then STOPS. The tip branch used to fall through to the disputes insert.
+  //
+  // The skip logic below it reads the `payment` row, which is null for a tip, so
+  // neither `inFlight` nor `alreadyLedgered` could suppress anything — and the row it
+  // wrote carried the TIP's charge id in the machine template, on the GIG's booking.
+  // ctl_external_reversal_not_ledgered matches that template and joins disputes to
+  // payments on booking_id, so the gig's captured, never-refunded payment was reported
+  // as carrying an unledgered reversal, with a remedy ("Record chargeback") whose
+  // effect is to write refunded_cents onto a charge nobody refunded — misstating the
+  // poster's receipt and voiding any referral bonus sourced from that booking.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('the tip branch returns before anything can file a disputes row', () => {
+    const fn = code.slice(code.indexOf('async function recordReversal'));
+    const rpc = fn.indexOf('record_tip_reversal');
+    const insert = fn.search(/from\(['"]disputes['"]\)[\s\S]{0,80}?\.insert\(/);
+    expect(rpc).toBeGreaterThan(-1);
+    expect(insert).toBeGreaterThan(-1);
+
+    // The branch must hand back the tip's booking id — the caller still emails the
+    // admin with it — and it must do so before the insert is reachable.
+    const ret = fn.slice(rpc).search(/return\s+tip\.booking_id\s*;/);
+    expect(`tip branch returns its own booking id: ${ret > -1}`)
+      .toBe('tip branch returns its own booking id: true');
+    expect(rpc + ret).toBeLessThan(insert);
+
+    // And it must not ALSO assign into the shared bookingId, which is what carried
+    // execution onward into the dispute path.
+    const branch = fn.slice(rpc, rpc + ret);
+    expect(branch).not.toMatch(/bookingId\s*=\s*tip\.booking_id/);
+  });
+
+  it('the control that misread those rows still matches the machine template', () => {
+    // If this template ever stops matching, the paragraph above stops being the reason
+    // the tip row was harmful — and this test would be asserting nothing.
+    const ctl = fs3.readFileSync(
+      path3.join(__dirname, '..', 'supabase', 'migrations',
+        '20260814060000_reversal_reason_trust_and_ticket_photo_scope.sql'),
+      'utf8',
+    );
+    expect(ctl).toMatch(/Stripe refund on charge%/);
+    expect(ctl).toMatch(/join public\.payments p|from public\.payments p/);
+    const template = code.match(/Stripe refund on charge \$\{[^}]+\}/);
+    expect(template).toBeTruthy();
   });
 });

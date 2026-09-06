@@ -3,21 +3,24 @@
 import { useState, useTransition } from "react";
 import { setDisputeStatus, type ActionResult } from "./actions";
 
+// `canResolve` comes from the PAGE as roleSatisfies(ctx.role, "trust") — the same
+// predicate setDisputeStatus enforces. It used to be role === "admin", which rendered
+// "<status> · admin only" to the very tier whose job this is.
 export default function DisputeControls({
   disputeId,
   status,
-  isAdmin,
+  canResolve,
 }: {
   disputeId: string;
   status: string;
-  isAdmin: boolean;
+  canResolve: boolean;
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [note, setNote] = useState("");
 
-  if (!isAdmin) {
-    return <span className="text-xs text-[var(--muted)]">{status} · admin only</span>;
+  if (!canResolve) {
+    return <span className="text-xs text-[var(--muted)]">{status} · view only</span>;
   }
 
   const fire = (next: string) => {

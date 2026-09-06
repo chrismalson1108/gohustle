@@ -322,6 +322,10 @@ const REQUIRED_ACCOUNT_EVENTS = [
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
   "payment_intent.canceled",
+  // The only observation that may promote a payments row to 'authorized' on a recovery
+  // re-hold, where accept-booking never runs. Without the subscription that promotion
+  // never happens and the earner is refused payment on money that is genuinely held.
+  "payment_intent.amount_capturable_updated",
   "charge.refunded",
   "charge.dispute.created",
   "identity.verification_session.verified",

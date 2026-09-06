@@ -127,8 +127,9 @@ RLS enabled `schema.sql:122`. This is the most heavily guarded object. `UNIQUE(j
   - **Poster branch:** pins `earner_id, job_id, slot_id, earner_done, completion_photos, before_photos, started_at, application_note, counter_offer, tip_amount, poster_rating, poster_review` (a poster cannot forge the rating the earner gave them). Allowed transitions: `pending→declined|cancelled`, `confirmed→cancelled`, `confirmed→completed` (only if both done-flags set), `completed→verified` **only if a `payments` row with `status='captured'` exists**. The poster **cannot set `confirmed` directly** — the escrow-attested confirm is edge-only.
   - **Earner branch:** pins `job_id, earner_id, poster_done, earner_rating, review_text, payment_method, counter_offer, amendment_note, tip_amount, application_note, cancellation_fee`; allows the single `started_at` null→non-null while confirmed; allows `confirmed→completed` (if poster already done) and `→cancelled` from `pending/confirmed`; cannot regress a `verified` booking.
 - **`advance_mutual_completion`** trigger auto-advances `confirmed→completed` when both done-flags are set (`20260624210000_review4_db_fixes.sql`).
-- **`guard_started_booking_cancel`** blocks cancelling once `started_at` is set (`20260629190000_...`).
+- **`guard_started_booking_cancel`** blocks cancelling once `started_at` is set (`20260629190000_...`, rescoped by `20260905005000_force_cancel_voided_the_hold_then_could_not_cancel.sql`). It binds **the two parties only** — it early-returns for `service_role`, like `guard_bookings_write` and `guard_min_age`, so the console's audited, step-up-gated Force cancel is not blocked by a control aimed at the earner and the poster.
 - **The confirm path is server-only.** The `accept-booking` edge fn (`supabase/functions/accept-booking/index.ts:39,56-73`) authenticates, checks `booking.job.poster_id === user.id` (IDOR guard), re-fetches the Stripe PaymentIntent, and requires `status === 'requires_capture'` before flipping to `confirmed` via service role. The guard blocks any client-set confirm.
+  - **There is a SECOND writer of `confirmed`:** the console's Re-open (`admin/app/(console)/bookings/actions.ts` `reopenBooking`, `requireFreshAdmin('finance')`). `guard_bookings_write` early-returns for `service_role`, so the database re-checks nothing there. It therefore reads the `payments` row itself and refuses unless `status = 'authorized'`, failing closed on a missing row — otherwise a `pending` (no hold yet) or `declined` (hold voided) booking could be confirmed with no escrow and the earner would work against nothing. Pinned by `__tests__/reopenRequiresHold.test.js`.
 - `application_note` is capped ≤500 chars (CHECK) and content-moderated (`trg_guard_content_bookings`).
 
 ### 5a. Booking status transitions — who can drive which
@@ -331,8 +332,20 @@ Two tiers in one console (`type AdminRole = "admin" | "support"`, `admin/lib/gua
 | User mutations (suspend/verify/student/reset/email/delete/notify/note) | **Yes** | No | `users/[id]/actions.ts` all `requireAdmin('admin')` |
 | GDPR user data export | **Yes** | No | `users/[id]/export/route.ts:53` `requireAdmin('admin')` (+ CSRF & UUID guards) |
 | Job takedown / restore | **Yes** | No | `jobs/actions.ts:15` `requireAdmin('admin')` |
-| Report resolve / reopen | **Yes** | No | `moderation/actions.ts:12,38` `requireAdmin('admin')` |
+| Report resolve / reopen | **Yes** | No | `moderation/actions.ts:12,38` `requireAdmin('admin')` — **SUPERSEDED, see below** |
 | Support ticket reply / status / AI draft | **Yes** | **Yes** | `support/actions.ts:16-18` `requireAdmin('support')` |
+
+> [!IMPORTANT]
+> **Correction (2026-09-06) — report resolve/reopen is `trust`, not `admin`.** The table
+> above is a 2026-07-07 snapshot of a two-tier console; the console now has four ranked
+> tiers (`support` · `trust` · `finance` · `admin`, `admin/lib/guard.ts`), and
+> `admin/app/(console)/moderation/actions.ts:19,43` both call `requireAdmin("trust")`,
+> which `SATISFIES` admits for `{admin, trust}`. This one row is corrected in place
+> rather than left to the staleness banner because reading it wrong costs someone money:
+> `earner-claim-payment` refuses to settle a booking with an open report, so the whole
+> point of the `trust` tier was to stop one admin's availability from being a money-harm
+> control. `RUNBOOK_SAFETY.md` §1.6 carried the same error and is fixed alongside it.
+> The other rows in this table have not been re-verified against the four-tier console.
 
 - **MFA/AAL2 is mandatory** for all admin/support access (`guard.ts:53-56`).
 - **The audit log is append-only even to service_role**: `revoke update, delete … from … service_role` (`20260705010000_admin_console.sql:41`). `audit()` is awaited and fail-closed for mutations (`admin/lib/audit.ts:20-28`); `auditRead()` is best-effort for view pages. `deleteAccount` audits *before* the irreversible cascade.

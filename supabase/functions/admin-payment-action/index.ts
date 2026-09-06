@@ -32,6 +32,16 @@ import { requireAdminCaller } from '../_shared/adminAuth.ts';
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
+// Same guard as stripe-capture-payment / earner-claim-payment: Number(null) is 0 and
+// Number.isFinite(0) is true, so a bare finite test resolves a NULL rate to a free gig
+// rather than to the fallback. A pinned ZERO is legitimate (a "first 2 gigs free"
+// promotion stores exactly that), so the test is >= 0, not > 0.
+function safeBps(v: unknown, fallback = 1000): number {
+  if (v === null || v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 3000 ? Math.trunc(n) : fallback;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -102,7 +112,9 @@ Deno.serve(async (req: Request) => {
       .from('payments')
       // poster_discount_cents is needed by the settle op: settle_booking_benefits is
       // charged the GIG value, and amount_cents is already net of any discount.
-      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, refunded_at, status, poster_discount_cents')
+      // fee_bps / fee_credit_cents are the PINNED inputs settle recomputes the fee from
+      // when Stripe cannot tell it what was applied — never the mutable fee_cents.
+      .select('id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, refunded_cents, refunded_at, status, poster_discount_cents, fee_bps, fee_credit_cents')
       .eq('booking_id', bookingId)
       .maybeSingle();
     if (payErr) return json({ error: 'lookup_failed', message: payErr.message }, 503);
@@ -180,14 +192,70 @@ Deno.serve(async (req: Request) => {
       // poster's own Verify sheet, which records a disputes row with the poster as the
       // party who asked for it. An operator quietly capturing 60% would produce a reduced
       // payout with no such record and no counterparty consent.
-      const captured = await stripe.paymentIntents.capture(pay.payment_intent_id);
+      // expand latest_charge: application_fee_amount lives on the charge, and
+      // stripe@22's PaymentIntent does not carry `charges` at all.
+      const captured = await stripe.paymentIntents.capture(pay.payment_intent_id, {
+        expand: ['latest_charge'],
+      });
 
       // Stripe is the source of truth for what was collected — the same rule
       // stripe-capture-payment follows. Never write a computed figure and hope.
       const received = typeof captured.amount_received === 'number'
         ? captured.amount_received
         : (pay.amount_cents ?? 0);
-      const feeCents = Math.min(received, pay.fee_cents ?? 0);
+
+      // ── THE FEE COMES FROM STRIPE, NOT FROM pay.fee_cents ────────────────
+      //
+      // fee_cents is MUTABLE, and there is a live path that leaves it wrong on a row
+      // this op is offered for. stripe-capture-payment's partial branch calls
+      // claimForCapture — which writes the REDUCED split — BEFORE the Stripe capture
+      // (index.ts:325 then :331). If that capture throws, the terminal catch only logs:
+      // the row rests at status='authorized' carrying the reduced fee, and
+      // InterventionPanel enables "Settle & pay earner" on exactly that state.
+      //
+      // Settling then captures the FULL hold, so Stripe applies the PaymentIntent's
+      // ORIGINAL application_fee_amount — while this wrote the smaller number and gave
+      // the difference to the earner. On a $100 gig at 700 bps after a failed 50%
+      // attempt: Stripe transfers 9300c, this recorded fee 350 / earner 9650, and
+      // credit_earnings credited $96.50 for money that was never sent. Nothing could
+      // see it: the two written values still sum to amount_received, so
+      // reconcile-stripe's captured_total_mismatch passes, and ctl_earnings_total_drift
+      // compares profiles against the same inflated column.
+      //
+      // earner-claim-payment:257-264 already reads latest_charge.application_fee_amount
+      // for this reason. This op's own comment said "never write a computed figure and
+      // hope" while doing precisely that.
+      const settledCharge = (captured.latest_charge ?? null) as
+        { application_fee_amount?: number | null } | null;
+      let feeCents: number;
+      if (typeof settledCharge?.application_fee_amount === 'number') {
+        feeCents = Math.min(received, Math.max(0, settledCharge.application_fee_amount));
+      } else {
+        // Stripe told us nothing usable. Recompute from the IMMUTABLE pinned inputs —
+        // fee_bps, fee_credit_cents and poster_discount_cents are all pinned at
+        // authorization by trg_z_pin_payment_fee_bps — through the one definition of
+        // the fee, exactly as earner-claim-payment's fallback does. Still never
+        // pay.fee_cents.
+        const discount = Math.max(0, Math.trunc(Number(pay.poster_discount_cents) || 0));
+        const { data: calc, error: calcErr } = await service.rpc('platform_fee_after_credit', {
+          p_amount_cents: received + discount,
+          p_fee_bps: safeBps(pay.fee_bps),
+          p_credit_cents: Math.max(0, Math.trunc(Number(pay.fee_credit_cents) || 0)),
+        });
+        if (calcErr || !Number.isFinite(Number(calc))) {
+          // FAIL LOUD, not quiet. Stripe has already captured, so a guessed split would
+          // be written over real money — leave the row for remediation and say so.
+          await logServerError('admin-payment-action',
+            `settle captured ${pay.payment_intent_id} but neither Stripe nor platform_fee_after_credit ` +
+            `could give the applied fee: ${calcErr?.message ?? 'non-numeric'}`,
+            { booking_id: bookingId, payment_id: pay.id }, { fatal: true });
+          return json({
+            error: 'fee_unknown',
+            message: 'The charge went through but the platform fee could not be established, so the ledger was not written. This is logged.',
+          }, 500);
+        }
+        feeCents = Math.min(received, Math.max(0, Number(calc) - discount));
+      }
       const earnerCents = Math.max(0, received - feeCents);
 
       const { error: updErr } = await service.from('payments').update({

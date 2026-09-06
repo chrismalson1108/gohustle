@@ -150,8 +150,14 @@ describe('the dispute row follows the capture, not the request', () => {
   );
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-  it('gates the insert on a capture having happened in this invocation', () => {
-    expect(code).toMatch(/if \(capturedGigCents !== null && capturePctFinal < 1\)/);
+  it('gates the insert on a REDUCED settlement having actually happened', () => {
+    // `settledPct` joined the gate when the retry-after-a-mid-flight-death case was
+    // fixed (see captureRetryBookkeeping.test.js): capturedGigCents is now also
+    // assigned on the recovery path, so it alone no longer means "less than the full
+    // amount was taken". settledPct is that fact, derived from the ledger.
+    expect(code).toMatch(
+      /if \(capturedGigCents !== null && capturePctFinal < 1 && settledPct < 1\)/,
+    );
     // The bare form is the bug: pct alone is the caller's claim.
     expect(code).not.toMatch(/if \(capturePctFinal < 1\) \{\s*\n\s*const \{ data: existingDispute/);
   });
@@ -161,9 +167,15 @@ describe('the dispute row follows the capture, not the request', () => {
     expect(code).toMatch(/if \(capturedGigCents !== null\)/);
   });
 
-  it('capturedGigCents is still assigned only inside the not-yet-captured block', () => {
+  it('capturedGigCents is never assigned before the not-yet-captured block', () => {
     // If it were assigned unconditionally the flag would mean nothing and the gate above
     // would silently become a no-op.
+    //
+    // It IS now assigned in a second place — the recovery branch that runs when this
+    // function died between the Stripe capture and its own bookkeeping. That branch is
+    // downstream of the block, and it derives what happened from the ledger
+    // (earner_amount_cents + fee_cents vs amount_cents) rather than from the request,
+    // which is why the dispute gate above needed settledPct as well.
     const guard = code.indexOf("if (payment.status !== 'captured')");
     const firstAssign = code.indexOf('capturedGigCents = ');
     expect(guard).toBeGreaterThan(-1);

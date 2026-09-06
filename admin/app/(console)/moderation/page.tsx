@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdminPage } from "@/lib/guard";
+import { requireAdminPage, roleSatisfies } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
 import { Section, Pill } from "@/lib/ui";
 import ResolveControls from "./ResolveControls";
@@ -13,6 +13,14 @@ export default async function ModerationPage({
 }) {
   const ctx = await requireAdminPage("trust");
   const showResolved = (await searchParams).filter === "resolved";
+  // The queue and the buttons must agree with the ACTIONS. resolveReport and
+  // reopenReport both take requireAdmin("trust"), and the page itself is
+  // requireAdminPage("trust") — but the controls were gated on role === "admin", so a
+  // trust operator could read every report and act on none of them. That is the tier's
+  // entire job, and earner-claim-payment refuses to settle a booking while a report is
+  // open, so withholding it makes one admin's availability a money-harm control — the
+  // exact failure `trust` was created to remove (guard.ts:14-16).
+  const canResolve = roleSatisfies(ctx.role, "trust");
 
   let q = ctx.service
     .from("reports")
@@ -82,6 +90,11 @@ export default async function ModerationPage({
                       <span className="font-medium">{r.reason}</span>
                       {r.resolved_at ? <Pill tone="green">resolved</Pill> : <Pill tone="red">open</Pill>}
                       {r.source === "auto" && <Pill tone="amber">auto</Pill>}
+                      {/* raise_gig_emergency files with source='emergency' — somebody
+                          pressed Get help while standing on a gig. It sat in this queue
+                          looking like any other report, and the booking link is where
+                          the address is. */}
+                      {r.source === "emergency" && <Pill tone="red">🚨 emergency</Pill>}
                     </div>
                     {r.details && <p className="mt-1 text-sm text-[var(--muted)]">{r.details}</p>}
                     <p className="mt-1 text-xs text-[var(--muted)]">
@@ -122,7 +135,7 @@ export default async function ModerationPage({
                       {r.resolution ? ` · “${r.resolution}”` : ""}
                     </p>
                   </div>
-                  <ResolveControls reportId={String(r.id)} resolved={Boolean(r.resolved_at)} isAdmin={ctx.role === "admin"} />
+                  <ResolveControls reportId={String(r.id)} resolved={Boolean(r.resolved_at)} canResolve={canResolve} />
                 </div>
               </li>
             ))}

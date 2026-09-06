@@ -94,6 +94,19 @@ flags the booking (auto-settlement suppressed).
 > `refunds.create` on a disputed charge (`charge_disputed`), so the Refund button
 > cannot do this and will error if you try.
 
+> ⚠️ **First check WHICH object was reversed — a reversed TIP is not a gig refund.**
+> From 2026-08-14 to 2026-09-06 `stripe-webhook` filed a `disputes` row for a refunded or
+> charged-back tip against the GIG's booking, in the same machine template, because a tip
+> writes no `payments` row and the branch fell through. `ctl_external_reversal_not_ledgered`
+> then reported the gig's captured, never-refunded payment as unledgered. **Pressing Record
+> chargeback there writes `refunded_cents` onto a charge nobody refunded**: the poster's
+> Transactions receipt starts saying "Refunded to you" on work they paid for, and
+> `vest_bonuses` voids any referral bonus sourced from that booking. Those old rows cannot
+> be told apart by shape, so the control now says so in its `remedy` when the figure matches
+> a reversed tip on the same booking — read it before acting. A reversed tip is already
+> ledgered in `tip_ledger.reversed_cents`, which `ctl_earnings_total_drift` subtracts;
+> resolve the dispute row and leave the payment alone.
+
 ---
 
 ## 3. A capture failed / the poster can't pay

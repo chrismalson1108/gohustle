@@ -23,6 +23,20 @@ declare module "@gohustlr/shared" {
   export const DEFAULT_FEE_BPS: number;
   export function platformFeeCents(amountCents: number, feeBps?: number | null): number;
   export function earnerNetCents(amountCents: number, feeBps?: number | null): number;
+  /** Fee after an earner's bonus credit. Mirrors public.platform_fee_after_credit. */
+  export function platformFeeAfterCreditCents(
+    amountCents: number,
+    feeBps?: number | null,
+    creditCents?: number | null,
+  ): number;
+  /** What the earner receives once their fee credit is applied. */
+  export function earnerNetAfterCreditCents(
+    amountCents: number,
+    feeBps?: number | null,
+    creditCents?: number | null,
+  ): number;
+  /** What is authorized on the poster's card: amount less their discount grant. */
+  export function posterChargeCents(amountCents: number, discountCents?: number | null): number;
   export function feeLabel(feeBps?: number | null): string;
   /** Net-of-fee value of a booking in DOLLARS, using that booking's OWN pinned rate. */
   export function bookingNetDollars(grossDollars: number, feeBps?: number | null): number;
@@ -172,6 +186,8 @@ declare module "@gohustlr/shared" {
   };
 
   // ── transforms (return `any` at the JS/TS boundary; callers cast to Job/Booking) ──
+  // Returns the url only when it is an object in our own public bucket; null otherwise.
+  export function safeStorageUrl(url: string | null | undefined, bucket: string): string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function transformJob(dbJob: Record<string, unknown>): any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,6 +286,16 @@ declare module "@gohustlr/shared" {
     now?: Date,
     graceDays?: number,
   ): boolean;
+  export function enteredStatus(
+    prevStatus: string | null | undefined,
+    nextStatus: string | null | undefined,
+    target: string,
+  ): boolean;
+  /** The poster on the other side of a booking: browse feed first, booking embed second. */
+  export function bookingPosterId(
+    booking: { jobId?: string | null; job?: { posterId?: string | null } | null } | null | undefined,
+    jobs: ReadonlyArray<{ id: string; posterId?: string | null }> | null | undefined,
+  ): string | null;
 
   // ── age ──
   export const MIN_AGE: number;
@@ -278,6 +304,12 @@ declare module "@gohustlr/shared" {
   export function isAdult(dob: string | Date | null | undefined, now?: Date): boolean;
 
   // ── taxFormat ──
+  // Today (or a given Date) in the VIEWER's time zone as YYYY-MM-DD — never the UTC
+  // date, which is already tomorrow for most of the US every evening.
+  // Overloaded because the no-argument call cannot fail: `new Date()` is always a
+  // valid date, and making every caller null-check today's date would be noise.
+  export function localDateISO(): string;
+  export function localDateISO(dt: Date | string | number): string | null;
   export const EXPENSE_CATEGORIES: { id: string; label: string; ion: string }[];
   export const INCOME_SOURCES: { id: string; label: string; ion: string }[];
   export function categoryMeta(id: string): { id: string; label: string; ion: string };
@@ -286,9 +318,20 @@ declare module "@gohustlr/shared" {
   export function buildTaxSummaryCSV(args: {
     year: number | string;
     stripeIncome: number;
+    // Card tips paid through the platform. Optional: they get their own CSV row and
+    // are not fee-bearing, so they cannot be folded into stripeIncome.
+    tipIncome?: number;
     income: Array<Record<string, unknown>>;
     expenses: Array<Record<string, unknown>>;
   }): string;
+  // Booking-shaped inputs stay structural here: the concrete Booking type lives in
+  // web/lib/types.ts and the shared package cannot import it.
+  export function bookingGrossDollars(booking: unknown, fullJob?: unknown): number;
+  export function platformIncomeForYear(args?: {
+    bookings?: unknown[] | null;
+    year: number | string;
+    jobById?: { get(id: string): unknown } | null;
+  }): { earnings: number; tips: number; total: number };
 
   // ── contentFilter ──
   export function findProhibited(text: string): string | null;
@@ -416,4 +459,111 @@ declare module "@gohustlr/shared" {
     certified: Array<{ label: string; count: number; avg: number }>;
     progress: Array<{ label: string; count: number; needed: number }>;
   };
+
+  // ── ledger (the money statement, both sides) ──
+  // Moved out of src/lib/payments.js on 2026-09-05 so the website could have a
+  // Transactions page without a second hand-written copy of money arithmetic. Only
+  // the two Supabase reads live per-client (src/lib/payments.js, web/lib/payments.ts).
+  // Amounts come from the payment ROW, never re-derived from the current rate card:
+  // the fee is PINNED per booking, so a past transaction shown at today's rate
+  // misstates what the person received.
+  export interface PaymentStateInfo { label: string; tone: string; note: string }
+  /** Wording per SIDE — 'captured' is "Released" to an earner and "Charged" to a poster. */
+  export function paymentState(status: string | null | undefined, side: string): PaymentStateInfo;
+
+  export interface PayoutStateInfo { label: string; tone: string; verb: string }
+  export const PAYOUT_STATE: Record<string, PayoutStateInfo>;
+  export function payoutState(status: string | null | undefined): PayoutStateInfo;
+
+  /** What Stripe actually charged: the split on a capture, else the authorization. */
+  export function settledGrossCents(row: Record<string, unknown> | null | undefined): number;
+  /** How much of a refund came out of the EARNER's payout. Read, never recomputed. */
+  export function earnerRefundShareCents(row: Record<string, unknown> | null | undefined): number;
+
+  /** Normalizes one payment row into the entry shape every helper below consumes. */
+  export function toEntry(
+    row: Record<string, unknown>,
+    side: string,
+    jobsById: Record<string, { id?: string; title?: string }>,
+    bookingsById: Record<string, Record<string, unknown>>,
+  ): Record<string, unknown>;
+
+  export function summarize(
+    entries: unknown[],
+    side: string,
+    year?: number,
+  ): {
+    year: number;
+    count: number;
+    settledCents: number;
+    heldCents: number;
+    feesCents: number;
+    refundedCents: number;
+  };
+
+  export const RANGES: Array<{ key: string; label: string; days?: number }>;
+  export function rangeBounds(key: string, now?: Date): { start: Date | null; end: Date | null };
+  export const STATUS_FILTERS: Array<{ key: string; label: string; match?: (e: never) => boolean }>;
+  export function filterEntries<T>(
+    entries: T[],
+    opts?: { side?: string; range?: string; status?: string; query?: string },
+  ): T[];
+
+  export function stats(entries: unknown[]): {
+    count: number;
+    settledCount: number;
+    grossCents: number;
+    netCents: number;
+    heldCents: number;
+    feesCents: number;
+    tipsCents: number;
+    refundedCents: number;
+    discountCents: number;
+    declinedCount: number;
+    avgCents: number;
+  };
+
+  export function monthlyTotals(
+    entries: unknown[],
+    months?: number,
+    now?: Date,
+  ): Array<{ key: string; label: string; cents: number }>;
+  export function byMonth<T>(entries: T[]): Array<{ key: string; label: string; data: T[] }>;
+  /** A statement the user can hand to an accountant, or reconcile against a bank feed. */
+  export function ledgerCsv(entries: unknown[], side: string): string;
+
+  export interface ReceiptLine {
+    key: string;
+    label: string;
+    cents: number;
+    good?: boolean;
+    dim?: boolean;
+  }
+  /** Line items that SUM to totalCents by construction — asserted in ledger.test.js. */
+  export function receiptLines(entry: unknown): {
+    lines: ReceiptLine[];
+    totalCents: number;
+    totalLabel: string;
+  };
+
+  // ── support (which conversation a person is shown) ──
+  // Moved out of src/lib/support.js on 2026-09-05 so the website's Support page
+  // shows the SAME thread the app does. Two copies of these rules is how one person
+  // gets two different "active" conversations on two devices.
+  export const SUPPORT_CATEGORIES: Array<{ key: string; label: string }>;
+  export interface SupportTicketLike {
+    id?: string;
+    status?: string;
+    archived_at?: string | null;
+    last_message_at?: string | null;
+    user_read_at?: string | null;
+  }
+  /** Unread iff SUPPORT said something the user has not seen — never your own reply. */
+  export function ticketHasUnread(t: SupportTicketLike | null | undefined): boolean;
+  /** Unread wins over status: an agent's note on a resolved thread stays 'closed'. */
+  export function pickActiveTicket<T extends SupportTicketLike>(tickets?: T[]): T | null;
+  export function groupTickets<T extends SupportTicketLike>(
+    tickets?: T[],
+    activeId?: string | null,
+  ): { live: T[]; archived: T[] };
 }

@@ -61,3 +61,40 @@ export function canClaimEarnerPayment(booking, now = new Date(), graceDays = EAR
   const at = now instanceof Date ? now : new Date(now);
   return at.getTime() >= deadline.getTime();
 }
+
+// ── Realtime status transitions ──────────────────────────────────────────────
+// A Postgres/Supabase realtime UPDATE payload carries the row's CURRENT status, not
+// a transition: Postgres broadcasts an UPDATE for ANY column change — including the
+// subscriber's OWN writes — and under the default REPLICA IDENTITY `payload.old`
+// holds only the primary key, so `payload.new.status` alone cannot tell "the poster
+// just accepted this" from "I stamped started_at on a booking that has been confirmed
+// for three days". Handlers that toasted off the current value re-announced "Booking
+// Confirmed!" every time the earner tapped "I'm on site" or "Mark done", and
+// re-announced "Job Verified!" when they rated the poster afterwards.
+//
+// Compare against the status the client already holds for that row instead. A row we
+// have no local copy of counts as a transition (prevStatus undefined): that is a cold
+// start, where the event genuinely IS the first news of this status.
+export function enteredStatus(prevStatus, nextStatus, target) {
+  if (nextStatus !== target) return false;
+  return prevStatus !== target;
+}
+
+
+// The poster on the other side of a booking.
+//
+// The browse feed is capped (200 newest, cancelled gigs excluded), so a booking's gig
+// is routinely absent from it: the poster soft-deleted the listing, or 200 newer gigs
+// exist. Call sites that resolved the poster ONLY through that feed silently produced
+// `undefined` and then did nothing — every one of them is a `if (posterId) notify(...)`,
+// so the counterparty was simply never told the work had started, finished, or been
+// cancelled. The booking row already carries the answer: both booking selects request
+// `job.poster_id` and transformBooking exposes it as `job.posterId`.
+//
+// `jobs` first, because the feed row is the fuller object and stays right when a gig
+// changes hands; the embed is the fallback, not the other way round.
+export function bookingPosterId(booking, jobs) {
+  if (!booking) return null;
+  const fromFeed = (jobs || []).find(j => j?.id === booking.jobId)?.posterId;
+  return fromFeed ?? booking.job?.posterId ?? null;
+}

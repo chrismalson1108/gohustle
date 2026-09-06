@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useHaptic } from '../hooks/useHaptic';
 import { pickImages, uploadPrivateImages } from '../lib/uploadImage';
 import SignedImage from '../components/SignedImage';
-import { addExpense } from '../lib/expenses';
+import { addExpense, localDateISO } from '../lib/expenses';
 import { haversineMiles } from '../lib/geo';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
 import { canClaimEarnerPayment } from '../../shared/lifecycle';
@@ -27,7 +27,10 @@ import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar
 import SafetyBar from '../components/SafetyBar';
 
 const TRANSPORT_CATEGORY = 'transport'; // EXPENSE_CATEGORIES id for Transport/Mileage
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The USER's local date, not the UTC one. `toISOString().slice(0, 10)` rolls over at
+// 7pm Eastern, so an evening entry was dated tomorrow and a 31 December one landed in
+// the next tax year — while the year filter reading it uses the local clock.
+const todayISO = () => localDateISO();
 const round1 = (n) => Math.round(n * 10) / 10;
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -281,7 +284,19 @@ export default function EarnScreen({ navigation }) {
       if (finishPhotos.length) {
         urls = await uploadPrivateImages({ uris: finishPhotos, bucket: 'completion-photos', userId: user.id });
       }
-      await markEarnerDone(finishTarget.id, urls, beforeUrls);
+      // Gate everything below on the real write. markEarnerDone rolls back its
+      // optimistic patch and shows "Couldn't mark done" when the update is rejected,
+      // then returns false — and this discarded it, so a rejected write still credited
+      // the weekly-earnings challenge, fired a success haptic, printed "Marked Done!"
+      // directly under the failure toast, and closed the sheet, orphaning the photos
+      // that had already uploaded to completion-photos and attaching them to nothing.
+      // Keep the sheet and the picked photos so a retry reuses them.
+      const ok = await markEarnerDone(finishTarget.id, urls, beforeUrls);
+      if (ok === false) {
+        haptic.error();
+        setFinishing(false);
+        return;
+      }
       // Progress the "Earn $100 this week" challenge (c2) by the gig's value when the
       // earner completes it — nothing fed it before, so it never moved.
       const cj = finishTarget.job;

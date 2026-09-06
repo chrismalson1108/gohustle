@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, Image,
+  Modal, View, Text, TextInput, TouchableOpacity, Image, Alert,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,6 +77,15 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const jobTitle   = booking.job?.title   || 'this job';
   const pay        = booking.job?.pay;
   const payType    = booking.job?.payType;
+
+  // "we keep a N% platform fee" is honest only when nothing else moved the fee. A
+  // referral fee credit (fee_credit_cents) means we keep LESS than the rate, and a
+  // poster discount (poster_discount_cents) less again — both pinned on the booking
+  // and both invisible to effectiveFeeLabel, which knows only amount and bps. Drop the
+  // parenthetical in that case, exactly as it is already dropped when the processing
+  // floor sets the fee; the sentence still says the fee comes off.
+  const benefitPinned = (booking.feeCreditCents || 0) > 0 || (booking.posterDiscountCents || 0) > 0;
+  const feeText = benefitPinned ? null : effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted);
 
   // A reduced payout must state a reason (recorded as the dispute audit trail).
   const reasonMissing = disputed && !disputeReason.trim();
@@ -169,7 +178,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             <View style={styles.escrowBox}>
               <Ionicons name="shield-checkmark" size={16} color={colors.success} style={{ marginRight: 8, marginTop: 1 }} />
               <Text style={styles.escrowText}>
-                The payment you authorized is held securely on your card. Confirming releases it to {earnerName}{effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted) ? ` (we keep a ${effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted)} platform fee)` : ' (minus the platform fee shown when you accepted)'} — no new charge.
+                The payment you authorized is held securely on your card. Confirming releases it to {earnerName}{feeText ? ` (we keep a ${feeText} platform fee)` : ' (minus the platform fee shown when you accepted)'} — no new charge.
               </Text>
             </View>
 
@@ -287,8 +296,18 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                       style={styles.disputeAddPhoto}
                       onPress={async () => {
                         haptic.selection();
+                        // pickImages resolves to { canceled, denied?, uris } — NEVER an
+                        // array. Testing `res.length` on that object is always undefined,
+                        // so every picked photo was dropped and the evidence the copy
+                        // below promises support would review never existed.
                         const res = await pickImages({ multiple: true });
-                        if (res?.length) setDisputePhotos(prev => [...prev, ...res].slice(0, 6));
+                        if (res.canceled) {
+                          if (res.denied) {
+                            Alert.alert('Photos access needed', 'Allow photo access in Settings to attach photos.');
+                          }
+                          return;
+                        }
+                        setDisputePhotos(prev => [...prev, ...res.uris].slice(0, 6));
                       }}
                     >
                       <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />

@@ -21,6 +21,8 @@ function relTime(iso) {
 function iconFor(type) {
   if (type === 'saved_search') return 'briefcase';
   if (type === 'message') return 'chatbubble';
+  // The check-in nudge — "still working?" — should not look like a marketing ping.
+  if (type === 'safety_checkin') return 'shield-checkmark';
   return 'notifications';
 }
 

@@ -51,7 +51,11 @@ export default function AcceptPaymentModal({
       .createPaymentIntent(booking.id)
       .then((res) => {
         setClientSecret(res.clientSecret);
-        setAmountCents(res.amountCents ?? res.amount ?? 0);
+        // authorizedCents is what Stripe HOLDS — the pinned amount less the poster's
+        // discount grant. amountCents is the pre-discount pin, so rendering it as
+        // "$X is held securely" / "Hold $X & accept" overstated the charge on every
+        // booking carrying a poster_discount grant. Fall back for older responses.
+        setAmountCents(res.authorizedCents ?? res.amountCents ?? res.amount ?? 0);
         setSavedCard(res.savedCard ?? null);
       })
       .catch((e: Error & { code?: string }) => {

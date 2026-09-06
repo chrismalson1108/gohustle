@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2, ArrowLeftRight, ChevronRight } from "lucide-react";
 import { NO_PAYOUT_ACCOUNT, type ConnectStatus } from "@/lib/connectStatus";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -25,10 +27,30 @@ type Readiness = {
 export default function PayoutsPage() {
   const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink, detachPaymentMethod } = useJobs();
   const { showToast } = useUser();
+  const { requireMfaChallenge } = useAuth();
   const [ready, setReady] = useState<Readiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+
+  // Both payout functions are step-up gated (_shared/stepUp.ts): with a verified factor
+  // on the account they refuse a session that is only aal1, answering 403 MFA_REQUIRED.
+  // That is a RECOVERABLE refusal — enter a current code and the same action works — but
+  // only if this page offers the prompt. It did not: the error fell into the generic
+  // catch below and rendered "Payout setup unavailable — Enter your authenticator code
+  // to change payout details." with no code field anywhere, so the honest reading was
+  // that payouts were broken. Opening the gate sends (app)/layout.tsx to /mfa, which
+  // already carries the code entry and the lost-phone path.
+  const handledStepUp = (e: unknown) => {
+    if ((e as { code?: string })?.code !== "MFA_REQUIRED") return false;
+    showToast({
+      icon: "🛡️",
+      title: "Confirm it's you",
+      message: (e as Error).message || "Enter your authenticator code to change payout details.",
+    });
+    requireMfaChallenge();
+    return true;
+  };
 
   const refreshReadiness = useCallback(async () => {
     const r = await getPaymentReadiness();
@@ -129,7 +151,9 @@ export default function PayoutsPage() {
     } catch (e) {
       // Surface the real reason (e.g. Stripe Connect not enabled) instead of a silent no-op.
       dash?.close();
-      showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
+      if (!handledStepUp(e)) {
+        showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
+      }
     } finally {
       // ALWAYS clear the spinner — a returning user must never find a button stuck loading.
       setBusy(null);
@@ -269,6 +293,25 @@ export default function PayoutsPage() {
             you verify the work.
           </p>
         </div>
+
+        {/* The record of what has already happened, both sides. This is the money
+            hub — mobile's PayoutSetupScreen links here, and the web had nothing to
+            link to until the Transactions page existed. */}
+        <Link
+          href="/profile/transactions"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] hover:bg-canvas"
+        >
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-canvas text-primary">
+            <ArrowLeftRight className="size-6" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-bold tracking-[-0.2px] text-ink">Transactions</p>
+            <p className="text-[13px] leading-[18px] text-ink-soft">
+              Receipts, fees, refunds, escrow and bank deposits.
+            </p>
+          </div>
+          <ChevronRight className="ml-auto size-5 shrink-0 text-ink-muted" />
+        </Link>
 
         <p className="pt-1 text-center text-xs text-ink-muted">
           Payments are processed securely by Stripe. GoHustlr never stores your card details.

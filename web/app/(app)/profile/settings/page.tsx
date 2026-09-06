@@ -31,6 +31,15 @@ import LocationPicker from "@/components/LocationPicker";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { classNames } from "@/lib/format";
 
+// Refusal codes delete-account returns with a message worth showing verbatim.
+// MFA_REQUIRED and mfa_check_unavailable came with the step-up gate: without them
+// here, an account with two-factor on gets "Please try again, or email support." for
+// a refusal that is neither a retry nor a support issue.
+const DELETE_REFUSALS = [
+  "UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED", "SETTLEMENT_CHECK_FAILED",
+  "MFA_REQUIRED", "mfa_check_unavailable",
+];
+
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 // Icon + label, matching mobile's role chips (school / clipboard / flash).
@@ -404,14 +413,14 @@ export default function SettingsPage() {
       try {
         const body = await (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } })
           .context?.json?.();
-        if (body?.message && ["UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED", "SETTLEMENT_CHECK_FAILED"].includes(body.error ?? "")) message = body.message;
+        if (body?.message && DELETE_REFUSALS.includes(body.error ?? "")) message = body.message;
       } catch {
         /* keep the generic message */
       }
       showToast({ icon: "❌", title: "Could not delete", message });
       return;
     }
-    if (["UNSETTLED_BOOKINGS", "UNDER_REVIEW", "REVIEW_CHECK_FAILED", "SETTLEMENT_CHECK_FAILED"].includes(data?.error ?? "")) {
+    if (DELETE_REFUSALS.includes(data?.error ?? "")) {
       setDeleting(false);
       setDeleteStep(0);
       showToast({ icon: "❌", title: "Could not delete", message: data.message });

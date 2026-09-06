@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Car, Receipt, Paperclip, X } from "lucide-react";
-import { IRS_MILEAGE_RATE } from "@gohustlr/shared";
+import { IRS_MILEAGE_RATE, localDateISO } from "@gohustlr/shared";
 import { addExpense, uploadReceipt, EXPENSE_CATEGORIES } from "@/lib/expenses";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
@@ -12,7 +12,10 @@ import Button from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import type { Booking } from "@/lib/types";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The USER's local date, not the UTC one. `toISOString().slice(0, 10)` rolls over at
+// 7pm Eastern, so an evening entry was dated tomorrow and a 31 December one landed in
+// the next tax year — while the year filter reading it uses the local clock.
+const todayISO = () => localDateISO();
 
 // Lets an earner log mileage (there & back) and out-of-pocket expenses for a specific
 // gig while or after they work it. Everything is tied to the booking and shows up in

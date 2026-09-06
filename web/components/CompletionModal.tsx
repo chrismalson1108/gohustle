@@ -10,7 +10,7 @@ import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
 import type { Booking } from "@/lib/types";
-import { earnerNetCents, effectiveFeeLabel } from "@gohustlr/shared";
+import { earnerNetAfterCreditCents, effectiveFeeLabel, posterChargeCents } from "@gohustlr/shared";
 
 export interface VerifyArgs {
   rating: number;
@@ -46,13 +46,15 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 export default function CompletionModal({
   open,
   booking,
-  heldCents = 0,
+  quotedCents = 0,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   booking: Booking | null;
-  heldCents?: number;
+  // The GROSS pinned deal value (bookings.amount_cents_quoted), not the hold. Two
+  // different numbers come off it and this sheet states both; see below.
+  quotedCents?: number;
   onClose: () => void;
   onConfirm: (args: VerifyArgs) => Promise<void>;
 }) {
@@ -81,6 +83,26 @@ export default function CompletionModal({
   if (!booking) return null;
   const earnerName = booking.earner?.name || "the earner";
   const jobTitle = booking.job?.title || "this job";
+
+  // TWO numbers come off the pinned amount, and this sheet asserts both to the payer:
+  //
+  //   held on the card   = quoted - poster_discount_cents   (Stripe's authorizedCents)
+  //   released to earner = quoted - fee AFTER fee_credit_cents (the fee is the earner's side)
+  //
+  // Both benefits are pinned on the booking at INSERT and both were ignored here, so
+  // on any booking carrying a referral fee credit or a poster-discount grant this sheet
+  // overstated the hold and understated the payout — under the sentence "this is the
+  // amount you already authorized". The helpers mirror platform_fee_after_credit and
+  // stripe-create-payment-intent's authorizedCents; __tests__/benefitDisplay.test.js
+  // parses the migration so they cannot drift.
+  const discountCents = Math.max(0, booking.posterDiscountCents ?? 0);
+  const creditCents = Math.max(0, booking.feeCreditCents ?? 0);
+  const heldCents = quotedCents > 0 ? posterChargeCents(quotedCents, discountCents) : 0;
+  const releasedCents = earnerNetAfterCreditCents(quotedCents, booking.feeBpsQuoted, creditCents);
+  // A percentage is honest only when nothing else moved the fee. A credit means we keep
+  // less than the rate and a discount less again, so the parenthetical is dropped the
+  // same way effectiveFeeLabel already drops it when the processing floor binds.
+  const feeText = discountCents || creditCents ? null : effectiveFeeLabel(heldCents, booking.feeBpsQuoted);
 
   const confirm = async () => {
     if (reasonMissing) return; // guarded by the disabled button, belt-and-suspenders
@@ -136,7 +158,7 @@ export default function CompletionModal({
           </p>
           {!disputed && (
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-              Confirming releases <b className="text-ink">{money(earnerNetCents(heldCents, booking.feeBpsQuoted), { cents: true })}</b> to {earnerName} {effectiveFeeLabel(heldCents, booking.feeBpsQuoted) ? `(we keep a ${effectiveFeeLabel(heldCents, booking.feeBpsQuoted)} platform fee)` : "(minus the platform fee shown when you accepted)"}. No new charge — this is the amount you already authorized when you accepted.
+              Confirming releases <b className="text-ink">{money(releasedCents, { cents: true })}</b> to {earnerName} {feeText ? `(we keep a ${feeText} platform fee)` : "(minus the platform fee shown when you accepted)"}. No new charge — this is the amount you already authorized when you accepted.
             </p>
           )}
         </div>

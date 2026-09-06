@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { cacheGet, cacheSet } from '../lib/cache';
+import { cacheGet, cacheSet, cacheRemove } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb, logModerationBlock } from '../lib/moderation';
@@ -11,6 +11,7 @@ import { fetchMyTickets, ticketHasUnread } from '../lib/support';
 import { track, captureError } from '../lib/analytics';
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
+import { enteredStatus, bookingPosterId } from '../../shared/lifecycle.js';
 import { findCategory } from '../../shared/categories.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
@@ -18,7 +19,17 @@ import { useUser } from './UserContext';
 const JobsContext = createContext(null);
 
 const JOBS_CACHE     = 'jobs_v1';
-const BOOKINGS_CACHE = 'bookings_v1';
+// Bookings are PER ACCOUNT and must be keyed that way. Under the old shared
+// 'bookings_v1' key, a slow fetch that resolved after sign-out wrote the previous
+// user's bookings back into the one cache every account reads on mount — and the next
+// account's My Jobs, Earn badge and booked-gig cards were seeded from them for the
+// whole 5-minute TTL. cacheClear() on sign-out was the only thing between the two
+// accounts, it runs after an awaited network call, and it swallows every storage error.
+// Same shape as UserContext's `profile_${userId}`.
+const bookingsCacheKey = (userId) => `bookings_${userId}`;
+// The pre-2026-09 shared key. Removed on load so an upgrading device stops carrying
+// somebody else's booking list around in storage.
+const LEGACY_BOOKINGS_CACHE = 'bookings_v1';
 
 // ─── Transformers ────────────────────────────────────────────────────────────
 // transformJob / transformBooking now live in shared/transforms.js and are imported
@@ -27,12 +38,17 @@ const BOOKINGS_CACHE = 'bookings_v1';
 // ─── Cancellation-fee policy (record/display only — NO money moves) ──────────
 // 15% of the booking's effective pay (counterOffer ?? job pay; hourly is multiplied
 // by estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
-// transformJob row from state.jobs (carries payType + estimatedHours); booking.job
-// is a thin embed and may lack estimatedHours.
+// transformJob row from state.jobs (carries payType + estimatedHours).
+//
+// `hours` falls back to the booking's own job EMBED, which transformBooking now maps
+// for exactly this reason. Reading it only from `fullJob` meant that whenever no full
+// row was available — a finished gig that has aged out of the browse feed, or a caller
+// that passes none at all — payType still resolved to 'hourly' from the embed while
+// hours collapsed to 1, and the booking was valued at its hourly RATE.
 export function computeEffectivePay(booking, fullJob) {
   const payType = fullJob?.payType ?? booking?.job?.payType;
   const basePay = booking?.counterOffer ?? Number(fullJob?.pay ?? booking?.job?.pay) ?? 0;
-  const hours = Number(fullJob?.estimatedHours) || 1;
+  const hours = Number(fullJob?.estimatedHours ?? booking?.job?.estimatedHours) || 1;
   const effective = payType === 'hourly' ? basePay * hours : basePay;
   return Number.isFinite(effective) ? effective : 0;
 }
@@ -129,6 +145,12 @@ export function JobsProvider({ children }) {
   const myPostedIdsRef = useRef([]);
   myPostedIdsRef.current = state.myPostedIds;
 
+  // Which account this provider is rendering for. Assigned during render (not in an
+  // effect) so an in-flight load can tell it has been superseded without depending on
+  // effect ordering — the pattern UserContext.loadProfile uses with activeUserId.
+  const activeUserId = useRef(null);
+  activeUserId.current = user?.id ?? null;
+
   // Always-current view of state for callbacks that must NOT be re-created on every
   // list refresh (see refreshUnread) — reading through the ref keeps them correct
   // without making the reducer's array identities part of their dependency list.
@@ -195,7 +217,7 @@ export function JobsProvider({ children }) {
       // be marked read — leaving a permanent phantom badge until unblock.
       const otherOf = {};
       state.posterBookings.forEach(b => { if (b.earner?.id) otherOf[b.id] = b.earner.id; });
-      state.bookings.forEach(b => { const pid = state.jobs.find(j => j.id === b.jobId)?.posterId; if (pid) otherOf[b.id] = pid; });
+      state.bookings.forEach(b => { const pid = bookingPosterId(b, state.jobs); if (pid) otherOf[b.id] = pid; });
       const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])]
         .filter(id => !blockedIds.has(otherOf[id]));
       if (!ids.length) { setUnreadMessages(0); return; }
@@ -289,8 +311,15 @@ export function JobsProvider({ children }) {
 
   const loadBookings = async () => {
     if (!user) return;
-    const cached = await cacheGet(BOOKINGS_CACHE);
-    if (cached?.length) dispatch({ type: 'SET_BOOKINGS', bookings: cached });
+    // Pin the account this load belongs to and re-check it after every await: an
+    // unbounded bookings query on a slow link outlives a sign-out (the access token
+    // stays valid after a scope:'local' sign-out, so the request still succeeds), and
+    // its late result must not land in the next account's state or storage.
+    const uid = user.id;
+    const cacheKey = bookingsCacheKey(uid);
+    cacheRemove(LEGACY_BOOKINGS_CACHE);
+    const cached = await cacheGet(cacheKey);
+    if (cached?.length && activeUserId.current === uid) dispatch({ type: 'SET_BOOKINGS', bookings: cached });
 
     const { data, error } = await supabase
       .from('bookings')
@@ -302,9 +331,10 @@ export function JobsProvider({ children }) {
       .order('created_at', { ascending: false });
 
     if (error || !data) return;
+    if (activeUserId.current !== uid) return; // signed out / switched accounts mid-flight
     const bookings = data.map(transformBooking);
     dispatch({ type: 'SET_BOOKINGS', bookings });
-    cacheSet(BOOKINGS_CACHE, bookings);
+    cacheSet(cacheKey, bookings);
 
     // Arm local pre-gig reminders on (cold) load. The realtime accept handler only
     // schedules a reminder while the app is open + connected, so a booking the poster
@@ -366,6 +396,13 @@ export function JobsProvider({ children }) {
         filter: `earner_id=eq.${user.id}`,
       }, (payload) => {
         const b = payload.new;
+        // The status this client already holds for the row, read BEFORE the dispatch
+        // below overwrites it. A realtime UPDATE fires on ANY column change — including
+        // this user's own writes (started_at, earner_done, completion_photos, a poster
+        // rating on an already-verified booking) — and payload.old carries only the
+        // primary key, so the toasts below MUST be gated on a transition rather than on
+        // the row's current status. See enteredStatus in shared/lifecycle.js.
+        const prevStatus = stateRef.current.bookings.find(x => x.id === b.id)?.status;
         // Patch only scalar status fields — the raw realtime row carries no job/
         // earner join, so transforming it would null those out on the booking.
         dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: {
@@ -385,19 +422,21 @@ export function JobsProvider({ children }) {
           completedAt: b.completed_at || null,
           cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
         } });
-        if (b.status === 'confirmed') {
+        if (enteredStatus(prevStatus, b.status, 'confirmed')) {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
           if (b.starts_at) scheduleGigReminder(b.id, b.starts_at, b.slot_label);
         }
-        if (b.status === 'verified') {
+        if (enteredStatus(prevStatus, b.status, 'verified')) {
           const stars = `${Math.round(b.earner_rating || 5)}★`;
           showToast({ icon: '💚', title: 'Job Verified!', message: `${stars} rating — paid via ${b.payment_method || 'cash'}!` });
-          cancelGigReminder(b.id);
         }
-        if (b.status === 'declined' || b.status === 'cancelled') {
-          if (b.status === 'declined') showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
-          cancelGigReminder(b.id);
+        if (enteredStatus(prevStatus, b.status, 'declined')) {
+          showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
         }
+        // Cancelling the reminder stays unconditional: it is idempotent, and a finalized
+        // booking must never keep a pending local notification just because this client
+        // already knew the status.
+        if (['verified', 'declined', 'cancelled'].includes(b.status)) cancelGigReminder(b.id);
       })
       .subscribe();
 
@@ -408,6 +447,12 @@ export function JobsProvider({ children }) {
         schema: 'public',
         table: 'bookings',
       }, (payload) => {
+        // Snapshot the status we already hold BEFORE the refresh below replaces it —
+        // this handler fires on any column change to a booking on one of my gigs,
+        // including my own writes (proposeAmendment / clearAmendment) and the earner
+        // adding completion photos, so "is it completed?" is not the question. "Did it
+        // just BECOME completed?" is.
+        const prevStatus = stateRef.current.posterBookings.find(x => x.id === payload.new?.id)?.status;
         // Refresh poster bookings on any change — simple and reliable
         loadPosterBookings();
         // The channel also delivers the user's OWN bookings (they're a party via
@@ -416,7 +461,7 @@ export function JobsProvider({ children }) {
         if (payload.eventType === 'INSERT' && fromOther) {
           showToast({ icon: '🔔', title: 'New Booking Request!', message: 'Someone wants to book your gig!' });
         }
-        if (payload.new?.status === 'completed' && fromOther) {
+        if (fromOther && enteredStatus(prevStatus, payload.new?.status, 'completed')) {
           showToast({ icon: '⚡', title: 'Job Marked Complete!', message: 'An earner says the job is done — verify and rate them!' });
         }
       })
@@ -441,7 +486,12 @@ export function JobsProvider({ children }) {
 
   const bookJob = async (jobId, slotId, slotLabel, counterOffer, applicationNote) => {
     if (!user) return false;
-    const job = state.jobs.find(j => j.id === jobId);
+    // The browse feed is capped at the 200 newest non-cancelled gigs, so a gig opened
+    // from a saved bookmark, a conversation link or a deep link may be absent from it.
+    // When it was, `job` came back undefined and BOTH of the things that hang off it
+    // silently no-opped: the self-book guard below never ran, and the poster got no
+    // "New booking request" push for an application they now had to find by chance.
+    const job = state.jobs.find(j => j.id === jobId) || (await fetchJobById(jobId));
     if (job?.posterId === user.id) return false; // can't book own gig
 
     const tempId = `temp-${Date.now()}`;
@@ -508,7 +558,7 @@ export function JobsProvider({ children }) {
       showToast({ icon: '⚠️', title: "Couldn't start", message: 'Something went wrong — please try again.' });
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, 'Job started', `The worker has started "${booking.job?.title || 'a gig'}".`, { tab: 'GigsTab', type: 'booking' });
     }
@@ -543,7 +593,7 @@ export function JobsProvider({ children }) {
       // an undefined return was indistinguishable from success after a failed write.
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab', type: 'booking' });
     }
@@ -591,10 +641,11 @@ export function JobsProvider({ children }) {
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'verified', posterDone: true } });
     showToast({ icon: '✅', title: 'Payment released', message: "The poster didn't confirm in time, so your payment was released to you." });
     // The ghosting-poster case is exactly when the gig was soft-cancelled and is
-    // therefore absent from state.jobs (fetchJobs excludes cancelled), and the thin
-    // booking.job embed never carries posterId — so look it up directly (mirrors
-    // ratePoster) instead of the old always-undefined fallback.
-    let posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    // therefore absent from state.jobs (fetchJobs excludes cancelled). The booking's
+    // embed carries poster_id — this comment used to claim it never did, which is why
+    // the round-trip below exists; it is kept only as the last resort for a booking
+    // loaded before that column was selected.
+    let posterId = bookingPosterId(booking, state.jobs);
     if (!posterId && booking?.jobId) {
       const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
       posterId = jobRow?.poster_id;
@@ -769,8 +820,13 @@ export function JobsProvider({ children }) {
     // Cancellation-fee POLICY (record + display only — NO money moves). A poster
     // who cancels a CONFIRMED (held) booking owes the worker a fee; pending bookings
     // have no hold yet, so no fee. computeCancellationFee mirrors the effective pay.
+    // `fullJob` may be absent (capped/soft-cancelled feed) — computeEffectivePay falls
+    // back to the booking's embed for pay/payType, and the poster comes from the embed
+    // too. Resolving the poster only through the feed made `isPoster` false for a poster
+    // cancelling an off-feed gig, which sent them their OWN "The earner cancelled" push
+    // and skipped the cancellation-fee record their cancel is supposed to carry.
     const fullJob = state.jobs.find(j => j.id === booking?.jobId);
-    const posterId = fullJob?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     const isPoster = posterId && user?.id === posterId;
     let cancellationFee = null;
     if (isPoster && booking?.status === 'confirmed') {
@@ -965,6 +1021,15 @@ export function JobsProvider({ children }) {
       location: jobData.location, description: jobData.description,
       urgent: jobData.urgent,
     };
+    // estimated_hours is part of the PRICE of an hourly gig — trg_z_pin_booking_amount
+    // and stripe-create-payment-intent both compute the hold as pay x estimated_hours.
+    // It was missing from this patch while addJob wrote it, so an edit could move `pay`
+    // and `pay_type` while the multiplier stayed at whatever the gig was posted with:
+    // a flat gig switched to hourly kept its posted hours and every later booking pinned
+    // amount_cents_quoted at the wrong total. (web/lib/jobs.tsx has always written it.)
+    // guard_jobs_write pins the column once a booking is live, so this can only take
+    // effect while the gig is still unbooked.
+    if (jobData.estimatedHours !== undefined) dbPatch.estimated_hours = jobData.estimatedHours;
     if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
     // Privacy: snap public job coords to ~1km so a poster's exact address is
     // never published; the precise location is shared with the earner after booking.
@@ -1155,8 +1220,10 @@ export function JobsProvider({ children }) {
   const cancellationFeeFor = (bookingId) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     if (!booking || booking.status !== 'confirmed' || booking.startedAt) return 0;
+    // Must answer for an off-feed gig exactly as cancelBooking does, or the poster is
+    // quoted $0 and then charged the fee the cancel records.
     const fullJob = state.jobs.find(j => j.id === booking.jobId);
-    if (!fullJob || fullJob.posterId !== user?.id) return 0;
+    if (bookingPosterId(booking, state.jobs) !== user?.id) return 0;
     return computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
   };
 
@@ -1279,7 +1346,7 @@ export function JobsProvider({ children }) {
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: prevStatus } }); // roll back
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab', type: 'amendment' });
     }

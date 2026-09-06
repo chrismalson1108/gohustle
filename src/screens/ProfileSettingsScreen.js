@@ -24,6 +24,15 @@ import CategoryPicker from '../components/CategoryPicker';
 import { fetchCategories } from '../lib/categories';
 import { categoryLabel, resolveCategorySlug, sameCategory } from '../../shared/categories.js';
 
+// Refusal codes delete-account returns with a message worth showing verbatim.
+// MFA_REQUIRED and mfa_check_unavailable came with the step-up gate: without them
+// here, an account with two-factor on gets "Please try again, or email support." for
+// a refusal that is neither a retry nor a support issue.
+const DELETE_REFUSALS = [
+  'UNSETTLED_BOOKINGS', 'UNDER_REVIEW', 'REVIEW_CHECK_FAILED', 'SETTLEMENT_CHECK_FAILED',
+  'MFA_REQUIRED', 'mfa_check_unavailable',
+];
+
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
 const MAX_SKILLS = 12;
@@ -350,12 +359,12 @@ export default function ProfileSettingsScreen({ navigation }) {
       let msg = 'Please try again, or email support.';
       try {
         const body = await error.context?.json?.();
-        if (body?.message && ['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED','SETTLEMENT_CHECK_FAILED'].includes(body.error)) msg = body.message;
+        if (body?.message && DELETE_REFUSALS.includes(body.error)) msg = body.message;
       } catch (_) { /* keep the generic message */ }
       showToast({ icon: '❌', title: 'Could not delete', message: msg });
       return;
     }
-    if (['UNSETTLED_BOOKINGS','UNDER_REVIEW','REVIEW_CHECK_FAILED','SETTLEMENT_CHECK_FAILED'].includes(data?.error)) {
+    if (DELETE_REFUSALS.includes(data?.error)) {
       setDeleting(false);
       showToast({ icon: '❌', title: 'Could not delete', message: data.message });
       return;
