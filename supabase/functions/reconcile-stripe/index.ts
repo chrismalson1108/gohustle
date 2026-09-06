@@ -192,19 +192,81 @@ Deno.serve(async (req: Request) => {
       //    Safe to switch outright rather than straddle both behaviours: production has
       //    zero partial captures (verified), so there is no historical charge carrying
       //    a pre-Basil amount_refunded to misread.
+      //    ── AND ONE MORE REVERSAL SHAPE THAT IS NOT A REFUND (2026-09-06) ────
+      //
+      //    A LOST CHARGEBACK takes the money back and moves NO refund figure at Stripe:
+      //    a Dispute is not a Refund object, so charge.amount_refunded stays 0. Stripe
+      //    will not even let refunds.create touch a disputed charge (charge_disputed),
+      //    which is why the only way to ledger one is admin-payment-action's
+      //    `record_reversal` op — a ledger-only write that makes no Stripe call and is
+      //    exactly what RUNBOOK_MONEY §2 tells the operator to press.
+      //
+      //    So comparing refunded_cents against amount_refunded alone punished the
+      //    correct behaviour: every properly-recorded chargeback reported here as a
+      //    critical `refund_mismatch` (ours X, stripe 0) that no action could clear —
+      //    hand-resolving it re-opened it on the next sweep, because the open-rows
+      //    unique index only collapses duplicates while a row is OPEN. That is the same
+      //    permanent-false-positive shape as the cancelled-hold and partial-capture
+      //    traps above, and this file has now been bitten by it three times.
+      //
+      //    It cut the other way too, which is the worse half: a lost chargeback that
+      //    NOBODY recorded compared 0 against 0 and produced no finding at all. The
+      //    money left the platform balance and this control said nothing.
+      //
+      //    payments.refund_source is NOT the signal to read here. It is a short-lived
+      //    in-flight marker: record_refund clears it (and refund_source_at) on every
+      //    exit path, so by the time a chargeback is ledgered the column is null again.
+      //    Ask Stripe instead — the whole premise of this function is that the
+      //    processor, not our table, is the authority on what money moved.
       const authorizedCents = pi.amount ?? 0;
       const autoReleased = Math.max(0, authorizedCents - receivedCents);
-      const realRefundAtStripe = refundedAtStripe;
+
+      let disputeLostCents = 0;
+      let disputesUnreadable: string | null = null;
+      const disputeDetail: Record<string, unknown>[] = [];
+      if (charge?.disputed) {
+        try {
+          const dl = await stripe.disputes.list({ charge: charge.id, limit: 10 });
+          for (const d of dl.data) {
+            disputeDetail.push({ id: d.id, status: d.status, amount: d.amount ?? 0 });
+            // Only a LOST dispute is money that is gone for good, and it is the only
+            // outcome the runbook tells an operator to record. An open one has been
+            // withdrawn pending the outcome and our ledger is correctly still 0, so
+            // counting it would fire on every live dispute — noise, not signal.
+            if (d.status === "lost") disputeLostCents += d.amount ?? 0;
+          }
+        } catch (e) {
+          disputesUnreadable = String((e as Error)?.message ?? e).slice(0, 200);
+        }
+      }
+
+      // What Stripe says came back out, by BOTH mechanisms it has.
+      const reversedAtStripe = refundedAtStripe + disputeLostCents;
 
       const wasCaptured = Boolean(p.captured_at) || receivedCents > 0;
-      if (wasCaptured && Math.abs(realRefundAtStripe - ourRefunded) > TOLERANCE_CENTS) {
+      if (wasCaptured && disputesUnreadable) {
+        // Say "I could not measure" rather than quoting a number built on half the
+        // picture. A comparison that silently omits the dispute leg is exactly the
+        // false finding this block exists to stop.
+        problems.push({
+          kind: "dispute_unreadable",
+          ours: ourRefunded,
+          stripe_raw_refunded: refundedAtStripe,
+          error: disputesUnreadable,
+          note:
+            "the charge is disputed but disputes.list failed, so the reversal total " +
+            "cannot be computed — refund_mismatch is skipped rather than guessed.",
+        });
+      } else if (wasCaptured && Math.abs(reversedAtStripe - ourRefunded) > TOLERANCE_CENTS) {
         problems.push({
           kind: "refund_mismatch",
           ours: ourRefunded,
-          stripe: realRefundAtStripe,
+          stripe: reversedAtStripe,
           stripe_raw_refunded: refundedAtStripe,
+          stripe_disputed_lost: disputeLostCents,
+          disputes: disputeDetail,
           auto_released: autoReleased,
-          diff: realRefundAtStripe - ourRefunded,
+          diff: reversedAtStripe - ourRefunded,
         });
       }
 
