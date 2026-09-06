@@ -300,6 +300,13 @@ declare module "@gohustlr/shared" {
   // ── age ──
   export const MIN_AGE: number;
   export function parseDob(input: string | null | undefined): string | null;
+  /**
+   * Whole years old on `now`. A `Date` dob is read as the day it denotes: exactly UTC
+   * midnight (`new Date('YYYY-MM-DD')`, `Date.UTC(...)`) is a date-only value and is read
+   * in UTC; anything with a time-of-day is a local instant and is read locally. Reading a
+   * date-only Date locally shifts the DOB a day earlier west of UTC, which is how
+   * `isAdult` once admitted a 17-year-old on the eve of their birthday.
+   */
   export function computeAge(dob: string | Date | null | undefined, now?: Date): number | null;
   export function isAdult(dob: string | Date | null | undefined, now?: Date): boolean;
 
