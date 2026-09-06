@@ -591,6 +591,7 @@ it is the second half of a change that has not been done yet.
 | `importIntegrity.test.js` | a JSX component used but never imported — Metro does not resolve free identifiers, so this passes `expo export` and crashes on open |
 | `headerDuplication.test.js` | a screen printing its nav-bar title a second time in its own header |
 | `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
+| `partyPoliciesSuspensionAgnostic.test.js` | a party-scoped policy going back to `join public.jobs` to decide who is a party. A policy subquery runs as the QUERYING role, so it inherits `jobs_select_all` — which hides a suspended poster's job — and suspending someone then erased their counterparty's message thread, chat photos, completion photos and dispute, from the counterparty only. Use `private.is_booking_party` (20260906041000) |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
