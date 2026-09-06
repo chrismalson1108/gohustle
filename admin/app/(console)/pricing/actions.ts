@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
 import { audit } from "@/lib/audit";
+import { parseRecipients, resolveRecipients, grantSummary } from "@/lib/recipients";
 
 export interface ActionResult {
   ok: boolean;
@@ -97,38 +98,67 @@ export async function setTier(formData: FormData): Promise<ActionResult> {
   }
 }
 
+// The box is labelled "Emails or usernames", and a real win-back list is a mix of both.
+// It used to match the WHOLE list against profiles.username and only look up emails
+// `if (!ids.length)`, so a single username entry suppressed the email lookup for every
+// other entry — and the success message then attributed those dropped people to the
+// RPC's "already holding it" skip. Nine people never got the offer and the operator was
+// told they already had it.
+//
+// So each entry is resolved on its own, and the three outcomes stay distinct in the
+// message: granted, already held, matched nobody. The email half goes through
+// admin_find_user_ids (20260906092000) rather than a single listUsers page, which
+// silently stopped resolving anyone past the first thousand accounts.
 export async function grantToUsers(formData: FormData): Promise<ActionResult> {
   const promotionId = String(formData.get("promotionId") ?? "");
   const raw = String(formData.get("emails") ?? "").trim();
   if (!promotionId) return { ok: false, message: "Pick a promotion." };
-  if (!raw) return { ok: false, message: "Paste some emails." };
+  if (!raw) return { ok: false, message: "Paste some emails or usernames." };
 
-  const emails = raw.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (!emails.length) return { ok: false, message: "No usable emails." };
-  if (emails.length > 500) return { ok: false, message: "500 at a time, max." };
+  const entries = parseRecipients(raw);
+  if (!entries.length) return { ok: false, message: "No usable emails or usernames." };
+  if (entries.length > 500) return { ok: false, message: "500 at a time, max." };
 
   try {
     const ctx = await requireFreshAdmin("admin");
-    // Resolve through auth.users via the admin API surface the console already uses
-    // for team management; profiles has no email column.
-    const { data: profs, error: pErr } = await ctx.service
-      .from("profiles").select("id, username").in("username", emails);
-    let ids = (profs ?? []).map((p) => p.id);
 
-    if (!ids.length) {
-      // Fall back to matching auth emails through the service role.
-      const { data: authUsers } = await ctx.service.auth.admin.listUsers({ perPage: 1000 });
-      const byEmail = new Map((authUsers?.users ?? []).map((u) => [String(u.email ?? "").toLowerCase(), u.id]));
-      ids = emails.map((e) => byEmail.get(e)).filter(Boolean) as string[];
+    // Usernames, from profiles.
+    const { data: profs, error: pErr } = await ctx.service
+      .from("profiles").select("id, username").in("username", entries);
+    // A failed username query used to be swallowed, which quietly reclassified every
+    // username entry as "matched nobody". Say so instead — the operator can retry.
+    if (pErr) return { ok: false, message: pErr.message };
+    const byUsername = new Map<string, string>();
+    for (const p of profs ?? []) {
+      const uname = String(p.username ?? "").trim().toLowerCase();
+      if (uname && p.id) byUsername.set(uname, p.id as string);
     }
-    if (pErr && !ids.length) return { ok: false, message: pErr.message };
+
+    // Emails, from auth.users — for EVERY entry a username did not already claim, not
+    // only when the username pass came back empty. profiles has no email column, so this
+    // is a service-role RPC.
+    const byEmail = new Map<string, string>();
+    const remaining = entries.filter((e) => !byUsername.has(e));
+    if (remaining.length) {
+      const { data: rows, error: eErr } = await ctx.service
+        .rpc("admin_find_user_ids", { p_emails: remaining });
+      if (eErr) return { ok: false, message: eErr.message };
+      for (const r of (rows ?? []) as { lookup_email: string | null; user_id: string | null }[]) {
+        const addr = String(r.lookup_email ?? "").trim().toLowerCase();
+        if (addr && r.user_id) byEmail.set(addr, r.user_id);
+      }
+    }
+
+    const { ids, unmatched } = resolveRecipients(entries, byUsername, byEmail);
     if (!ids.length) return { ok: false, message: "None of those matched a user." };
 
     // Before the RPC — this hands a campaign benefit directly to named people, which is
     // the console action most worth being able to attribute after the fact. `granted` is
     // not known yet, so the intent is recorded here and the count follows in the result.
+    // The unmatched entries are recorded too: they are the half a later reader would
+    // otherwise have to infer from a count that does not add up.
     await audit(ctx, "promotion.grant_direct", "promotion", promotionId, {
-      requested: emails.length, user_ids: ids.length,
+      requested: entries.length, user_ids: ids.length, unmatched,
     });
 
     const { data: n, error } = await ctx.service.rpc("grant_promotion_to_users", {
@@ -138,7 +168,7 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
     revalidatePath("/pricing");
     return {
       ok: true,
-      message: `Granted to ${n} of ${emails.length}. Anyone already holding it was skipped.`,
+      message: grantSummary({ granted: Number(n ?? 0), matched: ids.length, unmatched }),
     };
   } catch (e) {
     if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
