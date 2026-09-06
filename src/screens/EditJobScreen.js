@@ -46,6 +46,11 @@ export default function EditJobScreen({ route, navigation }) {
     categorySlug: resolveCategorySlug(job?.categorySlug || job?.category),
     pay: String(job?.pay || ''),
     payType: job?.payType || 'flat',
+    // The escrow hold for an hourly gig is pay x estimated_hours (trg_z_pin_booking_amount
+    // and stripe-create-payment-intent both multiply by it), so this is part of the price
+    // and has to be editable here — not only at post time. Seed from the gig; 2 matches
+    // the column default for a gig that predates the field.
+    estHours: job?.estimatedHours != null ? String(job.estimatedHours) : '2',
     location: job?.location || '',
     description: job?.description || '',
     requirements: (job?.requirements || []).join('\n'),
@@ -247,6 +252,14 @@ export default function EditJobScreen({ route, navigation }) {
       const ok = await updateJob(jobId, {
         title: form.title, category: form.category, categorySlug: form.categorySlug,
         pay, payType: form.payType,
+        // Only sent for hourly gigs, because that is the only pay type the escrow
+        // multiplier reads. A flat gig's stored hours is left alone on purpose: the
+        // safety check-in window derives from estimated_hours regardless of pay type
+        // (20260806180000_gig_safety.sql), so overwriting it here would silently
+        // shorten a flat gig's "are you OK?" timer as a side effect of an unrelated edit.
+        ...(form.payType === 'hourly'
+          ? { estimatedHours: Math.max(1, parseFloat(form.estHours) || 1) }
+          : {}),
         location: form.location, description: form.description,
         // Removing every time slot falls back to a bookable "Flexible" slot (same
         // as posting) so an edit can never strand the gig slot-less.
@@ -430,6 +443,29 @@ export default function EditJobScreen({ route, navigation }) {
               </Text>
             )}
           </Field>
+
+          {form.payType === 'hourly' && (
+            <Field label={`Estimated hours *${isLocked && !canEditPay ? '  (locked)' : ''}`}>
+              {canEditPay ? (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 3"
+                    value={form.estHours}
+                    onChangeText={v => set('estHours', v)}
+                    keyboardType="numeric"
+                    placeholderTextColor={colors.textMuted}
+                    inputAccessoryViewID={KEYBOARD_DONE_ID}
+                  />
+                  <Text style={styles.payHint}>
+                    Used to hold {form.pay ? `~$${((parseFloat(form.pay) || 0) * (parseFloat(form.estHours) || 0)).toFixed(0)}` : 'the estimated total'} on your card. The final charge is based on verified work.
+                  </Text>
+                </>
+              ) : (
+                <View style={[styles.input, styles.lockedInput]}><Text style={styles.lockedValue}>{form.estHours}</Text></View>
+              )}
+            </Field>
+          )}
 
           <Field label={`Location *${isLocked && !canEditCore ? '  (locked)' : ''}`}>
             {canEditCore
