@@ -10,7 +10,10 @@ import { supabase } from "./supabaseClient";
 // supabase-js surfaces a non-2xx as a FunctionsHttpError with the Response on
 // .context; the edge function also returns { error: 'rate_limited' } in the body.
 // Checked defensively because the shape differs across supabase-js versions.
-function isRateLimited(error: unknown, data: { error?: string } | null): boolean {
+// Exported because uploadImage.ts needs the SAME test for moderate-image's 429 —
+// two copies of "is this the user's own quota?" is how the image path ended up
+// failing open while the text path failed closed.
+export function isRateLimited(error: unknown, data: { error?: string } | null): boolean {
   if (data && data.error === "rate_limited") return true;
   if (!error) return false;
   const e = error as { context?: { status?: number }; status?: number; message?: string };

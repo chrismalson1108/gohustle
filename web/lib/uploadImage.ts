@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { isRateLimited } from "./moderation";
 
 // Only raster image types may be uploaded. Defense-in-depth that fails fast on the
 // client and mirrors the storage-bucket allowed_mime_types allowlist (the DB-level
@@ -18,11 +19,24 @@ function assertSafeImageType(file: File): void {
 // Server-side image moderation (Claude vision via the moderate-image function).
 // Runs right after an object lands in Storage. Throws a user-facing error when the
 // image violates policy (the object is deleted server-side). Fails open on
-// invocation/network errors so a moderation outage doesn't block legit uploads.
-async function moderateOrThrow(bucket: string, path: string): Promise<void> {
+// invocation/network errors so a moderation outage doesn't block legit uploads —
+// but fails CLOSED on the caller's own rate limit, see below.
+export async function moderateOrThrow(bucket: string, path: string): Promise<void> {
   try {
     const { data, error } = await supabase.functions.invoke("moderate-image", { body: { bucket, path } });
-    const result = data as { allowed?: boolean; reason?: string } | null;
+    const result = data as { allowed?: boolean; reason?: string; error?: string } | null;
+    // A 429 is NOT an outage — it is the caller's own quota, which they can exhaust
+    // on purpose with junk calls and then upload anything. Image moderation is the
+    // only scanning layer images have, and avatars / job-photos / certificates
+    // render to everyone, so a self-inflicted failure must block. Lockstep with
+    // src/lib/uploadImage.js, and with moderateText(), which has drawn this line
+    // since the same hole was closed on the text path.
+    if (isRateLimited(error, result)) {
+      const e = new Error("You've checked a lot of photos just now. Wait a minute and try again.");
+      (e as Error & { blocked?: boolean; rateLimited?: boolean }).blocked = true;
+      (e as Error & { blocked?: boolean; rateLimited?: boolean }).rateLimited = true;
+      throw e;
+    }
     if (!error && result && result.allowed === false) {
       // 'too_large' is a rejection, not a policy verdict — the scanner can't read the
       // file, so "violates our content policy" would be a lie to someone who just

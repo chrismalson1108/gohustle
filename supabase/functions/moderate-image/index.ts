@@ -6,6 +6,9 @@
 // Fails OPEN (allows) on any config/download/API error so a provider hiccup can't
 // block every upload; failures are logged loudly for monitoring. Reuses the
 // ANTHROPIC_API_KEY already configured for the assistant.
+//
+// It fails CLOSED on the two conditions a user can arrange for themselves: an
+// object too large to scan, and their own rate limit. See those branches.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -71,7 +74,26 @@ Deno.serve(async (req: Request) => {
         supabase.from('moderation_rate').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sinceDay),
       ]);
       if ((perMin ?? 0) > 20 || (perDay ?? 0) > 500) {
-        return json({ error: 'rate_limited' }, 429);
+        // Fail CLOSED, and at HTTP 200 on purpose.
+        //
+        // This used to be `json({ error: 'rate_limited' }, 429)`. supabase-js
+        // surfaces any non-2xx as a FunctionsHttpError with `data === null`, and
+        // both image wrappers only block on `!error && data.allowed === false` —
+        // so a 429 landed in their fail-open branch and the upload completed with
+        // the object already in Storage and its public URL written to the DB. That
+        // made a user's own quota a self-service kill switch for the ONLY scanning
+        // layer images have (there is no keyword equivalent for pixels), on buckets
+        // that render to every user. Exactly the reasoning moderateText() already
+        // carries for its 429; the image path never got it.
+        //
+        // Everything else here allows on failure because the failure is a SYSTEM
+        // condition a user cannot arrange. Quota exhaustion is arranged by the user,
+        // so it belongs with `too_large`, not with `api_error`.
+        //
+        // 200 means every wrapper — including builds shipped before this change —
+        // blocks on `allowed === false` without needing an update. `error` is echoed
+        // in the body so a caller sniffing for the old key still recognizes it.
+        return json({ allowed: false, reason: 'rate_limited', error: 'rate_limited' });
       }
       // Opportunistic cleanup so the table stays bounded per active user.
       supabase.from('moderation_rate').delete().eq('user_id', user.id).lt('created_at', sinceDay).then(() => {}, () => {});
