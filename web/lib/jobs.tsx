@@ -11,7 +11,7 @@ import React, {
 } from "react";
 import { transformJob, transformBooking, findProhibited, enteredStatus } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
-import { cacheGet, cacheSet } from "./cache";
+import { cacheGet, cacheSet, cacheRemove } from "./cache";
 import { stripeEdge } from "./edge";
 import { notify } from "./push";
 import { fetchBlockedIds, blockUserDb, logModerationBlock } from "./moderation";
@@ -24,7 +24,13 @@ import type { Job, Booking } from "./types";
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus, type ConnectStatus } from "./connectStatus";
 
 const JOBS_CACHE = "jobs_v1";
-const BOOKINGS_CACHE = "bookings_v1";
+// Bookings are PER ACCOUNT and must be keyed that way — a shared "bookings_v1" key
+// lets a fetch that resolves after sign-out seed the next account's My Jobs from the
+// previous user's bookings for the whole 5-minute TTL. Mirrors src/context/JobsContext.js.
+const bookingsCacheKey = (userId: string) => `bookings_${userId}`;
+// The pre-2026-09 shared key, removed on load so an upgrading browser stops holding
+// someone else's booking list in localStorage.
+const LEGACY_BOOKINGS_CACHE = "bookings_v1";
 
 // Codes from accept-booking that a retry can never fix — surface them immediately.
 const ACCEPT_PERMANENT_CODES = new Set([
@@ -251,6 +257,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Which account this provider is rendering for — assigned during render so an
+  // in-flight load can tell it has been superseded (mirrors UserContext.activeUserId).
+  const activeUserId = useRef<string | null>(null);
+  activeUserId.current = user?.id ?? null;
+
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -405,9 +416,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const loadBookings = async () => {
     if (!user) return;
+    // Pin the account this load belongs to and re-check it after every await — a slow
+    // query outlives a sign-out, and its late result must not reach the next account.
+    const uid = user.id;
+    const cacheKey = bookingsCacheKey(uid);
     try {
-      const cached = await cacheGet<Booking[]>(BOOKINGS_CACHE);
-      if (cached?.length) dispatch({ type: "SET_BOOKINGS", bookings: cached });
+      cacheRemove(LEGACY_BOOKINGS_CACHE);
+      const cached = await cacheGet<Booking[]>(cacheKey);
+      if (cached?.length && activeUserId.current === uid) dispatch({ type: "SET_BOOKINGS", bookings: cached });
 
       const bookingsSelect = (job: string) => `*, job:jobs!bookings_job_id_fkey(${job})`;
       let { data, error } = await supabase
@@ -424,9 +440,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (error || !data) return;
+      if (activeUserId.current !== uid) return; // signed out / switched accounts mid-flight
       const bookings = (data as unknown as Record<string, unknown>[]).map(transformBooking) as Booking[];
       dispatch({ type: "SET_BOOKINGS", bookings });
-      cacheSet(BOOKINGS_CACHE, bookings);
+      cacheSet(cacheKey, bookings);
     } finally {
       setBookingsLoading(false);
     }

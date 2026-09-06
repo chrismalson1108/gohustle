@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { cacheGet, cacheSet } from '../lib/cache';
+import { cacheGet, cacheSet, cacheRemove } from '../lib/cache';
 import { stripeEdge } from '../lib/stripeClient';
 import { notify, scheduleGigReminder, cancelGigReminder } from '../lib/push';
 import { fetchBlockedIds, blockUserDb, logModerationBlock } from '../lib/moderation';
@@ -19,7 +19,17 @@ import { useUser } from './UserContext';
 const JobsContext = createContext(null);
 
 const JOBS_CACHE     = 'jobs_v1';
-const BOOKINGS_CACHE = 'bookings_v1';
+// Bookings are PER ACCOUNT and must be keyed that way. Under the old shared
+// 'bookings_v1' key, a slow fetch that resolved after sign-out wrote the previous
+// user's bookings back into the one cache every account reads on mount — and the next
+// account's My Jobs, Earn badge and booked-gig cards were seeded from them for the
+// whole 5-minute TTL. cacheClear() on sign-out was the only thing between the two
+// accounts, it runs after an awaited network call, and it swallows every storage error.
+// Same shape as UserContext's `profile_${userId}`.
+const bookingsCacheKey = (userId) => `bookings_${userId}`;
+// The pre-2026-09 shared key. Removed on load so an upgrading device stops carrying
+// somebody else's booking list around in storage.
+const LEGACY_BOOKINGS_CACHE = 'bookings_v1';
 
 // ─── Transformers ────────────────────────────────────────────────────────────
 // transformJob / transformBooking now live in shared/transforms.js and are imported
@@ -129,6 +139,12 @@ export function JobsProvider({ children }) {
 
   const myPostedIdsRef = useRef([]);
   myPostedIdsRef.current = state.myPostedIds;
+
+  // Which account this provider is rendering for. Assigned during render (not in an
+  // effect) so an in-flight load can tell it has been superseded without depending on
+  // effect ordering — the pattern UserContext.loadProfile uses with activeUserId.
+  const activeUserId = useRef(null);
+  activeUserId.current = user?.id ?? null;
 
   // Always-current view of state for callbacks that must NOT be re-created on every
   // list refresh (see refreshUnread) — reading through the ref keeps them correct
@@ -290,8 +306,15 @@ export function JobsProvider({ children }) {
 
   const loadBookings = async () => {
     if (!user) return;
-    const cached = await cacheGet(BOOKINGS_CACHE);
-    if (cached?.length) dispatch({ type: 'SET_BOOKINGS', bookings: cached });
+    // Pin the account this load belongs to and re-check it after every await: an
+    // unbounded bookings query on a slow link outlives a sign-out (the access token
+    // stays valid after a scope:'local' sign-out, so the request still succeeds), and
+    // its late result must not land in the next account's state or storage.
+    const uid = user.id;
+    const cacheKey = bookingsCacheKey(uid);
+    cacheRemove(LEGACY_BOOKINGS_CACHE);
+    const cached = await cacheGet(cacheKey);
+    if (cached?.length && activeUserId.current === uid) dispatch({ type: 'SET_BOOKINGS', bookings: cached });
 
     const { data, error } = await supabase
       .from('bookings')
@@ -303,9 +326,10 @@ export function JobsProvider({ children }) {
       .order('created_at', { ascending: false });
 
     if (error || !data) return;
+    if (activeUserId.current !== uid) return; // signed out / switched accounts mid-flight
     const bookings = data.map(transformBooking);
     dispatch({ type: 'SET_BOOKINGS', bookings });
-    cacheSet(BOOKINGS_CACHE, bookings);
+    cacheSet(cacheKey, bookings);
 
     // Arm local pre-gig reminders on (cold) load. The realtime accept handler only
     // schedules a reminder while the app is open + connected, so a booking the poster
