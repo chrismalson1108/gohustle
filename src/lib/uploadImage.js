@@ -9,6 +9,7 @@ import { Platform, ActionSheetIOS, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
+import { isRateLimited } from './moderation';
 
 async function runLibrary({ multiple }) {
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -69,8 +70,9 @@ export async function pickImage(opts = {}) {
 // Server-side image moderation (Claude vision via the moderate-image function).
 // Called right after an object lands in Storage. Throws a user-facing error when
 // the image violates policy (the object is deleted server-side). Fails open on
-// invocation/network errors so a moderation outage doesn't block legit uploads.
-async function moderateOrThrow(bucket, path) {
+// invocation/network errors so a moderation outage doesn't block legit uploads —
+// but fails CLOSED on the caller's own rate limit, see below.
+export async function moderateOrThrow(bucket, path) {
   try {
     // Race the invoke against a timeout so a stalled Claude-vision call can't hang
     // the whole upload (chat send, mark-done photos, gig posting). A timeout resolves
@@ -78,6 +80,20 @@ async function moderateOrThrow(bucket, path) {
     const invoke = supabase.functions.invoke('moderate-image', { body: { bucket, path } });
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: 'timeout' }), 8000));
     const { data, error } = await Promise.race([invoke, timeout]);
+    // A 429 is NOT an outage — it is the caller's own quota, which they can exhaust
+    // on purpose with junk calls and then upload anything. Image moderation is the
+    // only scanning layer images have, and avatars / job-photos / certificates
+    // render to everyone, so a self-inflicted failure must block. moderateText()
+    // has drawn this line since the same hole was closed on the text path; the
+    // image path is only now catching up. moderate-image now answers 200 with
+    // allowed:false, so this branch is belt-and-braces for an older deployment of
+    // the function (or a gateway-level 429) still replying with a status.
+    if (isRateLimited(error, data)) {
+      const e = new Error("You've checked a lot of photos just now. Wait a minute and try again.");
+      e.blocked = true;
+      e.rateLimited = true;
+      throw e;
+    }
     if (!error && data && data.allowed === false) {
       // 'too_large' is a rejection, not a policy verdict — the scanner can't read
       // the file, so saying "violates our content policy" would be a lie to someone
