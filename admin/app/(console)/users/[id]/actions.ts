@@ -106,6 +106,31 @@ async function run(
   }
 }
 
+// "Sign out of all devices" has to mean the devices too.
+//
+// Revoking refresh sessions leaves `push_tokens` untouched, so a phone whose session
+// was killed kept receiving that account's booking, message and payment notifications
+// on its lock screen — indefinitely, since the row is only ever evicted when ANOTHER
+// account signs in on that device (trg_push_tokens_evict_stale_device) or the app is
+// uninstalled (send-push's DeviceNotRegistered pruning).
+//
+// The app cannot close this itself. On a natural expiry auth-js clears the stored
+// session BEFORE emitting SIGNED_OUT, so a client-side DELETE goes out unauthenticated
+// and owner RLS matches nothing; src/context/AuthContext.js used to try anyway. The
+// service role is the only caller that can, which is why it lives here.
+//
+// Best-effort by design: it must never fail a suspension. The count is returned so the
+// audit row records what actually happened rather than what was intended.
+async function clearPushTokens(ctx: Ctx, userId: string): Promise<number | string> {
+  const { data, error } = await ctx.service
+    .from("push_tokens")
+    .delete()
+    .eq("user_id", userId)
+    .select("token");
+  if (error) return `error: ${error.message}`;
+  return data?.length ?? 0;
+}
+
 export async function suspendUser(formData: FormData): Promise<ActionResult> {
   const userId = String(formData.get("userId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
@@ -126,8 +151,14 @@ export async function suspendUser(formData: FormData): Promise<ActionResult> {
     const { data: revoked, error: rErr } = await ctx.service.rpc("admin_revoke_sessions", {
       target: userId,
     });
+    // Their devices stop being their devices: see clearPushTokens above. A suspended
+    // account that keeps buzzing with booking and message alerts is both a wrong signal
+    // and, on a suspension that followed a report, a live channel to the person who
+    // filed it. They re-register on their next sign-in, which is gated on the unban.
+    const devices = await clearPushTokens(ctx, userId);
     return {
       sessions_revoked: rErr ? `error: ${rErr.message}` : revoked,
+      push_tokens_cleared: devices,
       __message:
         "Suspended. New logins are blocked immediately; if they're currently signed in, " +
         "that session ends when its token expires (up to ~1h).",
@@ -163,11 +194,14 @@ export async function forceSignOut(formData: FormData): Promise<ActionResult> {
       target: userId,
     });
     if (error) throw new Error(`session revoke failed: ${error.message}`);
+    const devices = await clearPushTokens(ctx, userId);
     return {
       sessions_revoked: revoked,
+      push_tokens_cleared: devices,
       __message:
-        `Revoked ${revoked ?? 0} session(s). They can't get a new token, but their ` +
-        `current one stays valid until it expires (up to ~1h) — Supabase can't kill an active JWT instantly.`,
+        `Revoked ${revoked ?? 0} session(s) and cleared ${typeof devices === "number" ? devices : 0} ` +
+        `push device(s). They can't get a new token, but their current one stays valid until it ` +
+        `expires (up to ~1h) — Supabase can't kill an active JWT instantly.`,
     };
   });
 }

@@ -119,14 +119,27 @@ export function AuthProvider({ children }) {
       if (!session?.user) {
         setOnbDone(true); setNeedsTerms(false); setOnbResolved(true); setLoading(false); // signed out → reset gates
         // A NATURAL session expiry (refresh-token failure) fires here WITHOUT going
-        // through signOut(), which is the only place that cleared cache + push token.
-        // Without this, the next account on the device could briefly see the previous
-        // user's cached bookings and the device kept receiving their notifications.
+        // through signOut(), which is the only place that clears the cache. Without
+        // this, the next account on the device could briefly see the previous user's
+        // cached bookings.
         // Only when we actually HAD a user (not a cold-start null). Idempotent with signOut().
-        if (prevUserId) {
-          cacheClear();
-          unregisterPushToken(prevUserId).catch(() => {});
-        }
+        //
+        // ⚠️ The push token CANNOT be cleaned up here, and this used to call
+        // unregisterPushToken() as though it could. auth-js `_removeSession()` clears
+        // the stored session and THEN emits SIGNED_OUT (GoTrueClient), and supabase-js
+        // falls back to the anon key when getSession() returns nothing — so the DELETE
+        // went out unauthenticated, `auth.uid()` was null, `push_tokens_delete_own`
+        // matched zero rows, and PostgREST answered 204. A no-op that reports success,
+        // under a comment claiming the device stopped receiving notifications.
+        //
+        // signOut() gets away with it only because it AWAITS the delete BEFORE revoking
+        // (see below); an expiry has no session left to spend. What actually evicts a
+        // stale row: `trg_push_tokens_evict_stale_device` when another account signs in
+        // on the same device, `send-push`'s DeviceNotRegistered pruning when the app is
+        // uninstalled, and — for a revoked or suspended account, where it matters most —
+        // the console's forceSignOut/suspend, which clear push_tokens with the service
+        // role precisely because the client cannot.
+        if (prevUserId) cacheClear();
       }
       // With a user, the keyed onboarding effect below owns loading + onboarding.
     });
