@@ -121,3 +121,81 @@ describe('claim gates anchor on the current hold', () => {
     expect(code).not.toMatch(/new Date\(holdRow\.created_at\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A claim that captures NOTHING is a money failure, not a retry hint.
+//
+// The capture call was wrapped in `catch (_capErr) {}` on the assumption that the only
+// thing that throws there is a lost race to a concurrent poster capture. It is not: a
+// hold Stripe already voided (the canceled webhook never arrived) and a recovery re-hold
+// written 'authorized' at PI creation and never confirmed both throw the same way. The
+// error was dropped, the re-retrieve read amount_received = 0, and the function answered
+// 502 'Could not release the payment. Please try again.' with NO logServerError — so the
+// earner retried daily into the same silence and /errors never showed a worker unpaid on
+// work they had done. The sibling stripe-capture-payment lets that same failure reach
+// its terminal catch, which logs it fatal.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a claim that captures nothing is logged and named', () => {
+  const fs3 = require('fs');
+  const path3 = require('path');
+  const src = fs3.readFileSync(
+    path3.join(__dirname, '..', 'supabase', 'functions', 'earner-claim-payment', 'index.ts'),
+    'utf8',
+  );
+  // Comments name the statuses and the codes; assert on the code itself.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  /** The `if (…) { … }` block whose head is `head`, brace-matched. */
+  const blockAt = (head) => {
+    const start = code.indexOf(head);
+    expect(`${head} present: ${start > -1}`).toBe(`${head} present: true`);
+    let depth = 0;
+    for (let i = code.indexOf('{', start); i < code.length; i += 1) {
+      if (code[i] === '{') depth += 1;
+      else if (code[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return code.slice(start, i + 1);
+      }
+    }
+    throw new Error(`unterminated block at ${head}`);
+  };
+
+  it('keeps the capture error instead of discarding it', () => {
+    const captureBlock = blockAt('if (!capturedOnStripe) {');
+    const caught = /catch \((\w+)\)/.exec(captureBlock);
+    expect(caught).not.toBeNull();
+    // `catch (_capErr)` is the bug in one character: the underscore declares the error
+    // deliberately unused, and unused is what made every non-race failure invisible.
+    expect(`${caught[1]} discarded: ${caught[1].startsWith('_')}`)
+      .toBe(`${caught[1]} discarded: false`);
+    // …and it must actually be READ somewhere else, not merely bound.
+    const uses = code.split(caught[1]).length - 1;
+    expect(`${caught[1]} is read outside its own catch: ${uses > 1}`)
+      .toBe(`${caught[1]} is read outside its own catch: true`);
+  });
+
+  it('logs to /errors before answering the earner', () => {
+    const zero = blockAt('if (capturedCents <= 0) {');
+    expect(zero).toContain('logServerError');
+    // The ids an operator needs at 2am, plus Stripe's own verdict on the intent.
+    for (const key of ['booking_id', 'payment_id', 'payment_intent_id', 'pi_status', 'stripe_code']) {
+      expect(`${key} logged: ${zero.includes(key)}`).toBe(`${key} logged: true`);
+    }
+    // Terminal at Stripe is a FATAL money event — that capture can never succeed, so
+    // the hold has to be re-placed by a human. A transient failure is logged, not paged.
+    expect(zero).toMatch(/fatal:/);
+    expect(zero).toMatch(/'canceled'/);
+    expect(zero).toMatch(/'requires_payment_method'/);
+  });
+
+  it('names the failure instead of telling the earner to retry forever', () => {
+    const zero = blockAt('if (capturedCents <= 0) {');
+    // A voided hold and a hold that was never confirmed have different remedies and
+    // already have different codes in this codebase (stripe-capture-payment,
+    // accept-booking). Reuse them rather than one opaque CAPTURE_FAILED.
+    expect(zero).toContain('HOLD_EXPIRED');
+    expect(zero).toContain('HOLD_NOT_AUTHORIZED');
+    // The old copy instructed the earner to do the one thing that cannot work.
+    expect(zero).not.toMatch(/Please try again/);
+  });
+});
