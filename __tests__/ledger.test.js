@@ -129,6 +129,52 @@ describe('ledgerCsv', () => {
     const csv = ledgerCsv([entry({ title: 'Bob\'s "big" move' })], 'earner');
     expect(csv).toContain('"Bob\'s ""big"" move"');
   });
+
+  // The export is dated in LOCAL time because everything that selected and grouped
+  // those rows was: rangeBounds() bounds a tax year with new Date(y, 0, 1), byMonth()
+  // keys on getFullYear()/getMonth(), and the screen prints toLocaleDateString(). A UTC
+  // date in the file files a row outside the year the statement claims to cover, and
+  // the person exporting it is reconciling against it.
+  //
+  // process.env.TZ cannot be used to force a zone here — jest sandboxes process.env, so
+  // assigning it never reaches V8's timezone notification. So the case is built from
+  // THIS machine's offset instead, in whichever direction it runs.
+  const csvDate = (at) => ledgerCsv([entry({ at })], 'earner').split('\n')[1].split(',')[0].replace(/"/g, '');
+  const pad = (n) => String(n).padStart(2, '0');
+  const localDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // An instant on one side of local midnight whose UTC calendar day is the other one.
+  // West of UTC that is the last half hour of 31 Dec; east of it, the first half hour
+  // of 1 Jan. Exactly at UTC no such instant exists, and the source guard below is what
+  // covers that machine.
+  const westOfUtc = new Date(2027, 0, 1).getTimezoneOffset() > 0;
+  const straddle = westOfUtc ? new Date(2026, 11, 31, 23, 30) : new Date(2027, 0, 1, 0, 30);
+
+  it('dates a settlement on the day the screen shows it, not the UTC day', () => {
+    expect(csvDate(straddle.toISOString())).toBe(localDay(straddle));
+  });
+
+  it('agrees with the month bucket the same entry is filed under', () => {
+    const at = straddle.toISOString();
+    const [bucket] = byMonth([entry({ at })]);
+    // byMonth's key is YYYY-MM, keyed on the LOCAL month; the CSV must file it there.
+    expect(csvDate(at).slice(0, 7)).toBe(bucket.key);
+  });
+
+  it('and that case really is one the old UTC formatting got wrong', () => {
+    // Only meaningful off UTC — where it is meaningful, it proves the two disagree, so
+    // the assertions above are not passing by coincidence.
+    if (new Date(2027, 0, 1).getTimezoneOffset() === 0) return;
+    expect(straddle.toISOString().slice(0, 10)).not.toBe(localDay(straddle));
+  });
+
+  it('never reaches for UTC to date a row the screen dated locally', () => {
+    // The guard that holds on a UTC machine, where no instant straddles.
+    const fs = require('fs');
+    const path = require('path');
+    const lib = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'payments.js'), 'utf8');
+    const fn = lib.slice(lib.indexOf('export function ledgerCsv'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).not.toMatch(/toISOString/);
+  });
 });
 
 const { rangeBounds, filterEntries, stats, monthlyTotals, STATUS_FILTERS } = require('../src/lib/payments');
