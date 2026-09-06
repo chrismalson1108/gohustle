@@ -5,7 +5,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Port of supabase/functions/delete-account/index.ts for ADMIN-initiated
 // deletion (the edge function authenticates the account owner; here the caller
 // is a vetted admin). Same sequence: storage objects → escrow-hold release →
-// auth.admin.deleteUser (cascades profile + user rows). Keep the two in sync.
+// support-ticket scrub → tombstone the profile → neutralise and permanently ban the
+// auth row. Keep the two in sync.
+//
+// This header used to end "auth.admin.deleteUser (cascades profile + user rows)", and
+// so did the code — which is the whole of the defect fixed on 2026-09-05. The edge
+// function stopped deleting the auth user on 2026-08-13 because that cascade reaches
+// the COUNTERPARTY's records; the console path was left behind and kept doing it.
+// See step 4.
+//
 // `certificates` was missing here and in the edge function, so uploaded credential
 // documents survived deletion in a public bucket. Keep this list in sync.
 const BUCKETS = [
@@ -146,7 +154,50 @@ export async function deleteUserCascade(service: SupabaseClient, userId: string)
     console.error("admin deleteUserCascade: support ticket scrub threw", e);
   }
 
-  // 4. Delete the auth user → cascades profile + all user-scoped rows.
-  const { error } = await service.auth.admin.deleteUser(userId);
-  if (error) throw new Error(`auth delete failed: ${error.message}`);
+  // 4. TOMBSTONE the profile — do NOT delete the auth user.
+  //
+  // `profiles_id_fkey` references auth.users ON DELETE CASCADE, and the cascade runs
+  // profiles → jobs → bookings → payments (jobs.poster_id and bookings.job_id are both
+  // CASCADE; so is payments.booking_id). PROVEN on a staged row by 20260813150000: a
+  // booking and its payment went 1 → 0.
+  //
+  // The step-0 gate above only blocks confirmed/completed bookings, so what the cascade
+  // took was precisely the VERIFIED, PAID work — every earner's record of money they had
+  // actually been paid, which is their Transactions statement, their Tax Center income
+  // and their 1099 evidence. They did not ask for anything to be deleted, and deleting a
+  // poster is not consent to erase their counterparties' financial records.
+  //
+  // The edge function was rewritten to tombstone for exactly this reason and this file
+  // says it is a port of it. It was not. Same sequence now: scrub the profile of every
+  // identifier and KEEP the row, then empty and permanently ban the auth row so the
+  // account can never be signed into again and the real email is freed for reuse.
+  //
+  // Order matters: tombstone BEFORE touching auth, and fail closed if it does not take —
+  // proceeding on a failed scrub is how an account ends up half-deleted with its
+  // identifiers intact. `ctl_tombstone_leaks_pii` watches for that state.
+  const { data: tombstoned, error: tombErr } = await service.rpc("tombstone_profile", {
+    p_user: userId,
+  });
+  if (tombErr) throw new Error(`profile tombstone failed, nothing was deleted: ${tombErr.message}`);
+  if (tombstoned === false) {
+    throw new Error("No profile row for that user — nothing was deleted. Check the id.");
+  }
+
+  // 5. Neutralise the auth row rather than deleting it (see above).
+  const { error } = await service.auth.admin.updateUserById(userId, {
+    email: `deleted-${userId}@removed.invalid`,
+    phone: undefined,
+    user_metadata: {},
+    app_metadata: { deleted: true },
+    ban_duration: "876000h", // 100 years — Supabase has no "forever", this is it
+  });
+  if (error) throw new Error(`auth neutralise failed: ${error.message}`);
+
+  // Kill every live session so the ban takes effect now rather than at the next
+  // token refresh. Best-effort, matching the edge function.
+  try {
+    await service.auth.admin.signOut(userId, "global");
+  } catch (e) {
+    console.error("admin deleteUserCascade: could not revoke sessions", e);
+  }
 }
