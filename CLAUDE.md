@@ -864,6 +864,17 @@ only runs when a human opens a page.
   `run_control` validates `fn_name` against `^ctl_[a-z0-9_]+$` **and** `pg_proc`.
 - Findings are unique on `(control_key, entity_id) where resolved_at is null`, so a
   persisting violation stays ONE row; anything a control stops returning **auto-resolves**.
+- **A control that names one entity twice is MERGED, not an error.** `run_control` upserts
+  findings with `on conflict (control_key, entity_id) … do update`, and Postgres refuses to
+  touch one target row twice in a single statement (SQLSTATE 21000) — so until
+  `20260906045000` a control whose arms could return one entity twice aborted its whole run
+  and filed **nothing**, while the board reported it as *errored* with a cardinality message.
+  The runner now groups by `entity_id` before the upsert and merges the duplicates into one
+  finding (`kind: multiple_rows_for_one_entity`, every original under `rows_detail`). That is
+  a net, not the target state: each row should carry its own id — `ctl_stripe_id_mode_mismatch`
+  namespaces its two arms `acct:` / `cus:` for exactly this reason, because everyone here can
+  both earn and post and one user's stale Connect account and stale customer id were the same
+  entity twice. `__tests__/controlEntityUniqueness.test.js` holds both halves.
 - **A control that errors or goes stale is reported as loudly as a violation** — both
   mean you are no longer being told the truth.
 - Alert dispatch config lives in **`app_flags`**, not a GUC. A GUC is invisible, needs
