@@ -13,6 +13,11 @@ const corsHeaders = {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  // Carried outside the try so the terminal catch can name WHICH tip failed, the same
+  // way accept-booking carries errBookingId/errUserId.
+  let errBookingId: string | null = null;
+  let errUserId: string | null = null;
+
   try {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
     const supabase = createClient(
@@ -23,8 +28,10 @@ Deno.serve(async (req: Request) => {
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+    errUserId = user.id;
 
     const { bookingId, tipCents } = await req.json();
+    errBookingId = typeof bookingId === 'string' ? bookingId : null;
     // Bound the tip (50¢–$1000) — it charges the poster's card off-session.
     if (!bookingId || !tipCents || tipCents < 50 || tipCents > 100_000) {
       return json({ error: 'A valid tip amount (50¢–$1000) is required' }, 400);
@@ -243,7 +250,21 @@ Deno.serve(async (req: Request) => {
     // reservation is left behind deliberately, times out of the caps on its own, and
     // ctl_earner_credit_missing raises it as tip_reservation_unconfirmed with the key an
     // operator needs.
-    if (err?.type === 'StripeCardError' || err?.code === 'authentication_required') {
+    const cardDeclined = err?.type === 'StripeCardError' || err?.code === 'authentication_required';
+    // Land it in /errors like every other money function. A declined card is the
+    // poster's to fix and is not fatal; anything else reaching here is a tip that did
+    // not happen for a reason nobody could see — this catch used to stop at
+    // console.error, so the only trace was a Supabase function log nobody tails.
+    await logServerError('stripe-tip',
+      `Tip failed: ${errMessage(err)}`,
+      {
+        booking_id: errBookingId,
+        stripe_error_code: err?.code ?? null,
+        stripe_error_type: err?.type ?? null,
+        card_declined: cardDeclined,
+      },
+      { fatal: !cardDeclined, userId: errUserId });
+    if (cardDeclined) {
       return json({ error: 'card_requires_authentication' }, 402);
     }
     return json({ error: 'Something went wrong. Please try again.' }, 500);
