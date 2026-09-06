@@ -413,10 +413,16 @@ Optional for users, enforced where it protects money.
 - **Recovery codes are generated AT enrollment, not offered later** — 2FA without a way
   back in turns a lost phone into a lost account. Redeeming one REMOVES the factor
   (a code cannot mint aal2), dropping the account to password-only.
-- **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link or starting
-  Connect onboarding requires aal2 **if the account has a factor**; no factor ⇒ allowed,
-  because locking someone out of their own bank details for not enrolling is the same
-  "our posture, their cost" mistake. Opening payout settings emails the account holder.
+- **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link, starting
+  Connect onboarding, or **deleting the account** requires aal2 **if the account has a
+  factor**; no factor ⇒ allowed, because locking someone out of their own bank details
+  for not enrolling is the same "our posture, their cost" mistake. Opening payout
+  settings emails the account holder. ⚠️ **The 2FA gate at sign-in is CLIENT-SIDE** — a
+  password sign-in on an enrolled account returns a real aal1 session, so the only
+  functions where the factor is actually enforced are the ones that call
+  `requireStepUp` themselves. `delete-account` did not until 2026-09-05, which made a
+  phished password enough to tombstone an enrolled account. The roster is pinned by
+  `__tests__/stepUpEdgeCoverage.test.js`; add to it before adding a destructive function.
   ⚠️ **The refusal is `403 { error: 'MFA_REQUIRED' }` and BOTH clients must key on that
   CODE** — `handledStepUp` in `PayoutSetupScreen.js` and `web/app/(app)/profile/payouts`,
   each calling `requireMfaChallenge()` on its auth context so the code prompt appears.
@@ -512,7 +518,7 @@ stayed invisible until someone complained.
 | `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
 | `controls-alert` | The hourly sweep's pager and the daily triage digest. `verify_jwt = false`. |
 | `send-push` | Expo push fan-out; owns `KNOWN_TABS` (see the tab-route-name note). |
-| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted TWICE: `certificates` once left public credential scans fetchable after the account was gone, and `support-photos` was missing until 2026-08-14. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is either cleared or excused with a reason, so the next omission fails the gate instead of waiting to be noticed. |
+| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. **Step-up gated** — see Two-factor. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted THREE times: `certificates` once left public credential scans fetchable after the account was gone, `support-photos` was missing here until 2026-08-14 — and until 2026-09-05 it was still missing from the console's two copies of the same list (`admin/lib/deleteUser.ts` and the GDPR export route), because the guard read this file only and the drift recurred one directory over. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is cleared or excused **in all three lists**, and that the three agree. |
 
 ## A feature is not finished when the mobile screen works
 

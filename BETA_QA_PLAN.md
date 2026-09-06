@@ -313,7 +313,7 @@ Severity key: **Critical** = money wrong/lost or cross-user data leak or app unu
 | Reporter cannot read `resolved_by` | reporter | Own resolved report | Read report row | `resolved_by`/`resolution` revoked from column grant | High | Yes — integration |
 | Location coarsened on jobs | Any | In-person gig | Read job coords | Coords snapped to ~1km (poster privacy) | Medium | Yes — unit |
 | Legacy public URL to now-private bucket dead | Any | Old completion/chat photo full URL | Open old public URL | Public link is dead (bucket private); UI must use signed URL. Verify no orphaned public leak | Medium | No |
-| Account deletion cascades + purges storage | Owner | Own account | Delete account | Escrow released, storage purged (receipts etc.), `auth.admin.deleteUser` cascade scoped to `user.id` | High | Yes — integration |
+| Account deletion tombstones + purges storage | Owner or admin | Own account / any user | Delete account (app, or console `/users/[id]`) | Escrow released, storage purged (receipts etc.), profile TOMBSTONED via `tombstone_profile` and the auth row emptied + banned — **the counterparty's bookings and payments must still exist afterwards**. Neither path may call `auth.admin.deleteUser`: that cascade runs profiles → jobs → bookings → payments (20260813150000; the console path did it until 2026-09-05) | High | Yes — integration |
 | Admin PII export gated | admin | — | Trigger user data export | `requireAdmin('admin')` + `Sec-Fetch-Site` CSRF block; support tier cannot; audited | High | Yes — integration |
 | Anthropic key not exposed | — | — | Inspect client bundles | Only anon/publishable (`pk_test_…`) keys in client; confirm previously-pasted Anthropic key rotated (`TESTFLIGHT.md:66`) | High | No |
 

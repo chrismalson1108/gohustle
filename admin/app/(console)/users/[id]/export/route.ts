@@ -37,9 +37,14 @@ const TABLES: { t: string; cols: string[] }[] = [
   { t: "assistant_messages", cols: ["user_id"] },
   { t: "support_tickets", cols: ["user_id"] },
 ];
-// `certificates` was missing here too (same omission as both delete paths).
+// `certificates` was missing here too (same omission as both delete paths), and
+// `support-photos` was missing until 2026-09-05 — so a data-access request answered
+// from this route silently omitted the photographs a user had attached to their own
+// support tickets, while the ticket TEXT was exported. An export that is quietly
+// incomplete is worse than one that errors: nobody knows to ask again.
 const BUCKETS = [
   "avatars", "job-photos", "chat-photos", "completion-photos", "receipts", "certificates",
+  "support-photos",
 ];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
