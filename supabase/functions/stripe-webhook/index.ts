@@ -104,7 +104,36 @@ async function recordReversal(
         `tip reversal failed for ${paymentIntentId}: ${tipErr.message}`,
         { payment_intent: paymentIntentId, kind }, { fatal: true });
     }
-    bookingId = tip.booking_id;
+
+    // ── RETURN HERE. A tip reversal is NOT a dispute on the escrow charge. ────
+    //
+    // This used to assign `bookingId = tip.booking_id` and fall through into the
+    // generic path below, which files a disputes row AGAINST THE BOOKING using the
+    // standard template — 'Stripe refund on charge ch_… (usd 20.00 refunded)'. That
+    // template is exactly what ctl_external_reversal_not_ledgered selects on, and the
+    // control then joins the row to the booking's CAPTURED escrow payment: a $100 gig
+    // that was never reversed at all. Twenty-four hours later it opened a HIGH money
+    // finding reading 'reversal 2000, refunded 0, unledgered 2000', and its remedy —
+    // "Record chargeback, which writes refunded_cents" — would have written a reversal
+    // onto a charge Stripe never touched, permanently misstating GMV and platform fees
+    // and putting reconcile-stripe into a refund_mismatch it could never clear. The
+    // finding could not auto-resolve either, because the only thing that would close it
+    // was that wrong write.
+    //
+    // The same row also freezes a THIRD PARTY's money: vest_bonuses holds a referral
+    // bonus while any open dispute exists on the source booking, and
+    // ctl_dispute_open_beyond_sla opens its own HIGH finding after 14 days.
+    //
+    // tip_ledger.reversed_cents / reversed_at / reversal_reason IS the record, written
+    // by record_tip_reversal above, and ctl_earnings_total_drift already subtracts it.
+    // The refund exemption below could not have saved us either: `row` is the null
+    // payments lookup, so `(row?.refunded_cents ?? 0) >= stripeRefundedCents` is false
+    // for any positive refund, and the chargeback arm skips that block entirely.
+    //
+    // If a tip CHARGEBACK is ever wanted as an abuse signal, it needs its own template
+    // — one the control's two anchored regexes do not match — and its own decision.
+    // It must not borrow the escrow charge's.
+    return tip.booking_id;
   }
   if (!bookingId) return null;
 
@@ -297,9 +326,39 @@ Deno.serve(async (req: Request) => {
         // split from what actually moved, using the same proportional rule as
         // stripe-capture-payment, BEFORE anything credits the earner.
         if (received > 0 && received !== storedSplit) {
+          // ── ASK STRIPE WHAT FEE IT APPLIED, don't scale ours ──────────────
+          //
+          // row.fee_cents is MUTABLE and can be stale in exactly the situation this
+          // branch exists for. stripe-capture-payment's partial branch persists the
+          // REDUCED split before calling Stripe; if that call throws, the row keeps the
+          // reduced fee at status='authorized'. Scaling that already-reduced number
+          // again understates the platform's take and over-credits the earner — and
+          // because the two written values still sum to amount_received,
+          // reconcile-stripe's captured_total_mismatch passes and
+          // ctl_earnings_total_drift compares profiles against the same wrong column.
+          //
+          // The charge's application_fee_amount is what Stripe actually took.
+          // earner-claim-payment:257-264 already settles this way; so does
+          // admin-payment-action's settle op. The proportional rule survives only as
+          // the fallback for when Stripe cannot be read.
+          let appliedFee: number | null = null;
+          try {
+            const full = await stripe.paymentIntents.retrieve(pi.id, { expand: ['latest_charge'] });
+            const ch = (full.latest_charge ?? null) as { application_fee_amount?: number | null } | null;
+            if (typeof ch?.application_fee_amount === 'number') {
+              appliedFee = Math.max(0, ch.application_fee_amount);
+            }
+          } catch (e: any) {
+            await logServerError('stripe-webhook',
+              `could not read the applied fee on ${pi.id} (${e?.message ?? e}) — falling back to ` +
+              `the proportional rule, which scales a possibly-stale fee_cents`,
+              { payment_id: row.id }, { fatal: false });
+          }
           const authorized = row.amount_cents || 0;
           const pct = authorized > 0 ? Math.min(1, received / authorized) : 1;
-          const fee = Math.min(received, Math.round((row.fee_cents ?? 0) * pct));
+          const fee = appliedFee !== null
+            ? Math.min(received, appliedFee)
+            : Math.min(received, Math.round((row.fee_cents ?? 0) * pct));
           await supabase.from('payments')
             .update({ fee_cents: fee, earner_amount_cents: received - fee })
             .eq('id', row.id)
@@ -415,6 +474,44 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case 'payment_intent.amount_capturable_updated': {
+        // ── The moment a hold actually becomes real ─────────────────────────
+        //
+        // Stripe fires this when a manual-capture PaymentIntent reaches
+        // requires_capture — i.e. the poster completed the sheet and funds are now held.
+        // That is the ONLY observation that may promote a payments row to 'authorized',
+        // and until this handler existed there was exactly one place that made it
+        // (accept-booking) — which refuses any booking that is not still 'pending'.
+        //
+        // So on a RECOVERY re-hold, where the booking is already confirmed or completed
+        // and the poster is re-paying a lapsed authorization, nothing ever wrote the
+        // promotion back. stripe-create-payment-intent's own comment at :415-450 records
+        // that window and says it leaves no trace: the row rested at 'failed' (now
+        // 'pending') naming real money, and both stripe-capture-payment and
+        // earner-claim-payment turned it away with HOLD_EXPIRED — the earner unpaid on
+        // funds that were genuinely held.
+        //
+        // Status-predicated like every sibling: never resurrect a cancelled or captured
+        // row, and never invent a booking transition here. This promotes the money
+        // record only; accept-booking still owns confirming the booking, because that
+        // requires the poster's own act.
+        const pi = event.data.object as Stripe.PaymentIntent;
+        if ((pi.amount_capturable ?? 0) > 0 && pi.status === 'requires_capture') {
+          const { data: promoted } = await supabase.from('payments')
+            .update({ status: 'authorized', authorized_at: new Date().toISOString() })
+            .eq('payment_intent_id', pi.id)
+            .in('status', ['pending', 'failed'])
+            .select('id, booking_id');
+          if (promoted?.length) {
+            console.log(
+              `stripe-webhook: ${pi.id} reached requires_capture — promoted the payments ` +
+              `row to 'authorized' (booking ${promoted[0].booking_id})`,
+            );
+          }
+        }
+        break;
+      }
+
       case 'payment_intent.canceled': {
         // A manual-capture authorization was canceled — most importantly, Stripe
         // AUTO-CANCELS an uncaptured hold ~7 days after it's placed. Without this
@@ -423,10 +520,16 @@ Deno.serve(async (req: Request) => {
         const pi = event.data.object as Stripe.PaymentIntent;
         // Don't clobber a row that already settled (captured) — only an outstanding
         // authorization can lapse into canceled.
+        //
+        // 'pending' is included because that is what an unconfirmed intent now reads as:
+        // a poster who opened the pay sheet and swiped it away leaves a live
+        // requires_payment_method intent, and Stripe eventually cancels it. Without this
+        // the row sat 'pending' naming a dead intent forever, and neither the poster nor
+        // any control could tell that from one still awaiting a card.
         await supabase.from('payments')
           .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
           .eq('payment_intent_id', pi.id)
-          .eq('status', 'authorized');
+          .in('status', ['pending', 'authorized']);
         const { data: payment } = await supabase
           .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
         if (payment) {

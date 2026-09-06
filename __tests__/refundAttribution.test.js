@@ -176,12 +176,17 @@ describe('support can settle a booking the app cannot', () => {
 
   it('it captures in FULL and reconciles to what Stripe collected', () => {
     const branch = fn.slice(fn.indexOf("if (op === 'settle')"));
-    // No amount argument: a reduced settlement is a dispute outcome and belongs to the
-    // poster's Verify sheet, which records who asked for it.
-    expect(branch).toMatch(/paymentIntents\.capture\(pay\.payment_intent_id\)/);
+    // No amount_to_capture: a reduced settlement is a dispute outcome and belongs to
+    // the poster's Verify sheet, which records who asked for it. The options object is
+    // permitted — it carries `expand: ['latest_charge']`, which is how this op learns
+    // the fee Stripe actually applied instead of trusting the mutable fee_cents column
+    // (see settleFeeFromStripe.test.js).
+    const call = /paymentIntents\.capture\(pay\.payment_intent_id[\s\S]*?\);/.exec(branch);
+    expect(call).not.toBeNull();
+    expect(call[0]).not.toMatch(/amount_to_capture/);
     expect(branch).toMatch(/amount_received/);
     // And it must credit the earner — capturing without crediting is the worse bug.
-    expect(branch.slice(0, 2000)).toMatch(/credit_earnings/);
+    expect(branch.slice(0, 4000)).toMatch(/credit_earnings/);
   });
 
   it('it only settles an open hold', () => {

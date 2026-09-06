@@ -197,6 +197,12 @@ Deno.serve(async (req: Request) => {
     if (payment.status === 'cancelled' || payment.status === 'failed') {
       return json({ error: 'HOLD_EXPIRED', message: 'The card hold already expired. Contact the poster or support to re-place a hold.' }, 409);
     }
+    // 'pending' is an intent the poster minted and never confirmed — Stripe holds
+    // nothing behind it. Capturing would fail at Stripe anyway; refuse with the same
+    // actionable message rather than a 502 from the capture attempt.
+    if (payment.status === 'pending') {
+      return json({ error: 'HOLD_EXPIRED', message: 'The card hold was never completed, so there is nothing to release. Contact the poster or support to re-place a hold.' }, 409);
+    }
     // Belt-and-suspenders: the escrow authorization ITSELF must have aged past the
     // grace window. Even if the scheduled time somehow reads as past, a hold placed
     // moments ago can never be instantly claimed.

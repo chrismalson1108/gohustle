@@ -38,12 +38,17 @@ export const LEDGER_CACHE_KEY = 'ledger:v1';
 // a support ticket.
 const STATE = {
   earner: {
+    // 'pending' is a hold the poster started and never completed — Stripe is holding
+    // nothing. It must never read as escrow: an earner told "In escrow" on a booking
+    // with no money behind it will do the work.
+    pending:    { label: 'Not yet held', tone: 'muted', note: 'The poster started the payment but never finished it, so nothing is held yet.' },
     authorized: { label: 'In escrow', tone: 'hold', note: 'Held by the poster. Released to you when they verify the work.' },
     captured:   { label: 'Released',  tone: 'good', note: 'Sent to your payout account. It reaches your bank in the next deposit — see Bank deposits for the date.' },
     failed:     { label: 'Payment failed', tone: 'bad', note: 'The poster\'s card was declined. Nothing was transferred.' },
     cancelled:  { label: 'Hold released', tone: 'muted', note: 'The booking ended before the work started, so nothing was charged.' },
   },
   poster: {
+    pending:    { label: 'Not finished', tone: 'muted', note: 'You started this payment but never completed it, so nothing is held on your card. Accept again to place the hold.' },
     authorized: { label: 'On hold',   tone: 'hold', note: 'Authorized on your card but not charged. You are charged when you verify the work.' },
     captured:   { label: 'Charged',   tone: 'good', note: 'Charged to your card and released to the hustler.' },
     failed:     { label: 'Card declined', tone: 'bad', note: 'Your card was declined, so nothing was charged.' },
