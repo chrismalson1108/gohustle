@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Wallet, CreditCard, CheckCircle2, Clock, AlertTriangle, Trash2, ArrowLeftRight, ChevronRight } from "lucide-react";
 import { NO_PAYOUT_ACCOUNT, type ConnectStatus } from "@/lib/connectStatus";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import { useJobs } from "@/lib/jobs";
@@ -292,6 +293,25 @@ export default function PayoutsPage() {
             you verify the work.
           </p>
         </div>
+
+        {/* The record of what has already happened, both sides. This is the money
+            hub — mobile's PayoutSetupScreen links here, and the web had nothing to
+            link to until the Transactions page existed. */}
+        <Link
+          href="/profile/transactions"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] hover:bg-canvas"
+        >
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-canvas text-primary">
+            <ArrowLeftRight className="size-6" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-bold tracking-[-0.2px] text-ink">Transactions</p>
+            <p className="text-[13px] leading-[18px] text-ink-soft">
+              Receipts, fees, refunds, escrow and bank deposits.
+            </p>
+          </div>
+          <ChevronRight className="ml-auto size-5 shrink-0 text-ink-muted" />
+        </Link>
 
         <p className="pt-1 text-center text-xs text-ink-muted">
           Payments are processed securely by Stripe. GoHustlr never stores your card details.

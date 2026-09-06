@@ -12,6 +12,14 @@ export const metadata = { title: "Booking detail" };
 
 const MESSAGE_LIMIT = 200;
 
+// Module scope, not inline in the page body: react-hooks/purity flags a bare Date.now()
+// inside a component as an impure render call. It is a false positive for an async
+// server component that renders once per request, but adding a sixth instance of an
+// error the repo already tolerates five of is how a lint signal stops being read.
+function isPast(iso: string | null | undefined): boolean {
+  return Boolean(iso) && Date.parse(iso as string) < Date.now();
+}
+
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAdminPage("support");
   const { id } = await params;
@@ -20,7 +28,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const [jobRes, earnerRes, paymentRes, disputeRes, messagesRes] = await Promise.all([
-    ctx.service.from("jobs").select("id, title, poster_id, status, location").eq("id", booking.job_id).maybeSingle(),
+    ctx.service.from("jobs").select("id, title, poster_id, status").eq("id", booking.job_id).maybeSingle(),
     ctx.service.from("profiles").select("id, name, username").eq("id", booking.earner_id).maybeSingle(),
     ctx.service.from("payments").select("*").eq("booking_id", id).maybeSingle(),
     ctx.service.from("disputes").select("id, reason, pct_paid, raised_by, created_at").eq("booking_id", id),
@@ -39,16 +47,34 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       .limit(MESSAGE_LIMIT + 1),
   ]);
 
-  // WHERE THE GIG IS. jobs.location is masked at write (trg_mask_job_location) and the
-  // exact street label lives in job_locations behind RLS — readable to the poster and to
-  // an earner with an accepted booking, and to nobody on staff. RUNBOOK_SAFETY §1 sends
-  // the on-call to THIS page for an emergency or an overdue check-in, and until now the
-  // page showed no location at all, masked or otherwise. The console runs as
-  // service_role, so the address was always reachable; it simply was not asked for.
-  const exactLocation = booking.job_id
-    ? (await ctx.service.from("job_locations").select("exact_location").eq("job_id", booking.job_id).maybeSingle())
-        .data?.exact_location ?? null
-    : null;
+  // ── Safety ────────────────────────────────────────────────────────────────
+  // RUNBOOK_SAFETY §1 sends the on-call here from the alert email, and until
+  // 2026-09-05 this page rendered no location at all — the gig link went to
+  // /jobs/<id>, which shows jobs.location, which trg_mask_job_location has already
+  // reduced to "Springfield, IL". So the console's answer to "where is the worker who
+  // just pressed the panic button" was the city.
+  //
+  // job_locations holds the precise label and grants all to service_role, the key this
+  // page already uses for the chat thread and the escrow figures. Gated at `trust`
+  // rather than the page's own `support` minimum: trust is the tier that can open
+  // /moderation, which is where a safety report is worked, and a poster's home address
+  // is not part of "a user's own context" that support exists to see.
+  const canSeeAddress = roleSatisfies(ctx.role, "trust");
+  const [locRes, checkinRes] = await Promise.all([
+    canSeeAddress && booking.job_id
+      ? ctx.service.from("job_locations").select("exact_location").eq("job_id", booking.job_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    ctx.service
+      .from("safety_checkins")
+      .select("due_at, nudged_at, escalated_at, resolved_at")
+      .eq("booking_id", id)
+      .maybeSingle(),
+  ]);
+  const exactLocation = (locRes.data as { exact_location?: string } | null)?.exact_location ?? null;
+  const checkin = checkinRes.data as
+    | { due_at: string; nudged_at: string | null; escalated_at: string | null; resolved_at: string | null }
+    | null;
+  const checkinOverdue = Boolean(checkin && !checkin.resolved_at && isPast(checkin.due_at));
 
   const posterId = jobRes.data?.poster_id;
   const poster = posterId
@@ -81,10 +107,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
   // Viewing a booking exposes both parties' identity, escrow amounts, and chat —
   // record the access (T&S / compliance).
-  await auditRead(ctx, "booking.view", "booking", id);
-  // The exact address is a separate, higher-sensitivity disclosure than the rest of the
-  // page, so it is recorded as its own line rather than folded into booking.view.
-  if (exactLocation) await auditRead(ctx, "booking.exact_location", "job", String(booking.job_id));
+  // ...and say when the exact address was among it. Reading where a person physically
+  // is has to leave a trace naming who read it, or the disclosure is unaccountable.
+  await auditRead(ctx, "booking.view", "booking", id, { exact_address_shown: exactLocation != null });
 
   return (
     <div className="space-y-6">
@@ -112,19 +137,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <dt className="text-[var(--muted)]">Poster</dt>
             <dd>{posterId ? <Link href={`/users/${posterId}`} className="text-[var(--brand)] hover:underline">{name(poster, posterId.slice(0, 8))}</Link> : "—"}</dd>
           </div>
-          <div className="col-span-2">
-            <dt className="text-[var(--muted)]">Where</dt>
-            <dd>
-              {exactLocation ?? jobRes.data?.location ?? "—"}
-              {exactLocation ? (
-                <span className="ml-2 text-xs text-[var(--muted)]">exact address · this view is logged</span>
-              ) : (
-                <span className="ml-2 text-xs text-[var(--muted)]">no exact address on file (remote or city-only listing)</span>
-              )}
-            </dd>
-          </div>
           <div><dt className="text-[var(--muted)]">Slot</dt><dd>{booking.slot_label ?? "—"}</dd></div>
-          <div><dt className="text-[var(--muted)]">Started</dt><dd>{booking.started_at ? fmtDate(booking.started_at) : "not started"}</dd></div>
           <div><dt className="text-[var(--muted)]">Booked</dt><dd>{fmtDate(booking.created_at)}</dd></div>
           <div><dt className="text-[var(--muted)]">Earner done</dt><dd>{booking.earner_done ? "yes" : "no"}</dd></div>
           <div><dt className="text-[var(--muted)]">Poster done</dt><dd>{booking.poster_done ? "yes" : "no"}</dd></div>
@@ -145,6 +158,72 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div><dt className="text-[var(--muted)]">Messages</dt><dd>{messages.length}</dd></div>
           {booking.counter_offer && <div><dt className="text-[var(--muted)]">Counter-offer</dt><dd>${Number(booking.counter_offer)}</dd></div>}
         </dl>
+      </Section>
+
+      {/* Above the money on purpose: a safety report outranks every other queue,
+          including this one. */}
+      <Section title="Safety">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm md:grid-cols-4">
+          <div className="col-span-2">
+            <dt className="text-[var(--muted)]">Where the gig is</dt>
+            <dd>
+              {!canSeeAddress ? (
+                <span className="text-[var(--muted)]">
+                  {jobRes.data ? "hidden — trust or admin only" : "—"}
+                </span>
+              ) : exactLocation ? (
+                <span className="font-medium">{exactLocation}</span>
+              ) : (
+                <span className="text-[var(--muted)]">
+                  no exact address on file — the poster listed this gig at city level
+                </span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[var(--muted)]">Work started</dt>
+            <dd>
+              {booking.started_at ? (
+                <>
+                  {fmtDate(booking.started_at)}{" "}
+                  {!["completed", "verified", "cancelled", "declined"].includes(booking.status) &&
+                    !booking.earner_done && <Pill tone="red">in progress</Pill>}
+                </>
+              ) : (
+                "not started"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[var(--muted)]">Check-in</dt>
+            <dd>
+              {!checkin ? (
+                <span className="text-[var(--muted)]">none open</span>
+              ) : checkin.resolved_at ? (
+                <>resolved {fmtDate(checkin.resolved_at)}</>
+              ) : (
+                <>
+                  due {fmtDate(checkin.due_at)}{" "}
+                  {checkinOverdue && <Pill tone="red">overdue</Pill>}
+                  {checkin.escalated_at ? (
+                    <Pill tone="red">escalated</Pill>
+                  ) : checkin.nudged_at ? (
+                    <Pill tone="amber">nudged</Pill>
+                  ) : null}
+                </>
+              )}
+            </dd>
+          </div>
+        </dl>
+        {canSeeAddress && exactLocation && (
+          // The masking exists to keep this away from every signed-in stranger; it is
+          // not a secret from the person paged to help. Saying so here stops the next
+          // reader treating the disclosure as a bug and "fixing" it.
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            jobs.location is masked to city level for everyone else — this is the exact label from
+            job_locations, and your reading it is in the audit log.
+          </p>
+        )}
       </Section>
 
       <Section

@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2, Archive, ArchiveRestore, Search } from "lucide-react";
+import { MessageCircle, Send, ArrowLeft, ImagePlus, MoreVertical, Flag, Ban, Check, Loader2, Archive, ArchiveRestore, Search, LifeBuoy } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useAuth } from "@/lib/auth";
 import { useUser } from "@/lib/user";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchLastMessages, fetchConversationState, isUnread, previewText, markConversationRead, setConversationArchived, notBlocked } from "@/lib/messages";
 import { notify } from "@/lib/push";
+import { fetchMyTickets, ticketHasUnread, type SupportTicket } from "@/lib/support";
 import { uploadPrivateToBucket, getSignedUrl, chatObjectPath } from "@/lib/uploadImage";
 import { submitReport, REPORT_REASONS, moderateText, logModerationBlock } from "@/lib/moderation";
 import { findProhibited } from "@gohustlr/shared";
@@ -92,6 +93,17 @@ export default function MessagesPage() {
   // Bumped on every archive toggle. A loadPreviews already in flight when the user
   // toggles would otherwise resolve later and overwrite the optimistic archived flag.
   const archiveSeq = useRef(0);
+  // Support is PINNED above gig conversations rather than sorted among them: it is
+  // the thread you look for when something has already gone wrong, and it must not
+  // slide down the list behind chatter about other gigs. Mirrors mobile's
+  // MessagesScreen, which had this while web sent people to a mailto:.
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    // Never let a support failure blank the inbox — gig conversations are the more
+    // common need and must render regardless.
+    fetchMyTickets().then(setSupportTickets).catch(() => setSupportTickets([]));
+  }, [user]);
 
   const loadPreviews = useCallback(async () => {
     if (!user) return;
@@ -147,7 +159,12 @@ export default function MessagesPage() {
   };
 
   const shown = conversations.filter((c) => (tab === "archived" ? !!last[c.bookingId]?.archived : !last[c.bookingId]?.archived));
-  const inboxCount = conversations.filter((c) => !last[c.bookingId]?.archived).length;
+  // The pinned support thread is a row in the inbox, so it counts as one. Showing
+  // "inbox (1)" above two visible rows makes the number look broken.
+  const openSupport = supportTickets.filter((t) => t.status !== "closed");
+  const supportUnread = openSupport.some(ticketHasUnread);
+  const inboxCount =
+    conversations.filter((c) => !last[c.bookingId]?.archived).length + (openSupport.length > 0 ? 1 : 0);
   const archivedCount = conversations.length - inboxCount;
 
   return (
@@ -227,6 +244,30 @@ export default function MessagesPage() {
                 ))}
               </div>
             </div>
+
+            {tab === "inbox" && (
+              // Always present, even with no ticket yet — "where do I get help" must
+              // be answerable before anything has gone wrong.
+              <div className="shrink-0 px-4 pb-2 sm:px-6 lg:px-4">
+                <Link
+                  href="/support"
+                  className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)] hover:bg-canvas"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-light text-primary">
+                    <LifeBuoy className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-ink">GoHustlr Support</span>
+                    <span className="block truncate text-xs text-ink-soft">
+                      {openSupport.length > 0
+                        ? `${openSupport.length} open conversation${openSupport.length > 1 ? "s" : ""}`
+                        : "Questions, payments, safety — real people answer"}
+                    </span>
+                  </span>
+                  {supportUnread && <span aria-label="unread" className="size-2 shrink-0 rounded-full bg-primary" />}
+                </Link>
+              </div>
+            )}
 
             {shown.length === 0 ? (
               <div className="min-h-0 flex-1 overflow-y-auto">

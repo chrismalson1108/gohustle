@@ -69,3 +69,106 @@ describe('maskLocation does not fail open on the word "remote"', () => {
     expect(maskLocation('Remote, Dallas, TX')).toBe('Remote, Dallas, TX');
   });
 });
+
+// ── Lockstep: the FOURTH copy ────────────────────────────────────────────────
+// maskLocation exists in four places — src/lib/address.js (above), web/lib/address.ts,
+// public.mask_location() (20260726030000) and supabase/functions/assistant/index.ts.
+// The first three deleted the fail-open "remote" shortcut in 20260726030000; the
+// assistant's copy kept it until 2026-09-05 while its own comment claimed to be a
+// mirror of address.js, and nothing read it. Dormant is not the same as absent: the
+// assistant is the one consumer that already selects job_locations.exact_location, so
+// this pins the fourth copy the way moderationSync.test.js pins findProhibited's three.
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const ASSISTANT_SRC = fs.readFileSync(
+  path.join(ROOT, 'supabase/functions/assistant/index.ts'),
+  'utf8',
+);
+const WEB_SRC = fs.readFileSync(path.join(ROOT, 'web/lib/address.ts'), 'utf8');
+const MOBILE_SRC = fs.readFileSync(path.join(ROOT, 'src/lib/address.js'), 'utf8');
+
+function streetSuffixRe(src) {
+  const m = src.match(/const STREET_SUFFIX_RE\s*=\s*([\s\S]*?);\n/);
+  if (!m) throw new Error('STREET_SUFFIX_RE not found');
+  return m[1].replace(/\s+/g, '');
+}
+
+function extractFn(src, name) {
+  const start = src.indexOf(`function ${name}(`);
+  if (start === -1) throw new Error(`${name} not found`);
+  const open = src.indexOf('{', start);
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  throw new Error(`${name} body unterminated`);
+}
+
+// Build a runnable copy of the assistant's maskLocation by stripping the TS
+// annotations, so the assertions below exercise the SHIPPED body rather than a
+// paraphrase of it.
+function loadAssistantMaskLocation() {
+  const body = extractFn(ASSISTANT_SRC, 'maskLocation')
+    .replace('(location: unknown)', '(location)')
+    .replace('): unknown {', ') {');
+  const re = ASSISTANT_SRC.match(/const STREET_SUFFIX_RE\s*=\s*([\s\S]*?);\n/)[1];
+  // eslint-disable-next-line no-new-func
+  return new Function(`const STREET_SUFFIX_RE = ${re};\n${body}\nreturn maskLocation;`)();
+}
+
+describe('the assistant edge function mirrors maskLocation exactly', () => {
+  const assistantMask = loadAssistantMaskLocation();
+
+  test('carries no "contains remote -> return unmasked" shortcut', () => {
+    const fn = extractFn(ASSISTANT_SRC, 'maskLocation');
+    expect(fn).not.toMatch(/includes\(\s*['"]remote['"]\s*\)/);
+    expect(fn).not.toMatch(/return label;/);
+  });
+
+  test('neither do the mobile and web copies (all four stay deleted)', () => {
+    expect(extractFn(MOBILE_SRC, 'maskLocation')).not.toMatch(/includes\(\s*['"]remote['"]\s*\)/);
+    expect(WEB_SRC.slice(WEB_SRC.indexOf('export function maskLocation')))
+      .not.toMatch(/includes\(\s*['"]remote['"]\s*\)/);
+  });
+
+  test('its STREET_SUFFIX_RE is byte-identical to the mobile one', () => {
+    expect(streetSuffixRe(ASSISTANT_SRC)).toBe(streetSuffixRe(MOBILE_SRC));
+    expect(streetSuffixRe(WEB_SRC)).toBe(streetSuffixRe(MOBILE_SRC));
+  });
+
+  test('masks the same labels the mobile copy masks', () => {
+    const cases = [
+      '123 Main St, Dallas, TX',
+      'One Main Street, Uptown, Dallas, TX',
+      'Apt 4, 789 Oak Ave, Plano, TX',
+      'Oak Cliff, Dallas, TX',
+      '123 Main St',
+      'Remote',
+      'Remote, Dallas, TX',
+      'Remote — anywhere in TX',
+      // The two labels the shortcut published verbatim.
+      '1234 Remote Ridge Rd, Dallas, TX',
+      '123 Main St, Dallas, TX (remote possible)',
+    ];
+    for (const label of cases) {
+      expect([label, assistantMask(label)]).toEqual([label, maskLocation(label)]);
+    }
+  });
+
+  test('specifically: a street address containing "remote" is masked', () => {
+    expect(assistantMask('1234 Remote Ridge Rd, Dallas, TX')).toBe('Dallas, TX');
+    expect(assistantMask('123 Main St, Dallas, TX (remote possible)'))
+      .toBe('Dallas, TX (remote possible)');
+  });
+
+  test('passes null/empty through like the others', () => {
+    expect(assistantMask(null)).toBe(null);
+    expect(assistantMask('')).toBe('');
+  });
+});

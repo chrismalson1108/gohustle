@@ -314,8 +314,17 @@ describe('tips are read in the unit they are stored in', () => {
   });
 
   it('the module uses this conversion, not the raw cents() helper', () => {
-    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src/lib/payments.js'), 'utf8');
-    expect(src).toMatch(/const tip = dollarsToCents\(b\.tip_amount\)/);
+    // toEntry moved to shared/ledger.js on 2026-09-05 so the website could have a
+    // ledger without a second hand-written copy of this arithmetic. Read it where it
+    // lives now, and assert the mobile module did NOT keep a copy — two toEntry
+    // bodies is the exact failure the move was made to prevent.
+    const fs = require('fs');
+    const path = require('path');
+    const shared = fs.readFileSync(path.join(__dirname, '..', 'shared/ledger.js'), 'utf8');
+    expect(shared).toMatch(/const tip = dollarsToCents\(b\.tip_amount\)/);
+    const mobile = fs.readFileSync(path.join(__dirname, '..', 'src/lib/payments.js'), 'utf8');
+    expect(mobile).not.toMatch(/function toEntry\(/);
+    expect(mobile).toMatch(/export \* from '\.\.\/\.\.\/shared\/ledger'/);
   });
 });
 

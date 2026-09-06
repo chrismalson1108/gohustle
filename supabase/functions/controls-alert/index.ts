@@ -46,6 +46,26 @@ function esc(s: string): string {
   return (s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
 }
 
+// The digest email goes to the on-call, who is the intended reader of everything a
+// control finds. The TRIAGE payload goes to Anthropic, and its job is prioritisation —
+// it does not need a street address to say which finding to look at first.
+//
+// ctl_safety_checkin_overdue started carrying `exact_location` (20260905003100) so the
+// person paged about a worker who never checked out is told where they are. Without
+// this, widening that detail would have quietly begun shipping posters' home addresses
+// to a third-party LLM every morning. Keys are dropped by NAME rather than by guessing
+// at values, and the masked `location` stays so the model still has geography.
+const TRIAGE_REDACT = new Set(['exact_location', 'exact_address']);
+
+function redactForTriage(detail: unknown): unknown {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(detail as Record<string, unknown>)) {
+    out[k] = TRIAGE_REDACT.has(k) ? '[redacted — see the finding in the console]' : v;
+  }
+  return out;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
@@ -133,7 +153,7 @@ Deno.serve(async (req: Request) => {
         const payload = {
           open_findings: open.slice(0, 60).map((f) => ({
             control: f.control_key, title: titleOf(f.control_key), severity: f.severity,
-            entity: f.entity_id, detail: f.detail, first_seen: f.first_seen_at,
+            entity: f.entity_id, detail: redactForTriage(f.detail), first_seen: f.first_seen_at,
           })),
           controls_erroring: errored.map((c) => ({ key: c.key, error: c.last_error })),
           controls_stale: stale.map((c) => c.key),

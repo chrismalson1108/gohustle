@@ -36,7 +36,13 @@ const accept = read(FN, 'accept-booking', 'index.ts');
 const webhook = read(FN, 'stripe-webhook', 'index.ts');
 const capture = read(FN, 'stripe-capture-payment', 'index.ts');
 const claim = read(FN, 'earner-claim-payment', 'index.ts');
-const ledger = read(ROOT, 'src', 'lib', 'payments.js');
+// The ledger arithmetic and its wording moved to shared/ledger.js on 2026-09-05, when
+// the website gained a Transactions page and a second hand-written copy of money maths
+// was the alternative. src/lib/payments.js is now a re-export, so read the definition
+// where it lives — and assert the mobile module still points at it, or this guard would
+// pass against a shared copy the app had stopped using.
+const ledger = read(ROOT, 'shared', 'ledger.js');
+const mobileLedger = read(ROOT, 'src', 'lib', 'payments.js');
 const migration = read(
   ROOT, 'supabase', 'migrations',
   '20260906013100_a_hold_that_was_never_placed_read_as_live_escrow.sql',
@@ -157,6 +163,13 @@ describe('the ledger never shows a poster or earner escrow that is not there', (
 
   test("only 'authorized' counts as money in flight", () => {
     expect(ledger).toMatch(/pending: row\.status === 'authorized',/);
+  });
+
+  test('the mobile module still serves this from the shared definition', () => {
+    // Without this, the two assertions above could pass while src/lib/payments.js
+    // carried its own drifted copy again.
+    expect(mobileLedger).toMatch(/from '\.\.\/\.\.\/shared\/ledger(\.js)?'|shared\/ledger/);
+    expect(mobileLedger).toMatch(/paymentState/);
   });
 });
 

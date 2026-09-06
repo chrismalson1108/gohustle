@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
-  ChevronDown, Star, Clock, AlertCircle, Car, DollarSign,
+  ChevronDown, Star, Clock, AlertCircle, Car, DollarSign, ArrowLeftRight,
 } from "lucide-react";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
@@ -450,6 +450,14 @@ export default function MyJobsPage() {
             </span>
             <span className="truncate text-xs font-medium text-ink-soft">this week</span>
           </span>
+          {/* The earner's way into their own ledger — mobile's EarnScreen has had
+              this and the web had no ledger to link to at all until 2026-09-05. */}
+          <Link
+            href="/profile/transactions"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-ink hover:bg-canvas"
+          >
+            <ArrowLeftRight className="size-3.5 text-primary" /> Transactions
+          </Link>
         </div>
       </PageHeader>
 

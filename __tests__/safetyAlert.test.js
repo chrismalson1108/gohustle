@@ -80,8 +80,14 @@ describe('the surfaces that page a human can say WHERE the worker is', () => {
     const page = read('admin/app/(console)/bookings/[id]/page.tsx');
     expect(page).toContain('job_locations');
     expect(page).toContain('exact_location');
-    // A deliberate PII disclosure gets its own audit line, not a fold into booking.view.
-    expect(page).toContain('booking.exact_location');
+    // A deliberate PII disclosure has to be RECORDED. Two shapes satisfy that and the
+    // merge kept the second: a dedicated audit action, or booking.view carrying whether
+    // the address was actually shown. What is not acceptable is an unrecorded read, or a
+    // flag hard-coded true — hence the tie to the variable the render is gated on.
+    expect(page).toMatch(/booking\.exact_location|exact_address_shown/);
+    expect(page).toMatch(/auditRead\([^)]*booking\.view[^)]*exact_address_shown: exactLocation != null|auditRead\(ctx, "booking\.exact_location"/s);
+    // and staff below `trust` must not reach it at all.
+    expect(page).toMatch(/roleSatisfies\(ctx\.role, "trust"\)/);
   });
 
   test('the moderation queue distinguishes an emergency from a routine report', () => {
