@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     // Re-read the report server-side (don't trust the posted body for content).
     const { data: report } = await supabase
       .from('reports')
-      .select('id, reason, details, reporter_id, reported_user_id, job_id, booking_id, created_at')
+      .select('id, reason, details, reporter_id, reported_user_id, job_id, booking_id, source, created_at')
       .eq('id', reportId)
       .maybeSingle();
     const r = report ?? payload?.record;
@@ -66,6 +66,37 @@ Deno.serve(async (req: Request) => {
     const to = Deno.env.get('SAFETY_ONCALL_EMAIL') || DEFAULT_NOTIFY;
     const reporter = names[r.reporter_id] || r.reporter_id || 'unknown';
     const reported = r.reported_user_id ? (names[r.reported_user_id] || r.reported_user_id) : '—';
+    const emergency = r.source === 'emergency';
+
+    // WHERE THE PERSON IS. jobs.location is masked at write and the exact street label
+    // lives in job_locations behind RLS — so every staff surface showed the on-call a
+    // city and nothing else, on the one email that pages a human about someone who may
+    // be in physical danger. This function runs as service_role and could always read
+    // it. Deliberate PII disclosure, to the on-call inbox only, and only for a report
+    // that is attached to a real booking.
+    let gig: { title?: string; exact?: string | null; masked?: string | null } | null = null;
+    let bk: { status?: string; started_at?: string | null; earner_done?: boolean } | null = null;
+    if (r.booking_id) {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('id, job_id, status, started_at, earner_done')
+        .eq('id', r.booking_id)
+        .maybeSingle();
+      if (booking) {
+        bk = booking;
+        const { data: job } = await supabase
+          .from('jobs')
+          .select('id, title, location')
+          .eq('id', booking.job_id)
+          .maybeSingle();
+        const { data: loc } = await supabase
+          .from('job_locations')
+          .select('exact_location')
+          .eq('job_id', booking.job_id)
+          .maybeSingle();
+        gig = { title: job?.title, masked: job?.location ?? null, exact: loc?.exact_location ?? null };
+      }
+    }
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
@@ -80,12 +111,24 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         from: SAFETY_FROM,
         to: [to],
-        subject: `⚠️ Safety report: ${r.reason}`,
+        // An SOS from an active gig and a routine report are not the same page. The
+        // subject is what the on-call sees on a phone at 11pm, so it leads with which
+        // one this is.
+        subject: emergency
+          ? `🚨 EMERGENCY on an active gig: ${r.reason}`
+          : `⚠️ Safety report: ${r.reason}`,
         html: `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
-          <p style="font-size:16px;"><strong>New safety report</strong></p>
+          <p style="font-size:16px;"><strong>${emergency ? '🚨 Emergency raised from an active gig' : 'New safety report'}</strong></p>
           <p><strong>Reason:</strong> ${esc(r.reason)}</p>
           <p><strong>Reporter:</strong> ${esc(reporter)}</p>
           <p><strong>Reported:</strong> ${esc(reported)}</p>
+          ${gig ? `<p style="border-left:3px solid #EA4637;padding-left:12px;">
+            <strong>Gig:</strong> ${esc(gig.title || '—')}<br/>
+            <strong>Where:</strong> ${gig.exact
+              ? `${esc(gig.exact)}`
+              : `${esc(gig.masked || 'unknown')} <span style="color:#6B6482;">(no exact address on file — remote or city-only listing)</span>`}<br/>
+            <strong>Booking:</strong> ${esc(bk?.status || '—')}${bk?.started_at ? ` · started ${esc(String(bk.started_at))}` : ' · not started'}${bk?.earner_done ? ' · earner tapped done' : ''}
+          </p>` : ''}
           ${r.details ? `<p style="white-space:pre-wrap;border-left:3px solid #EA4637;padding-left:12px;color:#6B6482;">${esc(r.details)}</p>` : ''}
           <p style="color:#6B6482;font-size:12px;">Report ${esc(r.id)}${r.job_id ? ` · job ${esc(r.job_id)}` : ''}${r.booking_id ? ` · booking ${esc(r.booking_id)}` : ''} · ${esc(String(r.created_at || ''))}</p>
           <!-- /moderation, not /reports: the console has no /reports route, so this
@@ -93,6 +136,7 @@ Deno.serve(async (req: Request) => {
                a harassment or assault report, so it failed exactly when someone was
                trying to act on one. -->
           <p><a href="${ADMIN_URL}/moderation" style="color:#5038FF;">Open the moderation queue →</a></p>
+          ${r.booking_id ? `<p><a href="${ADMIN_URL}/bookings/${esc(String(r.booking_id))}" style="color:#5038FF;">Open the booking (address, conversation, force-cancel) →</a></p>` : ''}
         </div>`,
       }),
     });
