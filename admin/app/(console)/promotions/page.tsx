@@ -40,9 +40,15 @@ export default async function PromotionsPage() {
   // issued to a named person and never taken back. And bonus_ledger was three aggregate
   // tiles — no owner, no state per row, no action — which matters more now that it is the
   // mechanism behind the partial-capture fee-credit return.
-  const { data: grants } = await ctx.service
+  // uses_CONSUMED, not uses_used. There has never been a uses_used column: asking
+  // PostgREST for one fails the WHOLE select with 42703, supabase-js returns
+  // { data: null, error }, and `(grants ?? []).length === 0` then rendered "No grants
+  // issued." over a table with rows in it — taking the only Revoke lever in the console
+  // with it. The error is captured below for the same reason: a failed query must never
+  // be indistinguishable from an empty one.
+  const { data: grants, error: grantsError } = await ctx.service
     .from("promo_grants")
-    .select("id, promotion_id, user_id, fee_bps, uses_allowed, uses_used, expires_at, revoked_at, revoked_reason, created_at")
+    .select("id, promotion_id, user_id, fee_bps, uses_allowed, uses_consumed, expires_at, revoked_at, revoked_reason, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -212,13 +218,20 @@ export default async function PromotionsPage() {
           Pausing a campaign stops NEW claims and does nothing about someone already
           holding a grant. This is the per-person lever, and until now it did not exist
           in the UI at all — revokeGrant was written, correct, and had zero callers. */}
-      <h2 className="mt-8 text-lg font-semibold text-[var(--ink)]">Grants ({(grants ?? []).length})</h2>
+      <h2 className="mt-8 text-lg font-semibold text-[var(--ink)]">
+        Grants ({grantsError ? "unknown" : (grants ?? []).length})
+      </h2>
       <p className="mt-1 text-xs text-[var(--muted)]">
         A grant is one person&apos;s claim on a campaign, with the benefit snapshotted at claim
         time. Revoking stops future uses; bookings already made with it keep the rate they were
         given.
       </p>
-      {(grants ?? []).length === 0 ? (
+      {grantsError ? (
+        <p className="mt-3 text-sm text-red-600">
+          Could not load grants: {grantsError.message}. Nobody&rsquo;s grant can be revoked from
+          here until this reads.
+        </p>
+      ) : (grants ?? []).length === 0 ? (
         <p className="mt-3 text-sm text-[var(--muted)]">No grants issued.</p>
       ) : (
         <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--line)]">
@@ -242,7 +255,7 @@ export default async function PromotionsPage() {
                     {g.fee_bps != null ? `${(g.fee_bps / 100).toFixed(2)}% fee` : "—"}
                   </td>
                   <td className="px-3 py-2">
-                    {g.uses_used ?? 0}/{g.uses_allowed ?? "∞"}
+                    {g.uses_consumed ?? 0}/{g.uses_allowed ?? "∞"}
                   </td>
                   <td className="px-3 py-2">{g.expires_at ? fmtDate(g.expires_at) : "—"}</td>
                   <td className="px-3 py-2 text-right">
