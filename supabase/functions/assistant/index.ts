@@ -1706,7 +1706,15 @@ const STREET_SUFFIX_RE =
 function maskLocation(location: unknown): unknown {
   if (!location) return location;
   const label = String(location);
-  if (label.toLowerCase().includes('remote')) return label;
+  // NOTE: there is deliberately no "contains 'remote' -> return unmasked" shortcut.
+  // It used to be here and it leaked street addresses: the substring matches inside
+  // real labels like "1234 Remote Ridge Rd, Dallas, TX" and "123 Main St, Dallas, TX
+  // (remote possible)", both of which were published in full to every signed-in user.
+  // src/lib/address.js, web/lib/address.ts and public.mask_location all deleted it in
+  // 20260726030000; this fourth copy kept it until 2026-09-05 while still claiming to
+  // be a mirror. The shortcut was also unnecessary — a "Remote" segment carries no
+  // digits and no street suffix, so the normal filter below preserves it anyway
+  // ("Remote" -> "Remote", "Remote, Dallas, TX" -> "Remote, Dallas, TX").
   const parts = label.split(',').map((p) => p.trim()).filter(Boolean);
   const safe = parts.filter((p) => !/\d/.test(p) && !STREET_SUFFIX_RE.test(p));
   if (safe.length > 0) return safe.join(', ');
