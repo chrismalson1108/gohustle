@@ -386,7 +386,51 @@ describe('a console factor is confirmed, not assumed', () => {
   });
 
   it('Activate stamps the confirmation, because Activate IS the confirmation', () => {
-    expect(acts).toMatch(/factors_confirmed_at: status === "active" \? new Date\(\)\.toISOString\(\) : null/);
+    // pending → active, and ONLY that transition. The old test pinned
+    // `status === "active" ? now : null`, which is where the next one comes from.
+    expect(acts).toMatch(/const vouches = status === "active" && before\.status === "pending";/);
+    expect(acts).toMatch(/if \(vouches\) \{\s*patch\.factors_confirmed_at = new Date\(\)\.toISOString\(\);/);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // setTeamStatus also serves RESTORE, whose dialog said only "Restore access for X?".
+  // Stamping there vouched for authenticators nobody had been shown — and a disabled row
+  // is the account nobody is watching: it grants nothing so no alarm fires, /mfa still
+  // enrols for whoever holds the password, ctl_admin_unconfirmed_factor filters to
+  // status='active' so it cannot see the row, and a reset does not demote a disabled
+  // member. Restore then wrote a stamp NEWER than that factor and the control went quiet
+  // on the one account it existed for.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('Restore does NOT vouch — it restores access and leaves the stamp alone', () => {
+    const fn = acts.slice(acts.indexOf('export async function setTeamStatus'));
+    // The transition is read before the write; landing on "active" is not enough.
+    expect(fn).toMatch(/\.select\("status"\)\.eq\("user_id", userId\)\.maybeSingle\(\)/);
+    // Cleared on the way OUT of active, untouched on the way back IN.
+    expect(fn).toMatch(/else if \(status !== "active"\) \{\s*patch\.factors_confirmed_at = null;/);
+    // The one shape that must never come back.
+    expect(fn).not.toMatch(/factors_confirmed_at: status === "active" \?/);
+  });
+
+  it('the trigger holds it even if the console forgets', () => {
+    // The console is not the only writer — service_role is — and this stamp has already
+    // been written by a click that did not ask once.
+    expect(allMigrations).toMatch(/create or replace function public\.admin_restore_never_vouches\(\)/);
+    expect(allMigrations).toMatch(/create trigger trg_admin_restore_never_vouches\s+before update on public\.admin_users/);
+    expect(allMigrations).toMatch(/old\.status = 'disabled'\s*\n\s*and new\.status = 'active'/);
+    // It PINS rather than raising: restoring access is an availability path.
+    expect(allMigrations).toMatch(/new\.factors_confirmed_at := old\.factors_confirmed_at;/);
+    // And the probe proves it discriminates on the transition, not on the landing state.
+    expect(allMigrations).toMatch(/FIX TOO BROAD: pending -> active no longer records the confirmation/);
+    expect(allMigrations).toMatch(/FIX FAILED: disabled -> active still stamped/);
+    expect(allMigrations).toMatch(/Confirm authenticators can no longer vouch/);
+  });
+
+  it('the Restore dialog says what it is and is not doing', () => {
+    const restore = ctrls.slice(ctrls.indexOf('status === "disabled" &&'));
+    expect(restore).toMatch(/Restore console access for/);
+    expect(restore).toMatch(/authenticator/);
+    expect(restore).toMatch(/Restoring does not vouch for any of them/);
+    expect(restore).toMatch(/Confirm authenticators/);
   });
 
   it('a reset clears it — the factors it vouched for are gone', () => {

@@ -175,28 +175,66 @@ export async function setTeamStatus(formData: FormData): Promise<ActionResult> {
     }
     if (status !== "active") await assertNotLastAdmin(ctx, userId);
 
+    // WHICH transition this is, not merely where it lands. Read before the write,
+    // because the stamp below is only owed by one of them.
+    const { data: before, error: beforeErr } = await ctx.service
+      .from("admin_users").select("status").eq("user_id", userId).maybeSingle();
+    if (beforeErr) throw new Error(beforeErr.message);
+    if (!before) throw new Error("No such team member.");
+
+    // ── Only the click that ASKED may vouch ─────────────────────────────────
+    //
+    // Activating IS the confirmation. The instruction has always been "activate only
+    // after you have confirmed the enrolment time with them directly" — that is the
+    // click where it happens, so it is the click that records it. Without a stamp, a
+    // factor enrolled a week later is indistinguishable from the one that was vouched
+    // for, and ctl_admin_unconfirmed_factor has nothing to compare against.
+    //
+    // But this action also serves RESTORE (disabled → active), whose dialog asked
+    // nothing: "Restore access for X?" — no factor list, no enrolment time, no
+    // instruction to confirm out of band. Stamping there vouched for factors nobody had
+    // looked at, and a revoked account is precisely the one nobody is watching: /mfa
+    // enrols a fresh authenticator for whoever holds the password, a disabled row grants
+    // nothing so no alarm fires, and a reset on a disabled member does not demote it. So
+    // a factor enrolled during the revocation was silently certified by Restore, and the
+    // control that exists to catch it (newest factor > factors_confirmed_at) went quiet.
+    //
+    // Restore now restores ACCESS and vouches for nothing. The row comes back unconfirmed
+    // — /team shows "Confirm authenticators" and the control fires — so the vouch is made
+    // by the one click whose entire purpose is to make it.
+    const vouches = status === "active" && before.status === "pending";
+
+    const patch: Record<string, unknown> = {
+      status,
+      disabled_at: status === "disabled" ? new Date().toISOString() : null,
+    };
+    if (vouches) {
+      patch.factors_confirmed_at = new Date().toISOString();
+    } else if (status !== "active") {
+      // Leaving active drops the vouch: whatever it covered is no longer vouched for.
+      patch.factors_confirmed_at = null;
+    }
+    // Restore (disabled → active) does not touch the column at all, deliberately.
+    // Writing null would also erase a confirmation somebody genuinely did make on the
+    // disabled row; leaving it keeps whatever is true, which on the ordinary
+    // revoke→restore path is the null that revoking already wrote.
+
     const { data, error } = await ctx.service
       .from("admin_users")
-      .update({
-        status,
-        disabled_at: status === "disabled" ? new Date().toISOString() : null,
-        // Activating IS the confirmation. The instruction has always been "activate only
-        // after you have confirmed the enrolment time with them directly" — this is the
-        // click where that happens, so it is the click that should record it. Without a
-        // stamp, a factor enrolled a week later is indistinguishable from the one that
-        // was vouched for, and ctl_admin_unconfirmed_factor has nothing to compare
-        // against. Cleared on the way OUT of active, so re-activating vouches afresh.
-        factors_confirmed_at: status === "active" ? new Date().toISOString() : null,
-      })
+      .update(patch)
       .eq("user_id", userId)
       .select("user_id");
     if (error) throw new Error(error.message);
     if (!data?.length) throw new Error("No such team member.");
 
     return {
+      from: before.status,
+      vouched: vouches,
       __message:
         status === "active"
-          ? "Activated. Their next sign-in reaches the console."
+          ? vouches
+            ? "Activated. Their next sign-in reaches the console."
+            : "Access restored. This did NOT vouch for their authenticators — check every entry on their row with them directly, then press Confirm authenticators."
           : status === "disabled"
             ? "Access revoked. Their row is kept so past audit entries still attribute correctly. Any current token stays valid for up to ~1h."
             : "Set back to pending — access refused until activated again.",
