@@ -11,8 +11,11 @@ import JobCard from '../components/JobCard';
 import JobsMap from '../components/JobsMap';
 import CategoryPicker from '../components/CategoryPicker';
 import FilterSheet, { DEFAULT_FILTERS, countActiveFilters } from '../components/FilterSheet';
+import ReportSheet from '../components/ReportSheet';
 import { useUser } from '../context/UserContext';
 import { useJobs } from '../context/JobsContext';
+import { useAuth } from '../context/AuthContext';
+import { submitReport } from '../lib/moderation';
 import { useHaptic } from '../hooks/useHaptic';
 import { milesLabel } from '../lib/geo';
 import { useTabBarScrollHandler, expandTabBar } from '../lib/tabBarScroll';
@@ -47,8 +50,9 @@ async function geocodeOne(q) {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { name, streakDays, school, skills, city, recentCategorySlugs } = useUser();
+  const { name, streakDays, school, skills, city, recentCategorySlugs, showToast } = useUser();
   const { jobs, bookings, refreshJobs, refreshBookings, blockedIds } = useJobs();
+  const { user } = useAuth();
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
   const onTabBarScroll = useTabBarScrollHandler();
@@ -71,6 +75,9 @@ export default function HomeScreen({ navigation }) {
   const geoMounted = useRef(true);
   useEffect(() => () => { geoMounted.current = false; }, []);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+  // ONE sheet for the whole feed, holding the job it was opened from. Mounting the
+  // sheet inside a FlatList row would be one native modal window per visible card.
+  const [reportJob, setReportJob] = useState(null);
   // Android ships no Google Maps API key, and a MapView built without one is
   // rejected by the Maps SDK — so there is no Map control to offer there. Lifts
   // by itself once app.json carries the key (src/lib/mapsConfig.js).
@@ -147,6 +154,23 @@ export default function HomeScreen({ navigation }) {
     setRefreshing(true);
     await Promise.all([refreshJobs(), refreshBookings()]);
     setRefreshing(false);
+  };
+
+  // Same insert JobDetailScreen's report makes — one reports table, one queue. The
+  // sheet is closed FIRST so the row is never left half-dismissed behind a failure
+  // toast, and the toast says what happens next rather than just acknowledging.
+  const doReport = async (reason) => {
+    const job = reportJob;
+    setReportJob(null);
+    if (!job || !user?.id) return;
+    try {
+      await submitReport({ reporterId: user.id, reportedUserId: job.posterId, jobId: job.id, reason });
+      showToast({ icon: '🚩', title: 'Report submitted', message: 'Thanks — our team will review this gig.' });
+    } catch (e) {
+      // The rate-limit guard (10/reporter/hour) raises check_violation with a message
+      // written for the person reading it; surface it rather than "please try again".
+      showToast({ icon: '⚠️', title: "Couldn't submit", message: e?.message || 'Please try again.' });
+    }
   };
 
   // Build state list from available jobs for the location filter
@@ -350,6 +374,9 @@ export default function HomeScreen({ navigation }) {
             distanceLabel={milesLabel(item._distanceMi)}
             onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
             bookingStatus={bookings.find(b => b.jobId === item.id)?.status}
+            // Your own gigs appear in Browse (nothing in isBrowsable filters them out),
+            // and reporting yourself would page the on-call for nothing.
+            onReport={item.posterId && item.posterId === user?.id ? undefined : setReportJob}
           />
         )}
         showsVerticalScrollIndicator={false}
@@ -390,6 +417,14 @@ export default function HomeScreen({ navigation }) {
         defaultCenterLabel={city}
         onApply={(f) => { setFilters(f); setShowFilter(false); }}
         onClose={() => setShowFilter(false)}
+      />
+
+      <ReportSheet
+        visible={!!reportJob}
+        title="Report this gig"
+        subtitle={reportJob?.title}
+        onClose={() => setReportJob(null)}
+        onSelect={doReport}
       />
     </View>
   );

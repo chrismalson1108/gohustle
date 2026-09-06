@@ -369,6 +369,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 - **`DateTimePicker`** — day chips + time grid producing `slots[]`. Use for posting and editing.
 - **`SlotPicker`** — single-select chip row from existing `slots[]` (used in JobDetail). Props: `slots`, `selected`, `onSelect`.
 - **`ScreenHeader`** — flat screen header, the replacement for the deleted gradient hero. Props: `children`, `style`, `topInset` (default `true`; pass `false` on pushed screens where the opaque native bar already cleared the status bar), `surface` (white instead of canvas). **There is no `GradientHeader` and no LinearGradient anywhere in the app.**
+- **`ReportSheet`** — the shared report-reason bottom sheet. Props: `visible` (required), `title`, `subtitle`, `onSelect(reason)`, `onClose`. Draws its rows from `REPORT_REASONS`, so the five reasons cannot drift per surface. Used by the **⋯ on `JobCard`** — pass `onReport(job)` and the card grows an overflow beside the bookmark; the HOST screen owns the sheet (one per feed, not one Modal per FlatList row). `HomeScreen` passes it, suppressed on your own gigs. `JobDetailScreen`/`PublicProfileScreen`/`MessageSheet` still carry their own older copies.
 - **`AchievementToast`** — driven by `pendingToast` in UserContext.
 - **`BookingStatusBadge`** — status pill: pending/confirmed/completed/verified/declined/cancelled. Props: `status`, `compact` (icon-only).
 - **`PosterTrustCard`** — displays poster profile info and rating in JobDetailScreen.

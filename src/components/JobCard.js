@@ -30,7 +30,14 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 // attached: renders with a square bottom edge so a status panel can sit flush
 // beneath it and the pair reads as ONE card (rounded top, rounded bottom).
-export default function JobCard({ job, onPress, bookingStatus, distanceLabel, attached }) {
+//
+// onReport: optional. When given, the card carries a ⋯ overflow beside the bookmark
+// that calls back with this job. Reporting a listing used to require opening it first,
+// so the one gig a browsing user most wants to flag — an obvious scam they are NOT
+// about to tap into — was the one they could not report. The host screen owns the
+// sheet: a Modal per row in a FlatList is one native window per visible card.
+// Omitted (undefined) on your own gigs and on surfaces where reporting makes no sense.
+export default function JobCard({ job, onPress, bookingStatus, distanceLabel, attached, onReport }) {
   const haptic = useHaptic();
   const { savedJobIds, toggleSavedJob } = useJobs();
   const saved = savedJobIds.has(job.id);
@@ -54,27 +61,39 @@ export default function JobCard({ job, onPress, bookingStatus, distanceLabel, at
       onPress={() => { haptic.light(); onPress(); }}
       activeOpacity={0.82}
     >
-      <TouchableOpacity
-        style={styles.saveBtn}
-        onPress={() => { haptic.light(); toggleSavedJob(job.id); }}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        accessibilityLabel={saved ? 'Unsave gig' : 'Save gig'}
-      >
-        <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={16} color={saved ? colors.primary : colors.textMuted} />
-      </TouchableOpacity>
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => { haptic.light(); toggleSavedJob(job.id); }}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+          accessibilityLabel={saved ? 'Unsave gig' : 'Save gig'}
+        >
+          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={16} color={saved ? colors.primary : colors.textMuted} />
+        </TouchableOpacity>
+        {onReport && (
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => { haptic.light(); onReport(job); }}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+            accessibilityLabel="Report this gig"
+          >
+            <Ionicons name="ellipsis-horizontal" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={styles.body}>
         {job.photos?.length > 0 && (
           <Image source={{ uri: job.photos[0] }} style={styles.cover} />
         )}
         {bookingStatus && BOOKING_PILL[bookingStatus] && (
-          <View style={[styles.bookingPill, { backgroundColor: BOOKING_PILL[bookingStatus].bg }]}>
+          <View style={[styles.bookingPill, onReport && styles.bookingPillWide, { backgroundColor: BOOKING_PILL[bookingStatus].bg }]}>
             <Ionicons name={BOOKING_PILL[bookingStatus].ion} size={13} color={BOOKING_PILL[bookingStatus].text} style={{ marginRight: 5 }} />
             <Text style={[styles.bookingPillText, { color: BOOKING_PILL[bookingStatus].text }]}>
               {BOOKING_PILL[bookingStatus].label}
             </Text>
           </View>
         )}
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, onReport && styles.headerRowWide]}>
           <View style={styles.headerLeft}>
             {job.urgent && (
               <View style={styles.urgentBadge}>
@@ -140,8 +159,13 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 0,
     marginBottom: 0,
   },
-  saveBtn: {
+  // One absolutely-positioned row rather than two absolute buttons: the ⋯ is
+  // optional, so laying them out by hand would put its right offset in two places.
+  cardActions: {
     position: 'absolute', top: 12, right: 12, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  actionBtn: {
     backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 16, padding: 6,
   },
   body: { padding: 16 },
@@ -150,10 +174,14 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
     alignSelf: 'stretch', marginBottom: 10, alignItems: 'center',
     flexDirection: 'row', justifyContent: 'center',
-    // Clear the absolute bookmark button in the top-right so they don't overlap
+    // Clear the absolute action buttons in the top-right so they don't overlap
     // when the pill is the card's top element (matches headerRow's paddingRight).
     marginRight: 30,
   },
+  // The ⋯ adds a second 28pt button plus its gap. Without widening these two, the
+  // meta line and the booking pill run underneath it.
+  bookingPillWide: { marginRight: 62 },
+  headerRowWide: { paddingRight: 60 },
   bookingPillText: { fontSize: 12, fontWeight: '700' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingRight: 28 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },

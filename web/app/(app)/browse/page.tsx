@@ -16,6 +16,8 @@ import {
 } from "@gohustlr/shared";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
+import { useAuth } from "@/lib/auth";
+import { REPORT_REASONS, submitReport } from "@/lib/moderation";
 import { fetchCategories, type CategoryIndex } from "@/lib/categories";
 import JobCard from "@/components/JobCard";
 import CategoryPicker from "@/components/CategoryPicker";
@@ -44,8 +46,28 @@ const HEAD_CHIPS = [
 ];
 
 export default function BrowsePage() {
-  const { name, streakDays, school, skills, city, profileStatus, recentCategorySlugs } = useUser();
+  const { name, streakDays, school, skills, city, profileStatus, recentCategorySlugs, showToast } = useUser();
   const { jobs, bookings, blockedIds, jobsLoading } = useJobs();
+  const { user } = useAuth();
+
+  // ONE modal for the whole grid, holding the job it was opened from.
+  const [reportJob, setReportJob] = useState<Job | null>(null);
+
+  // The same insert the gig page's report makes — one reports table, one queue.
+  async function doReport(reason: string) {
+    const job = reportJob;
+    setReportJob(null);
+    if (!job || !user?.id) return;
+    try {
+      await submitReport({ reporterId: user.id, reportedUserId: job.posterId, jobId: job.id, reason });
+      showToast({ icon: "🚩", title: "Report submitted", message: "Thanks — our team will review this gig." });
+    } catch (e) {
+      // The rate-limit guard (10/reporter/hour) raises with a message written for the
+      // person reading it; surface that rather than a generic retry line.
+      const msg = e instanceof Error ? e.message : "";
+      showToast({ icon: "⚠️", title: "Couldn't submit", message: msg || "Please try again." });
+    }
+  }
 
   // Show the real name only once the profile has actually loaded — never render the
   // "Hustler" placeholder as if it were the signed-in user's account.
@@ -402,6 +424,7 @@ export default function BrowsePage() {
                 job={job}
                 distanceLabel={milesLabel(job._distanceMi ?? null)}
                 bookingStatus={bookings.find((b) => b.jobId === job.id)?.status}
+                onReport={job.posterId && job.posterId === user?.id ? undefined : setReportJob}
               />
             ))}
           </div>
@@ -437,6 +460,21 @@ export default function BrowsePage() {
         }}
         onClose={() => setShowFilter(false)}
       />
+
+      <Modal open={!!reportJob} onClose={() => setReportJob(null)} title="Report this gig" size="sm">
+        <p className="mb-3 text-sm text-ink-soft">{reportJob?.title}</p>
+        <div className="space-y-2">
+          {REPORT_REASONS.map((reason) => (
+            <button
+              key={reason}
+              onClick={() => doReport(reason)}
+              className="w-full rounded-xl border border-line bg-white px-4 py-3.5 text-left text-sm font-semibold text-ink transition hover:border-urgent hover:text-urgent"
+            >
+              {reason}
+            </button>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

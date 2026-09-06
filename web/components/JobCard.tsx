@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MapPin, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark, AlertTriangle, Zap } from "lucide-react";
+import { MapPin, CheckCircle2, Clock, RefreshCw, Heart, XCircle, Bookmark, AlertTriangle, Zap, MoreHorizontal } from "lucide-react";
 import { categoryLabel } from "@gohustlr/shared";
 import Avatar from "./ui/Avatar";
 import RatingStars from "./ui/RatingStars";
@@ -27,9 +27,14 @@ interface Props {
   job: Job;
   distanceLabel?: string | null;
   bookingStatus?: BookingStatus;
+  // Optional, and the mobile card's twin. When given, the card carries a ⋯ overflow
+  // beside the bookmark; the PAGE owns the reason modal, so one is mounted per feed
+  // rather than one per card. Omitted on your own gigs — nothing filters them out of
+  // the browse feed, and reporting yourself pages the on-call for nothing.
+  onReport?: (job: Job) => void;
 }
 
-export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
+export default function JobCard({ job, distanceLabel, bookingStatus, onReport }: Props) {
   const { savedJobIds, toggleSavedJob } = useJobs();
   const pill = bookingStatus ? BOOKING_PILL[bookingStatus] : null;
   const saved = savedJobIds.has(job.id);
@@ -59,13 +64,25 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
     // Hover deepens the shadow only — no lift, no ring. A translate-on-hover
     // card is a template flourish with no counterpart in the app.
     <div className="relative flex h-full overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-card)] transition-shadow duration-150 hover:shadow-[var(--shadow-soft)]">
-      <button
-        onClick={() => toggleSavedJob(job.id)}
-        className="absolute right-3 top-3 z-10 rounded-full bg-white/92 p-1.5 text-ink-muted transition hover:text-primary"
-        aria-label={saved ? "Unsave gig" : "Save gig"}
-      >
-        <Bookmark className={saved ? "size-4 fill-primary text-primary" : "size-4"} />
-      </button>
+      {/* One row, so the ⋯ being optional does not put its offset in two places. */}
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1">
+        <button
+          onClick={() => toggleSavedJob(job.id)}
+          className="rounded-full bg-white/92 p-1.5 text-ink-muted transition hover:text-primary"
+          aria-label={saved ? "Unsave gig" : "Save gig"}
+        >
+          <Bookmark className={saved ? "size-4 fill-primary text-primary" : "size-4"} />
+        </button>
+        {onReport && (
+          <button
+            onClick={() => onReport(job)}
+            className="rounded-full bg-white/92 p-1.5 text-ink-muted transition hover:text-urgent"
+            aria-label="Report this gig"
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+        )}
+      </div>
 
       <Link href={`/jobs/${job.id}`} className="flex min-w-0 flex-1 flex-col p-4">
         {job.photos?.length > 0 && (
@@ -74,10 +91,12 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
         )}
 
         {pill && (
-          // mr-8 clears the absolute bookmark button when the pill is the top element.
+          // Clears the absolute action buttons when the pill is the top element —
+          // two of them when the card carries the ⋯.
           <div
             className={classNames(
-              "mb-2.5 mr-8 flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold",
+              "mb-2.5 flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold",
+              onReport ? "mr-16" : "mr-8",
               pill.className,
             )}
           >
@@ -85,7 +104,7 @@ export default function JobCard({ job, distanceLabel, bookingStatus }: Props) {
           </div>
         )}
 
-        <div className="mb-2 flex items-center justify-between gap-2 pr-7">
+        <div className={classNames("mb-2 flex items-center justify-between gap-2", onReport ? "pr-16" : "pr-7")}>
           <div className="flex min-w-0 items-center gap-2">
             {job.urgent && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-urgent-light px-2 py-0.5 text-[11px] font-bold text-urgent">

@@ -123,7 +123,20 @@ export default async function ModerationPage({
                           {nameOf.get(r.reporter_id) ?? r.reporter_id.slice(0, 8)}
                         </Link>
                       )}
-                      {r.job_id ? ` · gig: ${titleOf.get(r.job_id) ?? r.job_id.slice(0, 8)}` : ""}
+                      {/* A LINK, not plain text. The whole point of a gig report is
+                          "pull down this listing", and take-down lives on /jobs/[id];
+                          the title used to render as dead text, so the one action the
+                          report exists to enable required pasting an id into the URL.
+                          Browse now files these one tap from the feed, so this is the
+                          first stop for most of them. */}
+                      {r.job_id ? (
+                        <>
+                          {" · gig: "}
+                          <Link href={`/jobs/${r.job_id}`} className="text-[var(--brand)] hover:underline">
+                            {titleOf.get(r.job_id) ?? r.job_id.slice(0, 8)}
+                          </Link>
+                        </>
+                      ) : null}
                       {r.booking_id ? (
                         <>
                           {" · "}

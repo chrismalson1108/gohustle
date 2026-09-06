@@ -258,6 +258,11 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     ['claiming payment when a poster goes quiet', /Claim your payment/],
     ['redeeming a promo or referral code', /Have a code\?/],
     ['reporting or blocking someone', /Reporting or blocking/],
+    // Added 2026-09-06 with the report control on the browse card. A user who
+    // describes a scam listing they have NOT applied to was being told to open a
+    // conversation or a profile they do not have — the one report path the prompt
+    // knew about required a relationship with the person they are trying to avoid.
+    ['reporting a listing from Browse', /Reporting a LISTING/],
     ['identity and student verification', /Verify Student Status/],
     ['inviting friends', /Invite friends/],
     ['saved gigs and saved people', /Saved gigs/],
