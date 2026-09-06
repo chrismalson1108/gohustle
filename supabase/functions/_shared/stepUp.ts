@@ -88,8 +88,14 @@ export async function requireStepUp(
       ok: false,
       status: 403,
       body: {
-        // The app keys on this to route to the code prompt rather than showing a
-        // dead-end error.
+        // Both clients key on this CODE — not on the message — to route to the code
+        // prompt rather than showing a dead-end error: `handledStepUp` in
+        // src/screens/PayoutSetupScreen.js and in web/app/(app)/profile/payouts/page.tsx,
+        // each calling requireMfaChallenge() on its auth context. That was untrue when
+        // written: for months nothing anywhere read this string, so the refusal reached
+        // the user as a toast telling them to enter a code on a screen that has no field
+        // for one. If you rename this value, rename it in those two handlers too —
+        // __tests__/payoutStepUpRecovery.test.js pins all three to the same literal.
         error: 'MFA_REQUIRED',
         message: 'Enter your authenticator code to change payout details.',
       },

@@ -251,7 +251,7 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
 ## State Management
 
 ### AuthContext (`src/context/AuthContext.js`)
-`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`, `needsMfaChallenge`, `mfaResolved`, `clearMfaPending`. Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
+`session`, `user`, `loading`, `onboardingResolved`, `authError`, `onboardingDone`, `pendingEmail`, `needsTermsAcceptance`, `needsMfaChallenge`, `mfaResolved`, `clearMfaPending`, `requireMfaChallenge` (opens the challenge gate when the SERVER refuses an action with 403 `MFA_REQUIRED` — see **Two-factor**). Functions: `signIn`, `signInWithGoogle`, `signInWithApple`, `signUp`, `resetPassword`, `resendConfirmation`, `clearPending`, `clearError`, `signOut`, `markOnboardingDone`, `markTermsAccepted`.
 
 **Email verification is ON** (Supabase `mailer_autoconfirm=false`; `gohustlr://**` is whitelisted in the auth redirect allow-list). `signUp()` returns no session — it sets `pendingEmail`, and `AuthScreen` shows a "Verify your email" panel with a Resend button. `signIn()` maps the `email_not_confirmed` error to a friendly message + sets `pendingEmail`. `onboardingDone` is derived from the profile's `onboarding_done` column **on every session establishment** (`loadOnboarding`), so a freshly-confirmed user's first sign-in still routes through onboarding while returning users skip it.
 
@@ -396,6 +396,12 @@ Optional for users, enforced where it protects money.
   Connect onboarding requires aal2 **if the account has a factor**; no factor ⇒ allowed,
   because locking someone out of their own bank details for not enrolling is the same
   "our posture, their cost" mistake. Opening payout settings emails the account holder.
+  ⚠️ **The refusal is `403 { error: 'MFA_REQUIRED' }` and BOTH clients must key on that
+  CODE** — `handledStepUp` in `PayoutSetupScreen.js` and `web/app/(app)/profile/payouts`,
+  each calling `requireMfaChallenge()` on its auth context so the code prompt appears.
+  Until 2026-09-06 nothing read the string and it reached the user as a toast telling
+  them to enter a code on a screen with no field for one. `__tests__/payoutStepUpRecovery.test.js`
+  pins the server literal and both clients together.
 
 ## Hustlr AI — `supabase/functions/assistant`
 

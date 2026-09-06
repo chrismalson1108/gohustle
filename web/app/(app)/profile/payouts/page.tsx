@@ -6,6 +6,7 @@ import { NO_PAYOUT_ACCOUNT, type ConnectStatus } from "@/lib/connectStatus";
 import { SUPPORT_EMAIL } from "@/lib/legal";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -25,10 +26,30 @@ type Readiness = {
 export default function PayoutsPage() {
   const { getPaymentReadiness, getPayoutOnboardingUrl, getPayoutLoginLink, detachPaymentMethod } = useJobs();
   const { showToast } = useUser();
+  const { requireMfaChallenge } = useAuth();
   const [ready, setReady] = useState<Readiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+
+  // Both payout functions are step-up gated (_shared/stepUp.ts): with a verified factor
+  // on the account they refuse a session that is only aal1, answering 403 MFA_REQUIRED.
+  // That is a RECOVERABLE refusal — enter a current code and the same action works — but
+  // only if this page offers the prompt. It did not: the error fell into the generic
+  // catch below and rendered "Payout setup unavailable — Enter your authenticator code
+  // to change payout details." with no code field anywhere, so the honest reading was
+  // that payouts were broken. Opening the gate sends (app)/layout.tsx to /mfa, which
+  // already carries the code entry and the lost-phone path.
+  const handledStepUp = (e: unknown) => {
+    if ((e as { code?: string })?.code !== "MFA_REQUIRED") return false;
+    showToast({
+      icon: "🛡️",
+      title: "Confirm it's you",
+      message: (e as Error).message || "Enter your authenticator code to change payout details.",
+    });
+    requireMfaChallenge();
+    return true;
+  };
 
   const refreshReadiness = useCallback(async () => {
     const r = await getPaymentReadiness();
@@ -129,7 +150,9 @@ export default function PayoutsPage() {
     } catch (e) {
       // Surface the real reason (e.g. Stripe Connect not enabled) instead of a silent no-op.
       dash?.close();
-      showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
+      if (!handledStepUp(e)) {
+        showToast({ icon: "⚠️", title: "Payout setup unavailable", message: (e as Error).message || "Please try again in a moment." });
+      }
     } finally {
       // ALWAYS clear the spinner — a returning user must never find a button stuck loading.
       setBusy(null);

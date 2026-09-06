@@ -223,6 +223,25 @@ export function AuthProvider({ children }) {
   // the app would sit on the loading gate until the effect re-runs.
   const clearMfaPending = () => { setMfaPending(false); setMfaResolved(true); };
 
+  // The other direction: the SERVER refused an action for want of aal2.
+  //
+  // `_shared/stepUp.ts` answers 403 MFA_REQUIRED on the two payout functions, and its
+  // comment claimed "the app keys on this to route to the code prompt" — which nothing
+  // did. `grep -rn MFA_REQUIRED src web` found exactly one hit, in stepUp.ts itself, so
+  // both clients turned it into a toast reading "Enter your authenticator code" on a
+  // screen with nowhere to enter one.
+  //
+  // The local AAL check cannot see this coming: getAuthenticatorAssuranceLevel() derives
+  // nextLevel from `session.user.factors` in the STORED session, so a session established
+  // before the factor was enrolled (a second device, a browser tab left signed in) reports
+  // nextLevel 'aal1' and passes the sign-in gate until its token refreshes — up to an hour
+  // in which the server says aal2 and the client believes nothing is owed. The server's
+  // refusal is the only signal, so this opens the gate on it.
+  //
+  // Safe to be wrong in only one direction: if the account has no factor after all, the
+  // challenge screen's own listFactors() finds none and clears the gate immediately.
+  const requireMfaChallenge = () => { setMfaPending(true); setMfaResolved(true); };
+
   const signIn = async (email, password) => {
     setAuthError(null);
     cancelPendingPurge();
@@ -504,6 +523,7 @@ export function AuthProvider({ children }) {
       needsMfaChallenge: !!session && mfaPending,
       mfaResolved,
       clearMfaPending,
+      requireMfaChallenge,
       markTermsAccepted,
       signIn,
       signInWithGoogle,
