@@ -1,6 +1,6 @@
 // Cancels a PaymentIntent when a booking is declined or cancelled, releasing the card hold.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { one } from '../_shared/pgrest.ts';
 
 const corsHeaders = {

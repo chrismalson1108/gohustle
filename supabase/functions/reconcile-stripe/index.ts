@@ -32,8 +32,8 @@
 // failures that matter are recent, because that is when they are still fixable.
 //
 // Secrets: STRIPE_SECRET_KEY, plus the shared secret in app_flags.controls_alert.
-import Stripe from "npm:stripe@22";
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import Stripe from "npm:stripe@22.5.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.112.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

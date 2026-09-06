@@ -1,7 +1,7 @@
 // Detaches (removes) the poster's saved card(s) from their Stripe Customer.
 // Used by the "Remove card" action in the Payments hub.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

@@ -11,8 +11,8 @@
 // ghosted poster forfeits the dispute path) and credits exactly once via the same
 // credit_earnings RPC. All money movement is initiated by a human (the earner), never
 // on a timer.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { payoutCapable } from '../_shared/payoutCapable.ts';
 

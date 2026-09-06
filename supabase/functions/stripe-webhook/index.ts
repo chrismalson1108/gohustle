@@ -6,8 +6,8 @@
 //   charge.dispute.created, charge.refunded,
 //   identity.verification_session.verified, identity.verification_session.requires_input,
 //   identity.verification_session.canceled
-import Stripe from 'npm:stripe@22';
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {

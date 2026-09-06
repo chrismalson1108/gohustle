@@ -8,7 +8,7 @@
 //
 // Upgrade path: an authoritative provider (SheerID/VerifyPass) can later mark a
 // profile verified via webhook with student_verify_method='sheerid'.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

@@ -1,7 +1,7 @@
 // Creates a SetupIntent so a poster can save a card on file BEFORE accepting a booking.
 // Mirrors the customer get-or-create logic in stripe-create-payment-intent.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

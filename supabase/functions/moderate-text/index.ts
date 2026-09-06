@@ -7,7 +7,7 @@
 //
 // Fails OPEN (allows) on any config/API error so a provider hiccup can't wedge
 // posting or messaging; the keyword DB trigger still blocks the explicit terms.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

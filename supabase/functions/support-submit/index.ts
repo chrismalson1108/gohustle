@@ -1,7 +1,7 @@
 // Public support intake — the website Contact form POSTs here (verify_jwt=false).
 // Creates a ticket + first message and emails a notification to the support inbox.
 // Light rate-limit by email. Resend is the transport (RESEND_API_KEY secret).
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

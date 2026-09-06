@@ -1,7 +1,7 @@
 // Returns whether the current user (poster) has a saved card on file.
 // Used to drive the "add a payment method" alerts and to gate booking acceptance.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

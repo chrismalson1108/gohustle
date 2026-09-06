@@ -12,7 +12,7 @@
 //
 // Requires the Supabase secret ANTHROPIC_API_KEY:
 //   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
