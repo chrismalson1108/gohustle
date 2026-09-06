@@ -6,10 +6,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import ScreenHeader from '../components/ScreenHeader';
 import JobsMap from '../components/JobsMap';
+import Constants from 'expo-constants';
 import { useJobs } from '../context/JobsContext';
 import { supabase } from '../lib/supabase';
 import { computeAreaInsights } from '../lib/insights';
 import { categoryLabel } from '../../shared/categories.js';
+import { mapsAvailable } from '../lib/mapsConfig';
 import { colors, radii, shadows } from '../theme';
 
 // Coerce a value (number or numeric string from Postgres) to a finite number or null.
@@ -101,7 +103,7 @@ export default function MarketInsightsScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        {hasMapPins && Platform.OS !== 'web' && (
+        {hasMapPins && mapsAvailable(Platform.OS, Constants.expoConfig) && (
           <View style={styles.mapWrap}>
             <JobsMap jobs={jobs} />
           </View>

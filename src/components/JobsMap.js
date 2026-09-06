@@ -1,8 +1,10 @@
 import React from 'react';
 import { View, Text, Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { categoryColor } from '../../shared/categories.js';
 import { maskLocation } from '../lib/address';
+import { mapsAvailable, mapUnavailableReason } from '../lib/mapsConfig';
 import { colors } from '../theme';
 
 // Lazy-require react-native-maps so the native AIRMap view registers only when a
@@ -23,10 +25,14 @@ function loadMaps() {
 // gig that has coordinates. Tapping a pin opens that gig.
 export default function JobsMap({ jobs, userCoords, onPressJob }) {
   const insets = useSafeAreaInsets();
-  if (Platform.OS === 'web') {
+  // Web has no native map; Android has no Google Maps API key in the manifest,
+  // and constructing a MapView without one is what the Maps SDK rejects outright
+  // ("API key not found") rather than degrading. See src/lib/mapsConfig.js —
+  // this gate lifts by itself once app.json carries the key.
+  if (!mapsAvailable(Platform.OS, Constants.expoConfig)) {
     return (
       <View style={styles.fallback}>
-        <Text style={styles.fallbackText}>Map view isn't available on web.</Text>
+        <Text style={styles.fallbackText}>{mapUnavailableReason(Platform.OS, Constants.expoConfig)}</Text>
       </View>
     );
   }

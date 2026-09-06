@@ -63,9 +63,28 @@ eas submit --platform ios --profile production
 
 ## 🤖 Android → Play Console (you — same codebase)
 
-The app is already Android-config-ready: package `com.gohustlr.app`, adaptive icon,
+The app is mostly Android-config-ready: package `com.gohustlr.app`, adaptive icon,
 and the `expo-location` plugin auto-adds `ACCESS_FINE_LOCATION` to the manifest.
 `eas.json` already has the build profiles.
+
+⚠️ **There is no Google Maps Android API key, so the map is OFF on Android.**
+`react-native-maps` renders Apple Maps on iOS (no key) but only Google on Android,
+and the Maps SDK refuses to initialise a MapView without `com.google.android.geo.API_KEY`
+meta-data in the manifest. `JobsMap`, HomeScreen's Map/List toggle and the Market
+Insights heat-map all consult `mapsAvailable()` (`src/lib/mapsConfig.js`) and fall back
+to list-only on Android rather than constructing a map that cannot load. To turn it on:
+
+1. Create a Google Maps **Android** API key restricted to package `com.gohustlr.app`
+   plus the release signing SHA-1 (`eas credentials` prints it).
+2. Add it to `app.json` → `plugins` as
+   `["react-native-maps", { "androidGoogleMapsApiKey": "<key>" }]`.
+   ⚠️ **`android.config.googleMaps.apiKey` does NOT work here.** react-native-maps
+   ships its own config plugin, which wins over @expo/prebuild-config's fallback — and
+   that fallback is the only thing that reads the `android.config` field. Worse, the
+   package's own mod *removes* the meta-data when it is given no props. So the field
+   looks configured and changes nothing.
+3. Rebuild (native config — an OTA will not carry it). The gate lifts by itself; no
+   code change. `__tests__/androidMapsKey.test.js` guards both halves.
 
 ```bash
 eas build --platform android --profile production   # produces an .aab
