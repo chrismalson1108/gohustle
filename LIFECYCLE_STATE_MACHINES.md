@@ -140,13 +140,14 @@ Two properties of this guard are load-bearing for the whole audit:
 
 ### Server-side validation — required vs. exists
 - **Guard transition rules (exist):** poster branch allows `pending→cancelled` and `confirmed→cancelled` (`20260702030000...:72-73`); earner branch allows `cancelled` from `pending`/`confirmed` (`:109-111`).
-- **Dedicated hard-error trigger `guard_started_booking_cancel`** (`supabase/migrations/20260629190000_job_start_cancel.sql:26-43`): RAISES `Cannot cancel a job that has already started` when `new.status='cancelled' and old.started_at is not null`. This is a **separate `BEFORE UPDATE` trigger** (`trg_guard_started_booking_cancel`) that raises (unlike `guard_bookings_write`, which silently reverts), so the client gets a real error and its rollback path fires.
+- **Dedicated hard-error trigger `guard_started_booking_cancel`** (latest definition `supabase/migrations/20260905005000_force_cancel_voided_the_hold_then_could_not_cancel.sql`; originally `20260629190000_job_start_cancel.sql:26-43`): RAISES `Cannot cancel a job that has already started` when `new.status='cancelled' and old.started_at is not null`. This is a **separate `BEFORE UPDATE` trigger** (`trg_guard_started_booking_cancel`) that raises (unlike `guard_bookings_write`, which silently reverts), so the client gets a real error and its rollback path fires. **It early-returns for `service_role`** (20260905005000), the same scope `guard_bookings_write` and `guard_min_age` have always had: it binds the two PARTIES, not the console. Without that scope the admin console's Force cancel voided the poster's hold at Stripe and *then* failed this guard, leaving a live booking with a dead authorization — see the migration header.
 - **`cancellation_fee` write authorization:** poster branch pins `cancellation_fee` to old unless `old.status='confirmed' and new.status='cancelled'` (`20260702030000...:64-66`); earner branch pins it always (`:101`). Only the poster's confirmed→cancelled path may author a fee. ✅
 - **Hold release:** `stripe-cancel-payment` requires caller be poster or earner (`:38-40`), rejects `completed`/`verified` (`:43-45`), rejects if `started_at` set (`:49-51`), and rejects a captured payment (`:67-69`). ✅
 
 ### Current code location enforcing it
 - Client: `cancelBooking` (`src/context/JobsContext.js:725-788`).
-- Server: `guard_bookings_write` (`20260702030000...:64-66,72-73,101,109-111`), `guard_started_booking_cancel` (`20260629190000_job_start_cancel.sql:26-43`), `stripe-cancel-payment/index.ts:38-69`.
+- Server: `guard_bookings_write` (`20260702030000...:64-66,72-73,101,109-111`), `guard_started_booking_cancel` (`20260905005000_force_cancel_voided_the_hold_then_could_not_cancel.sql`), `stripe-cancel-payment/index.ts:38-69`.
+- Operator: `forceCancel` (`admin/app/(console)/bookings/actions.ts`) writes `status='cancelled'` FIRST and releases the hold second — the same order `cancelBooking` uses, and for the same reason. Pinned by `__tests__/forceCancelOrder.test.js`.
 
 ### Missing validation / product gaps
 - ⚠️ **Risk (product gap):** the **cancellation fee is cosmetic** — no charge is levied and nothing is paid to the wronged worker; only `bookings.cancellation_fee` is recorded (display-only). This is clearly commented as intentional but is a *product gap* if beta expects TaskRabbit-style enforced fees.
