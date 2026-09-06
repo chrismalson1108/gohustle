@@ -494,6 +494,66 @@ describe('account deletion preserves the counterparty record', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Deleting an account must also delete what STRIPE holds — the saved card most of all.
+//
+// Both delete paths cancelled open PaymentIntents and stopped there. Neither ever called
+// `customers.del` or `accounts.del`, so the Stripe Customer — created by
+// stripe-create-setup-intent with the user's real email and name, with their card
+// attached and off-session charging enabled — survived deletion indefinitely. There was
+// no way back either: the account is banned, so stripe-detach-payment-method (the only
+// caller of `paymentMethods.detach` in the repo) is a user-JWT function they can never
+// reach. And because the profile is now TOMBSTONED rather than deleted, the
+// stripe_customers row that used to cascade away survives too, still mapping the
+// departed uuid to a live payment method.
+//
+// The privacy policy retains only what "must be retained by us or by our processors
+// (notably Stripe) to meet legal, tax, accounting, and fraud-prevention obligations"
+// (20260702020000). A card kept for future charges is not one of those.
+//
+// Connect deletion is deliberately allowed to fail — Stripe refuses to delete an account
+// holding a positive balance, and that refusal protects money still owed to the earner.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('account deletion removes the Stripe customer and the saved card', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+  const paths = {
+    'delete-account edge function': path.join(
+      __dirname, '..', 'supabase/functions/delete-account/index.ts'),
+    'admin deleteUserCascade': path.join(__dirname, '..', 'admin/lib/deleteUser.ts'),
+  };
+
+  for (const [name, p] of Object.entries(paths)) {
+    const code = strip(fs.readFileSync(p, 'utf8'));
+
+    it(`${name}: deletes the Stripe Customer (which detaches every saved card)`, () => {
+      expect(code).toMatch(/customers\.del\(/);
+      // Deleted by id read from our own mapping row, not from anything the caller sent.
+      expect(code).toMatch(/stripe_customers["']?\)?\s*\)?[\s\S]{0,120}customer_id/);
+    });
+
+    it(`${name}: attempts to delete the Connect account too`, () => {
+      expect(code).toMatch(/accounts\.del\(/);
+    });
+
+    it(`${name}: a Stripe failure never blocks the deletion`, () => {
+      // The whole block is best-effort — a compliance deletion must not depend on
+      // Stripe being reachable.
+      const block = code.slice(code.indexOf('customers.del('));
+      expect(block).toMatch(/catch/);
+    });
+  }
+
+  it('the edge function drops the local mapping row once Stripe has removed the object', () => {
+    // The tombstone keeps the profile, so nothing cascades these away any more.
+    const code = strip(fs.readFileSync(paths['delete-account edge function'], 'utf8'));
+    expect(code).toMatch(/from\('stripe_customers'\)\.delete\(\)/);
+    expect(code).toMatch(/from\('stripe_accounts'\)\.delete\(\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A refund is not the same size on both sides.
 //
 // The poster gets the whole refund back. The earner never held the platform fee, so
