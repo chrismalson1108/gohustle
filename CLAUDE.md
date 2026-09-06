@@ -698,6 +698,12 @@ keyed on verified-booking count) · an active `fee_override` promotion grant.
 **Display**: `shared/pricing.js` (`platformFeeCents`, `earnerNetCents`, `feeLabel`,
 `bookingNetDollars`) with `__tests__/pricing.test.js` **parsing the migration off disk**
 so JS/SQL cannot drift — the same guard `categories.test.js` applies to `category_slug`.
+⚠️ It resolves the LAST migration defining `platform_fee_cents` and builds its mirror
+from constants **parsed** out of that body. Until 2026-09-06 it did neither: it opened
+20260806050000 by name — a body 20260806140000 had already replaced — and retyped
+5000/0.029/30/25 as JS literals, so a third `create or replace` moving the 25c margin or
+dropping the half-up offset would have shipped with the suite green. Never name a
+migration by hand in a drift guard; resolve it, as `supportGuardDrift`/`tipCaps` do.
 Quote screens use `getFeeBps()` (the current rate); anything showing an existing booking
 uses **that booking's `feeBpsQuoted`**. Using the wrong one is a disclosure bug.
 `SERVICE_FEE_PCT` still exists in both clients but has **no consumers** and resolves to
