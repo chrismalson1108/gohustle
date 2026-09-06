@@ -474,6 +474,19 @@ Optional for users, enforced where it protects money.
 - **Recovery codes are generated AT enrollment, not offered later** — 2FA without a way
   back in turns a lost phone into a lost account. Redeeming one REMOVES the factor
   (a code cannot mint aal2), dropping the account to password-only.
+- ⚠️ **ONE ACCOUNT CAN HOLD TWO VERIFIED FACTORS, AND THAT IS THE STEADY STATE.** The
+  app and the website enrol as `GoHustlr`, the admin console as `GoHustlr Admin`, and
+  `/team` deliberately refuses to alert on two for that reason. Both screens said "the
+  factor" until 2026-09-06 and both were wrong for staff accounts: `turnOff` unenrolled
+  `status.factors[0]` and toasted "your account is password-only again" unconditionally,
+  so the other authenticator kept gating every sign-in with the card reading **On**
+  directly under that toast; and the challenge took whichever factor GoTrue listed first
+  while the copy named `GoHustlr`, so a code from the entry the screen NAMED was rejected
+  as wrong — `challengeAndVerify` is scoped to the factorId it is handed. `factorLabel` /
+  `factorOrigin` / `preferredFactor` (`src/lib/mfa.js`, mirrored in `web/lib/mfa.ts`) are
+  the shared answer: every verified factor is listed by name and enrolment date, disabling
+  picks one and derives its toast from the **reloaded** status, and the challenge prefers
+  the app's own entry and names it. `mfa.test.js` covers all four screens.
 - **Step-up** (`_shared/stepUp.ts`): minting a Stripe payout dashboard link, starting
   Connect onboarding, or **deleting the account** requires aal2 **if the account has a
   factor**; no factor ⇒ allowed, because locking someone out of their own bank details

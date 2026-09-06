@@ -25,8 +25,21 @@ import { useHaptic } from '../hooks/useHaptic';
 import {
   fetchMfaStatus, startEnrollment, confirmEnrollment, disableMfa,
   generateRecoveryCodes, confirmRecoveryCodes,
+  factorLabel, factorOrigin, preferredFactor,
 } from '../lib/mfa';
 import { colors, radii, shadows } from '../theme';
+
+// "added 17 Aug 2026" — enough to recognise a setup you remember doing, and to notice
+// one you do not.
+function fmtDate(ts) {
+  if (!ts) return 'an unknown date';
+  try {
+    const d = new Date(ts);
+    return Number.isNaN(d.getTime())
+      ? 'an unknown date'
+      : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch (_) { return 'an unknown date'; }
+}
 
 export default function SecurityScreen() {
   const { showToast } = useUser();
@@ -40,9 +53,18 @@ export default function SecurityScreen() {
   const [code, setCode] = useState('');
   const [codes, setCodes] = useState(null);
   const [err, setErr] = useState(null);
+  // Which authenticator the disable step is aimed at. An account can legitimately hold
+  // two (the app's "GoHustlr" and the console's "GoHustlr Admin"), and the code entered
+  // only verifies against the one it is challenged with.
+  const [targetId, setTargetId] = useState(null);
 
+  // Returns the status it just read. turnOff has to decide between "two-factor is off"
+  // and "one of your authenticators is gone" from the RELOADED state — the previous
+  // code announced password-only from having called disableMfa, which is not the same
+  // question.
   const load = useCallback(async () => {
-    try { setStatus(await fetchMfaStatus()); } catch (_) { setStatus(null); }
+    try { const s = await fetchMfaStatus(); setStatus(s); return s; }
+    catch (_) { setStatus(null); return null; }
     finally { setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -127,13 +149,29 @@ export default function SecurityScreen() {
     } catch (e) { setErr(e.message); } finally { await load(); setBusy(false); }
   };
 
+  // Removes ONE authenticator, and says which — then reads the status back to find out
+  // whether that actually turned two-factor off.
+  //
+  // It used to unenrol factors[0] and toast "Your account is password-only again"
+  // unconditionally. On an account with both entries that removed whichever GoTrue
+  // happened to list first, left the other one still gating every sign-in, and put the
+  // card's own "On" directly underneath a toast saying the opposite.
   const turnOff = async () => {
     haptic.medium(); setErr(null); setBusy(true);
+    const target = status?.factors?.find((f) => f.id === targetId) ?? preferredFactor(status?.factors);
+    if (!target) { setBusy(false); return; }
     try {
-      await disableMfa(status.factors[0].id, code);
-      setStep('idle'); setCode('');
-      showToast({ icon: '🔓', title: 'Two-factor is off', message: 'Your account is password-only again.' });
-      await load();
+      await disableMfa(target.id, code);
+      setStep('idle'); setCode(''); setTargetId(null);
+      const fresh = await load();
+      const left = fresh?.factors?.length ?? 0;
+      showToast(left > 0
+        ? {
+            icon: '🔐',
+            title: `“${factorLabel(target)}” removed`,
+            message: `Two-factor is still ON — ${left} other authenticator${left === 1 ? '' : 's'} can still sign you in.`,
+          }
+        : { icon: '🔓', title: 'Two-factor is off', message: 'Your account is password-only again.' });
     } catch (e) { setErr(e.message); haptic.error(); } finally { setBusy(false); }
   };
 
@@ -156,6 +194,11 @@ export default function SecurityScreen() {
   }
 
   const on = status?.enabled;
+  const factors = status?.factors ?? [];
+  // Two verified factors is a legitimate permanent state, not an anomaly: the app and
+  // the website enrol as "GoHustlr", the admin console as "GoHustlr Admin".
+  const multi = factors.length > 1;
+  const target = factors.find((f) => f.id === targetId) ?? preferredFactor(factors);
 
   // automaticallyAdjustKeyboardInsets: the "enter the 6-digit code" and "turn off
   // two-factor" cards render BELOW the status card, so on a short screen the keyboard
@@ -197,6 +240,21 @@ export default function SecurityScreen() {
                 + 'where your money goes.'}
           </Text>
 
+          {/* Every verified authenticator, named as it appears in the app's list. An
+              account can hold two, and "the factor" is the wrong mental model for those
+              — you cannot act on one you cannot see. */}
+          {on && factors.map((f) => (
+            <Text key={f.id} style={styles.factorLine}>
+              ↳ “{factorLabel(f)}” — {factorOrigin(f)}, added {fmtDate(f.createdAt)}
+            </Text>
+          ))}
+          {on && multi && (
+            <Text style={styles.hintSmall}>
+              Two entries is normal if you also use the admin console. Either one signs
+              you in, so removing one does not turn two-factor off.
+            </Text>
+          )}
+
           {step === 'idle' && !on && (
             <TouchableOpacity style={styles.primaryBtn} onPress={begin} disabled={busy}>
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Turn on two-factor</Text>}
@@ -222,8 +280,16 @@ export default function SecurityScreen() {
                   {status.recovery.remaining > 0 ? 'New recovery codes' : 'Create recovery codes'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { haptic.selection(); setStep('disable'); }}>
-                <Text style={styles.dangerLink}>Turn off two-factor</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  haptic.selection();
+                  setTargetId(preferredFactor(factors)?.id ?? null);
+                  setStep('disable');
+                }}
+              >
+                <Text style={styles.dangerLink}>
+                  {multi ? 'Remove an authenticator' : 'Turn off two-factor'}
+                </Text>
               </TouchableOpacity>
             </>
           )}
@@ -340,10 +406,47 @@ export default function SecurityScreen() {
         {/* ── Disable ────────────────────────────────────────────────────── */}
         {step === 'disable' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Turn off two-factor</Text>
+            <Text style={styles.cardTitle}>
+              {multi ? 'Remove an authenticator' : 'Turn off two-factor'}
+            </Text>
+
+            {/* With two entries the choice is the whole point: the code only verifies
+                against the factor it is challenged with, so a code from the other entry
+                is rejected as if it were wrong. */}
+            {multi && (
+              <View style={styles.factorPicker}>
+                {factors.map((f) => {
+                  const picked = f.id === target?.id;
+                  return (
+                    <TouchableOpacity
+                      key={f.id}
+                      style={[styles.factorChip, picked && styles.factorChipOn]}
+                      onPress={() => { haptic.selection(); setTargetId(f.id); setErr(null); }}
+                    >
+                      <Ionicons
+                        name={picked ? 'radio-button-on' : 'radio-button-off'}
+                        size={16}
+                        color={picked ? colors.primary : colors.textMuted}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.factorChipTitle}>{factorLabel(f)}</Text>
+                        <Text style={styles.factorChipSub}>
+                          {factorOrigin(f)}, added {fmtDate(f.createdAt)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             <Text style={styles.cardBody}>
-              Enter a current code to confirm it is you. Afterwards your account is
-              protected by your password alone.
+              {multi
+                ? `Enter a current code from the “${factorLabel(target)}” entry in your `
+                  + 'authenticator — a code from the other entry will not be accepted. '
+                  + 'Your other authenticator keeps working, so two-factor stays on.'
+                : 'Enter a current code to confirm it is you. Afterwards your account is '
+                  + 'protected by your password alone.'}
             </Text>
             <TextInput
               style={styles.codeInput}
@@ -362,9 +465,11 @@ export default function SecurityScreen() {
               onPress={turnOff}
               disabled={busy || code.length !== 6}
             >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Turn it off</Text>}
+              {busy
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.primaryText}>{multi ? 'Remove it' : 'Turn it off'}</Text>}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setStep('idle'); setCode(''); setErr(null); }}>
+            <TouchableOpacity onPress={() => { setStep('idle'); setCode(''); setTargetId(null); setErr(null); }}>
               <Text style={styles.cancelLink}>Keep it on</Text>
             </TouchableOpacity>
           </View>
@@ -425,6 +530,16 @@ const styles = StyleSheet.create({
   },
   err: { fontSize: 13, color: colors.urgent, lineHeight: 19, marginBottom: 10 },
   warn: { fontSize: 12.5, color: colors.warningDeep, lineHeight: 18, marginTop: 8 },
+
+  factorLine: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 19, marginTop: 2 },
+  factorPicker: { gap: 8, marginTop: 12, marginBottom: 14 },
+  factorChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1,
+    borderColor: colors.border, borderRadius: radii.md, padding: 12,
+  },
+  factorChipOn: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  factorChipTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  factorChipSub: { fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
 
   recoveryRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 2 },
   recoveryText: { fontSize: 13.5, color: colors.textSecondary, fontWeight: '600' },
