@@ -57,6 +57,23 @@ export function safeStorageUrl(url, bucket) {
   }
 }
 
+// The poster's name is at job.poster.name — there has never been a job.posterName,
+// and reading one gave a screen that always showed its fallback ("How was the
+// poster?") no matter whose gig it was.
+//
+// Not every job carries a real name: transformJob writes 'Anonymous' when the row has
+// no profile embed, and the booking-fallback shape below writes the literal 'Poster'
+// for a gig that is no longer listed. Interpolating either of those reads worse than
+// the fallback it would replace ("How was Poster?"), so they are treated as absent and
+// the caller's own wording wins. Returns null when there is no name worth showing.
+export const PLACEHOLDER_POSTER_NAMES = new Set(['Anonymous', 'Poster']);
+
+export function posterDisplayName(job) {
+  const name = String(job?.poster?.name ?? '').trim();
+  if (!name || PLACEHOLDER_POSTER_NAMES.has(name)) return null;
+  return name;
+}
+
 export function transformJob(dbJob) {
   return {
     id: dbJob.id,
