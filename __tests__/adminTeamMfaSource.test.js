@@ -293,6 +293,43 @@ describe('/denied distinguishes the four ways requireAdmin says no', () => {
     expect(denied).toMatch(/\} catch \{[\s\S]{0,300}?return "none";/);
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // The four-way copy justifies itself with "only after they have already presented a
+  // password and a TOTP code for that account". That was an assumption about the route
+  // in, not a check: proxy.ts whitelists /denied as an auth route beside /login and
+  // /mfa, so an aal1 session that never passed the code prompt reaches it by typing the
+  // URL. Without an assurance check, a phished password alone is answered with "Waiting
+  // on approval" or "Your account can reach the console, but not this page" — an oracle
+  // confirming the credential belongs to a live console member.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('the assurance level is CHECKED, not assumed from the route in', () => {
+    expect(denied).toMatch(/aalFromToken\(session\?\.access_token\) !== "aal2"/);
+    // Short of aal2 it must fall to the copy that gives nothing away.
+    expect(denied).toMatch(/aalFromToken\(session\?\.access_token\) !== "aal2"\) return "none";/);
+  });
+
+  it('the check comes BEFORE the membership lookup, so aal1 never reaches it', () => {
+    const aal = denied.indexOf('!== "aal2"');
+    const lookup = denied.indexOf('.from("admin_users")');
+    expect(aal).toBeGreaterThan(-1);
+    expect(lookup).toBeGreaterThan(-1);
+    expect(aal).toBeLessThan(lookup);
+  });
+
+  it('it reuses the guard’s own decoder rather than a second copy', () => {
+    // Two decoders drift, and the one that drifts is the one nobody gates on.
+    expect(denied).toMatch(/import \{ aalFromToken \} from "@\/lib\/guard"/);
+    expect(guard).toMatch(/export function aalFromToken\(/);
+    expect(denied).not.toMatch(/JSON\.parse|Buffer\.from/);
+  });
+
+  it('proxy.ts still lets an unauthenticated visitor see /denied — this is copy, not a gate', () => {
+    // If /denied stopped being an auth route, signing out from it would bounce to
+    // /login mid-POST. The fix is the aal branch above, NOT closing the route.
+    const proxy = clean(fs3.readFileSync(path3.join(R3, 'admin', 'proxy.ts'), 'utf8'));
+    expect(proxy).toMatch(/path === "\/denied"/);
+  });
+
   it('the GUARD itself is unchanged — this is copy, not access', () => {
     // If softening the message ever softened the check, the trust-on-first-use window
     // that pending exists to close would be open again.

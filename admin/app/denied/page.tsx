@@ -1,6 +1,7 @@
 import { signOutAction } from "../auth-actions";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { getServiceClient } from "@/lib/serviceClient";
+import { aalFromToken } from "@/lib/guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Four different situations used to render one sentence.
@@ -28,6 +29,18 @@ import { getServiceClient } from "@/lib/serviceClient";
 // about anyone else and nothing about what lies behind the gate. The generic string is
 // kept for the case where there is genuinely no row, so someone who lands here by
 // guessing still learns nothing.
+//
+// THAT SECOND CLAUSE IS NOW ENFORCED, AND WAS NOT. It described the only route that
+// reaches this page legitimately — requireAdminPage throws "forbidden" only after
+// requireAdmin has already demanded aal2 — and then trusted it. But proxy.ts whitelists
+// /denied as an auth route alongside /login and /mfa, so an aal1 session that never
+// passed the code prompt can simply type the URL. A phished password alone would have
+// been answered with "Waiting on approval" or "Your account can reach the console, but
+// not this page": a free oracle telling an attacker that the credential in their hand
+// belongs to a console member, and whether it is live — which is precisely the account
+// the pending/TOTP machinery exists to protect. So the assurance level is checked HERE
+// too, with the same decoder guard.ts gates on, and anything short of aal2 gets the
+// generic copy that gives nothing away.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Situation = "pending" | "disabled" | "role" | "none";
@@ -37,6 +50,11 @@ async function situation(): Promise<Situation> {
     const supa = await getServerSupabase();
     const { data: { user } } = await supa.auth.getUser();
     if (!user) return "none";
+    // getUser above proved the token authentic, so its own aal claim is trustworthy —
+    // same order, same reader, as lib/guard.ts. A password-only session learns nothing
+    // it did not already know.
+    const { data: { session } } = await supa.auth.getSession();
+    if (aalFromToken(session?.access_token) !== "aal2") return "none";
     const { data: row } = await getServiceClient()
       .from("admin_users")
       .select("status")
