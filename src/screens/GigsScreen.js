@@ -659,6 +659,14 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const declined   = booking.status === 'declined';
+  // PAST_STATUSES is verified | declined | cancelled, and only `verified` is work that
+  // actually happened. The rating row used to render for everything that was not
+  // declined, so a CANCELLED booking printed the literal word "Completed" next to its
+  // own grey "Cancelled" badge — a job the poster called off, in their own history,
+  // reading as paid and finished. Key on verified rather than on "not declined", so a
+  // past status added later is not silently labelled completed too.
+  const settled    = booking.status === 'verified';
+  const didntHappen = declined || booking.status === 'cancelled';
 
   return (
     <View style={styles.pastCard}>
@@ -669,7 +677,7 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
             initial={initial}
             size={38}
             fontSize={15}
-            bg={declined ? colors.textMuted : colors.primary}
+            bg={didntHappen ? colors.textMuted : colors.primary}
             style={{ marginRight: 10 }}
           />
           <View style={styles.earnerInfo}>
@@ -679,7 +687,7 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
         </TouchableOpacity>
         <BookingStatusBadge status={booking.status} compact />
       </View>
-      {!declined && (
+      {settled && (
         <View style={styles.pastRatingRow}>
           {booking.earnerRating ? (
             <View style={styles.pastStars}>
