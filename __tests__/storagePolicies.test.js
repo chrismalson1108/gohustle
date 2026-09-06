@@ -101,6 +101,22 @@ describe('storage.objects RLS — no bucket is anonymously enumerable', () => {
     expect(offenders).toEqual([]);
   });
 
+  // 20260806360000 put the POSTER's dispute evidence in this bucket, on the stated
+  // premise that "completion_party_read already lets EITHER booking party read it —
+  // so the earner can see what they are accused of". It did not: the party branch
+  // only ever unnested bookings.completion_photos/before_photos, and a dispute photo
+  // lives under the poster's own folder in disputes.photos. The one person who could
+  // not open the evidence was the person it was used against.
+  test('the final completion_party_read reaches dispute evidence, not only the booking arrays', () => {
+    const p = live.get('completion_party_read');
+    expect(p).toBeDefined();
+    expect(p.command).toBe('select');
+    // The branch added by 20260905004000.
+    expect(p.using).toMatch(/public\.disputes/i);
+    // ...and the proof-of-work branch it was originally written for survives.
+    expect(p.using).toMatch(/completion_photos/i);
+  });
+
   test('the three buckets fixed in 20260725000000 are owner-scoped in the final state', () => {
     for (const name of ['avatars_owner_list', 'job_photos_owner_list', 'certificates_owner_list']) {
       const p = live.get(name);
