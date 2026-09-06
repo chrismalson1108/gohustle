@@ -1240,6 +1240,44 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
   const gigId = String(payload.gig_id ?? '');
   const slotId = payload.slot_id ? String(payload.slot_id) : null;
 
+  // The payload was staged up to ten minutes ago and NOTHING re-checked it since.
+  // In that window another earner can take the slot or the poster can close the
+  // listing — and the insert then fails on `bookings_one_active_per_slot`, which
+  // raises the SAME 23505 as the user's own (job_id, earner_id) duplicate. The
+  // handler below cannot tell those apart from the code alone, and the old default
+  // told the one user who does NOT have a request in that they already do. So
+  // re-read the listing and the staged slot first: this is the cheap, honest case,
+  // and it leaves only the true race for the constraint-name branch.
+  const { data: fresh } = await sb
+    .from('jobs')
+    .select('id, status, job_slots(id, label, taken, starts_at)')
+    .eq('id', gigId)
+    .maybeSingle();
+  if (!fresh) {
+    return JSON.stringify({ error: 'gig_not_found', message: "That gig isn't there any more — nothing was booked." });
+  }
+  const slots = (((fresh as Json).job_slots as Json[] | null) ?? []);
+  const notPast = (s: Json) => !s.starts_at || new Date(String(s.starts_at)).getTime() > Date.now();
+  const openSlots = slots.filter((s) => !s.taken && notPast(s)).map((s) => String(s.label));
+  if ((fresh as Json).status !== 'open') {
+    return JSON.stringify({
+      error: 'listing_closed',
+      message: 'That gig closed while the confirmation was waiting — nothing was booked.',
+    });
+  }
+  if (slotId) {
+    const staged = slots.find((s) => String(s.id) === slotId);
+    if (!staged || staged.taken || !notPast(staged)) {
+      return JSON.stringify({
+        error: staged && staged.taken ? 'slot_taken' : 'slot_unavailable',
+        message: staged && staged.taken
+          ? 'Someone else took that time while the confirmation was waiting — nothing was booked.'
+          : 'That time is no longer available — nothing was booked.',
+        open_slots: openSlots,
+      });
+    }
+  }
+
   const { data: booking, error } = await sb
     .from('bookings')
     .insert({
@@ -1254,7 +1292,19 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
     .single();
 
   if (error) {
-    if (String(error.message).toLowerCase().includes('duplicate') || (error as { code?: string }).code === '23505') {
+    const detail = `${error.message ?? ''} ${(error as { details?: string }).details ?? ''}`.toLowerCase();
+    const duplicate = detail.includes('duplicate') || (error as { code?: string }).code === '23505';
+    if (duplicate && detail.includes('bookings_one_active_per_slot')) {
+      // Another earner took the slot between the re-read above and this insert.
+      // The user has no request on this gig, so any "already …" wording would be a
+      // false claim — and it is persisted into the thread, so they read it later too.
+      return JSON.stringify({
+        error: 'slot_taken',
+        message: 'Someone else booked that time a moment ago — nothing was booked.',
+        open_slots: openSlots,
+      });
+    }
+    if (duplicate) {
       // "You've already requested this gig" is wrong — and confusing — when the user
       // has actually WORKED it. Read the existing booking and say what really happened.
       const { data: prior } = await sb
@@ -1266,12 +1316,21 @@ async function executeBooking(sb: SupabaseClient, userId: string, payload: Json,
         .limit(1)
         .maybeSingle();
       const st = (prior as Json | null)?.status as string | undefined;
+      if (!st) {
+        // 23505 with no booking of the user's own behind it. Whatever collided, it
+        // was not their own request, so do not tell them one exists.
+        return JSON.stringify({
+          error: 'not_booked',
+          message: "That didn't go through — nothing was booked. Want me to try again?",
+          open_slots: openSlots,
+        });
+      }
       const msg = st === 'verified' || st === 'completed'
         ? "You've already done this gig — it's in your completed work."
         : st === 'confirmed'
           ? "You're already booked on this gig."
           : "You've already requested this gig.";
-      return JSON.stringify({ error: 'already_booked', booking_status: st ?? null, message: msg });
+      return JSON.stringify({ error: 'already_booked', booking_status: st, message: msg });
     }
     return JSON.stringify({ error: error.message });
   }
