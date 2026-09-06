@@ -129,15 +129,34 @@ Deno.serve(async (req: Request) => {
     }
     const reservationKey: string = reservation.key;
 
+    // The Stripe idempotency key is the reservation ROW (`resv_<row id>`), NOT the slot
+    // key. They were one string until 20260906014000, and that conflated two different
+    // lifetimes: the slot key is deterministic per (booking, cents) and is released on
+    // confirm — but Stripe remembers a key for 24 hours, so the next legitimate tip of
+    // the same amount was answered with the FIRST PaymentIntent, no card was charged,
+    // confirm_tip_charge found the already-credited first row by PI, and this function
+    // reported success. The row id is stable exactly as long as the reservation is,
+    // which is precisely the window in which a replay is what we want.
+    //
+    // The derivation from reservation_id is the same shape reserve_tip_slot returns, and
+    // covers this function being deployed ahead of the migration. There is deliberately
+    // no third fallback to `reservation.key`: that is the replay this fixes, so refuse.
+    const stripeKey: string = reservation.stripe_key
+      ?? (reservation.reservation_id ? `resv_${reservation.reservation_id}` : '');
+    if (!stripeKey) {
+      await supabase.rpc('release_tip_reservation', { p_key: reservationKey });
+      console.error('stripe-tip: reservation returned no row handle — refusing to charge:', reservation);
+      return json({ error: 'Tip limits are unavailable right now. Please try again.' }, 503);
+    }
+
     // Off-session charge → full tip to earner (no platform fee on tips).
     //
-    // The idempotency key is the RESERVATION, not booking+amount. It is deterministic
-    // (`resv_<booking>_<cents>`), so a double-tap still collapses onto one
-    // PaymentIntent exactly as before — but it is now also the row that consumed the
-    // headroom, so a second charge cannot exist without a second reservation having
-    // passed the caps. It makes a retry after a timeout exactly-once rather than
-    // merely likely: reserve_tip_slot hands back the same key, Stripe replays the same
-    // PaymentIntent, and confirm_tip_charge attaches it.
+    // A double tap still collapses onto one PaymentIntent: reserve_tip_slot reuses the
+    // live reservation, so both taps get the same row and the same key. A retry after a
+    // timeout is exactly-once for the same reason — the reservation is still there,
+    // Stripe replays the same PaymentIntent, and confirm_tip_charge attaches it. And a
+    // second charge still cannot exist without a second reservation having passed the
+    // caps, because the key names the row that consumed the headroom.
     let pi;
     try {
       pi = await stripe.paymentIntents.create({
@@ -155,14 +174,15 @@ Deno.serve(async (req: Request) => {
           earner_id: booking.earner_id,
           poster_id: user.id,
           reservation: reservationKey,
+          reservation_id: String(reservation.reservation_id ?? ''),
         },
-      }, { idempotencyKey: reservationKey });
+      }, { idempotencyKey: stripeKey });
     } catch (chargeErr: any) {
       // Release ONLY on a definitive decline. An ambiguous failure (timeout, network,
       // Stripe 5xx) may have created the charge anyway, and giving the slot back would
       // let a second charge in beside it. Those reservations expire on their own —
       // reserved_until is excluded from every cap query — so nothing is held forever
-      // and the deterministic key makes the retry land on the same PaymentIntent.
+      // and the reservation's own key makes the retry land on the same PaymentIntent.
       if (chargeErr?.type === 'StripeCardError' || chargeErr?.code === 'authentication_required') {
         await supabase.rpc('release_tip_reservation', { p_key: reservationKey });
       }
@@ -218,8 +238,8 @@ Deno.serve(async (req: Request) => {
     // can tell the poster their card needs re-verification, instead of a generic
     // 500. No money moved (the off-session confirm failed), and a later successful retry
     // is still exactly-once — but by the RESERVATION now, not claim_and_credit_tip: the
-    // reservation row already holds this slot under a deterministic key, so the retry
-    // reuses it and confirm_tip_charge does the crediting. If this attempt dies here the
+    // reservation row already holds this slot, and its own id is the Stripe key, so the
+    // retry reuses both and confirm_tip_charge does the crediting. If this attempt dies here the
     // reservation is left behind deliberately, times out of the caps on its own, and
     // ctl_earner_credit_missing raises it as tip_reservation_unconfirmed with the key an
     // operator needs.
