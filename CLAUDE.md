@@ -917,6 +917,17 @@ only runs when a human opens a page.
   `__tests__/sweepHousekeepingRunsWithoutJwt.test.js` fails if that disappears.
   `expire_dead_listings` survives the same context only because `guard_jobs_write` pins
   and never raises — that is luck, not a pattern to copy.
+  slots are freed. ⚠️ **The sweep must claim `service_role` for its own transaction**
+  (`set_config('request.jwt.claims', …, true)`, first statement in the body). pg_cron
+  carries no JWT, so `auth.role()`/`auth.uid()` are NULL and `guard_bookings_write` —
+  which exempts only service_role and otherwise ends in `raise exception 'not authorized
+  to modify this booking'` — aborted the whole UPDATE on the first qualifying row. The
+  sweep's own `exception when others then raise warning` hid it, so the expiry never once
+  ran on schedule; the console's "Run sweep now" calls `run_all_controls`, which does not
+  reach the expiry at all, so nothing contradicted it. Fixed 20260906034000, asserted by
+  `__tests__/sweepClaimsServiceRole.test.js` — the sweep body is copied forward by every
+  migration that adds a call to it, so the claim is exactly the kind of line a copy loses.
+  `ctl_expiry_sweep_not_clearing` watches the outcome rather than the call.
 - Console: **`/controls`**.
 
 ## Admin console roles
