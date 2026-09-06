@@ -11,6 +11,7 @@ import { fetchMyTickets, ticketHasUnread } from '../lib/support';
 import { track, captureError } from '../lib/analytics';
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
+import { enteredStatus } from '../../shared/lifecycle.js';
 import { findCategory } from '../../shared/categories.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
@@ -366,6 +367,13 @@ export function JobsProvider({ children }) {
         filter: `earner_id=eq.${user.id}`,
       }, (payload) => {
         const b = payload.new;
+        // The status this client already holds for the row, read BEFORE the dispatch
+        // below overwrites it. A realtime UPDATE fires on ANY column change — including
+        // this user's own writes (started_at, earner_done, completion_photos, a poster
+        // rating on an already-verified booking) — and payload.old carries only the
+        // primary key, so the toasts below MUST be gated on a transition rather than on
+        // the row's current status. See enteredStatus in shared/lifecycle.js.
+        const prevStatus = stateRef.current.bookings.find(x => x.id === b.id)?.status;
         // Patch only scalar status fields — the raw realtime row carries no job/
         // earner join, so transforming it would null those out on the booking.
         dispatch({ type: 'UPDATE_BOOKING_STATUS', id: b.id, patch: {
@@ -385,19 +393,21 @@ export function JobsProvider({ children }) {
           completedAt: b.completed_at || null,
           cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
         } });
-        if (b.status === 'confirmed') {
+        if (enteredStatus(prevStatus, b.status, 'confirmed')) {
           showToast({ icon: '✅', title: 'Booking Confirmed!', message: 'The poster accepted your booking. Get ready!' });
           if (b.starts_at) scheduleGigReminder(b.id, b.starts_at, b.slot_label);
         }
-        if (b.status === 'verified') {
+        if (enteredStatus(prevStatus, b.status, 'verified')) {
           const stars = `${Math.round(b.earner_rating || 5)}★`;
           showToast({ icon: '💚', title: 'Job Verified!', message: `${stars} rating — paid via ${b.payment_method || 'cash'}!` });
-          cancelGigReminder(b.id);
         }
-        if (b.status === 'declined' || b.status === 'cancelled') {
-          if (b.status === 'declined') showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
-          cancelGigReminder(b.id);
+        if (enteredStatus(prevStatus, b.status, 'declined')) {
+          showToast({ icon: '😔', title: 'Booking Declined', message: 'The poster declined this booking.' });
         }
+        // Cancelling the reminder stays unconditional: it is idempotent, and a finalized
+        // booking must never keep a pending local notification just because this client
+        // already knew the status.
+        if (['verified', 'declined', 'cancelled'].includes(b.status)) cancelGigReminder(b.id);
       })
       .subscribe();
 
@@ -408,6 +418,12 @@ export function JobsProvider({ children }) {
         schema: 'public',
         table: 'bookings',
       }, (payload) => {
+        // Snapshot the status we already hold BEFORE the refresh below replaces it —
+        // this handler fires on any column change to a booking on one of my gigs,
+        // including my own writes (proposeAmendment / clearAmendment) and the earner
+        // adding completion photos, so "is it completed?" is not the question. "Did it
+        // just BECOME completed?" is.
+        const prevStatus = stateRef.current.posterBookings.find(x => x.id === payload.new?.id)?.status;
         // Refresh poster bookings on any change — simple and reliable
         loadPosterBookings();
         // The channel also delivers the user's OWN bookings (they're a party via
@@ -416,7 +432,7 @@ export function JobsProvider({ children }) {
         if (payload.eventType === 'INSERT' && fromOther) {
           showToast({ icon: '🔔', title: 'New Booking Request!', message: 'Someone wants to book your gig!' });
         }
-        if (payload.new?.status === 'completed' && fromOther) {
+        if (fromOther && enteredStatus(prevStatus, payload.new?.status, 'completed')) {
           showToast({ icon: '⚡', title: 'Job Marked Complete!', message: 'An earner says the job is done — verify and rate them!' });
         }
       })

@@ -270,6 +270,11 @@ declare module "@gohustlr/shared" {
     now?: Date,
     graceDays?: number,
   ): boolean;
+  export function enteredStatus(
+    prevStatus: string | null | undefined,
+    nextStatus: string | null | undefined,
+    target: string,
+  ): boolean;
 
   // ── age ──
   export const MIN_AGE: number;

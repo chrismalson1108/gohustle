@@ -61,3 +61,22 @@ export function canClaimEarnerPayment(booking, now = new Date(), graceDays = EAR
   const at = now instanceof Date ? now : new Date(now);
   return at.getTime() >= deadline.getTime();
 }
+
+// ── Realtime status transitions ──────────────────────────────────────────────
+// A Postgres/Supabase realtime UPDATE payload carries the row's CURRENT status, not
+// a transition: Postgres broadcasts an UPDATE for ANY column change — including the
+// subscriber's OWN writes — and under the default REPLICA IDENTITY `payload.old`
+// holds only the primary key, so `payload.new.status` alone cannot tell "the poster
+// just accepted this" from "I stamped started_at on a booking that has been confirmed
+// for three days". Handlers that toasted off the current value re-announced "Booking
+// Confirmed!" every time the earner tapped "I'm on site" or "Mark done", and
+// re-announced "Job Verified!" when they rated the poster afterwards.
+//
+// Compare against the status the client already holds for that row instead. A row we
+// have no local copy of counts as a transition (prevStatus undefined): that is a cold
+// start, where the event genuinely IS the first news of this status.
+export function enteredStatus(prevStatus, nextStatus, target) {
+  if (nextStatus !== target) return false;
+  return prevStatus !== target;
+}
+

@@ -9,7 +9,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { transformJob, transformBooking, findProhibited } from "@gohustlr/shared";
+import { transformJob, transformBooking, findProhibited, enteredStatus } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet } from "./cache";
 import { stripeEdge } from "./edge";
@@ -245,6 +245,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     myPostedIds: [],
   });
 
+  // Always-current view of state for the realtime handlers, which must read the status
+  // they already hold for a row without becoming stale closures over the reducer's
+  // array identities (mirrors stateRef in src/context/JobsContext.js).
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -474,6 +480,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         { event: "UPDATE", schema: "public", table: "bookings", filter: `earner_id=eq.${user.id}` },
         (payload) => {
           const b = payload.new as Record<string, unknown>;
+          // The status this client already holds for the row, read BEFORE the dispatch
+          // below overwrites it. A realtime UPDATE fires on ANY column change — this
+          // user's own writes included — and payload.old carries only the primary key,
+          // so the toasts must be gated on a transition, not on the current status.
+          const prevStatus = stateRef.current.bookings.find((x) => x.id === (b.id as string))?.status;
           // Patch only scalar fields — the realtime row has no job/earner embed, so
           // running the full transformBooking would wipe the embedded job/earner.
           dispatch({
@@ -495,13 +506,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
               cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
             },
           });
-          if (b.status === "confirmed")
+          const next = b.status as string;
+          if (enteredStatus(prevStatus, next, "confirmed"))
             showToast({ icon: "✅", title: "Booking Confirmed!", message: "The poster accepted your booking. Get ready!" });
-          if (b.status === "verified") {
+          if (enteredStatus(prevStatus, next, "verified")) {
             const stars = `${Math.round((b.earner_rating as number) || 5)}★`;
             showToast({ icon: "💚", title: "Job Verified!", message: `${stars} rating — paid via ${b.payment_method || "cash"}!` });
           }
-          if (b.status === "declined")
+          if (enteredStatus(prevStatus, next, "declined"))
             showToast({ icon: "😔", title: "Booking Declined", message: "The poster declined this booking." });
         },
       )
@@ -510,13 +522,17 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const posterChannel = supabase
       .channel(`poster-bookings-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, (payload) => {
+        // Snapshot the held status before the refresh replaces it — this fires on any
+        // column change to a booking on one of my gigs, my own writes included.
+        const rowId = (payload.new as Record<string, unknown>)?.id as string | undefined;
+        const prevStatus = stateRef.current.posterBookings.find((x) => x.id === rowId)?.status;
         loadPosterBookings();
         // Only toast when it's someone ELSE acting on the poster's gig — the broad
         // subscription also delivers the user's own (earner-side) booking rows.
         const isOthers = (payload.new as Record<string, unknown>)?.earner_id !== user.id;
         if (payload.eventType === "INSERT" && isOthers)
           showToast({ icon: "🔔", title: "New Booking Request!", message: "Someone wants to book your gig!" });
-        if (isOthers && (payload.new as Record<string, unknown>)?.status === "completed")
+        if (isOthers && enteredStatus(prevStatus, (payload.new as Record<string, unknown>)?.status as string, "completed"))
           showToast({ icon: "⚡", title: "Job Marked Complete!", message: "An earner says the job is done — verify and rate them!" });
       })
       .subscribe();
