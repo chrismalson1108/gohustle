@@ -5,7 +5,7 @@
 //
 // Fire-and-forget from the client; never blocks the user. Best-effort + lightly
 // rate-limited so one user rapidly probing the filter can't flood the queue.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

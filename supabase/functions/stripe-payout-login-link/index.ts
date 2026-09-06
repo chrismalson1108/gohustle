@@ -1,8 +1,8 @@
 // Returns a single-use Stripe Express dashboard login link so an onboarded earner
 // can manage/update their payout (bank) details inside a browser. Requires the
 // connected account to have completed onboarding.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { requireStepUp } from '../_shared/stepUp.ts';
 
 const corsHeaders = {

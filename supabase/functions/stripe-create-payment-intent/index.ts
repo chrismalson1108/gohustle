@@ -1,7 +1,7 @@
 // Creates a Stripe PaymentIntent (manual capture = escrow) when a poster accepts a booking.
 // Charged to poster immediately on card auth; captured to earner after job verification.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
 

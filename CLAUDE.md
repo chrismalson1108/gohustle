@@ -541,6 +541,20 @@ deliberately *absent* and why (`support-reply`/`support-ai-draft` keep `verify_j
 true` because the console calls them with a real admin JWT); read it before adding a
 function that anything other than the app calls.
 
+⚠️ **Every dependency specifier is an EXACT version — `npm:@supabase/supabase-js@2.112.3`,
+`npm:stripe@22.5.0` — and all the import sites must agree.** They were floating majors
+(`@2`, `@22`) until 2026-09-06, and `deno.lock` is gitignored, so nothing recorded a
+resolution: each hand-deploy resolved the newest matching release at that moment, and the
+functions are deployed one at a time on the day each is touched. The fleet therefore ran
+whatever minor was current when each function last shipped, and `deno check
+--node-modules-dir=none` — which resolves through Deno's GLOBAL cache — could not see it,
+so the first symptom would have been one function failing in production with no diff that
+explains it. `__tests__/edgeDepsPinned.test.js` fails on any `npm:`/`jsr:` specifier
+without a full `x.y.z`, on two sites disagreeing about a package, and on a raw `https://`
+module import. This is NOT what `stripeApiVersion.test.js` pins: that one fixes the wire
+API version and asserts only the stripe MAJOR, so the library underneath it drifted
+exactly as supabase-js did.
+
 ⚠️ **Edge failures go to `logServerError` (`_shared/logError.ts`), not `console.error`.**
 It writes into the same `client_errors` table the console renders at `/errors`, tagged
 `platform='edge'` with the function name in `app_version`, and it never throws. Supabase's
@@ -708,6 +722,7 @@ it is the second half of a change that has not been done yet.
 | `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
 | `partyPoliciesSuspensionAgnostic.test.js` | a party-scoped policy going back to `join public.jobs` to decide who is a party. A policy subquery runs as the QUERYING role, so it inherits `jobs_select_all` — which hides a suspended poster's job — and suspending someone then erased their counterparty's message thread, chat photos, completion photos and dispute, from the counterparty only. Use `private.is_booking_party` (20260906041000) |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
+| `edgeDepsPinned.test.js` | an edge function importing a floating dependency range — 32 hand-deploys on 32 days each resolved their own supabase-js, and the local type-check reads the developer's cache rather than production |
 | `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**

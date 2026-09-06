@@ -1,7 +1,7 @@
 // Confirms a .edu student verification code. On success, flips the profile's
 // student_verified flag (only the service role may — a DB trigger blocks clients
 // from self-setting it) and records the verified school domain.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

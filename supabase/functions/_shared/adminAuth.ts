@@ -13,7 +13,7 @@
 //
 // Mirrors admin/lib/guard.ts exactly: authentic token (getUser hits the auth
 // server) → AAL2/TOTP from the JWT claim → admin_users membership → role tier.
-import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2.112.3';
 
 export type AdminRole = 'admin' | 'support';
 

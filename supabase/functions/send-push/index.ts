@@ -2,7 +2,7 @@
 // Called by the client at booking/message events. Auth: any signed-in user may
 // notify another (notifications are non-sensitive event pings). Recipient tokens
 // are read with the service role. Dead tokens (DeviceNotRegistered) are pruned.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 // Read the AAL claim straight from the access-token JWT (local decode, no network
 // round-trip). The admin console re-issues the token at aal2 after mfa.verify, so

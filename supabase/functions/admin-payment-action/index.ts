@@ -27,9 +27,9 @@
 // the same token sitting in a console browser can be POSTed straight at
 // /functions/v1/admin-payment-action and the console is never involved. Three ops that
 // move money ran with no record of who did it.
-import Stripe from 'npm:stripe@22';
+import Stripe from 'npm:stripe@22.5.0';
 import { requireAdminCaller } from '../_shared/adminAuth.ts';
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 
 // Same guard as stripe-capture-payment / earner-claim-payment: Number(null) is 0 and

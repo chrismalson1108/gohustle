@@ -7,7 +7,7 @@
 // and cost vector, and the errors that matter operationally (booking, capture, tip,
 // verify, post) are all post-auth. The root ErrorBoundary still renders its fallback
 // either way; only the reporting is gated.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

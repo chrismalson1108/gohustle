@@ -1,7 +1,7 @@
 // Charges the poster's saved card off-session for a tip and routes it (in full)
 // to the earner's Connect account. Called after a job is verified.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { logServerError, errMessage } from '../_shared/logError.ts';
 import { one } from '../_shared/pgrest.ts';
 

@@ -7,8 +7,8 @@
 // that cascade reaches jobs → bookings → payments, i.e. the COUNTERPARTY's financial
 // records. See the tombstone block below.
 // Financial records of record remain in Stripe.
-import Stripe from 'npm:stripe@22';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@22.5.0';
+import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
 import { requireStepUp } from '../_shared/stepUp.ts';
 
 const corsHeaders = {

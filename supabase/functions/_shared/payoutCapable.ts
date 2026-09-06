@@ -25,8 +25,8 @@
 //
 // Found by the 2026-08-12 payments audit, reproduced against current code 2026-08-14.
 // ─────────────────────────────────────────────────────────────────────────────
-import type Stripe from 'npm:stripe@22';
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import type Stripe from 'npm:stripe@22.5.0';
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 export type PayoutCapability = {
   /** True only when Stripe says the account can take a transfer right now. */

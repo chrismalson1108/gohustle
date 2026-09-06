@@ -31,7 +31,7 @@
 //
 // So MFA stays optional, and is enforced where it actually protects money.
 // ─────────────────────────────────────────────────────────────────────────────
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 /** The `aal` claim, read straight from the access token (local decode, no round-trip). */
 export function aalFromToken(token: string): string | null {

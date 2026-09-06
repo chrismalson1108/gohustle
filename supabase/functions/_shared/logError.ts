@@ -20,7 +20,7 @@
 // every caller is a terminal `catch`, and in each of these functions the
 // `const supabase = createClient(...)` lives INSIDE the `try`, so it is not in
 // scope where the logging actually needs to happen.
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.112.3';
 
 const MAX_MESSAGE = 2000;
 const MAX_CONTEXT_BYTES = 8000;
