@@ -1,5 +1,6 @@
 import { requireAdminPage } from "@/lib/guard";
 import { fmtDate } from "@/lib/format";
+import { isGrantableKind } from "@/lib/promoKinds";
 import { CreatePromotion, StatusButtons, MintCodes, EditPromotion, RevokeGrant } from "./PromoControls";
 
 export const metadata = { title: "Promotions" };
@@ -171,7 +172,18 @@ export default async function PromotionsPage() {
                         {cs.length > 3 && <div className="opacity-60">+{cs.length - 3} more</div>}
                         {cs.length === 0 && <div className="opacity-60">none</div>}
                       </div>
-                      <MintCodes id={p.id} />
+                      {isGrantableKind(p.kind) ? (
+                        <MintCodes id={p.id} />
+                      ) : (
+                        // A code on a bonus campaign used to redeem TRUE, burn a seat and
+                        // mint a grant nothing consumes — referral bonuses are paid out of
+                        // bonus_ledger and never read a grant. The RPC refuses it now; this
+                        // stops the console offering a button that can only fail.
+                        <div className="text-[11px] text-[var(--muted)]">
+                          No codes — a {p.kind} campaign pays out of the referral ledger, so a
+                          code would apply to nothing.
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_CLASS[p.status] ?? ""}`}>
