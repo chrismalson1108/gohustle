@@ -185,7 +185,12 @@ open application.
   ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
   names only, and it re-applies the same accepted-booking condition before revealing the
   exact label — a definer function that skipped that would be a way to read addresses off
-  unaccepted applications.
+  unaccepted applications. **"Revocable" was only true of the schema until 20260905** —
+  the Terms and Privacy Policy have promised since 2026-08-06 that the earner can switch
+  a link off at any time, `gig_shares_revoke_own` allowed it, and no client ever wrote
+  `revoked_at`. `SafetyBar` now shows "Stop sharing my location" whenever a live link
+  exists; `parity.test.js` fails if a client that calls `create_gig_share` has no path
+  to `revoked_at`.
 - **`safety_checkins`** — `due_at` / `nudged_at` / `escalated_at` / `resolved_at` per
   booking: the "are you OK?" timer, its nudge, and escalation when it goes unanswered.
   ⚠️ Both middle columns were written by **nothing** until 20260905002200 — the nudge

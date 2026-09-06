@@ -612,3 +612,49 @@ describe('documented component props exist on the component', () => {
     });
   }
 });
+
+// ── 6. A consent document promising a control that exists ───────────────────
+// The Terms and the Privacy Policy (20260806190000, republished verbatim as the
+// 2026-08-12 versions) tell posters and earners that a gig share link "can be switched
+// off by the Earner at any time" and that "the Earner can revoke it at any time". The
+// schema always allowed it — gig_shares_revoke_own, plus a pin trigger that permits
+// revoked_at — and no client ever wrote the column. SafetyBar had exactly two actions,
+// share and SOS, so the only end to a link was its 12-hour expiry (24-hour ceiling),
+// and a link discloses the poster's exact street address, both first names and live
+// status.
+//
+// A document asserting a control that does not exist is worse than a missing feature:
+// it is what the user relied on when they consented.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the share link can be revoked, because the legal text says it can', () => {
+  const legal = read('supabase/migrations/20260806190000_safety_share_disclosure.sql');
+
+  it('the published legal text does promise revocation', () => {
+    // If this stops matching, the promise moved and the assertion below is aimed at
+    // nothing — fix the pointer rather than deleting the guard.
+    expect(legal).toMatch(/switched off by the Earner at any time|revoke it at any time/);
+  });
+
+  it('every client that mints a share also offers a way to stop it', () => {
+    const src = ['src', 'web', 'admin'];
+    const minters = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name === '.next') continue;
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) walk(rel);
+        else if (/\.(js|jsx|ts|tsx)$/.test(e.name)) {
+          const body = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+          if (body.includes('create_gig_share')) minters.push([rel, body]);
+        }
+      }
+    };
+    src.forEach(walk);
+
+    expect(minters.length).toBeGreaterThan(0);
+    const silent = minters
+      .filter(([, body]) => !codeOnly(body).includes('revoked_at'))
+      .map(([rel]) => rel);
+    expect(silent).toEqual([]);
+  });
+});
