@@ -70,32 +70,68 @@ export const NOTIF_CATEGORIES = [
 
 // Load the signed-in user's preferences, merged over the defaults so the UI
 // always has a complete object even before a row exists.
+//
+// This FAILS CLOSED, and that is the whole point. It used to discard the
+// PostgREST error (`const { data } = ...`) and return DEFAULT_NOTIF_PREFS from
+// both the `!data` branch and the outer catch, so "your read failed" and "you
+// have no row yet" were the same answer. The settings screen rendered those
+// defaults as the user's live settings, and the next toggle wrote the whole
+// eight-column row back — silently reverting every opt-out the user had saved.
+// A caller that cannot tell a failed read from an empty one must not be allowed
+// to write, so an error is raised rather than answered with defaults.
 export async function getNotificationPrefs() {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { ...DEFAULT_NOTIF_PREFS };
-    const { data } = await supabase
-      .from('notification_preferences')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (!data) return { ...DEFAULT_NOTIF_PREFS };
-    const merged = { ...DEFAULT_NOTIF_PREFS };
-    for (const k of PREF_KEYS) if (typeof data[k] === 'boolean') merged[k] = data[k];
-    return merged;
-  } catch {
-    return { ...DEFAULT_NOTIF_PREFS };
-  }
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  const user = auth?.user;
+  if (!user) return { ...DEFAULT_NOTIF_PREFS };
+  const { data, error } = await supabase
+    .from('notification_preferences')
+    .select('*')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { ...DEFAULT_NOTIF_PREFS };
+  const merged = { ...DEFAULT_NOTIF_PREFS };
+  for (const k of PREF_KEYS) if (typeof data[k] === 'boolean') merged[k] = data[k];
+  return merged;
 }
 
-// Upsert the full preferences row (owner RLS). Pass the complete prefs object.
-export async function saveNotificationPrefs(prefs) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  const row = { user_id: user.id, updated_at: new Date().toISOString() };
-  for (const k of PREF_KEYS) if (typeof prefs[k] === 'boolean') row[k] = prefs[k];
-  const { error } = await supabase
+// Write ONE preference (owner RLS). Deliberately single-key: the previous
+// whole-object upsert carried the seven columns the user did not touch, so
+// anything wrong with the in-memory copy was written over the stored row. An
+// UPDATE of one column cannot do that no matter what the screen is showing.
+// The insert is the fallback for a user who has no row yet, and only then does
+// the full default set get written.
+export async function saveNotificationPref(key, value) {
+  if (!PREF_KEYS.includes(key)) throw new Error(`Unknown notification preference: ${key}`);
+  if (typeof value !== 'boolean') throw new Error('Notification preference must be a boolean');
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  const user = auth?.user;
+  // Not a silent no-op: the screen has already moved the switch optimistically,
+  // so a write that cannot happen has to come back as a failure.
+  if (!user) throw new Error('Not signed in');
+
+  const patch = { [key]: value, updated_at: new Date().toISOString() };
+  const { data: updated, error } = await supabase
     .from('notification_preferences')
-    .upsert(row, { onConflict: 'user_id' });
+    .update(patch)
+    .eq('user_id', user.id)
+    .select('user_id');
   if (error) throw error;
+  if (updated && updated.length > 0) return;
+
+  // No row yet — create one from the defaults with this single change applied.
+  const { error: insertError } = await supabase
+    .from('notification_preferences')
+    .insert({ user_id: user.id, ...DEFAULT_NOTIF_PREFS, ...patch });
+  if (!insertError) return;
+  // A row appeared between the UPDATE and the INSERT (another device, or the
+  // send-push path): patch that row rather than replacing it.
+  if (insertError.code !== '23505') throw insertError;
+  const { error: retryError } = await supabase
+    .from('notification_preferences')
+    .update(patch)
+    .eq('user_id', user.id);
+  if (retryError) throw retryError;
 }
