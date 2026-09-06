@@ -28,7 +28,7 @@ import { useJobs } from "@/lib/jobs";
 import { notify } from "@/lib/push";
 import { isFavorite, addFavorite, removeFavorite } from "@/lib/favorites";
 import { fetchCertifications, type Certification } from "@/lib/certifications";
-import { submitReport, blockUserDb, REPORT_REASONS } from "@/lib/moderation";
+import { submitReport, REPORT_REASONS } from "@/lib/moderation";
 import PageHeader, { PageContainer, EmptyState } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import RatingStars from "@/components/ui/RatingStars";
@@ -126,7 +126,7 @@ export default function PublicProfilePage() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast, name: myName } = useUser();
-  const { postedJobs, jobs, bookings, posterBookings } = useJobs();
+  const { postedJobs, jobs, bookings, posterBookings, blockUser } = useJobs();
   const [profile, setProfile] = useState<PubProfile | null>(null);
   const [availability, setAvailabilityState] = useState<AvailabilityWindow[]>([]);
   const [reviews, setReviews] = useState<PubReview[]>([]);
@@ -180,7 +180,11 @@ export default function PublicProfilePage() {
     setMenuOpen(false);
     if (!user) return;
     try {
-      await blockUserDb(user.id, id);
+      // Go through JobsContext, never blockUserDb directly: `blockedIds` is loaded
+      // once per user and is what Browse filters and the Messages hub filter on, so
+      // a direct table write leaves both showing this person until a hard reload —
+      // and router.push('/browse') is a client transition that keeps the stale Set.
+      await blockUser(id);
       showToast({ icon: "🚫", title: "User blocked", message: "You won't see their gigs anymore." });
       router.push("/browse");
     } catch {
