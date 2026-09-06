@@ -8,7 +8,7 @@
 //   identity.verification_session.canceled
 import Stripe from 'npm:stripe@22';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { logServerError } from '../_shared/logError.ts';
+import { logServerError, errMessage } from '../_shared/logError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -282,7 +282,11 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (!row) {
-          console.error(`stripe-webhook: succeeded for unknown payment_intent ${pi.id}`);
+          // /errors, not the function log nobody reads: Stripe has money against a
+          // PaymentIntent this ledger cannot account for.
+          await logServerError('stripe-webhook',
+            `succeeded for unknown payment_intent ${pi.id}`,
+            { payment_intent: pi.id, event_type: event.type }, { fatal: true });
           break;
         }
 
@@ -316,10 +320,10 @@ Deno.serve(async (req: Request) => {
           .in('status', ['pending', 'authorized']);
 
         if (!['pending', 'authorized', 'captured'].includes(row.status)) {
-          console.error(
-            `stripe-webhook: succeeded arrived for ${pi.id} while the row was '${row.status}' — ` +
-            `status left alone, but Stripe has this money. Needs a human.`,
-          );
+          await logServerError('stripe-webhook',
+            `succeeded arrived for ${pi.id} while the row was '${row.status}' — status left ` +
+            `alone, but Stripe has this money. Needs a human.`,
+            { payment_intent: pi.id, payment_id: row.id, row_status: row.status }, { fatal: true });
         }
 
         // Settlement must credit the earner exactly once, no matter which path (this
@@ -570,7 +574,20 @@ Deno.serve(async (req: Request) => {
           last_event_at: new Date(event.created * 1000).toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'payout_id' });
-        if (poErr) console.error('stripe-webhook: payout upsert failed', poErr);
+        // THROW, exactly as the account lookup above does, and for the same reason: a
+        // failed write here is a payout state we do not have. Swallowing it with a
+        // console.error and answering 200 meant Stripe never redelivered, the row stayed
+        // in_transit with the ESTIMATED date, and the notification below still told the
+        // earner "$X has arrived" — the told-it-arrived / screen-says-pending split that
+        // 20260813100000 exists to prevent. Three days after the estimate
+        // ctl_payout_overdue then opens a finding claiming a deposit that landed never
+        // did, which is the wrong diagnosis to hand a human.
+        //
+        // The redelivery is safe: guard_stripe_payout_ordering drops a stale write on
+        // last_event_at, so a replay cannot revert a paid row to pending.
+        if (poErr) {
+          throw new Error(`payout ${payout.id}: stripe_payouts upsert failed — ${poErr.message}`);
+        }
 
         // Tell them when it actually lands, and when it does not. These are the two
         // moments an earner wants to hear from us; everything between is noise, so
@@ -588,7 +605,13 @@ Deno.serve(async (req: Request) => {
               data: { type: 'payment', tab: 'ProfileTab' },
             });
           } catch (e) {
-            console.error('stripe-webhook: payout notification failed', e);
+            // Deliberately NOT rethrown: the payout row is already correct, and a
+            // redelivery to fix a missing notification would re-run the whole handler.
+            // It still belongs on /errors — an earner who was never told is invisible.
+            await logServerError('stripe-webhook',
+              `payout ${payout.id}: notification insert failed — ${errMessage(e)}`,
+              { payout_id: payout.id, user_id: acctRow.user_id, event_type: event.type },
+              { fatal: false, userId: acctRow.user_id });
           }
         }
         break;
@@ -691,8 +714,14 @@ Deno.serve(async (req: Request) => {
         break;
     }
   } catch (err: any) {
-    // Log internals server-side only; never leak exception text to the caller.
+    // Log internals server-side only; never leak exception text to the caller — but log
+    // them where someone actually looks. Every throw in the switch above is deliberate
+    // ("we do not know this, let Stripe redeliver"), and a 500 that only reaches the
+    // Supabase function log is a money-path failure nobody is watching.
     console.error('Webhook handler error:', err);
+    await logServerError('stripe-webhook',
+      `handler error on ${event.type} (${event.id}) — returning 500 so Stripe redelivers: ${errMessage(err)}`,
+      { event_id: event.id, event_type: event.type }, { fatal: true });
     return new Response('Handler error', { status: 500 });
   }
 

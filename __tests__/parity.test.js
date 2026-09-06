@@ -612,3 +612,68 @@ describe('documented component props exist on the component', () => {
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleting a gig is gated ONLY in the clients, so the three must say the same thing.
+//
+// deleteJob is a bare `update({ status: 'cancelled' })` (JobsContext / web jobs.tsx).
+// guard_jobs_delete fires on a hard DELETE and guard_jobs_write never reads status, so
+// nothing server-side decides whether a listing may be withdrawn — the predicate in the
+// client IS the rule. Two of the three agreed on pending/confirmed/completed;
+// EditJobScreen reused its core-terms lock (confirmed/completed/verified) instead, and
+// was wrong at both ends:
+//
+//   · 'pending' missing — Edit → Delete soft-cancelled a gig out from under live
+//     applications, leaving applicants on "Awaiting confirmation" for a listing that no
+//     longer exists until expire_stale_pending_bookings(14) catches up 14 days later.
+//   · 'verified' included — a finished, paid gig answered "Someone is actively working
+//     this gig" on Edit while the Hire tab deleted it without a word.
+//
+// Editing and deleting are different questions: 'verified' locks the TERMS (the deal is
+// done and cannot be restated) and 'pending' does not, while 'pending' blocks the
+// WITHDRAWAL and 'verified' does not. The lock predicate is deliberately left alone here.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('all three delete gates enumerate the same booking statuses', () => {
+  // The statuses named in the statement that declares the gate. Comment-stripped, since
+  // every one of these files explains the rule in prose right next to it.
+  const gateStatuses = (file, varName) => {
+    const src = codeOnly(read(file));
+    const at = src.indexOf(varName);
+    expect(`${file} declares ${varName}`).toBe(at > -1 ? `${file} declares ${varName}` : 'MISSING');
+    const stmt = src.slice(at, src.indexOf(';', at));
+    return [...stmt.matchAll(/["']([a-z]+)["']/g)].map((m) => m[1]).sort();
+  };
+
+  const EXPECTED = ['completed', 'confirmed', 'pending'];
+
+  it('the mobile Hire tab gates on pending/confirmed/completed', () => {
+    expect(gateStatuses('src/screens/GigsScreen.js', 'activeBookings')).toEqual(EXPECTED);
+  });
+
+  it('the web edit page gates on the same set', () => {
+    expect(gateStatuses('web/app/(app)/hiring/[id]/edit/page.tsx', 'hasUnresolvedBooking')).toEqual(EXPECTED);
+  });
+
+  it('the mobile edit screen gates on the same set, not on its core-terms lock', () => {
+    expect(gateStatuses('src/screens/EditJobScreen.js', 'unresolvedBooking')).toEqual(EXPECTED);
+  });
+
+  it('the mobile edit screen deletes on the delete gate, not on isLocked', () => {
+    // The defect was one identifier: handleDelete tested `isLocked`, which is the
+    // core-terms lock. Reusing it here is what produced both wrong answers.
+    const src = codeOnly(read('src/screens/EditJobScreen.js'));
+    const handler = src.slice(src.indexOf('const handleDelete'), src.indexOf('const handleDelete') + 400);
+    expect(handler).toMatch(/if \(!canDelete\)/);
+    expect(handler).not.toMatch(/if \(isLocked\)/);
+  });
+
+  it('the core-terms lock is still its own, different predicate', () => {
+    // Guarding the fix in the other direction: collapsing the two would unlock a
+    // verified booking's terms, or lock a poster out of editing a gig that only has
+    // applications.
+    const src = codeOnly(read('src/screens/EditJobScreen.js'));
+    const stmt = src.slice(src.indexOf('const lockedBooking'), src.indexOf(';', src.indexOf('const lockedBooking')));
+    expect([...stmt.matchAll(/["']([a-z]+)["']/g)].map((m) => m[1]).sort())
+      .toEqual(['completed', 'confirmed', 'verified']);
+  });
+});

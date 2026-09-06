@@ -127,6 +127,20 @@ export default function EditJobScreen({ route, navigation }) {
   const jobBookings = posterBookings.filter(b => b.jobId === jobId);
   const lockedBooking = jobBookings.find(b => ['confirmed','completed','verified'].includes(b.status));
   const isLocked = !!lockedBooking;
+
+  // DELETING is a different question from EDITING, and this screen used to answer it
+  // with `isLocked` — a set that excludes 'pending' and includes 'verified', which is
+  // wrong at both ends and disagreed with the other two clients:
+  //   · pending: the gig was soft-cancelled out from under live applications, leaving
+  //     the applicants on 'Awaiting confirmation' for a listing that no longer exists
+  //     until expire_stale_pending_bookings(14) eventually cancels them.
+  //   · verified: finished, paid work blocked the delete with "Someone is actively
+  //     working this gig", while the Hire tab deleted the same gig without complaint.
+  // deleteJob is a bare `update({status:'cancelled'})` with no server-side check —
+  // guard_jobs_delete only fires on a hard DELETE — so this predicate IS the gate, and
+  // the three clients must state it identically. parity.test.js pins them together.
+  const unresolvedBooking = jobBookings.find(b => ['pending','confirmed','completed'].includes(b.status));
+  const canDelete = !unresolvedBooking;
   const amendmentAccepted = isLocked && lockedBooking.amendmentStatus === 'accepted';
   const canEditCore = !isLocked || amendmentAccepted;
   // Pay is special: once a booking is active there's an escrow hold authorized at
@@ -292,10 +306,10 @@ export default function EditJobScreen({ route, navigation }) {
   };
 
   const handleDelete = () => {
-    if (isLocked) {
+    if (!canDelete) {
       Alert.alert(
         'Cannot Delete',
-        'Someone is actively working this gig. Complete or decline the booking before deleting.',
+        'This gig has active or unverified bookings. Decline pending requests and verify any completed work before deleting.',
       );
       return;
     }
