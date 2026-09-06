@@ -42,6 +42,7 @@ const codeOnly = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/
 const admin = codeOnly(read('admin', 'app', 'mfa', 'page.tsx'));
 const web = codeOnly(read('web', 'app', 'mfa', 'page.tsx'));
 const mobile = codeOnly(read('src', 'screens', 'MfaChallengeScreen.js'));
+const mobileLib = codeOnly(read('src', 'lib', 'mfa.js'));
 
 describe('an unreadable factor list cannot become a fresh authenticator', () => {
   it('the console captures the listFactors error', () => {
@@ -124,6 +125,24 @@ describe('enrolling through the console mints a way back in', () => {
     // the gate would re-prompt and burn a second code without a refresh.
     const redeemAt = admin.search(/redeem_mfa_recovery_code/);
     expect(admin.slice(redeemAt)).toMatch(/refreshSession\(\)/);
+  });
+
+  it('and every other surface that redeems refreshes too', () => {
+    // The title above says "as on web and mobile" and only ever read the console file,
+    // so the web page went a month without the refresh while this suite stayed green.
+    // redeem_mfa_recovery_code deletes every row in auth.mfa_factors, but supabase-js
+    // derives nextLevel from the `user.factors` cached in storage: until the next hourly
+    // token refresh, every reload re-computes aal2-required/aal1-held, bounces back to
+    // the challenge, and the only route left for someone whose authenticator is gone
+    // costs another code from a ten-code last resort.
+    const surfaces = { 'web/app/mfa/page.tsx': web, 'src/lib/mfa.js': mobileLib };
+    for (const [name, src] of Object.entries(surfaces)) {
+      const at = src.search(/redeem_mfa_recovery_code/);
+      expect(`${name} redeems a recovery code: ${at > -1}`).toBe(`${name} redeems a recovery code: true`);
+      const after = src.slice(at);
+      expect(`${name} refreshes after redeeming: ${/refreshSession\(\)/.test(after)}`)
+        .toBe(`${name} refreshes after redeeming: true`);
+    }
   });
 
   it('one message covers wrong / used / rate-limited', () => {
