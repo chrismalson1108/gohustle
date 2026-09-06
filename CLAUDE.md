@@ -882,7 +882,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **69 controls are registered**: 67 run in-database and 2 are `external`. Every
+- **70 controls are registered**: 68 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -946,6 +946,19 @@ only runs when a human opens a page.
   four weeks. `ctl_alert_not_dispatching` now names each dark channel and the shape that
   broke it, resolving url/secret exactly as each dispatcher does — including the GUC
   fallback only `notify_safety_report` has, so it cannot report a live channel dark.
+- ⚠️ **The PRODUCT kill switches get the watcher but NOT the deadline, and that split is
+  deliberate.** `payments_enabled`, `posting_enabled`, `signups_enabled`, `tips_enabled`,
+  `assistant_enabled`, `promotions_enabled` are excluded from the alert flags' auto-expiry
+  on purpose — re-enabling a pager resumes telling you things, re-enabling payments
+  resumes taking money 24 hours into a Stripe incident. Until 20260906085000 that was the
+  only half anyone scoped, so a pause was visible on exactly one surface (a red pill on
+  `/flags`) while the digest, the page and `/controls` read clean. `ctl_feature_flag_off`
+  (medium, so it reaches the daily digest rather than paging an operator an hour after
+  they flipped the switch themselves) now reports every off flag for as long as it lasts,
+  and **never re-enables anything**. It watches every `app_flags` row rather than a list
+  of today's six, so the next kill switch is covered the moment it is added; a row that is
+  MEANT to sit off carries `value.off_is_normal` — today only
+  `bonus_cash_payout_enabled`.
 - TWO registry rows are `external = true` — `stripe_reconciliation` and `stripe_webhook_config`,
   both `fn_name = 'external:reconcile-stripe'`. `run_all_controls` filters them out (it iterates
   `where enabled and not external`), so they run only via `controls_sweep_and_page`'s HTTP dispatch
