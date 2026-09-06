@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { inviteEmails, revokeEmail, setOpenBeta, type ActionResult } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 function Msg({ result }: { result: ActionResult | null }) {
   if (!result) return null;
@@ -14,7 +16,8 @@ function Msg({ result }: { result: ActionResult | null }) {
 
 export function InviteForm({ isAdmin }: { isAdmin: boolean }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [emails, setEmails] = useState("");
   const [note, setNote] = useState("");
 
@@ -41,10 +44,15 @@ export function InviteForm({ isAdmin }: { isAdmin: boolean }) {
             const fd = new FormData();
             fd.set("emails", emails);
             fd.set("note", note);
+            // Clear inside the thunk, not after it: useStepUp replays this exact
+            // call after a fresh code, so a form that only reset on the first
+            // attempt would still hold the cohort after a successful retry.
             start(async () => {
-              const r = await inviteEmails(fd);
-              setResult(r);
-              if (r.ok) setEmails("");
+              await stepUp.run(async () => {
+                const r = await inviteEmails(fd);
+                if (r.ok) setEmails("");
+                return r;
+              });
             });
           }}
           disabled={pending || !emails.trim()}
@@ -53,6 +61,7 @@ export function InviteForm({ isAdmin }: { isAdmin: boolean }) {
           {pending ? "Inviting…" : "Invite"}
         </button>
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       <Msg result={result} />
     </div>
   );
@@ -60,22 +69,24 @@ export function InviteForm({ isAdmin }: { isAdmin: boolean }) {
 
 export function RevokeButton({ email, isAdmin }: { email: string; isAdmin: boolean }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   if (!isAdmin) return null;
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex flex-col items-end gap-1">
       <button
         onClick={() => {
           if (!confirm(`Revoke the invite for ${email}?`)) return;
           const fd = new FormData();
           fd.set("email", email);
-          start(async () => setResult(await revokeEmail(fd)));
+          start(async () => { await stepUp.run(() => revokeEmail(fd)); });
         }}
         disabled={pending}
         className="rounded-lg border border-[var(--line)] px-2.5 py-1 text-xs hover:bg-[var(--surface)] disabled:opacity-50"
       >
         Revoke
       </button>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && !result.ok && <span className="text-xs text-[var(--danger)]">{result.message}</span>}
     </span>
   );
@@ -86,7 +97,11 @@ export function RevokeButton({ email, isAdmin }: { email: string; isAdmin: boole
 // Neither belongs behind a single click.
 export function OpenBetaControl({ open, isAdmin }: { open: boolean; isAdmin: boolean }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // The switch is step-up guarded, so the typed word is no longer the only thing
+  // between a borrowed session and public signup — a current code is too. Without
+  // this the operator would just see the raw "stale_mfa" sentinel and no way past it.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [confirmation, setConfirmation] = useState("");
   const next = !open;
   const word = next ? "OPEN" : "CLOSE";
@@ -124,9 +139,11 @@ export function OpenBetaControl({ open, isAdmin }: { open: boolean; isAdmin: boo
             fd.set("open", String(next));
             fd.set("confirmation", confirmation);
             start(async () => {
-              const r = await setOpenBeta(fd);
-              setResult(r);
-              if (r.ok) setConfirmation("");
+              await stepUp.run(async () => {
+                const r = await setOpenBeta(fd);
+                if (r.ok) setConfirmation("");
+                return r;
+              });
             });
           }}
           disabled={pending || confirmation !== word}
@@ -135,6 +152,7 @@ export function OpenBetaControl({ open, isAdmin }: { open: boolean; isAdmin: boo
           {next ? "Open signups to everyone" : "Close to invite-only"}
         </button>
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       <Msg result={result} />
     </div>
   );

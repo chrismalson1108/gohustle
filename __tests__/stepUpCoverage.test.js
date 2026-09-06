@@ -62,10 +62,64 @@ describe('budget-spending actions require a fresh second factor', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Opening signups to the whole internet is an access grant, and it was the last
+// high-consequence control still on plain requireAdmin.
+//
+// guard.ts states the rule as "use for anything that moves money, changes pricing, or
+// GRANTS ACCESS". setOpenBeta upserts the '*' row, which handle_new_user reads as "allow
+// every email" — the difference between a private beta and public signup — and it was
+// satisfied by nothing more than a typed word and a session whose factor could be hours
+// old. A borrowed unlocked screen inside the 12h session cap could make signups public
+// without producing a second factor, while pausing payments from /flags in the same
+// session would have asked for one.
+//
+// Invite and revoke are pinned here too: they are the same act at a smaller scale, and an
+// exception carved by blast radius is the one that grows back.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('access-granting actions require a fresh second factor', () => {
+  const actions = codeOnly(read('access', 'actions.ts'));
+
+  const bodyOf = (name) => {
+    const i = actions.indexOf(`export async function ${name}(`);
+    if (i === -1) return '';
+    const next = actions.indexOf('export async function ', i + 10);
+    return actions.slice(i, next === -1 ? actions.length : next);
+  };
+
+  it('the shared context helper steps up', () => {
+    expect(actions).toMatch(/async function adminCtx\(\)\s*\{\s*return requireFreshAdmin\("admin"\);/);
+    // Not merely "requireFreshAdmin appears somewhere": the plain guard must be gone,
+    // or a later edit can reintroduce it beside the import and nothing notices.
+    expect(actions).not.toMatch(/requireAdmin\(/);
+  });
+
+  ['inviteEmails', 'revokeEmail', 'setOpenBeta'].forEach((fn) => {
+    it(`${fn} goes through it`, () => {
+      const b = bodyOf(fn);
+      expect(`${fn}: found`).toBe(b.length > 50 ? `${fn}: found` : `${fn}: MISSING`);
+      expect(`${fn}: ${/await adminCtx\(\)/.test(b)}`).toBe(`${fn}: true`);
+      // …and reports the recoverable denial as the sentinel useStepUp keys on, not as
+      // the flat "Not authorized." that reads like a revoked role.
+      expect(`${fn}: ${/return denial\(e\)/.test(b)}`).toBe(`${fn}: true`);
+    });
+  });
+
+  it('denial() maps stale_mfa to the sentinel and everything else to a plain denial', () => {
+    expect(actions).toMatch(
+      /function denial\(e: AdminAuthError\): ActionResult \{\s*return \{ ok: false, message: e\.reason === "stale_mfa" \? "stale_mfa" : "Not authorized\." \};/,
+    );
+  });
+});
+
 describe('every guarded call has a recovery path', () => {
   // Any client component that invokes a step-up-guarded action must hold a useStepUp
   // instance AND render the prompt, or the operator dead-ends on "stale_mfa".
-  const FILES = ['promotions/PromoControls.tsx', 'pricing/PricingControls.tsx'];
+  const FILES = [
+    'promotions/PromoControls.tsx',
+    'pricing/PricingControls.tsx',
+    'access/AccessControls.tsx',
+  ];
 
   FILES.forEach((rel) => {
     it(`${rel}: no component can enter step-up without a way out`, () => {
