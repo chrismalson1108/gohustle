@@ -55,6 +55,8 @@ interface AuthValue {
   mfaResolved: boolean;
   /** Called by the challenge UI once a code has verified. */
   clearMfaPending: () => void;
+  /** Called when the SERVER refuses an action for want of aal2 (403 MFA_REQUIRED). */
+  requireMfaChallenge: () => void;
   markTermsAccepted: () => void;
   signIn: (email: string, password: string) => Promise<boolean>;
   signInWithGoogle: () => Promise<boolean>;
@@ -313,6 +315,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // on the loading gate until the effect re-runs.
   const clearMfaPending = () => { setMfaPending(false); setMfaResolved(true); };
 
+  // The other direction: the SERVER refused an action for want of aal2.
+  //
+  // `_shared/stepUp.ts` answers 403 MFA_REQUIRED on the two payout functions, and its
+  // comment claimed "the app keys on this to route to the code prompt" — which nothing
+  // did on either client. The refusal arrived as a plain Error and both payout screens
+  // turned it into a toast reading "Enter your authenticator code" on a page with
+  // nowhere to enter one.
+  //
+  // The local AAL check cannot see this coming: getAuthenticatorAssuranceLevel() derives
+  // nextLevel from `session.user.factors` in the STORED session, so a tab signed in
+  // before the factor was enrolled on the phone reports nextLevel 'aal1' and sails
+  // through the gate until its token refreshes — up to an hour. The server's refusal is
+  // the only signal there is, so this opens the gate on it and (app)/layout.tsx routes
+  // to /mfa from there.
+  const requireMfaChallenge = () => { setMfaPending(true); setMfaResolved(true); };
+
   const signIn: AuthValue["signIn"] = async (email, password) => {
     setAuthError(null);
     cancelPendingPurge();
@@ -525,6 +543,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         needsMfaChallenge: !!session && mfaPending,
         mfaResolved,
         clearMfaPending,
+        requireMfaChallenge,
         markTermsAccepted,
         signIn,
         signInWithGoogle,

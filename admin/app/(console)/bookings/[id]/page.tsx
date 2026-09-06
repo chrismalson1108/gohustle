@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdminPage } from "@/lib/guard";
+import { requireAdminPage, roleSatisfies } from "@/lib/guard";
 import { fmtCents, fmtDate, fmtDollars } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
@@ -217,7 +217,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               ? Math.max(0, (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0) - (pay.refunded_cents ?? 0))
               : 0
           }
-          isAdmin={ctx.role === "admin"}
+          canIntervene={roleSatisfies(ctx.role, "finance")}
         />
       </Section>
 
