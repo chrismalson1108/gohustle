@@ -100,6 +100,23 @@ export default function MfaPage() {
         setErr("That code was not accepted. Each code works once.");
         return;
       }
+      // The factor is gone in the database, but THIS BROWSER'S stored session still
+      // remembers it. getAuthenticatorAssuranceLevel() derives nextLevel from the cached
+      // `user.factors` and currentLevel from the JWT's aal claim, and the RPC updates
+      // neither — so clearMfaPending() below lifts the gate for this render only. Reload
+      // the tab, or open a second one, and the AAL effect in lib/auth.tsx re-reads the
+      // stale user, computes "has a factor, hasn't satisfied it" again, and (app)/layout
+      // sends them back here. With the authenticator gone their only route is another
+      // code, out of a ten-code set that is already the last resort.
+      //
+      // Refreshing re-reads the user server-side, where the factor list is now empty; the
+      // new access token also re-keys that effect, so the gate re-derives itself instead
+      // of resting on the optimistic clear. Same fix as src/lib/mfa.js and the console.
+      //
+      // Never fail the redemption over this: the code is spent and 2FA is off either way,
+      // and throwing here would show a failure message for the thing that just worked.
+      await supabase.auth.refreshSession().catch(() => {});
+
       // The code removed the factor server-side, so this session is no longer waiting
       // on one. They are password-only now and the Security screen says so.
       clearMfaPending();
