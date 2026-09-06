@@ -39,41 +39,53 @@ Deno.serve(async (req: Request) => {
     const cleanEmail = normalizeEduEmail(email);
     if (!cleanEmail || !code) return json({ error: 'missing_fields' }, 400);
 
-    // Most recent un-consumed code for this user + email.
-    const { data: row } = await supabase
-      .from('student_email_verifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('email', cleanEmail)
-      .eq('consumed', false)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!row) return json({ error: 'no_pending', message: 'Request a new code.' }, 400);
-    if (new Date(row.expires_at).getTime() < Date.now()) return json({ error: 'expired', message: 'That code expired. Request a new one.' }, 400);
-    if (row.attempts >= 5) return json({ error: 'too_many_attempts', message: 'Too many tries. Request a new code.' }, 429);
-
+    // ONE call does the counting, the comparison, the one-inbox-one-account rule and
+    // the consume.
+    //
+    // It used to be four statements here: read the row, test `row.attempts >= 5` against
+    // the value just read, compare the hash, and only on a mismatch write
+    // `attempts: row.attempts + 1` — an absolute value computed from a stale read, with
+    // no predicate. Requests fired together all read attempts = 0, were all evaluated as
+    // guesses, and all wrote 1, so a burst of twenty guesses cost one attempt against a
+    // 900,000-space code. Nothing else limited this endpoint, and a hit grants the
+    // Verified Student badge for the VICTIM's school while locking the real owner of that
+    // inbox out of ever verifying it.
+    //
+    // claim_student_verification() makes the attempt the gate — one guarded UPDATE whose
+    // predicate is re-evaluated under the row lock — and adds a ceiling per INBOX rather
+    // than per user, because the row is bound to the caller's own uid and more accounts
+    // would otherwise buy more guesses. Same rule as mfa_recovery_attempts: count first.
     const codeHash = await sha256(`${String(code).trim()}:${user.id}`);
-    if (codeHash !== row.code_hash) {
-      await supabase.from('student_email_verifications').update({ attempts: row.attempts + 1 }).eq('id', row.id);
-      return json({ error: 'invalid_code', message: "That code doesn't match." }, 400);
+    const { data: claim, error: claimErr } = await supabase.rpc('claim_student_verification', {
+      p_user: user.id,
+      p_email: cleanEmail,
+      p_code_hash: codeHash,
+    });
+    // Fail CLOSED. The old code checked no error on any of its writes, so a failed
+    // increment silently handed back a free guess.
+    if (claimErr) {
+      console.error('student-verify-confirm: claim failed', claimErr);
+      return json({ error: 'Something went wrong. Please try again.' }, 500);
     }
-
-    // One .edu inbox verifies only ONE account — block reuse on a different user.
-    const { data: priorUse } = await supabase
-      .from('student_email_verifications')
-      .select('user_id')
-      .eq('email', cleanEmail)
-      .eq('consumed', true)
-      .neq('user_id', user.id)
-      .limit(1);
-    if (priorUse?.length) {
-      return json({ error: 'email_in_use', message: 'That school email has already verified another account.' }, 409);
+    const result = Array.isArray(claim) ? claim[0] : claim;
+    switch (result?.status) {
+      case 'ok':
+        break;
+      case 'expired':
+        return json({ error: 'expired', message: 'That code expired. Request a new one.' }, 400);
+      case 'too_many_attempts':
+        return json({ error: 'too_many_attempts', message: 'Too many tries. Request a new code.' }, 429);
+      case 'invalid_code':
+        return json({ error: 'invalid_code', message: "That code doesn't match." }, 400);
+      case 'email_in_use':
+        return json({ error: 'email_in_use', message: 'That school email has already verified another account.' }, 409);
+      case 'no_pending':
+        return json({ error: 'no_pending', message: 'Request a new code.' }, 400);
+      default:
+        console.error('student-verify-confirm: unknown claim status', result);
+        return json({ error: 'Something went wrong. Please try again.' }, 500);
     }
-
-    // Success — consume the code and mark the profile a Verified Student.
-    await supabase.from('student_email_verifications').update({ consumed: true }).eq('id', row.id);
+    const verifiedDomain: string | null = result?.domain ?? null;
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -85,7 +97,7 @@ Deno.serve(async (req: Request) => {
       student_verified: true,
       student_verified_at: new Date().toISOString(),
       student_verify_method: 'edu_email',
-      school_domain: row.domain,
+      school_domain: verifiedDomain,
     };
     // Keep an existing 'alumni' status; otherwise treat as a current student.
     if (profile?.student_status !== 'alumni') patch.student_status = 'student';
@@ -103,14 +115,14 @@ Deno.serve(async (req: Request) => {
     // home, so it must vouch for the institution that was proven, not one adjacent to
     // it. Deriving unconditionally also means the label and school_domain can never
     // disagree.
-    if (row.domain) {
-      const core = String(row.domain).replace(/\.(edu|ac\.uk|edu\.[a-z]{2})$/, '').split('.').pop() || row.domain;
+    if (verifiedDomain) {
+      const core = String(verifiedDomain).replace(/\.(edu|ac\.uk|edu\.[a-z]{2})$/, '').split('.').pop() || verifiedDomain;
       patch.school = core.charAt(0).toUpperCase() + core.slice(1);
     }
 
     await supabase.from('profiles').update(patch).eq('id', user.id);
 
-    return json({ verified: true, schoolDomain: row.domain, school: patch.school ?? profile?.school ?? null });
+    return json({ verified: true, schoolDomain: verifiedDomain, school: patch.school ?? profile?.school ?? null });
   } catch (err) {
     console.error('student-verify-confirm:', err);
     return json({ error: 'Something went wrong. Please try again.' }, 500);
