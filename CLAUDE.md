@@ -368,12 +368,24 @@ guarded). `SupportScreen` is the conversation; the admin console queue is `/supp
   server-side, cold contact is in-app + push only (never branded email), never merges
   into a user's own safety report, rate-limited from the append-only `admin_audit_log`.
 
-## Transactions — `src/lib/payments.js`, `PaymentsScreen` (route `Payments`, title "Transactions")
+## Transactions — `shared/ledger.js`, `PaymentsScreen` (route `Payments`) + web `/profile/transactions`
 
 `payments` rows rendered as a statement for whichever side the reader is on.
 `fetchLedger` runs TWO queries on purpose: RLS exposes a row through either the earner
 or the poster policy and a single select cannot tell which side the reader is on — that
 is the difference between "you earned $54" and "you paid $60".
+
+⚠️ **The arithmetic is in `shared/ledger.js` and nowhere else.** `src/lib/payments.js`
+and `web/lib/payments.ts` are the two Supabase reads plus a re-export; only the client
+differs, the maths does not. It moved there on 2026-09-05 because the WEBSITE had no
+ledger at all — no receipts, no refunds, no pinned fee, no CSV, no deposits — while
+Hustlr AI's single prompt told web users to open "Transactions". Porting by hand would
+have meant a second copy of money maths whose fee is pinned per booking, whose refund
+share differs by side, and whose partial capture deliberately leaves `amount_cents` at
+the full authorization. `__tests__/webLedgerParity.test.js` fails if either client
+grows its own copy, and `ledger.test.js` exercises the shared module through the mobile
+re-export. Entry points on web: Settings → Money, `/profile/payouts`, `/my-jobs` and
+`/hiring` — the last of which is deliberately NOT the mobile gap noted above.
 
 - Amounts come from the payment row, **never re-derived from the current rate card**.
   A past transaction shown at today's rate misstates what the person received.

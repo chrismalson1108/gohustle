@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import {
   Search, X, ChevronRight, UserCircle2, Clock, Eye, CreditCard, Receipt,
   SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag, Sparkles,
-  ShieldCheck,
+  ShieldCheck, ArrowLeftRight,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -140,6 +140,18 @@ export default function SettingsPage() {
       {
         title: "Money",
         rows: [
+          // FIRST, as on mobile. This row did not exist until 2026-09-05 and neither
+          // did the page: the web read neither `payments` nor `stripe_payouts`, so a
+          // poster who hired here had no record of what they were charged — while
+          // Hustlr AI told them to open exactly this.
+          {
+            icon: ArrowLeftRight,
+            title: "Transactions",
+            sub: "Receipts, fees, refunds & escrow",
+            keywords:
+              "transactions ledger statement receipt receipts history payments charged earnings fee refund escrow csv export bank deposit",
+            href: "/profile/transactions",
+          },
           {
             icon: CreditCard,
             title: "Payments & payouts",

@@ -416,4 +416,90 @@ declare module "@gohustlr/shared" {
     certified: Array<{ label: string; count: number; avg: number }>;
     progress: Array<{ label: string; count: number; needed: number }>;
   };
+
+  // ── ledger (the money statement, both sides) ──
+  // Moved out of src/lib/payments.js on 2026-09-05 so the website could have a
+  // Transactions page without a second hand-written copy of money arithmetic. Only
+  // the two Supabase reads live per-client (src/lib/payments.js, web/lib/payments.ts).
+  // Amounts come from the payment ROW, never re-derived from the current rate card:
+  // the fee is PINNED per booking, so a past transaction shown at today's rate
+  // misstates what the person received.
+  export interface PaymentStateInfo { label: string; tone: string; note: string }
+  /** Wording per SIDE — 'captured' is "Released" to an earner and "Charged" to a poster. */
+  export function paymentState(status: string | null | undefined, side: string): PaymentStateInfo;
+
+  export interface PayoutStateInfo { label: string; tone: string; verb: string }
+  export const PAYOUT_STATE: Record<string, PayoutStateInfo>;
+  export function payoutState(status: string | null | undefined): PayoutStateInfo;
+
+  /** What Stripe actually charged: the split on a capture, else the authorization. */
+  export function settledGrossCents(row: Record<string, unknown> | null | undefined): number;
+  /** How much of a refund came out of the EARNER's payout. Read, never recomputed. */
+  export function earnerRefundShareCents(row: Record<string, unknown> | null | undefined): number;
+
+  /** Normalizes one payment row into the entry shape every helper below consumes. */
+  export function toEntry(
+    row: Record<string, unknown>,
+    side: string,
+    jobsById: Record<string, { id?: string; title?: string }>,
+    bookingsById: Record<string, Record<string, unknown>>,
+  ): Record<string, unknown>;
+
+  export function summarize(
+    entries: unknown[],
+    side: string,
+    year?: number,
+  ): {
+    year: number;
+    count: number;
+    settledCents: number;
+    heldCents: number;
+    feesCents: number;
+    refundedCents: number;
+  };
+
+  export const RANGES: Array<{ key: string; label: string; days?: number }>;
+  export function rangeBounds(key: string, now?: Date): { start: Date | null; end: Date | null };
+  export const STATUS_FILTERS: Array<{ key: string; label: string; match?: (e: never) => boolean }>;
+  export function filterEntries<T>(
+    entries: T[],
+    opts?: { side?: string; range?: string; status?: string; query?: string },
+  ): T[];
+
+  export function stats(entries: unknown[]): {
+    count: number;
+    settledCount: number;
+    grossCents: number;
+    netCents: number;
+    heldCents: number;
+    feesCents: number;
+    tipsCents: number;
+    refundedCents: number;
+    discountCents: number;
+    declinedCount: number;
+    avgCents: number;
+  };
+
+  export function monthlyTotals(
+    entries: unknown[],
+    months?: number,
+    now?: Date,
+  ): Array<{ key: string; label: string; cents: number }>;
+  export function byMonth<T>(entries: T[]): Array<{ key: string; label: string; data: T[] }>;
+  /** A statement the user can hand to an accountant, or reconcile against a bank feed. */
+  export function ledgerCsv(entries: unknown[], side: string): string;
+
+  export interface ReceiptLine {
+    key: string;
+    label: string;
+    cents: number;
+    good?: boolean;
+    dim?: boolean;
+  }
+  /** Line items that SUM to totalCents by construction — asserted in ledger.test.js. */
+  export function receiptLines(entry: unknown): {
+    lines: ReceiptLine[];
+    totalCents: number;
+    totalLabel: string;
+  };
 }
