@@ -6,10 +6,13 @@
 // user what they will pay or receive before they commit, and they must agree with the
 // server to the cent or the disclosure is a lie.
 //
-// The authority is public.platform_fee_cents (supabase/migrations/20260806050000).
-// This file mirrors it, and __tests__/pricing.test.js parses that migration and fails
-// if the two ever drift — the same guard categories.test.js applies to category_slug.
-// If you change one, change the other, or the test will tell you.
+// The authority is public.platform_fee_cents, whose live body is in the LAST migration
+// that defines it — 20260806140000_fee_overflow_fix.sql today, not 20260806050000, which
+// this comment named until 2026-09-06 and which Postgres has already replaced. This file
+// mirrors that body, and __tests__/pricing.test.js resolves it the same way, parses its
+// constants and fails if the two ever drift — the same guard categories.test.js applies
+// to category_slug. If you change one, change the other, or the test will tell you.
+// A new `create or replace` is fine; naming a migration by hand here is how it goes stale.
 
 export const DEFAULT_FEE_BPS = 1000; // 10.00% — the founding rate, and the fallback
 
