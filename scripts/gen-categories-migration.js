@@ -290,7 +290,17 @@ begin
 end;
 $$;
 
-grant execute on function public.resolve_category_slug(text) to authenticated;
+-- BOTH roles, and the revoke before the grant. A bare grant to authenticated leaves
+-- Supabase's default EXECUTE grant to anon AND Postgres's built-in one to PUBLIC in
+-- place, which is how this definer function stayed callable with the embedded anon key
+-- from 2026-08-05 until 20260906081000 revoked it. Guarded by
+-- __tests__/definerAnonExecute.test.js. The committed 20260805000000 has NOT been
+-- regenerated to carry these two lines — production applied it without them, and the
+-- privilege replay in that test is only worth anything if it models the history
+-- production actually has. Regenerating for an unrelated catalog change will emit them,
+-- which is correct: a fresh database should never open the hole in the first place.
+revoke execute on function public.resolve_category_slug(text) from public, anon;
+grant execute on function public.resolve_category_slug(text) to authenticated, service_role;
 
 -- ── 7. jobs.category_slug ────────────────────────────────────────────────────
 alter table public.jobs add column if not exists category_slug text;
