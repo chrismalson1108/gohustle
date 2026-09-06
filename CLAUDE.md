@@ -888,7 +888,18 @@ only runs when a human opens a page.
   function is why the console's "Run sweep now" once skipped both while reporting success.
 - The hourly sweep also runs `expire_stale_pending_bookings(14)` — untouched,
   never-started bookings with no live Stripe authorization become `cancelled` and their
-  slots are freed.
+  slots are freed. ⚠️ **A housekeeping step that WRITES has to claim `service_role`
+  itself.** pg_cron runs the sweep with no `request.jwt.claims`, and `SECURITY DEFINER`
+  changes the database role, not the request claim — so `auth.role()` and `auth.uid()`
+  are both NULL inside it and `guard_bookings_write` (whose fallthrough is deny-by-default)
+  raises. This function shipped without that and **never expired a single booking from
+  cron** between 2026-08-12 and 20260906042000: the guard only raises on the hours there is
+  a row to expire, and the sweep's `exception when others then raise warning` turned the
+  failure into a log line nobody reads. It now sets the claim transaction-locally around
+  its own UPDATE and hands the caller's back before `run_all_controls`;
+  `__tests__/sweepHousekeepingRunsWithoutJwt.test.js` fails if that disappears.
+  `expire_dead_listings` survives the same context only because `guard_jobs_write` pins
+  and never raises — that is luck, not a pattern to copy.
 - Console: **`/controls`**.
 
 ## Admin console roles
