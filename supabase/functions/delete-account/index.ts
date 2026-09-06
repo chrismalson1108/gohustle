@@ -273,6 +273,16 @@ Deno.serve(async (req: Request) => {
     // account can never be signed into again. What remains is an opaque uuid with no
     // personal data attached — the same tombstone shape already used for the profile and
     // for support_tickets above.
+    //
+    // THE IDENTITIES ARE NOT HANDLED HERE. updateUserById neither deletes nor rewrites
+    // auth.identities, so for a social account this call alone left the Google/Apple
+    // `sub` pointed at a banned user — every future "Continue with Google" resolved to
+    // it and was refused, permanently, while identity_data kept the provider's copy of
+    // their name, email and avatar. tombstone_profile() (step 4) now deletes the social
+    // identities and neutralises the address on the email one, which is why it sits on
+    // the fail-closed side of the line: a best-effort call here is exactly the kind of
+    // step that fails quietly and locks somebody out of their own sign-in button. The
+    // email identity is deliberately kept, because THIS call rewrites it.
     const { error: delErr } = await admin.auth.admin.updateUserById(user.id, {
       email: `deleted-${user.id}@removed.invalid`,
       phone: undefined,

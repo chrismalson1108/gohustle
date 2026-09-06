@@ -73,3 +73,49 @@ describe('the tombstone takes the school email with it', () => {
     expect(where).toMatch(/student_email_verifications/i);
   });
 });
+
+describe('the tombstone takes the Google/Apple identity with it', () => {
+  // GoTrue resolves an ID token by (provider, provider_id) in auth.identities, and
+  // updateUserById neither deletes nor rewrites those rows. So a social account's
+  // identity stayed pointed at the banned user: every future "Continue with Google"
+  // resolved to it and was refused — permanently, with no message that explains it —
+  // while identity_data kept the provider's copy of their name, email and avatar.
+  const tombstone = latestDefining('tombstone_profile');
+
+  it('deletes the social identities', () => {
+    expect(tombstone).toMatch(/delete from auth\.identities/i);
+    // Scoped: the email/phone identity is kept, because delete-account's step 5 rewrites
+    // it and removing it would bet this migration on a GoTrue internal.
+    const del = tombstone.slice(tombstone.search(/delete from auth\.identities/i));
+    expect(del.slice(0, del.indexOf(';'))).toMatch(/provider not in \('email', 'phone'\)/i);
+  });
+
+  it('and neutralises the address on the identity it keeps', () => {
+    expect(tombstone).toMatch(/update auth\.identities[\s\S]{0,300}removed\.invalid/i);
+  });
+
+  it('clears the identities already stranded on accounts erased before the fix', () => {
+    expect(allMigrations).toMatch(
+      /delete from auth\.identities i[\s\S]{0,200}p\.deleted_at is not null/i,
+    );
+  });
+
+  it('and the control reports a tombstone that still has one', () => {
+    const ctl = latestDefining('ctl_tombstone_leaks_pii');
+    expect(ctl).toMatch(/has_social_identity/);
+    const where = ctl.slice(ctl.search(/where p\.deleted_at is not null/i));
+    expect(where).toMatch(/auth\.identities/i);
+  });
+
+  it('stays on the fail-closed side of delete-account, not a best-effort call', () => {
+    // The scrub is the one step delete-account refuses to continue past on failure. A
+    // separate best-effort identity delete in the edge function would be exactly the
+    // step that fails quietly and locks somebody out.
+    const fn = fs.readFileSync(
+      path.join(ROOT, 'supabase', 'functions', 'delete-account', 'index.ts'), 'utf8');
+    const code = fn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(code).toMatch(/tombstone_profile/);
+    expect(code).toMatch(/tombErr/);
+    expect(code).not.toMatch(/auth\.identities|from\(['"]identities['"]\)/);
+  });
+});
