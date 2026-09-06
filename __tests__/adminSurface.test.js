@@ -121,3 +121,54 @@ describe('every admin console page is reachable', () => {
     expect({ unlisted_route_handlers: unlisted }).toEqual({ unlisted_route_handlers: [] });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The runbook must name the tier the code actually requires.
+//
+// RUNBOOK_SAFETY.md §1.6 told the on-call "Only `admin` role can resolve" while
+// moderation/actions.ts had gated resolve AND reopen at requireAdmin("trust") — the
+// tier created for exactly this, because earner-claim-payment refuses to settle a
+// booking with an open report and making one admin's availability the gate is a
+// money-harm control. A trust-tier teammate following the runbook escalates and waits
+// instead of resolving, re-creating the delay the tier removed. Nothing caught it:
+// docIndex only checks that a doc is listed, and openWork only checks the register's
+// shape. A permission claim in a runbook is load-bearing at 2am and nothing read it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the safety runbook names the tier the moderation guard enforces', () => {
+  const actions = fs.readFileSync(
+    path.join(ROOT, 'admin/app/(console)/moderation/actions.ts'), 'utf8');
+  const runbook = fs.readFileSync(path.join(ROOT, 'RUNBOOK_SAFETY.md'), 'utf8');
+
+  // Every requireAdmin tier in the file — resolveReport and reopenReport both.
+  const tiers = [...new Set(
+    [...actions.matchAll(/requireAdmin\(\s*["'`]([a-z]+)["'`]\s*\)/g)].map((m) => m[1]),
+  )];
+
+  it('the moderation actions gate at exactly one tier', () => {
+    // If resolve and reopen ever diverge, the single sentence below cannot be right
+    // about both and the runbook needs rewriting rather than patching.
+    expect(tiers).toHaveLength(1);
+  });
+
+  it('the runbook resolve step names that tier', () => {
+    const step = runbook.split('\n').find((l) => /Resolve the report/.test(l));
+    expect(step).toBeTruthy();
+    // The sentence continues onto following lines; take the paragraph.
+    const at = runbook.indexOf(step);
+    const para = runbook.slice(at, at + 700);
+    expect(`resolve tier in runbook: ${para.includes(`\`${tiers[0]}\``) ? tiers[0] : 'NOT NAMED'}`)
+      .toBe(`resolve tier in runbook: ${tiers[0]}`);
+  });
+
+  it('the runbook does not claim resolve is admin-only', () => {
+    // The specific false sentence, and any restatement of it.
+    expect(runbook).not.toMatch(/Only\s+`?admin`?\s+role can resolve/i);
+  });
+
+  it('the guard admits that tier plus admin, and nobody else', () => {
+    // The runbook sentence also says support cannot clear the queue; that is only true
+    // while SATISFIES keeps the set small.
+    const guard = fs.readFileSync(path.join(ROOT, 'admin/lib/guard.ts'), 'utf8');
+    expect(guard).toMatch(new RegExp(`${tiers[0]}:\\s*new Set<AdminRole>\\(\\["admin",\\s*"${tiers[0]}"\\]\\)`));
+  });
+});

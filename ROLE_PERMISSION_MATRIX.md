@@ -332,8 +332,20 @@ Two tiers in one console (`type AdminRole = "admin" | "support"`, `admin/lib/gua
 | User mutations (suspend/verify/student/reset/email/delete/notify/note) | **Yes** | No | `users/[id]/actions.ts` all `requireAdmin('admin')` |
 | GDPR user data export | **Yes** | No | `users/[id]/export/route.ts:53` `requireAdmin('admin')` (+ CSRF & UUID guards) |
 | Job takedown / restore | **Yes** | No | `jobs/actions.ts:15` `requireAdmin('admin')` |
-| Report resolve / reopen | **Yes** | No | `moderation/actions.ts:12,38` `requireAdmin('admin')` |
+| Report resolve / reopen | **Yes** | No | `moderation/actions.ts:12,38` `requireAdmin('admin')` — **SUPERSEDED, see below** |
 | Support ticket reply / status / AI draft | **Yes** | **Yes** | `support/actions.ts:16-18` `requireAdmin('support')` |
+
+> [!IMPORTANT]
+> **Correction (2026-09-06) — report resolve/reopen is `trust`, not `admin`.** The table
+> above is a 2026-07-07 snapshot of a two-tier console; the console now has four ranked
+> tiers (`support` · `trust` · `finance` · `admin`, `admin/lib/guard.ts`), and
+> `admin/app/(console)/moderation/actions.ts:19,43` both call `requireAdmin("trust")`,
+> which `SATISFIES` admits for `{admin, trust}`. This one row is corrected in place
+> rather than left to the staleness banner because reading it wrong costs someone money:
+> `earner-claim-payment` refuses to settle a booking with an open report, so the whole
+> point of the `trust` tier was to stop one admin's availability from being a money-harm
+> control. `RUNBOOK_SAFETY.md` §1.6 carried the same error and is fixed alongside it.
+> The other rows in this table have not been re-verified against the four-tier console.
 
 - **MFA/AAL2 is mandatory** for all admin/support access (`guard.ts:53-56`).
 - **The audit log is append-only even to service_role**: `revoke update, delete … from … service_role` (`20260705010000_admin_console.sql:41`). `audit()` is awaited and fail-closed for mutations (`admin/lib/audit.ts:20-28`); `auditRead()` is best-effort for view pages. `deleteAccount` audits *before* the irreversible cascade.

@@ -61,8 +61,17 @@ students.** Safety reports outrank every other queue, including money.
    - Unclear → leave the report **open**, add an `admin_user_notes` entry, and
      revisit within the day.
 7. Resolve the report (`/moderation`) with a resolution string that a stranger could
-   read and understand. **Only `admin` role can resolve** — a `support` helper can
-   read the queue but not clear it.
+   read and understand. **`trust` or `admin` can resolve and reopen** — a `support`
+   helper can read the queue but not clear it, and `finance` cannot either (trust and
+   finance are peers, so neither inherits the other's authority).
+   `admin/app/(console)/moderation/actions.ts:19,43` both call `requireAdmin("trust")`,
+   and `admin/lib/guard.ts` admits `{admin, trust}` for that minimum.
+   > This line said **only `admin`** until 2026-09-06, which was wrong in the direction
+   > that costs someone money. The `trust` tier exists precisely because `resolveReport`
+   > used to need full `admin` while `earner-claim-payment` refuses to settle a booking
+   > with an open report — one person's availability was a money-harm control. A
+   > trust-tier on-call who believed this line would escalate and wait instead of
+   > resolving, re-creating the exact delay the tier was introduced to remove.
 
 > **An unresolved report blocks the earner's payout** (`earner-claim-payment` refuses
 > on any open non-auto report). Leaving a report open is not free — it withholds
