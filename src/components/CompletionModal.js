@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, Image,
+  Modal, View, Text, TextInput, TouchableOpacity, Image, Alert,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -287,8 +287,18 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                       style={styles.disputeAddPhoto}
                       onPress={async () => {
                         haptic.selection();
+                        // pickImages resolves to { canceled, denied?, uris } — NEVER an
+                        // array. Testing `res.length` on that object is always undefined,
+                        // so every picked photo was dropped and the evidence the copy
+                        // below promises support would review never existed.
                         const res = await pickImages({ multiple: true });
-                        if (res?.length) setDisputePhotos(prev => [...prev, ...res].slice(0, 6));
+                        if (res.canceled) {
+                          if (res.denied) {
+                            Alert.alert('Photos access needed', 'Allow photo access in Settings to attach photos.');
+                          }
+                          return;
+                        }
+                        setDisputePhotos(prev => [...prev, ...res.uris].slice(0, 6));
                       }}
                     >
                       <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
