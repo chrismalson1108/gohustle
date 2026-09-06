@@ -181,6 +181,14 @@ only policy (`job_locations_party_read`) exposes the exact label to the **poster
 an earner **only once their booking is `confirmed`/`completed`/`verified`** — never on an
 open application.
 
+That trigger is the ONLY thing enforcing it — no CHECK constraint, no masking view, and
+`jobs_select_all` is `USING(true)` apart from the suspended-poster carve-out. So
+`ctl_job_location_unmasked` (critical) is the canary: `mask_location` is idempotent, so
+`location = mask_location(location)` is true of every correctly masked row and false of
+exactly the leaked ones, and a second arm catches the coordinate snap in the same
+function going with it. It calls `mask_location` rather than re-deciding what an address
+looks like, and `__tests__/jobLocationUnmasked.test.js` fails if that stops being true.
+
 - **`gig_shares`** — a tokenised, expiring, revocable link an earner sends to a friend
   ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
   names only, and it re-applies the same accepted-booking condition before revealing the
@@ -747,7 +755,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
+- **59 controls are registered**: 57 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
