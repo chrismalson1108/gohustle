@@ -367,6 +367,14 @@ guarded). `SupportScreen` is the conversation; the admin console queue is `/supp
 - Agents can **open** a thread (`openThreadWithUser`, support tier): recipient resolved
   server-side, cold contact is in-app + push only (never branded email), never merges
   into a user's own safety report, rate-limited from the append-only `admin_audit_log`.
+- ⚠️ **The console queue's predicate, ordering and count are all in the QUERY** — the
+  "needs reply" tab used to fetch the 200 newest open tickets and then filter
+  `last_author = 'user'` in JavaScript, which drops exactly the people waiting longest
+  and under-counts the badge at the same time (the false negative `/bookings` fixed
+  first). Ordering is `priority_rank`, a **generated** column added by
+  `20260906015300` because PostgREST can only order by a column and `priority` is text
+  that sorts high, low, normal, urgent. `__tests__/supportQueueWindow.test.js` pins the
+  rank to the CHECK constraint's four values and the page to the server-side shape.
 
 ## Transactions — `src/lib/payments.js`, `PaymentsScreen` (route `Payments`, title "Transactions")
 
