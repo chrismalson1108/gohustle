@@ -31,7 +31,11 @@ import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 export type PayoutCapability = {
   /** True only when Stripe says the account can take a transfer right now. */
   capable: boolean;
-  /** Present when we could not ask Stripe at all — distinct from a definite "no". */
+  /**
+   * Present when we could not ask at all — distinct from a definite "no". Set both when
+   * Stripe is unreachable and when the stripe_accounts lookup itself errors; neither is
+   * evidence that the earner cannot be paid.
+   */
   unverifiable?: boolean;
   accountId?: string;
 };
@@ -44,6 +48,9 @@ export type PayoutCapability = {
  *     itself fails against a restricted destination, which is loud and immediate.
  *   · cache says NO   → ask Stripe, because a stale FALSE is silent and expensive.
  *
+ * A failed stripe_accounts read takes the same `unverifiable` path — "could not ask" is
+ * "could not ask" whichever leg could not answer.
+ *
  * `unverifiable` is returned rather than folded into `capable` so the caller can decide.
  * At settle time refusing on an unreachable Stripe is the wrong default: the work is done
  * and the hold is live, so a transient API error should not start the clock on a voided
@@ -54,12 +61,20 @@ export async function payoutCapable(
   supabase: SupabaseClient,
   earnerId: string,
 ): Promise<PayoutCapability> {
-  const { data: acct } = await supabase
+  const { data: acct, error: acctErr } = await supabase
     .from('stripe_accounts')
     .select('account_id, onboarded')
     .eq('user_id', earnerId)
     .maybeSingle();
 
+  // A failed lookup is not a "no". Discarding this error made every transient PostgREST
+  // blip read as "this earner has no payout account", which both settle callers report as
+  // a definite refusal telling the earner to re-verify an account that needs nothing.
+  // Same reasoning as the unreachable-Stripe branch below: at settle time we do not refuse
+  // on uncertainty, we say we could not ask.
+  if (acctErr) return { capable: false, unverifiable: true };
+
+  // No error and no row is a real answer: this earner never connected an account.
   const accountId = (acct as { account_id?: string } | null)?.account_id;
   if (!accountId) return { capable: false };
   if ((acct as { onboarded?: boolean } | null)?.onboarded) return { capable: true, accountId };
