@@ -111,10 +111,16 @@ export default function SharePage() {
     <Shell>
       <div className={`rounded-2xl border px-4 py-4 ${toneClass}`}>
         <p className="text-lg font-semibold leading-snug">{headline.text}</p>
+        {/* Say only what the platform does. The line below used to promise an automatic
+            check-in, written before the nudge existed — nothing wrote
+            safety_checkins.nudged_at until 20260905002200, so the friend reading this at
+            11pm was told a check had gone out when none had. Now one does: an in-app
+            reminder first, then the safety team. */}
         {late && (
           <p className="mt-1 text-sm">
-            This can simply mean they forgot to tap &ldquo;done&rdquo;. GoHustlr checks in
-            with them automatically when a gig runs long.
+            This can simply mean they forgot to tap &ldquo;done&rdquo;. GoHustlr sends them
+            a reminder in the app when a gig runs long, and flags it to our safety team if
+            it stays open.
           </p>
         )}
       </div>

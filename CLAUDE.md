@@ -185,9 +185,27 @@ open application.
   ("here's where I'll be"). `view_gig_share(token)` is SECURITY DEFINER and returns first
   names only, and it re-applies the same accepted-booking condition before revealing the
   exact label — a definer function that skipped that would be a way to read addresses off
-  unaccepted applications.
+  unaccepted applications. **"Revocable" was only true of the schema until 20260905** —
+  the Terms and Privacy Policy have promised since 2026-08-06 that the earner can switch
+  a link off at any time, `gig_shares_revoke_own` allowed it, and no client ever wrote
+  `revoked_at`. `SafetyBar` now shows "Stop sharing my location" whenever a live link
+  exists; `parity.test.js` fails if a client that calls `create_gig_share` has no path
+  to `revoked_at`.
 - **`safety_checkins`** — `due_at` / `nudged_at` / `escalated_at` / `resolved_at` per
   booking: the "are you OK?" timer, its nudge, and escalation when it goes unanswered.
+  ⚠️ Both middle columns were written by **nothing** until 20260905002200 — the nudge
+  stage was designed and never built, so every forgotten "done" tap paged the on-call
+  directly. `run_safety_checkin_stages()` (first step of the hourly sweep) now writes an
+  Alerts-inbox notification to the earner and stamps `nudged_at`, then stamps
+  `escalated_at` 30 minutes later if the check-in is still open;
+  `ctl_safety_checkin_overdue` fires on `escalated_at` **or** on any check-in more than
+  3 hours past due — that second arm is the backstop, and it is deliberate: gating a
+  safety control on a column another function writes would let a broken nudge turn the
+  board green. The nudge is **in-app only**; `send-push` authenticates a signed-in
+  user's token, so there is no database→push rail. The control's finding carries the
+  gig's **exact** address from `job_locations` (LEFT joined — a remote gig has no row
+  and must still be reported), as do the `safety-alert` email and the console's
+  `/bookings/[id]`.
 - `trg_notify_safety_report` dispatch config lives in `app_flags`, **not a GUC** — that is
   why it sat dead from 2026-07-10 to 2026-08-06 without firing once.
 

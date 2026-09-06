@@ -20,7 +20,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const [jobRes, earnerRes, paymentRes, disputeRes, messagesRes] = await Promise.all([
-    ctx.service.from("jobs").select("id, title, poster_id, status").eq("id", booking.job_id).maybeSingle(),
+    ctx.service.from("jobs").select("id, title, poster_id, status, location").eq("id", booking.job_id).maybeSingle(),
     ctx.service.from("profiles").select("id, name, username").eq("id", booking.earner_id).maybeSingle(),
     ctx.service.from("payments").select("*").eq("booking_id", id).maybeSingle(),
     ctx.service.from("disputes").select("id, reason, pct_paid, raised_by, created_at").eq("booking_id", id),
@@ -38,6 +38,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       // invites an escalation for an export that doesn't exist.
       .limit(MESSAGE_LIMIT + 1),
   ]);
+
+  // WHERE THE GIG IS. jobs.location is masked at write (trg_mask_job_location) and the
+  // exact street label lives in job_locations behind RLS — readable to the poster and to
+  // an earner with an accepted booking, and to nobody on staff. RUNBOOK_SAFETY §1 sends
+  // the on-call to THIS page for an emergency or an overdue check-in, and until now the
+  // page showed no location at all, masked or otherwise. The console runs as
+  // service_role, so the address was always reachable; it simply was not asked for.
+  const exactLocation = booking.job_id
+    ? (await ctx.service.from("job_locations").select("exact_location").eq("job_id", booking.job_id).maybeSingle())
+        .data?.exact_location ?? null
+    : null;
 
   const posterId = jobRes.data?.poster_id;
   const poster = posterId
@@ -71,6 +82,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   // Viewing a booking exposes both parties' identity, escrow amounts, and chat —
   // record the access (T&S / compliance).
   await auditRead(ctx, "booking.view", "booking", id);
+  // The exact address is a separate, higher-sensitivity disclosure than the rest of the
+  // page, so it is recorded as its own line rather than folded into booking.view.
+  if (exactLocation) await auditRead(ctx, "booking.exact_location", "job", String(booking.job_id));
 
   return (
     <div className="space-y-6">
@@ -98,7 +112,19 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <dt className="text-[var(--muted)]">Poster</dt>
             <dd>{posterId ? <Link href={`/users/${posterId}`} className="text-[var(--brand)] hover:underline">{name(poster, posterId.slice(0, 8))}</Link> : "—"}</dd>
           </div>
+          <div className="col-span-2">
+            <dt className="text-[var(--muted)]">Where</dt>
+            <dd>
+              {exactLocation ?? jobRes.data?.location ?? "—"}
+              {exactLocation ? (
+                <span className="ml-2 text-xs text-[var(--muted)]">exact address · this view is logged</span>
+              ) : (
+                <span className="ml-2 text-xs text-[var(--muted)]">no exact address on file (remote or city-only listing)</span>
+              )}
+            </dd>
+          </div>
           <div><dt className="text-[var(--muted)]">Slot</dt><dd>{booking.slot_label ?? "—"}</dd></div>
+          <div><dt className="text-[var(--muted)]">Started</dt><dd>{booking.started_at ? fmtDate(booking.started_at) : "not started"}</dd></div>
           <div><dt className="text-[var(--muted)]">Booked</dt><dd>{fmtDate(booking.created_at)}</dd></div>
           <div><dt className="text-[var(--muted)]">Earner done</dt><dd>{booking.earner_done ? "yes" : "no"}</dd></div>
           <div><dt className="text-[var(--muted)]">Poster done</dt><dd>{booking.poster_done ? "yes" : "no"}</dd></div>

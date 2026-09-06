@@ -90,6 +90,11 @@ export default async function ModerationPage({
                       <span className="font-medium">{r.reason}</span>
                       {r.resolved_at ? <Pill tone="green">resolved</Pill> : <Pill tone="red">open</Pill>}
                       {r.source === "auto" && <Pill tone="amber">auto</Pill>}
+                      {/* raise_gig_emergency files with source='emergency' — somebody
+                          pressed Get help while standing on a gig. It sat in this queue
+                          looking like any other report, and the booking link is where
+                          the address is. */}
+                      {r.source === "emergency" && <Pill tone="red">🚨 emergency</Pill>}
                     </div>
                     {r.details && <p className="mt-1 text-sm text-[var(--muted)]">{r.details}</p>}
                     <p className="mt-1 text-xs text-[var(--muted)]">
