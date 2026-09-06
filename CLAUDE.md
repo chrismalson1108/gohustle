@@ -479,7 +479,7 @@ stayed invisible until someone complained.
 | Function | |
 |---|---|
 | `safety-alert` | Pages a human when a safety report lands. Invoked by the `reports` AFTER INSERT trigger via pg_net with the `x-safety-secret` shared secret; `verify_jwt = false`. |
-| `moderate-text` | Claude context-aware moderation, called before user text is written. **Fails OPEN by design** so a provider hiccup cannot wedge posting — do not model it as authoritative. On a block it auto-files a report into the Moderation queue. |
+| `moderate-text` | Claude context-aware moderation, called before user text is written. **Fails OPEN by design** so a provider hiccup cannot wedge posting — do not model it as authoritative. On a block it auto-files a report into the Moderation queue. ⚠️ **Its callers fail open on an outage and CLOSED on a 429**, which is not the same failure: the quota is per user and shared between a caller's direct calls and the ones Hustlr AI forwards on their behalf, so treating a 429 as "allowed" made the rate limiter a self-service switch for turning this layer off. Both `src/lib/moderation.js` and the assistant's `moderateViaEdge` are guarded by `__tests__/moderationRateLimitFailsClosed.test.js`. |
 | `moderate-image` | Claude vision on upload; deletes the object on violation. Every path through `src/lib/uploadImage.js` goes through it, so "all writes go through uploadImage.js" also means "all writes are moderated". |
 | `log-moderation` | Records client-detected keyword blocks into the Moderation queue as `reports` with `source='auto'`, rate-limited so probing the filter cannot flood it. |
 | `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
