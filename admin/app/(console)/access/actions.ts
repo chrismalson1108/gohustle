@@ -98,21 +98,45 @@ export async function revokeEmail(formData: FormData): Promise<ActionResult> {
   }
   try {
     await audit(ctx, "access.revoke", "beta_allowlist", email);
-    // Match case-insensitively: handle_new_user compares with lower(), so a row
-    // stored as 'Foo@Bar.com' still grants access but an .eq() on the lowercased
-    // input would not delete it — and the action would report success having
-    // revoked nothing.
-    const { data, error } = await ctx.service
-      .from("beta_allowlist").delete().ilike("email", email).select("email");
-    if (error) throw new Error(error.message);
-    if (!data || data.length === 0) {
+    // Case-insensitivity is still the requirement — handle_new_user compares with
+    // lower(), so a row stored as 'Foo@Bar.com' grants access and an .eq() on the
+    // lowercased input would report success having revoked nothing.
+    //
+    // But .ilike() takes a LIKE PATTERN, not a value. '_' matches any single character
+    // and '%' any run, and both are legal in an email address — so revoking
+    // 'j_doe@school.edu' also deleted 'j.doe@school.edu' and 'jxdoe@school.edu', other
+    // testers' invites gone while the action reported success naming only the one
+    // address. They then hit `signup_not_allowlisted` with nobody able to say why.
+    //
+    // Two halves, and the second is the one that carries the guarantee: the pattern is
+    // escaped so it reads as a value, and the DELETE no longer carries a pattern at all.
+    // The ilike gathers CANDIDATES; exact equality is decided here; .in() deletes those
+    // literal addresses. A pattern that somehow still over-matched could widen the read
+    // and not the delete.
+    const pattern = email.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const { data: candidates, error: findErr } = await ctx.service
+      .from("beta_allowlist").select("email").ilike("email", pattern);
+    if (findErr) throw new Error(findErr.message);
+    const exact = (candidates ?? [])
+      .map((r) => r.email)
+      .filter((e): e is string => typeof e === "string" && e.toLowerCase() === email);
+    if (exact.length === 0) {
       return { ok: false, message: `${email} isn't on the invite list — nothing to revoke.` };
     }
+    const { data, error } = await ctx.service
+      .from("beta_allowlist").delete().in("email", exact).select("email");
+    if (error) throw new Error(error.message);
     revalidatePath("/access");
+    // Report the COUNT, not just the address that was asked for. The old message named
+    // one address whatever the delete actually did; more than one row here means the
+    // same address was stored in several casings, and an operator should be told that
+    // rather than left to infer it.
+    const removed = data?.length ?? exact.length;
+    const extra = removed > 1 ? ` (${removed} rows — the same address was stored in more than one casing)` : "";
     // Say what this does NOT do. Revoking only closes the door to a future signup;
     // an operator who reads "revoked" as "removed from the beta" will not think to
     // also suspend the account they already have.
-    return { ok: true, message: `${email} can no longer sign up. Any account they already created is unaffected — suspend it separately if that's the intent.` };
+    return { ok: true, message: `${email} can no longer sign up${extra}. Any account they already created is unaffected — suspend it separately if that's the intent.` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
