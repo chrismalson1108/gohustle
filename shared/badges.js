@@ -10,6 +10,7 @@
 
 import { BADGE_DEFS } from './constants.js';
 import { resolveCategorySlug } from './categories.js';
+import { bookingGrossDollars } from './taxFormat.js';
 
 const DONE = ['completed', 'verified'];
 
@@ -121,9 +122,15 @@ const RULES = {
   // Hiring ----------------------------------------------------------------
   firstPost:  (c) => count(arr(c.postedJobs).length, 1),
   goodBoss:   (c) => count(verifiedHires(c).length, 5),
-  // An accepted counter-offer supersedes the listed pay; fall back to the listing.
+  // What the hire was actually worth, via bookingGrossDollars: the PINNED
+  // `amount_cents_quoted` where the row has one, else pay x hours off the job embed
+  // (an accepted counter-offer still supersedes the listed pay inside that helper).
+  //
+  // This used to be `counterOffer || job.pay`, which never looked at payType or
+  // estimatedHours — so an hourly hire counted at its RATE, and ten verified 6-hour
+  // $25/hr hires ($1,500 paid) showed Big Spender locked at "$250 / $1,000".
   bigSpender: (c) => count(
-    verifiedHires(c).reduce((s, b) => s + (num(b?.counterOffer) || num(b?.job?.pay)), 0),
+    verifiedHires(c).reduce((s, b) => s + num(bookingGrossDollars(b)), 0),
     1000,
   ),
   tipper: (c) => count(arr(c.posterBookings).filter(b => num(b?.tipAmount) > 0).length, 3),
