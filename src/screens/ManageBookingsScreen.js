@@ -64,15 +64,21 @@ export default function ManageBookingsScreen() {
   };
 
   const handleMarkDone = async (booking) => {
-    haptic.success();
     setLoadingId(booking.id);
-    await markPosterDone(booking.id);
+    // markPosterDone returns false on a rejected write (having rolled back and toasted),
+    // so the success haptic belongs after it, not before the write is attempted.
+    const ok = await markPosterDone(booking.id);
     setLoadingId(null);
+    if (ok === false) { haptic.error(); return; }
+    haptic.success();
   };
 
   const handleVerify = async (data) => {
-    if (!verifyTarget) return;
-    await verifyAndRate(verifyTarget.id, data);
+    if (!verifyTarget) return false;
+    // CompletionModal closes on anything that is not an explicit `false`, so an
+    // abort (blocked review, booking already finalized) has to be propagated or the
+    // sheet vanishes and takes the poster's rating, review and tip with it.
+    return await verifyAndRate(verifyTarget.id, data);
   };
 
   const isEmpty = Object.keys(grouped).length === 0;

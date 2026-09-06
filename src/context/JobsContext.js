@@ -1016,6 +1016,15 @@ export function JobsProvider({ children }) {
       location: jobData.location, description: jobData.description,
       urgent: jobData.urgent,
     };
+    // estimated_hours is part of the PRICE of an hourly gig — trg_z_pin_booking_amount
+    // and stripe-create-payment-intent both compute the hold as pay x estimated_hours.
+    // It was missing from this patch while addJob wrote it, so an edit could move `pay`
+    // and `pay_type` while the multiplier stayed at whatever the gig was posted with:
+    // a flat gig switched to hourly kept its posted hours and every later booking pinned
+    // amount_cents_quoted at the wrong total. (web/lib/jobs.tsx has always written it.)
+    // guard_jobs_write pins the column once a booking is live, so this can only take
+    // effect while the gig is still unbooked.
+    if (jobData.estimatedHours !== undefined) dbPatch.estimated_hours = jobData.estimatedHours;
     if (jobData.photos !== undefined) dbPatch.photos = jobData.photos;
     // Privacy: snap public job coords to ~1km so a poster's exact address is
     // never published; the precise location is shared with the earner after booking.
