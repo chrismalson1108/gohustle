@@ -9,7 +9,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { transformJob, transformBooking, findProhibited, enteredStatus } from "@gohustlr/shared";
+import { transformJob, transformBooking, findProhibited, enteredStatus, bookingPosterId } from "@gohustlr/shared";
 import { supabase } from "./supabaseClient";
 import { cacheGet, cacheSet, cacheRemove } from "./cache";
 import { stripeEdge } from "./edge";
@@ -572,7 +572,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   // ── Earner actions ───────────────────────────────────────────────────────--
   const bookJob: JobsValue["bookJob"] = async (jobId, slotId, slotLabel = null, counterOffer = null, applicationNote = null) => {
     if (!user) return false;
-    const job = state.jobs.find((j) => j.id === jobId);
+    // The browse feed is capped at the 200 newest non-cancelled gigs, so a gig opened
+    // from a saved bookmark or a conversation link may be absent from it — and then the
+    // self-book guard below never ran and the poster got no "New booking request".
+    const job = state.jobs.find((j) => j.id === jobId) || (await fetchJobById(jobId));
     if (job?.posterId === user.id) return false;
 
     // All bookings start 'pending' and require the poster to Accept (which creates
@@ -634,7 +637,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       showToast({ icon: "⚠️", title: "Couldn't start", message: "Something went wrong — please try again." });
       return false;
     }
-    const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) notify(posterId, "Job started", `The worker has started "${booking.job?.title || "a gig"}".`, { tab: "GigsTab", type: "booking" });
     return true;
   };
@@ -653,10 +656,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { status: "verified", posterDone: true } });
     showToast({ icon: "✅", title: "Payment released", message: "The poster didn't confirm in time, so your payment was released to you." });
-    // The ghosting-poster case is exactly when the gig may be soft-cancelled (absent
-    // from state.jobs) and the thin booking.job embed never carries posterId — so look
-    // it up directly (mirrors ratePoster) instead of an always-undefined fallback.
-    let posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
+    // The ghosting-poster case is exactly when the gig may be soft-cancelled and so
+    // absent from state.jobs. The booking's embed carries poster_id — this comment used
+    // to claim it never did, which is why the round-trip below exists; it stays only as
+    // the last resort for a booking loaded before that column was selected.
+    let posterId = bookingPosterId(booking, state.jobs);
     if (!posterId && booking?.jobId) {
       const { data: jobRow } = await supabase.from("jobs").select("poster_id").eq("id", booking.jobId).single();
       posterId = jobRow?.poster_id;
@@ -693,7 +697,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       showToast({ icon: "⚠️", title: "Couldn't mark done", message: "Something went wrong — please try again." });
       return false;
     }
-    const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) notify(posterId, "Job marked done", "The earner says the job is finished — verify and rate them.", { tab: "GigsTab", type: "booking" });
     return true;
   };
@@ -852,8 +856,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // Cancellation-fee POLICY (record + display only — NO money moves). A poster
     // who cancels a CONFIRMED (held) booking owes the worker a fee; pending bookings
     // have no hold yet, so no fee.
+    // `fullJob` may be absent (capped/soft-cancelled feed); the poster comes from the
+    // booking's embed in that case, or a poster cancelling an off-feed gig is not
+    // recognised as the poster — they get their own "The earner cancelled" push and the
+    // cancellation-fee record is skipped.
     const fullJob = state.jobs.find((j) => j.id === booking?.jobId);
-    const posterId = fullJob?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     const isPoster = posterId && user?.id === posterId;
     let cancellationFee: number | null = null;
     if (isPoster && booking?.status === "confirmed") {
@@ -900,8 +908,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const cancellationFeeFor: JobsValue["cancellationFeeFor"] = (bookingId) => {
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
     if (!booking || booking.status !== "confirmed" || booking.startedAt) return 0;
+    // Must answer for an off-feed gig exactly as cancelBooking does, or the poster is
+    // quoted $0 and then charged the fee the cancel records.
     const fullJob = state.jobs.find((j) => j.id === booking.jobId);
-    if (!fullJob || fullJob.posterId !== user?.id) return 0;
+    if (bookingPosterId(booking, state.jobs) !== user?.id) return 0;
     return computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
   };
 
@@ -1241,7 +1251,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const booking = [...state.bookings, ...state.posterBookings].find((b) => b.id === bookingId);
     dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { amendmentStatus: newStatus } });
     await supabase.from("bookings").update({ amendment_status: newStatus }).eq("id", bookingId);
-    const posterId = state.jobs.find((j) => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: "GigsTab", type: "amendment" });
   };
 

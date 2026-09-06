@@ -80,3 +80,21 @@ export function enteredStatus(prevStatus, nextStatus, target) {
   return prevStatus !== target;
 }
 
+
+// The poster on the other side of a booking.
+//
+// The browse feed is capped (200 newest, cancelled gigs excluded), so a booking's gig
+// is routinely absent from it: the poster soft-deleted the listing, or 200 newer gigs
+// exist. Call sites that resolved the poster ONLY through that feed silently produced
+// `undefined` and then did nothing — every one of them is a `if (posterId) notify(...)`,
+// so the counterparty was simply never told the work had started, finished, or been
+// cancelled. The booking row already carries the answer: both booking selects request
+// `job.poster_id` and transformBooking exposes it as `job.posterId`.
+//
+// `jobs` first, because the feed row is the fuller object and stays right when a gig
+// changes hands; the embed is the fallback, not the other way round.
+export function bookingPosterId(booking, jobs) {
+  if (!booking) return null;
+  const fromFeed = (jobs || []).find(j => j?.id === booking.jobId)?.posterId;
+  return fromFeed ?? booking.job?.posterId ?? null;
+}

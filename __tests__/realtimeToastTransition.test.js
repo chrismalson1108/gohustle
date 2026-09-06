@@ -52,7 +52,7 @@ describe('the realtime handlers gate every toast on a transition', () => {
   test('mobile reads the previously-held status from stateRef before dispatching', () => {
     expect(mobile).toMatch(/const prevStatus = stateRef\.current\.bookings\.find\(x => x\.id === b\.id\)\?\.status;/);
     expect(mobile).toMatch(/const prevStatus = stateRef\.current\.posterBookings\.find\(x => x\.id === payload\.new\?\.id\)\?\.status;/);
-    expect(mobile).toContain("import { enteredStatus } from '../../shared/lifecycle.js';");
+    expect(mobile).toMatch(/import \{[^}]*\benteredStatus\b[^}]*\} from '\.\.\/\.\.\/shared\/lifecycle\.js';/);
   });
 
   test('mobile earner-channel toasts go through enteredStatus', () => {

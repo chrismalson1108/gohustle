@@ -11,7 +11,7 @@ import { fetchMyTickets, ticketHasUnread } from '../lib/support';
 import { track, captureError } from '../lib/analytics';
 import { NO_PAYOUT_ACCOUNT, cachedPayoutStatus } from '../lib/connectStatus';
 import { transformJob, transformBooking, fallbackJobFromBooking } from '../../shared/transforms.js';
-import { enteredStatus } from '../../shared/lifecycle.js';
+import { enteredStatus, bookingPosterId } from '../../shared/lifecycle.js';
 import { findCategory } from '../../shared/categories.js';
 import { useAuth } from './AuthContext';
 import { useUser } from './UserContext';
@@ -212,7 +212,7 @@ export function JobsProvider({ children }) {
       // be marked read — leaving a permanent phantom badge until unblock.
       const otherOf = {};
       state.posterBookings.forEach(b => { if (b.earner?.id) otherOf[b.id] = b.earner.id; });
-      state.bookings.forEach(b => { const pid = state.jobs.find(j => j.id === b.jobId)?.posterId; if (pid) otherOf[b.id] = pid; });
+      state.bookings.forEach(b => { const pid = bookingPosterId(b, state.jobs); if (pid) otherOf[b.id] = pid; });
       const ids = [...new Set([...state.bookings.map(b => b.id), ...state.posterBookings.map(b => b.id)])]
         .filter(id => !blockedIds.has(otherOf[id]));
       if (!ids.length) { setUnreadMessages(0); return; }
@@ -481,7 +481,12 @@ export function JobsProvider({ children }) {
 
   const bookJob = async (jobId, slotId, slotLabel, counterOffer, applicationNote) => {
     if (!user) return false;
-    const job = state.jobs.find(j => j.id === jobId);
+    // The browse feed is capped at the 200 newest non-cancelled gigs, so a gig opened
+    // from a saved bookmark, a conversation link or a deep link may be absent from it.
+    // When it was, `job` came back undefined and BOTH of the things that hang off it
+    // silently no-opped: the self-book guard below never ran, and the poster got no
+    // "New booking request" push for an application they now had to find by chance.
+    const job = state.jobs.find(j => j.id === jobId) || (await fetchJobById(jobId));
     if (job?.posterId === user.id) return false; // can't book own gig
 
     const tempId = `temp-${Date.now()}`;
@@ -548,7 +553,7 @@ export function JobsProvider({ children }) {
       showToast({ icon: '⚠️', title: "Couldn't start", message: 'Something went wrong — please try again.' });
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, 'Job started', `The worker has started "${booking.job?.title || 'a gig'}".`, { tab: 'GigsTab', type: 'booking' });
     }
@@ -583,7 +588,7 @@ export function JobsProvider({ children }) {
       // an undefined return was indistinguishable from success after a failed write.
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, 'Job marked done', 'The earner says the job is finished — verify and rate them.', { tab: 'GigsTab', type: 'booking' });
     }
@@ -631,10 +636,11 @@ export function JobsProvider({ children }) {
     dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { status: 'verified', posterDone: true } });
     showToast({ icon: '✅', title: 'Payment released', message: "The poster didn't confirm in time, so your payment was released to you." });
     // The ghosting-poster case is exactly when the gig was soft-cancelled and is
-    // therefore absent from state.jobs (fetchJobs excludes cancelled), and the thin
-    // booking.job embed never carries posterId — so look it up directly (mirrors
-    // ratePoster) instead of the old always-undefined fallback.
-    let posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    // therefore absent from state.jobs (fetchJobs excludes cancelled). The booking's
+    // embed carries poster_id — this comment used to claim it never did, which is why
+    // the round-trip below exists; it is kept only as the last resort for a booking
+    // loaded before that column was selected.
+    let posterId = bookingPosterId(booking, state.jobs);
     if (!posterId && booking?.jobId) {
       const { data: jobRow } = await supabase.from('jobs').select('poster_id').eq('id', booking.jobId).single();
       posterId = jobRow?.poster_id;
@@ -809,8 +815,13 @@ export function JobsProvider({ children }) {
     // Cancellation-fee POLICY (record + display only — NO money moves). A poster
     // who cancels a CONFIRMED (held) booking owes the worker a fee; pending bookings
     // have no hold yet, so no fee. computeCancellationFee mirrors the effective pay.
+    // `fullJob` may be absent (capped/soft-cancelled feed) — computeEffectivePay falls
+    // back to the booking's embed for pay/payType, and the poster comes from the embed
+    // too. Resolving the poster only through the feed made `isPoster` false for a poster
+    // cancelling an off-feed gig, which sent them their OWN "The earner cancelled" push
+    // and skipped the cancellation-fee record their cancel is supposed to carry.
     const fullJob = state.jobs.find(j => j.id === booking?.jobId);
-    const posterId = fullJob?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     const isPoster = posterId && user?.id === posterId;
     let cancellationFee = null;
     if (isPoster && booking?.status === 'confirmed') {
@@ -1195,8 +1206,10 @@ export function JobsProvider({ children }) {
   const cancellationFeeFor = (bookingId) => {
     const booking = [...state.bookings, ...state.posterBookings].find(b => b.id === bookingId);
     if (!booking || booking.status !== 'confirmed' || booking.startedAt) return 0;
+    // Must answer for an off-feed gig exactly as cancelBooking does, or the poster is
+    // quoted $0 and then charged the fee the cancel records.
     const fullJob = state.jobs.find(j => j.id === booking.jobId);
-    if (!fullJob || fullJob.posterId !== user?.id) return 0;
+    if (bookingPosterId(booking, state.jobs) !== user?.id) return 0;
     return computeCancellationFeeAmount(computeEffectivePay(booking, fullJob));
   };
 
@@ -1319,7 +1332,7 @@ export function JobsProvider({ children }) {
       dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { amendmentStatus: prevStatus } }); // roll back
       return false;
     }
-    const posterId = state.jobs.find(j => j.id === booking?.jobId)?.posterId;
+    const posterId = bookingPosterId(booking, state.jobs);
     if (posterId) {
       notify(posterId, `Change ${newStatus}`, `The earner ${newStatus} your proposed change.`, { tab: 'GigsTab', type: 'amendment' });
     }
