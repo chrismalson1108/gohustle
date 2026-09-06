@@ -49,7 +49,7 @@ const RECUR_LABEL = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly'
 
 export default function JobDetailScreen({ route, navigation }) {
   const { jobId } = route.params;
-  const { jobs, bookings, posterBookings, bookJob, isBooked, savedJobIds, toggleSavedJob, fetchJobById, ratePoster } = useJobs();
+  const { jobs, bookings, posterBookings, bookJob, getLastBookingError, isBooked, savedJobIds, toggleSavedJob, fetchJobById, ratePoster } = useJobs();
   const { addXP, updateChallenge, showToast } = useUser();
   const { user } = useAuth();
   const haptic = useHaptic();
@@ -255,7 +255,17 @@ export default function JobDetailScreen({ route, navigation }) {
     if (!ok) {
       // The booking didn't persist — don't award XP/challenges or claim success.
       haptic.error();
-      showToast({ icon: '⚠️', title: "Couldn't book", message: 'That gig could not be booked. Please try again.' });
+      // Prefer the server's own sentence when there is one. A guard that refuses a
+      // booking says WHY in words meant for the earner ("This gig is booked through its
+      // time slots — pick an available one"), and telling them to "try again" instead
+      // sends them round the same loop with no idea what to change. Only our own
+      // check_violation messages reach here; anything else keeps the generic line.
+      const reason = getLastBookingError?.();
+      showToast({
+        icon: '⚠️',
+        title: "Couldn't book",
+        message: reason || 'That gig could not be booked. Please try again.',
+      });
       return;
     }
     haptic.success();

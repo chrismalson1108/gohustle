@@ -34,6 +34,7 @@
 // Secrets: STRIPE_SECRET_KEY, plus the shared secret in app_flags.controls_alert.
 import Stripe from "npm:stripe@22.5.0";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.112.3";
+import { logServerError } from "../_shared/logError.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -396,8 +397,46 @@ Deno.serve(async (req: Request) => {
       }
 
       // 5. The hold lapsed at Stripe while we still believe it is live.
+      //
+      // REPAIRED, not merely reported. Found live on 2026-09-06: one $150 row six days
+      // old, `authorized` here and `requires_payment_method` at Stripe — a poster who
+      // opened the pay sheet and closed it. Reporting alone leaves that row stuck
+      // forever: expire_stale_pending_bookings treats `authorized` as live escrow and
+      // skips the booking, so the slot never returns to the market and the earner waits
+      // on an application nobody can accept; then ctl_escrow_hold_lapsed_uncancelled
+      // opens a SECOND, misleading CRITICAL at eight days saying a hold lapsed, when no
+      // hold was ever placed.
+      //
+      // Stripe is authoritative about whether money is held, and this is the one
+      // direction that is safe to write from: 'authorized' -> no-hold. It never touches
+      // a captured row, never moves money, and never invents a hold — it only withdraws
+      // a claim Stripe has already contradicted. `requires_payment_method` means the
+      // intent exists and nothing is held, which is exactly what 20260906013100 defined
+      // 'pending' to mean; `canceled` is terminal, so the row is 'cancelled'. Both then
+      // become visible to the sweeps and controls that already handle those states.
       if (p.status === "authorized" && (pi.status === "canceled" || pi.status === "requires_payment_method")) {
-        problems.push({ kind: "hold_dead_at_stripe", stripe_status: pi.status });
+        const corrected = pi.status === "canceled" ? "cancelled" : "pending";
+        const { error: fixErr } = await supabase
+          .from("payments")
+          .update({ status: corrected })
+          // Re-assert the status we read, so a capture racing this sweep wins.
+          .eq("id", p.id)
+          .eq("status", "authorized");
+        if (fixErr) {
+          await logServerError("reconcile-stripe",
+            `could not correct a dead hold on payment ${p.id}: ${fixErr.message}`,
+            { payment_id: p.id, booking_id: p.booking_id, stripe_status: pi.status });
+          problems.push({ kind: "hold_dead_at_stripe", stripe_status: pi.status, repaired: false });
+        } else {
+          // Still recorded as a finding: an operator should know a poster's payment
+          // silently failed to arm, and the repair is what makes it auto-resolve.
+          problems.push({
+            kind: "hold_dead_at_stripe",
+            stripe_status: pi.status,
+            repaired: true,
+            corrected_to: corrected,
+          });
+        }
       }
 
       if (problems.length) {
