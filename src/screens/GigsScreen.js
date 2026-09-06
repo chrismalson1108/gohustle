@@ -273,14 +273,19 @@ export default function GigsScreen({ navigation }) {
   };
 
   const handleVerify = async (data) => {
-    if (!verifyTarget) return;
+    if (!verifyTarget) return false;
     try {
       // Gate on the real result — verifyAndRate returns false when it aborts
       // (blocked review, booking missing, already finalized) and has already
       // explained why, so claiming success here would contradict it.
+      // ...and PROPAGATE it. CompletionModal keeps the sheet open only on an explicit
+      // `false`; a bare `return` here resolved to undefined, which the sheet read as
+      // success and closed on — discarding the rating, review text, tip and dispute
+      // selection at the exact moment the toast said "please edit it and try again".
       const ok = await verifyAndRate(verifyTarget.id, data);
-      if (ok === false) return;
+      if (ok === false) return false;
       showToast({ icon: '⭐', title: 'Job verified!', message: 'Rating submitted and job marked complete.' });
+      return true;
     } catch (e) {
       showToast({ icon: '⚠️', title: 'Could not verify', message: e?.message || 'Please try again.' });
       throw e; // keep the modal open so the poster can retry
