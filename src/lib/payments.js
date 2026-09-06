@@ -422,6 +422,23 @@ export function byMonth(entries) {
   return out;
 }
 
+// The CSV date must be the date the user is LOOKING AT. Everything that selects and
+// groups these rows is local time — rangeBounds() bounds a tax year with
+// `new Date(y, 0, 1)`, byMonth() keys on getFullYear()/getMonth(), and the screen
+// renders each row with toLocaleDateString() — so formatting the export with
+// toISOString() (UTC) printed a different day for any settlement that straddles UTC
+// midnight. West of UTC that is the last hours of the evening (a 31 Dec 22:30 ET
+// verification exported as 2027-01-01, into a "This year" statement for 2026); east of
+// UTC it is the first hours of the morning, dated a day EARLIER than the screen shows.
+// Either way the file disagrees with the statement it was exported from, and people
+// reconcile against it.
+const localDay = (v) => {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+};
+
 const csvCell = (v) => {
   const s = String(v ?? '');
   // Neutralize spreadsheet formula injection: a gig titled "=HYPERLINK(...)" must
@@ -439,7 +456,7 @@ export function ledgerCsv(entries, side) {
   const lines = [head.map(csvCell).join(',')];
   entries.filter((e) => e.side === side).forEach((e) => {
     const st = paymentState(e.status, side).label;
-    const d = e.at ? new Date(e.at).toISOString().slice(0, 10) : '';
+    const d = e.at ? localDay(e.at) : '';
     const row = side === 'earner'
       ? [d, e.title, st, money(e.grossCents), money(e.feeCents), e.feeLabel, money(e.tipCents), money(e.refundShareCents ?? e.refundedCents), money(e.netCents)]
       : [d, e.title, st, money(e.grossCents), money(e.tipCents), money(e.discountCents), money(e.refundShareCents ?? e.refundedCents), money(e.netCents)];
