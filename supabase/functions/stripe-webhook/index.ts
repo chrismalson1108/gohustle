@@ -293,9 +293,39 @@ Deno.serve(async (req: Request) => {
         // split from what actually moved, using the same proportional rule as
         // stripe-capture-payment, BEFORE anything credits the earner.
         if (received > 0 && received !== storedSplit) {
+          // ── ASK STRIPE WHAT FEE IT APPLIED, don't scale ours ──────────────
+          //
+          // row.fee_cents is MUTABLE and can be stale in exactly the situation this
+          // branch exists for. stripe-capture-payment's partial branch persists the
+          // REDUCED split before calling Stripe; if that call throws, the row keeps the
+          // reduced fee at status='authorized'. Scaling that already-reduced number
+          // again understates the platform's take and over-credits the earner — and
+          // because the two written values still sum to amount_received,
+          // reconcile-stripe's captured_total_mismatch passes and
+          // ctl_earnings_total_drift compares profiles against the same wrong column.
+          //
+          // The charge's application_fee_amount is what Stripe actually took.
+          // earner-claim-payment:257-264 already settles this way; so does
+          // admin-payment-action's settle op. The proportional rule survives only as
+          // the fallback for when Stripe cannot be read.
+          let appliedFee: number | null = null;
+          try {
+            const full = await stripe.paymentIntents.retrieve(pi.id, { expand: ['latest_charge'] });
+            const ch = (full.latest_charge ?? null) as { application_fee_amount?: number | null } | null;
+            if (typeof ch?.application_fee_amount === 'number') {
+              appliedFee = Math.max(0, ch.application_fee_amount);
+            }
+          } catch (e: any) {
+            await logServerError('stripe-webhook',
+              `could not read the applied fee on ${pi.id} (${e?.message ?? e}) — falling back to ` +
+              `the proportional rule, which scales a possibly-stale fee_cents`,
+              { payment_id: row.id }, { fatal: false });
+          }
           const authorized = row.amount_cents || 0;
           const pct = authorized > 0 ? Math.min(1, received / authorized) : 1;
-          const fee = Math.min(received, Math.round((row.fee_cents ?? 0) * pct));
+          const fee = appliedFee !== null
+            ? Math.min(received, appliedFee)
+            : Math.min(received, Math.round((row.fee_cents ?? 0) * pct));
           await supabase.from('payments')
             .update({ fee_cents: fee, earner_amount_cents: received - fee })
             .eq('id', row.id)
