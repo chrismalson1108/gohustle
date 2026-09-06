@@ -777,6 +777,18 @@ uses **that booking's `feeBpsQuoted`**. Using the wrong one is a disclosure bug.
 `SERVICE_FEE_PCT` still exists in both clients but has **no consumers** and resolves to
 the founding rate.
 
+⚠️ **A booking that carries a benefit needs ALL FOUR pins to be described correctly** —
+`amount_cents_quoted` and `fee_bps_quoted` alone are not enough. The server authorizes
+`amount − poster_discount_cents` and pays the earner `amount − platform_fee_after_credit
+(amount, bps, fee_credit_cents)`, so a sheet built from two pins overstates the hold and
+understates the payout on every promoted booking. `transformBooking` exposes all four,
+and `platformFeeAfterCreditCents` / `earnerNetAfterCreditCents` / `posterChargeCents` in
+`shared/pricing.js` mirror the server (`__tests__/benefitDisplay.test.js` parses
+`20260806080000` the way `pricing.test.js` parses the fee migration). The accept sheets
+must render the edge function's **`authorizedCents`**, not its `amountCents` — that
+field is the pre-discount pin. And `effectiveFeeLabel` knows nothing about a credit or a
+discount, so the "we keep N%" parenthetical is dropped whenever either is pinned.
+
 ⚠️ **The fee comes out of the EARNER's payout**, not added to the poster's charge
 (`earnerAmountCents = amountCents - feeCents`). So a fee discount is a *supply-side*
 incentive; it does nothing for posters.

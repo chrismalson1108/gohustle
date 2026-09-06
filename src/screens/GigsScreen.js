@@ -167,8 +167,13 @@ export default function GigsScreen({ navigation }) {
     setLoadingId(bookingId);
     try {
       // 1. Create escrow PaymentIntent on the server
-      const { clientSecret, customerId, ephemeralKey, amountCents } =
+      // authorizedCents is what Stripe actually holds — the pinned amount less the
+      // poster's discount grant. amountCents is the PRE-discount pin, and the success
+      // toast below quotes this figure as "held in escrow", so on a discounted booking
+      // it named a number nobody was ever charged. Fall back for older responses.
+      const { clientSecret, customerId, ephemeralKey, amountCents, authorizedCents } =
         await createPaymentIntent(bookingId);
+      const heldCents = authorizedCents ?? amountCents;
 
       // 2. Initialize Stripe's payment sheet with the card UI
       const { error: initErr } = await initPaymentSheet({
@@ -206,7 +211,7 @@ export default function GigsScreen({ navigation }) {
         .select('status')
         .eq('id', bookingId)
         .maybeSingle();
-      const dollars = (amountCents / 100).toFixed(2);
+      const dollars = (heldCents / 100).toFixed(2);
       if (checkErr) {
         // Couldn't verify either way — don't claim a hold exists, don't claim it failed.
         showToast({ icon: 'ℹ️', title: 'Checking booking…', message: 'Pull to refresh to confirm this booking was accepted.' });

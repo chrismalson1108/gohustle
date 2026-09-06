@@ -87,6 +87,46 @@ export function feeBreakdown(amountCents, feeBps = DEFAULT_FEE_BPS) {
   };
 }
 
+/**
+ * Fee in cents AFTER an earner's bonus fee credit, mirroring
+ * public.platform_fee_after_credit (supabase/migrations/20260806080000_referral_bonus.sql).
+ *
+ * The floor is absolute and is computed from the AMOUNT, not from the fee: a credit
+ * reduces our margin, never Stripe's costs. That is why this is a second, additive
+ * step rather than a smaller fee_bps — and why a screen that shows a credited booking
+ * with plain platformFeeCents() overstates the fee and understates the payout.
+ */
+export function platformFeeAfterCreditCents(amountCents, feeBps = DEFAULT_FEE_BPS, creditCents = 0) {
+  const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;
+  const credit = Number.isFinite(Number(creditCents)) ? Math.max(0, Math.trunc(Number(creditCents))) : 0;
+  const floor = Math.ceil(amt * STRIPE_PCT) + STRIPE_FIXED_CENTS + PLATFORM_FLOOR_MARGIN_CENTS;
+  return Math.max(floor, platformFeeCents(amt, coerceBps(feeBps)) - credit);
+}
+
+/**
+ * What the earner receives on a booking that carries a fee credit. The poster's
+ * discount does NOT appear here: it comes out of the platform's side, so the earner's
+ * payout is unchanged by it (see stripe-create-payment-intent's split invariant).
+ */
+export function earnerNetAfterCreditCents(amountCents, feeBps = DEFAULT_FEE_BPS, creditCents = 0) {
+  const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;
+  return amt - platformFeeAfterCreditCents(amt, feeBps, creditCents);
+}
+
+/**
+ * What is actually authorized on the poster's card — the pinned amount less their
+ * discount grant, floored at Stripe's 50c minimum. Mirrors `authorizedCents` in
+ * stripe-create-payment-intent, which is the single name that function keeps for this
+ * quantity. Showing the pre-discount amount as "held on your card" is a money-level
+ * misstatement in the payer's own favour-sounding direction and still wrong.
+ */
+export function posterChargeCents(amountCents, discountCents = 0) {
+  const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;
+  const discount = Number.isFinite(Number(discountCents)) ? Math.max(0, Math.trunc(Number(discountCents))) : 0;
+  if (amt <= 0) return 0;
+  return Math.max(50, amt - discount);
+}
+
 /** What the earner actually receives. The fee comes out of THEIR side. */
 export function earnerNetCents(amountCents, feeBps = DEFAULT_FEE_BPS) {
   const amt = Number.isFinite(Number(amountCents)) ? Math.max(0, Math.trunc(Number(amountCents))) : 0;

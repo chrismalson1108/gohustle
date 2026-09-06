@@ -39,7 +39,10 @@ export const stripeEdge = {
     callEdgeFunction<{
       clientSecret: string;
       amount?: number;
+      // The PRE-discount pin. Kept for older responses; prefer authorizedCents.
       amountCents?: number;
+      // What Stripe actually holds: amount minus the poster's discount grant.
+      authorizedCents?: number;
       savedCard?: { id: string; brand: string | null; last4: string | null } | null;
     }>(
       "stripe-create-payment-intent",

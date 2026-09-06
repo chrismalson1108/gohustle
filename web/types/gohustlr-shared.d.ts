@@ -23,6 +23,20 @@ declare module "@gohustlr/shared" {
   export const DEFAULT_FEE_BPS: number;
   export function platformFeeCents(amountCents: number, feeBps?: number | null): number;
   export function earnerNetCents(amountCents: number, feeBps?: number | null): number;
+  /** Fee after an earner's bonus credit. Mirrors public.platform_fee_after_credit. */
+  export function platformFeeAfterCreditCents(
+    amountCents: number,
+    feeBps?: number | null,
+    creditCents?: number | null,
+  ): number;
+  /** What the earner receives once their fee credit is applied. */
+  export function earnerNetAfterCreditCents(
+    amountCents: number,
+    feeBps?: number | null,
+    creditCents?: number | null,
+  ): number;
+  /** What is authorized on the poster's card: amount less their discount grant. */
+  export function posterChargeCents(amountCents: number, discountCents?: number | null): number;
   export function feeLabel(feeBps?: number | null): string;
   /** Net-of-fee value of a booking in DOLLARS, using that booking's OWN pinned rate. */
   export function bookingNetDollars(grossDollars: number, feeBps?: number | null): number;

@@ -137,6 +137,12 @@ export interface Booking {
   // Null on rows predating the pins; fall back to the founding rate.
   feeBpsQuoted: number | null;
   amountCentsQuoted: number | null;
+  // The other two pinned inputs (20260806080000 / 20260806320000). The server
+  // authorizes amountCentsQuoted - posterDiscountCents and pays the earner
+  // amountCentsQuoted - platformFeeAfterCredit(..., feeCreditCents), so any screen
+  // stating either figure needs these. 0 when no benefit applies.
+  feeCreditCents: number;
+  posterDiscountCents: number;
   earner: EarnerMini | null;
   job: BookingJobMini | null;
 }

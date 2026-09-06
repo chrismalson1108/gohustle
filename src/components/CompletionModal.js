@@ -78,6 +78,15 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
   const pay        = booking.job?.pay;
   const payType    = booking.job?.payType;
 
+  // "we keep a N% platform fee" is honest only when nothing else moved the fee. A
+  // referral fee credit (fee_credit_cents) means we keep LESS than the rate, and a
+  // poster discount (poster_discount_cents) less again — both pinned on the booking
+  // and both invisible to effectiveFeeLabel, which knows only amount and bps. Drop the
+  // parenthetical in that case, exactly as it is already dropped when the processing
+  // floor sets the fee; the sentence still says the fee comes off.
+  const benefitPinned = (booking.feeCreditCents || 0) > 0 || (booking.posterDiscountCents || 0) > 0;
+  const feeText = benefitPinned ? null : effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted);
+
   // A reduced payout must state a reason (recorded as the dispute audit trail).
   const reasonMissing = disputed && !disputeReason.trim();
 
@@ -169,7 +178,7 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
             <View style={styles.escrowBox}>
               <Ionicons name="shield-checkmark" size={16} color={colors.success} style={{ marginRight: 8, marginTop: 1 }} />
               <Text style={styles.escrowText}>
-                The payment you authorized is held securely on your card. Confirming releases it to {earnerName}{effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted) ? ` (we keep a ${effectiveFeeLabel(booking.amountCentsQuoted, booking.feeBpsQuoted)} platform fee)` : ' (minus the platform fee shown when you accepted)'} — no new charge.
+                The payment you authorized is held securely on your card. Confirming releases it to {earnerName}{feeText ? ` (we keep a ${feeText} platform fee)` : ' (minus the platform fee shown when you accepted)'} — no new charge.
               </Text>
             </View>
 

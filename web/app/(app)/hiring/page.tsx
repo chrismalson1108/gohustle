@@ -62,7 +62,11 @@ export default function HiringPage() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelFee = cancelTarget ? cancellationFeeFor(cancelTarget.id) : 0;
 
-  // The amount held on the poster's card for the booking being verified.
+  // The GROSS pinned value of the booking being verified — NOT the hold. The sheet
+  // derives both money lines from it: the hold is this less the poster's discount
+  // grant, and the earner's payout is this less the fee after their credit. Handing
+  // the sheet one number called "held" is what made both lines wrong on any booking
+  // carrying a benefit.
   //
   // THE PIN IS AUTHORITATIVE. bookings.amount_cents_quoted is what
   // stripe-create-payment-intent actually authorized (20260806000000). This used to
@@ -73,7 +77,7 @@ export default function HiringPage() {
   //
   // The recompute survives only as the fallback for bookings predating the migration,
   // which is exactly what the server does too.
-  const verifyHeldCents = (() => {
+  const verifyQuotedCents = (() => {
     if (!verifyBooking) return 0;
     if (verifyBooking.amountCentsQuoted != null) return verifyBooking.amountCentsQuoted;
     const fullJob = postedJobs.find((j) => j.id === verifyBooking.jobId);
@@ -473,7 +477,7 @@ export default function HiringPage() {
         </p>
       </Modal>
 
-      <CompletionModal open={!!verifyBooking} booking={verifyBooking} heldCents={verifyHeldCents} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
+      <CompletionModal open={!!verifyBooking} booking={verifyBooking} quotedCents={verifyQuotedCents} onClose={() => setVerifyBooking(null)} onConfirm={onVerify} />
       <AcceptPaymentModal
         booking={payBooking}
         onClose={() => setPayBooking(null)}

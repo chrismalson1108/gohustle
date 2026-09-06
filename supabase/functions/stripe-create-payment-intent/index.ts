@@ -471,6 +471,12 @@ Deno.serve(async (req: Request) => {
             customerId,
             ephemeralKey: ephemeralKey.secret,
             amountCents,
+            // What Stripe is actually holding, i.e. amount MINUS the poster's discount
+            // grant. `amountCents` is the pre-discount pin; both accept sheets were
+            // rendering it as "held" / "Hold $X & accept" and overstating the charge on
+            // every discounted booking. Kept alongside rather than instead of, because
+            // older app builds read amountCents and must keep working.
+            authorizedCents,
             earnerAmountCents,
             feeCents,
             savedCard: savedCardExisting,
@@ -604,6 +610,9 @@ Deno.serve(async (req: Request) => {
       customerId,
       ephemeralKey: ephemeralKey.secret,
       amountCents,
+      // See the note on the replay branch above: this is the figure the accept sheets
+      // must show, because it is the one Stripe holds.
+      authorizedCents,
       earnerAmountCents,
       feeCents,
       savedCard,

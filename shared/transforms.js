@@ -189,6 +189,15 @@ export function transformBooking(b) {
     // Null on rows predating the pins; callers fall back to the founding rate.
     feeBpsQuoted: b.fee_bps_quoted != null ? Number(b.fee_bps_quoted) : null,
     amountCentsQuoted: b.amount_cents_quoted != null ? Number(b.amount_cents_quoted) : null,
+    // The other TWO pinned inputs (20260806080000 / 20260806320000). A sheet that
+    // states what is held on the card and what the earner receives cannot be right
+    // without them: the server authorizes amount - posterDiscountCents and pays the
+    // earner amount - platformFeeAfterCredit(amount, bps, feeCreditCents). They were
+    // on the row all along (both clients select `*`) and simply never surfaced, so
+    // every benefit-carrying booking was described to the payer with the wrong two
+    // numbers. Default 0, matching the NOT NULL DEFAULT 0 columns.
+    feeCreditCents: b.fee_credit_cents != null ? Number(b.fee_credit_cents) : 0,
+    posterDiscountCents: b.poster_discount_cents != null ? Number(b.poster_discount_cents) : 0,
     startedAt: b.started_at || null,
     cancellationFee: b.cancellation_fee != null ? Number(b.cancellation_fee) : null,
     tipAmount: b.tip_amount ? Number(b.tip_amount) : 0,
