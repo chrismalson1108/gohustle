@@ -346,17 +346,28 @@ All writes are owner-scoped under `<userId>/…` and go through `src/lib/uploadI
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
-## Support (in-app, two-way) — `src/lib/support.js`
+## Support (in-app, two-way) — `shared/support.js`, `src/lib/support.js`, `web/lib/support.ts`
 
 Tickets live in **`support_tickets`** + **`support_ticket_messages`** (owner RLS, both
-guarded). `SupportScreen` is the conversation; the admin console queue is `/support`.
+guarded). `SupportScreen` is the conversation on mobile and `/support` is the same
+conversation on web; the admin console queue is also `/support`.
+
+⚠️ **Signed-in web was a `mailto:` until 2026-09-05** — Settings and Profile both
+opened a personal inbox, `/contact` was linked only from the marketing footer, and no
+web code read either ticket table. That is the failure mobile deleted its own three
+mailto: links to fix. **Never put one back**: `support-reply` mails the user with
+`reply_to = mainmail@` and nothing in this repo ingests inbound mail, so an emailed
+reply lands in a mailbox where `last_author` never moves and the queue stays blind.
+`__tests__/webSupportParity.test.js` is the web half of `supportIntake.test.js`.
 
 - **Threads are PER TOPIC, and that is forced by the schema** — `priority` and
   `booking_id` are both per-ticket and safety is urgent by definition, so one lifelong
   thread could not carry a routine question and a safety report without mis-routing one.
-- `pickActiveTicket` / `groupTickets` (in `src/lib/support.js`, unit-tested) decide which
-  thread is shown: **unread wins over status**, because an agent's note on a resolved
-  thread deliberately leaves it `closed`.
+- `pickActiveTicket` / `groupTickets` / `ticketHasUnread` and `SUPPORT_CATEGORIES` live
+  in **`shared/support.js`** (unit-tested), re-exported by both clients — two copies is
+  how one person gets two different "active" conversations on two devices. They decide
+  which thread is shown: **unread wins over status**, because an agent's note on a
+  resolved thread deliberately leaves it `closed`.
 - **A user reply REOPENS a closed ticket** and un-archives it. Archiving is the user's
   inbox preference; closing is the team's workflow state. Never conflate them.
 - ⚠️ **`guard_support_ticket_write` must keep the `app.support_reopen` exemption.** The

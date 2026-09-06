@@ -21,7 +21,7 @@ students.** Safety reports outrank every other queue, including money.
 | A report's context | the report row links to `/bookings/<id>` ("view conversation") or `/users/<id>` |
 | A person | `/users/<id>` — profile, bookings both sides, reports, notes, login history |
 | **Where the worker physically is** | `/bookings/<id>` → **Safety** — the exact address, whether work has started, and the check-in timer. `trust` or `admin` only. **Not `/jobs/<id>`**: `jobs.location` is masked to city level at write, so that page says "Springfield, IL" for a gig at 742 Evergreen Terrace |
-| Support tickets | `/support` — in-app tickets now land here (mobile + web) |
+| Support tickets | `/support` — every in-app ticket lands here: the app's Support screen, the website's `/support` page (both write `support_tickets` directly and via `support-submit`), and the public `/contact` form. **Reply in the console, never by email.** `support-reply` mails the user with `reply_to = mainmail@`, and nothing ingests inbound mail — a reply to that email lands in a mailbox, `last_author` never moves, and `ctl_support_ticket_unanswered` goes on thinking the ticket is waiting on us. Until 2026-09-05 signed-in web had no thread at all, only a `mailto:`, so a web user's request never became a ticket |
 | Blocks | bottom of `/moderation` |
 
 **How a report reaches you.** `reports` INSERT → `trg_notify_safety_report` → pg_net →

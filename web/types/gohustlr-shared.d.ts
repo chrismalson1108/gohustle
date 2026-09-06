@@ -502,4 +502,25 @@ declare module "@gohustlr/shared" {
     totalCents: number;
     totalLabel: string;
   };
+
+  // ── support (which conversation a person is shown) ──
+  // Moved out of src/lib/support.js on 2026-09-05 so the website's Support page
+  // shows the SAME thread the app does. Two copies of these rules is how one person
+  // gets two different "active" conversations on two devices.
+  export const SUPPORT_CATEGORIES: Array<{ key: string; label: string }>;
+  export interface SupportTicketLike {
+    id?: string;
+    status?: string;
+    archived_at?: string | null;
+    last_message_at?: string | null;
+    user_read_at?: string | null;
+  }
+  /** Unread iff SUPPORT said something the user has not seen — never your own reply. */
+  export function ticketHasUnread(t: SupportTicketLike | null | undefined): boolean;
+  /** Unread wins over status: an agent's note on a resolved thread stays 'closed'. */
+  export function pickActiveTicket<T extends SupportTicketLike>(tickets?: T[]): T | null;
+  export function groupTickets<T extends SupportTicketLike>(
+    tickets?: T[],
+    activeId?: string | null,
+  ): { live: T[]; archived: T[] };
 }

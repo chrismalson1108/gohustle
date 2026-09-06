@@ -7,13 +7,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, X, ChevronRight, UserCircle2, Clock, Eye, CreditCard, Receipt,
-  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, Mail, LogOut, Tag, Sparkles,
-  ShieldCheck, ArrowLeftRight,
+  SlidersHorizontal, Bell, Bookmark, Heart, FileText, Lock, Briefcase, LogOut, Tag, Sparkles,
+  ShieldCheck, ArrowLeftRight, LifeBuoy,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useJobs } from "@/lib/jobs";
-import { SUPPORT_EMAIL } from "@/lib/legal";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -224,12 +223,18 @@ export default function SettingsPage() {
             keywords: "legal contractor 1099 employment classification",
             href: "/legal/contractor",
           },
+          // NOT a mailto:. This was `mailto:${SUPPORT_EMAIL}` until 2026-09-05, which
+          // meant a signed-in web user's request never entered support_tickets: it
+          // landed in a personal inbox, unassignable, un-triageable, with no status
+          // and no record it was answered — the exact failure mobile deleted its own
+          // three mailto: links to fix. And an emailed reply cannot re-enter the
+          // thread: nothing here ingests inbound mail, so `last_author` never moves.
           {
-            icon: Mail,
+            icon: LifeBuoy,
             title: "Contact support",
-            sub: SUPPORT_EMAIL,
-            keywords: "help email problem report bug",
-            href: `mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`,
+            sub: "Message a real person — replies land in the app",
+            keywords: "help support contact email problem report bug ticket message chat",
+            href: "/support",
           },
         ],
       },

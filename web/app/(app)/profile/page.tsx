@@ -13,7 +13,6 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchVerificationStatus, requestVerification } from "@/lib/verification";
 import { getReferralCode, fetchReferralCount } from "@/lib/referrals";
-import { SUPPORT_EMAIL } from "@/lib/legal";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
 import Avatar from "@/components/ui/Avatar";
 import XPBar from "@/components/XPBar";
@@ -600,7 +599,10 @@ export default function ProfilePage() {
           <Row icon={FileText} title="Terms of Service" href="/legal/terms" />
           <Row icon={FileText} title="Privacy Policy" href="/legal/privacy" />
           <Row icon={FileText} title="Independent Contractor Agreement" href="/legal/contractor" />
-          <Row icon={LifeBuoy} title="Contact support" externalHref={`mailto:${SUPPORT_EMAIL}?subject=GoHustlr%20Support`} />
+          {/* Was a mailto: to a personal inbox — the request never reached
+              support_tickets, so the console queue, the SLA control and the user's
+              own account page knew nothing about it. */}
+          <Row icon={LifeBuoy} title="Contact support" sub="Message a real person" href="/support" />
         </Group>
 
         {/* Sign out lives in Settings only — it sat at the bottom of the page
