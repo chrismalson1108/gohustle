@@ -71,6 +71,41 @@ describe('the earner clawback is recorded, not recomputed', () => {
     expect(select).toMatch(/earner_refunded_cents/);
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Recording it is only half the contract. The recorded figure has to be APPLIED.
+  //
+  // record_refund writes earner_refunded_cents unconditionally and then calls
+  // debit_earnings, discarding the boolean — and debit_earnings refuses outright on a
+  // payment whose earnings_credited is false, which is the whole state
+  // ctl_earner_credit_missing exists for. So a refund landing before the credit recorded
+  // a clawback nothing took, and credit_earnings then credited earner_amount_cents in
+  // FULL. On a $60 capture refunded by half the earner's dashboard read $55.80 for a
+  // position of $27.90, forever, and ctl_earnings_total_drift opened a HIGH that nothing
+  // could auto-resolve. Fixed by 20260906040000: the credit withholds what was already
+  // clawed back.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('credit_earnings honours a clawback recorded before the credit landed', () => {
+    const sql = latestDefining('credit_earnings').replace(/\s+/g, ' ');
+    // Read under the SAME claim UPDATE, so a refund cannot commit between the two reads.
+    expect(sql).toMatch(
+      /returning coalesce\(earner_amount_cents, 0\), coalesce\(earner_refunded_cents, 0\) into v_amount, v_clawed/,
+    );
+    // And credit the difference, floored — a negative credit would be a silent debit
+    // against unrelated earnings.
+    expect(sql).toMatch(/v_net := greatest\(0, v_amount - coalesce\(v_clawed, 0\)\)/);
+    expect(sql).toMatch(/v_dollars := v_net::numeric \/ 100/);
+    // The gross form is the line that shipped wrong. If it comes back, so does the bug.
+    expect(sql).not.toMatch(/v_dollars := v_amount::numeric \/ 100/);
+  });
+
+  it('the claim itself is untouched, so capture and webhook still credit once', () => {
+    // Netting must not have loosened the conditional flip that makes this exactly-once.
+    const sql = latestDefining('credit_earnings').replace(/\s+/g, ' ');
+    expect(sql).toMatch(
+      /set earnings_credited = true where id = p_payment_id and coalesce\(earnings_credited, false\) = false and status = 'captured' and coalesce\(earner_amount_cents, 0\) > 0/,
+    );
+  });
+
   it('ctl_earnings_total_drift sums the recorded figure', () => {
     const sql = latestDefining('ctl_earnings_total_drift').replace(/\s+/g, ' ');
     expect(sql).toMatch(/sum\(coalesce\(p\.earner_refunded_cents, 0\)\)/);

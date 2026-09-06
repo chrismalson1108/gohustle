@@ -121,6 +121,11 @@ reports "Verify & Rate" failing.
    - `succeeded` → it actually worked; the failure was after capture. Check
      whether `payments.status` says `captured` and whether the earner's earnings
      moved. If not, this is a ledger drift — record it and credit by hand.
+     **Credit it with `select public.credit_earnings(<payments.id>)`, never with a
+     direct `profiles` UPDATE.** If a refund was issued while the row was still
+     uncredited, `debit_earnings` refused it and the clawback is sitting recorded on
+     `payments.earner_refunded_cents`; the RPC withholds it (`20260906040000`) and a
+     hand-written increment would pay the earner money Stripe already took back.
 3. **A Dashboard capture is now safe, but still prefer the app.** This used to say
    "do not capture from the Stripe Dashboard": `payment_intent.succeeded` credited the
    earner the **pre-computed full split** without reading `amount_received`, so a
