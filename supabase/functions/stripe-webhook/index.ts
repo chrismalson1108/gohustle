@@ -104,7 +104,36 @@ async function recordReversal(
         `tip reversal failed for ${paymentIntentId}: ${tipErr.message}`,
         { payment_intent: paymentIntentId, kind }, { fatal: true });
     }
-    bookingId = tip.booking_id;
+
+    // ── RETURN HERE. A tip reversal is NOT a dispute on the escrow charge. ────
+    //
+    // This used to assign `bookingId = tip.booking_id` and fall through into the
+    // generic path below, which files a disputes row AGAINST THE BOOKING using the
+    // standard template — 'Stripe refund on charge ch_… (usd 20.00 refunded)'. That
+    // template is exactly what ctl_external_reversal_not_ledgered selects on, and the
+    // control then joins the row to the booking's CAPTURED escrow payment: a $100 gig
+    // that was never reversed at all. Twenty-four hours later it opened a HIGH money
+    // finding reading 'reversal 2000, refunded 0, unledgered 2000', and its remedy —
+    // "Record chargeback, which writes refunded_cents" — would have written a reversal
+    // onto a charge Stripe never touched, permanently misstating GMV and platform fees
+    // and putting reconcile-stripe into a refund_mismatch it could never clear. The
+    // finding could not auto-resolve either, because the only thing that would close it
+    // was that wrong write.
+    //
+    // The same row also freezes a THIRD PARTY's money: vest_bonuses holds a referral
+    // bonus while any open dispute exists on the source booking, and
+    // ctl_dispute_open_beyond_sla opens its own HIGH finding after 14 days.
+    //
+    // tip_ledger.reversed_cents / reversed_at / reversal_reason IS the record, written
+    // by record_tip_reversal above, and ctl_earnings_total_drift already subtracts it.
+    // The refund exemption below could not have saved us either: `row` is the null
+    // payments lookup, so `(row?.refunded_cents ?? 0) >= stripeRefundedCents` is false
+    // for any positive refund, and the chargeback arm skips that block entirely.
+    //
+    // If a tip CHARGEBACK is ever wanted as an abuse signal, it needs its own template
+    // — one the control's two anchored regexes do not match — and its own decision.
+    // It must not borrow the escrow charge's.
+    return tip.booking_id;
   }
   if (!bookingId) return null;
 
