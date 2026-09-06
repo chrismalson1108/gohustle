@@ -179,17 +179,13 @@ export async function forceCancel(formData: FormData): Promise<ActionResult> {
 
   return run("booking.force_cancel", bookingId, { reason }, async (ctx) => {
     const { data: b, error: readErr } = await ctx.service
-      .from("bookings").select("status").eq("id", bookingId).maybeSingle();
+      .from("bookings").select("status, started_at").eq("id", bookingId).maybeSingle();
     if (readErr) throw new Error(readErr.message);
     if (!b) throw new Error("Booking not found.");
     if (b.status === "verified") {
       throw new Error("This booking is already settled — refund it instead of cancelling.");
     }
 
-    // Release the escrow hold FIRST. Cancelling the booking while an authorization is
-    // still live would leave the poster's card holding funds against a gig that no
-    // longer exists, and nothing else in the system would ever release it.
-    let holdNote = "no open hold to release";
     // FAIL CLOSED. Dropping this error meant a timed-out lookup read as "no hold",
     // and the booking was cancelled while a live authorization stayed on the
     // poster's card with nothing left in the system that would ever release it.
@@ -208,16 +204,46 @@ export async function forceCancel(formData: FormData): Promise<ActionResult> {
         "This booking's payment is already CAPTURED — the poster has been charged. Refund it first, then cancel.",
       );
     }
+
+    // ── The GUARDED booking write FIRST, the irreversible Stripe call SECOND ──
+    // This used to void the hold first, so that a cancelled gig never left funds held.
+    // But the bookings write can REFUSE: trg_guard_started_booking_cancel raises on
+    // `new.status = 'cancelled' and old.started_at is not null`, i.e. on every booking
+    // where the earner tapped "I'm on site". So the authorization was voided at Stripe,
+    // the write then raised, and the booking stayed confirmed/completed and LIVE for
+    // both parties with nothing behind it — capture, settle and the earner's own claim
+    // all impossible from that moment on.
+    //
+    // Both orders can strand something, so strand the RECOVERABLE half. A cancelled
+    // booking with a live hold is caught by ctl_money_exposed_on_dead_booking
+    // ('hold_never_released', 6h), is fixed by the "Release hold" button right here, and
+    // expires at Stripe in ~7 days regardless. A live booking with a dead hold is
+    // watched by NO control — ctl_settled_without_captured_payment only looks for a
+    // confirmed/completed booking with no payments row at all, and this one has a row.
+    // JobsContext.cancelBooking already writes in this order, for this reason.
+    const { error } = await ctx.service.from("bookings").update({ status: "cancelled" }).eq("id", bookingId);
+    if (error) {
+      throw new Error(
+        `${error.message} Nothing was changed and no money moved.` +
+          (b.started_at
+            ? ` The earner marked "I'm on site" — clear "started" first if you still mean to cancel.`
+            : ""),
+      );
+    }
+
+    let holdNote = "no open hold to release";
     if (pay?.status === "authorized") {
       const { ok, body } = await callPaymentAction({ bookingId, op: "release_hold", reason });
       if (!ok && asStaleMfa(body)) throw new Error("stale_mfa");
-      if (!ok) throw new Error(`Could not release the escrow hold: ${body.message ?? body.error}. Booking NOT cancelled.`);
+      if (!ok) {
+        throw new Error(
+          `The booking is CANCELLED but the escrow hold could NOT be released: ${body.message ?? body.error}. ` +
+            `The poster's card is still authorized — press "Release hold" now.`,
+        );
+      }
       holdNote = "escrow hold released";
     }
-
-    const { error } = await ctx.service.from("bookings").update({ status: "cancelled" }).eq("id", bookingId);
-    if (error) throw new Error(`Hold released but the booking update failed: ${error.message}`);
-    return { was: b.status, hold: holdNote, __message: `Cancelled — ${holdNote}.` };
+    return { was: b.status, started_at: b.started_at, hold: holdNote, __message: `Cancelled — ${holdNote}.` };
   });
 }
 

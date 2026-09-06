@@ -112,10 +112,23 @@ export default function InterventionPanel({
         >
           Clear &ldquo;started&rdquo;
         </button>
+        {/* An operator override of a STARTED booking is a real override: the DB guard
+            trg_guard_started_booking_cancel exists to stop the two parties doing this,
+            and the action now writes the booking BEFORE it voids anything at Stripe, so
+            a refusal costs nothing. Say so in the confirm rather than hiding the button —
+            "Clear started" then Force cancel is the same override with an extra step and
+            no extra thought. */}
         <button
           className={danger}
           disabled={pending || settled || status === "cancelled"}
-          onClick={() => fire(forceCancel, "Cancel this booking and release any escrow hold?")}
+          onClick={() =>
+            fire(
+              forceCancel,
+              startedAt
+                ? "The earner marked “I’m on site” for this booking.\n\nCancel it anyway and release any escrow hold? The work may already have been done — a dispute or “Settle & pay earner” may be the honest answer."
+                : "Cancel this booking and release any escrow hold?",
+            )
+          }
         >
           Force cancel
         </button>
