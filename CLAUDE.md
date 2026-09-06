@@ -409,9 +409,16 @@ rate limiting and staging.
   from the SERVER's summary. Injected gig text can make the model stage something; it
   cannot produce the tap. Do not "simplify" this back into a prompt instruction.
 - **Its system prompt is a parity-tested artifact.** `__tests__/parity.test.js` fails if
-  the prompt does not name every tab as the app names it, or cannot point at
-  Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
-  pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
+  the prompt does not name every tab as the app names it, or cannot point at every
+  destination `MUST_KNOW` pins — Transactions, bank-deposit timing, Tax Center, Support,
+  two-factor, escrow, who pays the fee, and (added 2026-09-06) claiming payment on a gig
+  the poster never verified, redeeming a code, the on-gig safety tools, report/block,
+  identity + student verification, invites, saved gigs and people, the alerts inbox and
+  its settings, availability, Insights, and closing an account. **Adding a user-facing
+  feature means adding it to `MUST_KNOW` there.** The twelve added at once were not new
+  features: they had shipped on both clients and the prompt had never been told, so the
+  assistant answered "I'm not sure — ask Support" to questions one tap answers, and
+  answered a ghosted earner with the escrow line instead of the button that pays them.
 - ⚠️ **Two clients, two "where to find it" blocks.** The request body carries
   `client: 'web' | 'mobile'` (anything else, including an older app build that sends
   nothing, is treated as the app) and the prompt swaps `PLACES_MOBILE` for `PLACES_WEB`.
@@ -594,7 +601,7 @@ it is the second half of a change that has not been done yet.
 
 | Guard | Stops |
 |---|---|
-| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point at Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow, and who pays the fee · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
+| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point — on BOTH clients — at every destination `MUST_KNOW` pins · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
 | `categories.test.js` | JS `categorySlug()` ≠ SQL `category_slug()` |
 | `pricing.test.js` | `shared/pricing.js` ≠ the fee migration |
 | `supportGuardDrift.test.js` | a guard rewrite dropping the `app.support_reopen` exemption (has happened twice; makes customer replies invisible to the support queue) |

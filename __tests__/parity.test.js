@@ -180,6 +180,24 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // the screen existed the prompt told the model there was nowhere to send them,
     // which is now false.
     ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
+    // Added 2026-09-06. The prompt named five destinations and the app has a dozen
+    // more that people ASK about — so the assistant fell back on "I'm not sure, ask
+    // Support" for questions one tap answers. The first two are the ones that cost
+    // something: a ghosted earner was being told escrow releases "on completion" with
+    // no mention of the button that releases it, and a poster holding a promo code was
+    // sent to Support for a row that sits in Settings on both clients.
+    ['claiming payment when a poster goes quiet', /Claim your payment/],
+    ['redeeming a promo or referral code', /Have a code\?/],
+    ['the safety tools on a live gig', /Share my gig/],
+    ['reporting or blocking someone', /Reporting or blocking/],
+    ['identity and student verification', /Verify Student Status/],
+    ['inviting friends', /Invite friends/],
+    ['saved gigs and saved people', /Saved gigs/],
+    ['the alerts inbox', /Alerts inbox/],
+    ['notification settings', /Notification settings/],
+    ['availability and class schedule', /Availability & schedule/],
+    ['market insights', /Browse → Insights/],
+    ['closing an account', /Manage your account/],
   ];
 
   // Run against BOTH prompts. A destination the website answers differently still
