@@ -91,13 +91,19 @@ Deno.serve(async (req: Request) => {
     // stripe-capture-payment hard-refuses a 'failed' row with HOLD_EXPIRED, stranding
     // the poster permanently on a booking they have genuinely paid for.
     //
+    // 'pending' is in the predicate for the same reason and is the COMMON case:
+    // stripe-create-payment-intent now writes 'pending' when it mints the intent,
+    // because a manual-capture PI with no payment method holds nothing. This function is
+    // the normal path that observes requires_capture and promotes it. Leaving it out
+    // would 409 HOLD_RELEASED on every ordinary acceptance.
+    //
     // So exclude only the two that must never be resurrected: 'cancelled' (Stripe has
     // released the funds) and 'captured' (the money already moved).
     const { data: payAuthorized, error: payErr } = await supabase
       .from('payments')
       .update({ status: 'authorized' })
       .eq('id', payment.id)
-      .in('status', ['authorized', 'failed'])
+      .in('status', ['pending', 'authorized', 'failed'])
       .select('id');
     if (payErr) return json({ error: payErr.message }, 500);
     if (!payAuthorized || payAuthorized.length === 0) {

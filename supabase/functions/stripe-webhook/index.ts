@@ -411,6 +411,44 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case 'payment_intent.amount_capturable_updated': {
+        // ── The moment a hold actually becomes real ─────────────────────────
+        //
+        // Stripe fires this when a manual-capture PaymentIntent reaches
+        // requires_capture — i.e. the poster completed the sheet and funds are now held.
+        // That is the ONLY observation that may promote a payments row to 'authorized',
+        // and until this handler existed there was exactly one place that made it
+        // (accept-booking) — which refuses any booking that is not still 'pending'.
+        //
+        // So on a RECOVERY re-hold, where the booking is already confirmed or completed
+        // and the poster is re-paying a lapsed authorization, nothing ever wrote the
+        // promotion back. stripe-create-payment-intent's own comment at :415-450 records
+        // that window and says it leaves no trace: the row rested at 'failed' (now
+        // 'pending') naming real money, and both stripe-capture-payment and
+        // earner-claim-payment turned it away with HOLD_EXPIRED — the earner unpaid on
+        // funds that were genuinely held.
+        //
+        // Status-predicated like every sibling: never resurrect a cancelled or captured
+        // row, and never invent a booking transition here. This promotes the money
+        // record only; accept-booking still owns confirming the booking, because that
+        // requires the poster's own act.
+        const pi = event.data.object as Stripe.PaymentIntent;
+        if ((pi.amount_capturable ?? 0) > 0 && pi.status === 'requires_capture') {
+          const { data: promoted } = await supabase.from('payments')
+            .update({ status: 'authorized', authorized_at: new Date().toISOString() })
+            .eq('payment_intent_id', pi.id)
+            .in('status', ['pending', 'failed'])
+            .select('id, booking_id');
+          if (promoted?.length) {
+            console.log(
+              `stripe-webhook: ${pi.id} reached requires_capture — promoted the payments ` +
+              `row to 'authorized' (booking ${promoted[0].booking_id})`,
+            );
+          }
+        }
+        break;
+      }
+
       case 'payment_intent.canceled': {
         // A manual-capture authorization was canceled — most importantly, Stripe
         // AUTO-CANCELS an uncaptured hold ~7 days after it's placed. Without this
@@ -419,10 +457,16 @@ Deno.serve(async (req: Request) => {
         const pi = event.data.object as Stripe.PaymentIntent;
         // Don't clobber a row that already settled (captured) — only an outstanding
         // authorization can lapse into canceled.
+        //
+        // 'pending' is included because that is what an unconfirmed intent now reads as:
+        // a poster who opened the pay sheet and swiped it away leaves a live
+        // requires_payment_method intent, and Stripe eventually cancels it. Without this
+        // the row sat 'pending' naming a dead intent forever, and neither the poster nor
+        // any control could tell that from one still awaiting a card.
         await supabase.from('payments')
           .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
           .eq('payment_intent_id', pi.id)
-          .eq('status', 'authorized');
+          .in('status', ['pending', 'authorized']);
         const { data: payment } = await supabase
           .from('payments').select('booking_id').eq('payment_intent_id', pi.id).single();
         if (payment) {

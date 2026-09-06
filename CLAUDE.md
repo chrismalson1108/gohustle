@@ -747,7 +747,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **59 controls are registered**: 57 run in-database and 2 are `external`. Every
+- **60 controls are registered**: 58 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and

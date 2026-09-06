@@ -89,14 +89,17 @@ Deno.serve(async (req: Request) => {
     const { data: existingPay } = await supabase
       .from('payments').select('status, amount_cents, payment_intent_id').eq('booking_id', bookingId).maybeSingle();
     // A settled payment (captured/refunded/…) can never be re-held; only an
-    // outstanding, failed, or lapsed(cancelled) hold is re-holdable.
-    if (existingPay && !['authorized', 'failed', 'cancelled'].includes(existingPay.status)) {
+    // outstanding, failed, or lapsed(cancelled) hold is re-holdable. 'pending' — an
+    // intent minted for a sheet the poster never completed — is re-holdable too, and
+    // must be: it is the state this function itself leaves behind.
+    if (existingPay && !['pending', 'authorized', 'failed', 'cancelled'].includes(existingPay.status)) {
       return json({ error: 'This booking already has a settled payment.' }, 409);
     }
     // Holds are placed while accepting (pending/confirmed). Also permit a RECOVERY
-    // re-hold on a COMPLETED booking whose prior hold lapsed (cancelled/failed) —
-    // otherwise finished work whose ~7-day authorization expired could never be paid.
-    const isRecovery = ['cancelled', 'failed'].includes(existingPay?.status ?? '');
+    // re-hold on a COMPLETED booking whose prior hold lapsed (cancelled/failed) or was
+    // never confirmed ('pending') — otherwise finished work whose ~7-day authorization
+    // expired, or whose sheet was abandoned, could never be paid.
+    const isRecovery = ['pending', 'cancelled', 'failed'].includes(existingPay?.status ?? '');
     const canHold = ['pending', 'confirmed'].includes(booking.status)
       || (booking.status === 'completed' && isRecovery);
     if (!canHold) {
@@ -540,7 +543,34 @@ Deno.serve(async (req: Request) => {
       amount_cents: authorizedCents,
       fee_cents: feeCents,
       earner_amount_cents: earnerAmountCents,
-      status: 'authorized',
+      // ── 'pending', NOT 'authorized'. NOTHING IS HELD YET. ─────────────────
+      //
+      // A manual-capture PaymentIntent created with no payment_method and no confirm is
+      // `requires_payment_method`: Stripe is holding nothing, and only the poster
+      // completing the sheet makes it `requires_capture`. This row used to be stamped
+      // 'authorized' right here, which is the exact write the heal branch above refuses
+      // to make for the identical Stripe state — and for the reason its comment gives:
+      // 'authorized' tells expire_stale_pending_bookings and
+      // ctl_escrow_hold_lapsed_uncancelled that escrow exists when it does not.
+      //
+      // A poster who opens "Accept & pay" and swipes the sheet away leaves exactly that.
+      // Both clients treat a dismissal as "not a real error" and cancel nothing, and no
+      // webhook fires on abandonment, so the row rested at 'authorized' forever: the
+      // 14-day sweep skipped the booking because it saw a live hold, sync_slot_taken kept
+      // the slot taken so no other earner could book it, the earner sat in Awaiting
+      // indefinitely, and at eight days ctl_escrow_hold_lapsed_uncancelled opened a
+      // CRITICAL finding telling a human a hold had lapsed when none was ever placed.
+      //
+      // 'pending' is a state every consumer already reads correctly, because they all
+      // filter on `status = 'authorized'` to mean "money is held": the sweep expires the
+      // booking, the escrow controls and the dashboard's escrow_held_cents skip it, and
+      // reconcile-stripe stops filing hold_dead_at_stripe against it hourly. The webhook
+      // already listed 'pending' in two of its own predicates before the status existed.
+      //
+      // The promotion to 'authorized' happens ONLY on an observed `requires_capture`:
+      // accept-booking on the normal path, and payment_intent.amount_capturable_updated
+      // in stripe-webhook on the recovery re-hold, where accept-booking never runs.
+      status: 'pending',
       // When THIS hold was placed. created_at keeps recording the first one, which
       // other controls and the payments list read — so a recovery re-hold updates this
       // and leaves that history intact. Without it the escrow-age controls date a

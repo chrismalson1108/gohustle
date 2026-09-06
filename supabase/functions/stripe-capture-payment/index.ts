@@ -243,6 +243,18 @@ Deno.serve(async (req: Request) => {
         message: 'The card hold expired before payment could be released. Re-confirm this booking to place a new hold, then verify again.',
       }, 409);
     }
+    // 'pending' is an intent that was minted but never confirmed — Stripe is holding
+    // NOTHING, so there is nothing to capture. Same remedy, so the same error: place a
+    // hold that actually completes. (This is only reachable on the recovery re-hold
+    // path, where accept-booking does not run; the ordinary flow is promoted to
+    // 'authorized' by accept-booking or by payment_intent.amount_capturable_updated
+    // before anyone can verify.)
+    if (payment.status === 'pending') {
+      return json({
+        error: 'HOLD_EXPIRED',
+        message: 'The card hold was never completed, so there is nothing to release. Re-confirm this booking to place a new hold, then verify again.',
+      }, 409);
+    }
 
     let earnerAmountCents = payment.earner_amount_cents ?? 0;
     // The final gig value this capture settles at, for the promo budget. Null means no

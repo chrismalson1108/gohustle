@@ -66,7 +66,10 @@ export default async function PaymentsPage({
     : [];
   const userById = new Map(payoutUsers.map((u) => [u.id, u]));
 
-  const STATUSES = ["", "authorized", "captured", "cancelled", "failed"];
+  // "pending" is a PaymentIntent that was minted and never confirmed — the poster
+  // opened the pay sheet and abandoned it, so Stripe holds nothing. Filterable because
+  // it is the one status where a booking looks live and no money stands behind it.
+  const STATUSES = ["", "pending", "authorized", "captured", "cancelled", "failed"];
 
   return (
     <div className="space-y-6">
