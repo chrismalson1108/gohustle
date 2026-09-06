@@ -491,7 +491,7 @@ stayed invisible until someone complained.
 | `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
 | `controls-alert` | The hourly sweep's pager and the daily triage digest. `verify_jwt = false`. |
 | `send-push` | Expo push fan-out; owns `KNOWN_TABS` (see the tab-route-name note). |
-| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. **Step-up gated** — see Two-factor. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted TWICE: `certificates` once left public credential scans fetchable after the account was gone, and `support-photos` was missing until 2026-08-14. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is either cleared or excused with a reason, so the next omission fails the gate instead of waiting to be noticed. |
+| `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. **Step-up gated** — see Two-factor. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted THREE times: `certificates` once left public credential scans fetchable after the account was gone, `support-photos` was missing here until 2026-08-14 — and until 2026-09-05 it was still missing from the console's two copies of the same list (`admin/lib/deleteUser.ts` and the GDPR export route), because the guard read this file only and the drift recurred one directory over. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is cleared or excused **in all three lists**, and that the three agree. |
 
 ## A feature is not finished when the mobile screen works
 

@@ -16,8 +16,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //
 // `certificates` was missing here and in the edge function, so uploaded credential
 // documents survived deletion in a public bucket. Keep this list in sync.
+//
+// It drifted again: the edge function gained `support-photos` on 2026-08-14 and this
+// copy did not, so an account deleted from the console kept every screenshot it had
+// attached to a support ticket — files people attach precisely BECAUSE something went
+// wrong. __tests__/storagePolicies.test.js asserted bucket coverage against the edge
+// function's list only, so the drift the test exists to catch recurred one directory
+// over; it now reads this file and the GDPR export too.
+//
+// The loop below lists the `<userId>/` prefix only, so this removes what the USER
+// uploaded and leaves agent attachments under `ticket-<id>/` alone — those are
+// support's own record of the conversation, not the departing user's to erase.
 const BUCKETS = [
   "avatars", "job-photos", "chat-photos", "completion-photos", "receipts", "certificates",
+  "support-photos",
 ];
 
 // Booking states where the poster's card is authorized and the earner is owed.
