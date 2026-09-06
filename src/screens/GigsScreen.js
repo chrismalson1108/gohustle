@@ -261,10 +261,16 @@ export default function GigsScreen({ navigation }) {
   };
 
   const handleMarkDone = async (booking) => {
-    haptic.success();
     setLoadingId(booking.id);
-    await markPosterDone(booking.id);
+    // Gate on the real write. markPosterDone rolls back and shows "Couldn't mark done"
+    // before returning false; this discarded that and printed "Marked Done!" straight
+    // underneath it, so the poster was told the write both failed and succeeded. The
+    // success haptic moved below the await for the same reason — it used to fire before
+    // the write was even attempted.
+    const ok = await markPosterDone(booking.id);
     setLoadingId(null);
+    if (ok === false) { haptic.error(); return; }
+    haptic.success();
     if (booking.earnerDone) {
       showToast({ icon: '🎉', title: 'Job Complete!', message: 'Both parties confirmed. Now verify and rate the earner.' });
     } else {

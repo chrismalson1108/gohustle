@@ -64,10 +64,13 @@ export default function ManageBookingsScreen() {
   };
 
   const handleMarkDone = async (booking) => {
-    haptic.success();
     setLoadingId(booking.id);
-    await markPosterDone(booking.id);
+    // markPosterDone returns false on a rejected write (having rolled back and toasted),
+    // so the success haptic belongs after it, not before the write is attempted.
+    const ok = await markPosterDone(booking.id);
     setLoadingId(null);
+    if (ok === false) { haptic.error(); return; }
+    haptic.success();
   };
 
   const handleVerify = async (data) => {
