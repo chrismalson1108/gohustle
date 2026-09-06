@@ -176,3 +176,67 @@ describe('the admin-refund exemption cannot silence a chargeback', () => {
     expect(calls.filter((a) => /'refund'/.test(a)).length).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A payout write that fails must be REDELIVERED, not announced.
+//
+// The payout handler throws on a failed stripe_accounts lookup on purpose — its own
+// comment says "a null is a WRONG attribution … Throw instead — Stripe retries". The
+// write that actually persists the payout did the opposite: `if (poErr)
+// console.error(...)`, then fell through to the notification insert and a 200. So on a
+// transient PostgREST failure Stripe never redelivered, stripe_payouts kept the payout at
+// in_transit with the ESTIMATED arrival date, and the earner was still told "$X has
+// arrived" — the told-it-arrived / screen-says-pending split that
+// 20260813100000_payout_event_ordering.sql was written to prevent, reached from the other
+// side. Three days after the estimate ctl_payout_overdue then reports a deposit that
+// landed as overdue, which is the wrong thing to hand a human at 2am.
+//
+// Redelivery is safe by construction: guard_stripe_payout_ordering drops a stale write on
+// last_event_at, so a replayed payout.created cannot revert a paid row.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a failed payout write is redelivered rather than announced', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8');
+  // Comment-stripped, like the third block below: the prose in this handler quotes the
+  // broken `console.error` on purpose, and a guard satisfied by its own explanation is
+  // worse than no guard.
+  const stripJs = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const body = stripJs(src.slice(
+    src.indexOf("case 'payout.created':"),
+    src.indexOf("case 'charge.dispute.created':"),
+  ));
+
+  it('found the handler', () => {
+    expect(body).toContain("from('stripe_payouts')");
+    expect(body).toContain("from('notifications')");
+  });
+
+  it('throws on a failed stripe_payouts upsert, exactly as the account lookup does', () => {
+    expect(body).toMatch(/if \(poErr\) \{[\s\S]{0,400}throw new Error/);
+    // The swallow. A 200 here tells Stripe the payout state was recorded.
+    expect(body).not.toMatch(/if \(poErr\) console\.error/);
+  });
+
+  it('the throw comes BEFORE the "Money landed" notification', () => {
+    // Order is the whole fix: a notification that outlives its own row is the split
+    // state. Anything that moved the insert above the guard would recreate it.
+    const guard = body.indexOf('if (poErr)');
+    const notify = body.indexOf(".from('notifications')");
+    expect(guard).toBeGreaterThan(-1);
+    expect(notify).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(notify);
+  });
+
+  it('reports failures where a human looks, not to the function log', () => {
+    // CLAUDE.md: edge failures go to logServerError → client_errors → /errors.
+    // The function log is not somewhere anyone watches money paths from.
+    expect(body).not.toMatch(/console\.error/);
+    expect(body).toMatch(/logServerError/);
+  });
+
+  it('a 500 from any handler reaches /errors, not just the function log', () => {
+    const tail = stripJs(src.slice(src.lastIndexOf('} catch (err: any) {')));
+    expect(tail).toMatch(/logServerError/);
+    expect(tail).toMatch(/status: 500/);
+  });
+});
