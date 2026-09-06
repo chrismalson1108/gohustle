@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/config";
@@ -46,7 +46,7 @@ export async function replyTicket(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 
@@ -146,7 +146,7 @@ export async function setTicketStatus(formData: FormData): Promise<ActionResult>
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {
@@ -211,7 +211,7 @@ export async function openThreadWithUser(formData: FormData): Promise<ActionResu
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 
@@ -396,7 +396,7 @@ export async function claimTicket(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {
@@ -426,7 +426,7 @@ export async function setTicketPriority(formData: FormData): Promise<ActionResul
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {
@@ -449,7 +449,7 @@ export async function aiDraft(ticketId: string): Promise<{ ok: boolean; draft?: 
   try {
     ctx = await ctxOrFail();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {

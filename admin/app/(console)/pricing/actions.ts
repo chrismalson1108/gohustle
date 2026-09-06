@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin, denyResult } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -68,7 +68,7 @@ export async function setPlatformRate(formData: FormData): Promise<ActionResult>
         `they were struck at — this only affects new ones.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not set the rate." };
   }
 }
@@ -92,7 +92,7 @@ export async function setTier(formData: FormData): Promise<ActionResult> {
         : "Disabled. Bookings already pinned keep the rate they were given.",
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not change that tier." };
   }
 }
@@ -141,7 +141,7 @@ export async function grantToUsers(formData: FormData): Promise<ActionResult> {
       message: `Granted to ${n} of ${emails.length}. Anyone already holding it was skipped.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not issue those grants." };
   }
 }
@@ -201,7 +201,7 @@ export async function saveTier(formData: FormData): Promise<ActionResult> {
         : "Created, switched OFF. Enable it when you mean it.",
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not save that tier." };
   }
 }
@@ -223,7 +223,7 @@ export async function deleteTier(formData: FormData): Promise<ActionResult> {
     revalidatePath("/pricing");
     return { ok: true, message: "Deleted." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not delete that tier." };
   }
 }
@@ -286,7 +286,7 @@ export async function cancelScheduledRate(formData: FormData): Promise<ActionRes
       message: `Cancelled the scheduled ${row.fee_bps / 100}% change. The current rate is unchanged.`,
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not cancel that rate." };
   }
 }

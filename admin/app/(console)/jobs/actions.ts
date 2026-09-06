@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 import { pathFromPublicUrl } from "@/lib/media";
 
@@ -22,7 +22,7 @@ export async function setJobStatus(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await requireAdmin("admin");
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { promoteCategory, renameCategory, mergeCategory, type ActionResult } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 export interface GroupOption {
   key: string;
@@ -28,7 +30,10 @@ export default function CurationControls({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // A denial here can be the 12h session cap rather than a missing role, and that is
+  // recoverable with a current code.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [nextLabel, setNextLabel] = useState(label);
   const [nextGroup, setNextGroup] = useState(groupKey);
   const [target, setTarget] = useState("");
@@ -44,7 +49,7 @@ export default function CurationControls({
     const fd = new FormData();
     fd.set("slug", slug);
     for (const [k, v] of Object.entries(extra)) fd.set(k, v);
-    start(async () => setResult(await action(fd)));
+    start(async () => { await stepUp.run(() => action(fd)); });
   }
 
   if (!open) {
@@ -56,6 +61,9 @@ export default function CurationControls({
         >
           Curate
         </button>
+        {/* The panel closes on its own; the prompt must survive that, or a code entered
+            after the last action would have nowhere to go. */}
+        {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
         {result && (
           <span className={`max-w-xs text-right text-xs ${result.ok ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}>
             {result.message}
@@ -144,6 +152,7 @@ export default function CurationControls({
         </div>
       </div>
 
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <p className={`mt-3 text-xs ${result.ok ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}>{result.message}</p>
       )}

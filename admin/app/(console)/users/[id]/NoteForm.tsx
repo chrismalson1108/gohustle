@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { addNote, type ActionResult } from "./actions";
+import { useRef, useTransition } from "react";
+import { addNote } from "./actions";
+import ReauthPrompt from "../../ReauthPrompt";
+import { useStepUp } from "../../useStepUp";
 
 export default function NoteForm({ userId }: { userId: string }) {
   const [pending, startTransition] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
@@ -14,9 +17,13 @@ export default function NoteForm({ userId }: { userId: string }) {
       action={(fd) =>
         startTransition(async () => {
           fd.set("userId", userId);
-          const r = await addNote(fd);
-          setResult(r);
-          if (r.ok) formRef.current?.reset();
+          // The FormData is captured, so a replay after a fresh code posts the same note
+          // even though the form has been reset by then.
+          await stepUp.run(async () => {
+            const r = await addNote(fd);
+            if (r.ok) formRef.current?.reset();
+            return r;
+          });
         })
       }
       className="mt-3 flex gap-2"
@@ -34,6 +41,7 @@ export default function NoteForm({ userId }: { userId: string }) {
       >
         Add note
       </button>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && !result.ok && <span className="self-center text-sm text-[var(--danger)]">{result.message}</span>}
     </form>
   );
