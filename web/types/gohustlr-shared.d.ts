@@ -270,6 +270,16 @@ declare module "@gohustlr/shared" {
     now?: Date,
     graceDays?: number,
   ): boolean;
+  export function enteredStatus(
+    prevStatus: string | null | undefined,
+    nextStatus: string | null | undefined,
+    target: string,
+  ): boolean;
+  /** The poster on the other side of a booking: browse feed first, booking embed second. */
+  export function bookingPosterId(
+    booking: { jobId?: string | null; job?: { posterId?: string | null } | null } | null | undefined,
+    jobs: ReadonlyArray<{ id: string; posterId?: string | null }> | null | undefined,
+  ): string | null;
 
   // ── age ──
   export const MIN_AGE: number;
