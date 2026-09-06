@@ -138,11 +138,15 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // the screen existed the prompt told the model there was nowhere to send them,
     // which is now false.
     ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
-    // Added 2026-09-05 with the share-link revoke control. The share/SOS bar has
-    // existed since 2026-08-06 and the prompt never mentioned it, so the assistant
-    // could not answer the two questions it most obviously generates — "how do I stop
-    // sharing my location" and "how do I get help right now".
+    // Added 2026-09-05 with the share-link revoke control, extended when the same
+    // controls reached the website. The share/SOS bar has existed since 2026-08-06 and
+    // the prompt never mentioned it, so the assistant could not answer the two
+    // questions it most obviously generates — "how do I stop sharing my location" and
+    // "how do I get help right now" — and those are asked while someone is nervous
+    // about going to a stranger's address. "I don't think the app does that" is the
+    // worst available answer to either.
     ['stopping a location share', /Stop sharing my location/i],
+    ['the in-gig safety controls', /Share my gig|Get help/],
   ];
 
   MUST_KNOW.forEach(([what, re]) => {
@@ -607,6 +611,76 @@ describe('the address-masking contract is documented', () => {
   it('names the rest of the safety subsystem', () => {
     expect(claude).toMatch(/gig_shares/);
     expect(claude).toMatch(/safety_checkins/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A client that can START a gig must be able to raise the alarm on it.
+//
+// The web app could write bookings.started_at long before it could mint a share link
+// or raise an SOS. The server side was never the gap — open_safety_checkin fires on
+// any started_at write regardless of client, so a web earner always got the check-in
+// timer, its nudge and its escalation. What was absent is everything the person can
+// reach for THEMSELVES: an earner on a phone browser with no TestFlight build stood in
+// a stranger's house with no way to tell anyone where they were and no SOS, while the
+// public /s/[token] page existed on web the whole time. A safety feature that is
+// readable and not usable is worse than an absent one, because the product implies it.
+//
+// This is the same shape as the assistant-gate and 2FA sections above: nothing is
+// broken, nothing fails to compile, one client simply does not speak the protocol. So
+// the check has to be an explicit assertion that both clients call both RPCs.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the in-gig safety controls are wired on BOTH clients', () => {
+  // Read defensively: a client that has no safety bar at all is the exact regression
+  // this section is for, and it must report as a named failing assertion rather than
+  // throwing at describe-body time and taking the other 80 parity tests with it.
+  const readOrNull = (p) => {
+    try { return read(p); } catch { return null; }
+  };
+  const surfaces = {
+    mobile: readOrNull('src/components/SafetyBar.js'),
+    web: readOrNull('web/components/SafetyBar.tsx'),
+  };
+  const RPCS = ['create_gig_share', 'raise_gig_emergency'];
+
+  it('the RPCs the clients call actually exist server-side', () => {
+    const mig = read('supabase/migrations/20260806180000_gig_safety.sql')
+      + read('supabase/migrations/20260806300000_share_token_hardening.sql');
+    for (const rpc of RPCS) expect(mig).toMatch(new RegExp(`function public\\.${rpc}\\(`));
+  });
+
+  for (const [name, src] of Object.entries(surfaces)) {
+    describe(name, () => {
+      it('has an in-gig safety component at all', () => {
+        expect(`${name} SafetyBar: ${src === null ? 'MISSING' : 'present'}`)
+          .toBe(`${name} SafetyBar: present`);
+      });
+
+      for (const rpc of RPCS) {
+        it(`can call ${rpc}`, () => {
+          // codeOnly: both files EXPLAIN the contract in prose that names the RPCs,
+          // so a naive grep passes on a component that only talks about them.
+          expect(codeOnly(src ?? '')).toMatch(new RegExp(`rpc\\(\\s*['"]${rpc}['"]`));
+        });
+      }
+
+      it('gates the emergency behind a confirm and the share behind none', () => {
+        // Deliberately different weights: a mis-tapped SOS pages a real person, while
+        // friction on the share is how a safety feature goes unused.
+        expect(src ?? '').toMatch(/cancel/i);
+      });
+    });
+  }
+
+  it('the started-gig card on web actually renders it', () => {
+    // The component existing but never mounted is the same outage with extra steps.
+    const page = read('web/app/(app)/my-jobs/page.tsx');
+    expect(page).toMatch(/import SafetyBar from/);
+    expect(codeOnly(page)).toMatch(/<SafetyBar\b/);
+  });
+
+  it('the started-gig card on mobile actually renders it', () => {
+    expect(codeOnly(read('src/screens/EarnScreen.js'))).toMatch(/<SafetyBar\b/);
   });
 });
 

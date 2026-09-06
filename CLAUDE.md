@@ -208,6 +208,17 @@ open application.
   `/bookings/[id]`.
 - `trg_notify_safety_report` dispatch config lives in `app_flags`, **not a GUC** — that is
   why it sat dead from 2026-07-10 to 2026-08-06 without firing once.
+- **The two user-initiated controls are `SafetyBar`, and there are TWO of them** —
+  `src/components/SafetyBar.js` and `web/components/SafetyBar.tsx`, both rendered only on
+  a booking the earner has STARTED (mobile `EarnScreen`, web `my-jobs`). Both call
+  `create_gig_share` and `raise_gig_emergency` and nothing else does; `__tests__/parity.test.js`
+  fails if either client loses one. The web half is new as of 2026-09-06 — until then the
+  website could START a gig and could not share it or raise an alarm on it, so an earner
+  on a phone browser had only the generic Support form. The AUTOMATIC half was never
+  one-sided: `open_safety_checkin` fires on any `started_at` write regardless of client,
+  so the check-in timer, nudge and escalation always covered web too. **A new safety
+  control must ship on both, and the assistant prompt must be able to name it** — see the
+  `MUST_KNOW` row.
 
 Read `RUNBOOK_SAFETY.md` before changing any of it.
 
