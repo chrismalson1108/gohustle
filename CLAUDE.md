@@ -435,7 +435,11 @@ It writes into the same `client_errors` table the console renders at `/errors`, 
 `platform='edge'` with the function name in `app_version`, and it never throws. Supabase's
 own function logs exist, but nobody watches them and they are not searchable next to the
 rest of the console — which is how "the poster pressed pay and it silently didn't work"
-stayed invisible until someone complained.
+stayed invisible until someone complained. **The sink is now watched on a schedule too**:
+until 20260906051000 its only readers were the `/errors` page and a dashboard tile, both
+of which run when a human opens them, so a rotated Stripe key on a Friday evening was
+found on Monday. `ctl_edge_errors_burst` pages when one edge function writes 3+ fatal or
+10+ total rows inside 90 minutes.
 
 **Money & escrow**
 
@@ -747,7 +751,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
+- **59 controls are registered**: 57 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
