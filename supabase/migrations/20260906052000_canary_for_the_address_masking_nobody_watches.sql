@@ -103,12 +103,18 @@ as $$
                      'enabled and still points at the current capture_job_location: '
                      'select tgname, tgenabled from pg_trigger where tgrelid = '
                      '''public.jobs''::regclass. If it was dropped, weakened or disabled, '
-                     'restore it with a migration, then re-mask the affected rows by '
-                     'touching them (update public.jobs set location = location where ...) '
-                     'so the trigger captures the exact label into job_locations before '
-                     'overwriting the public column — the same reversible path the '
-                     'original backfill used. Do not hand-edit jobs.location: that '
-                     'destroys the address the accepted earner needs in order to turn up.'
+                     'restore it with a migration, then repair the affected rows by making '
+                     'the trigger do its own capture-and-mask: update public.jobs set '
+                     'location = location || '' '' where id = $1; then update '
+                     'public.job_locations set exact_location = btrim(exact_location) '
+                     'where job_id = $1. Two things that look like repairs and are not: '
+                     'a no-op touch (set location = location) early-returns unchanged '
+                     '(20260730180000) and only rounds the coordinates, so it looks like '
+                     'it worked; and set location = mask_location(location) DESTROYS the '
+                     'address, because the trigger reads a city-only label as a '
+                     'retraction and deletes the job_locations row — on a leaked row '
+                     'that is the only copy of the address the accepted earner needs in '
+                     'order to turn up.'
          )
     from public.jobs j
    where j.location is not null
@@ -213,10 +219,28 @@ begin
 
   -- 3. Repairing it the documented way — touch the row so the live trigger re-runs —
   --    closes the finding, so it auto-resolves instead of sitting open forever.
-  update public.jobs set location = location where id = leaked;
+  -- The repair the finding prescribes. Getting here took two wrong answers, both of
+  -- which this probe rejected, and both are why the remedy text is now specific:
+  --   · A no-op touch (set location = location) does nothing. capture_job_location
+  --     early-returns on an UPDATE whose location is unchanged (20260730180000) — it
+  --     still rounds the coordinates, so it LOOKS like it worked.
+  --   · Masking the column directly (set location = mask_location(location)) destroys
+  --     the address. The trigger's else-branch reads a city-only label as a retraction
+  --     and DELETES the job_locations row, which on a leaked row is the only copy.
+  -- So the label has to change while still carrying the exact detail, and the trigger
+  -- must be the thing that captures and masks it — one statement, its own transaction.
+  update public.jobs set location = location || ' ' where id = leaked;
+  update public.job_locations set exact_location = btrim(exact_location) where job_id = leaked;
+
+  if not exists (select 1 from public.job_locations where job_id = leaked) then
+    raise exception 'the repair masked the column without capturing the exact label — the earner can no longer find the gig';
+  end if;
+
   select count(*) into n from public.ctl_job_location_unmasked() where entity_id = leaked::text;
   if n <> 0 then
-    raise exception 're-masking left the finding open — it could never auto-resolve (% rows)', n;
+    select detail into d from public.ctl_job_location_unmasked() where entity_id = leaked::text;
+    raise exception 'the prescribed repair left the finding open — it could never auto-resolve (% rows). stored=% arms=%',
+      n, (select location from public.jobs where id = leaked), d -> 'arms';
   end if;
   if not exists (select 1 from public.job_locations where job_id = leaked) then
     raise exception 'the repair discarded the exact address instead of capturing it';

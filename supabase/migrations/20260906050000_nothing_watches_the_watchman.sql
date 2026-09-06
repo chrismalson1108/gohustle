@@ -191,6 +191,10 @@ declare
   erroring   integer;
   open_crit  integer;
   open_high  integer;
+  -- Appends below are cast ::text on purpose. `text[] || 'literal'` is ambiguous
+  -- and Postgres resolves it to array||array, which fails at runtime with
+  -- "malformed array literal" — i.e. exactly when a reason first had to be
+  -- recorded, which is the moment this watcher exists for.
   reasons    text[] := '{}';
   verdict    text;
 begin
@@ -215,12 +219,12 @@ begin
     into open_crit, open_high
     from public.control_findings where resolved_at is null;
 
-  if cardinality(broken) > 0            then reasons := reasons || 'scheduler'; end if;
+  if cardinality(broken) > 0            then reasons := reasons || 'scheduler'::text; end if;
   -- Three missed hourly sweeps. controls-alert already calls a control stale at 6h; this
   -- is the harder failure (nothing ran at all rather than one check going quiet) and it
   -- is being watched from outside, so it does not have to wait as long.
-  if last_run is null or age_min > 180  then reasons := reasons || 'sweep_stale'; end if;
-  if erroring > 0                       then reasons := reasons || 'controls_erroring'; end if;
+  if last_run is null or age_min > 180  then reasons := reasons || 'sweep_stale'::text; end if;
+  if erroring > 0                       then reasons := reasons || 'controls_erroring'::text; end if;
   verdict := case when cardinality(reasons) = 0 then 'ok' else 'alert' end;
 
   -- Record the check-in. This is the INWARD half of the mutual watch, and removing

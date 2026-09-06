@@ -273,7 +273,7 @@ revoke execute on function public.guard_bookings_write() from public;
 -- attempted write and switched back to read the result.
 do $$
 declare
-  uid uuid; jid uuid; b_conf uuid; b_ver uuid;
+  uid uuid; jid uuid; jid2 uuid; b_conf uuid; b_ver uuid;
   note text; rtext text; rating numeric; pm text; n int;
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -291,7 +291,15 @@ begin
   -- requires a 'verified' one on the same job.
   insert into public.bookings (job_id, earner_id, status) values (jid, uid, 'confirmed')
   returning id into b_conf;
-  insert into public.bookings (job_id, earner_id, status) values (jid, uid, 'verified')
+  -- A SECOND gig for the verified booking: bookings_job_id_earner_id_key is one booking
+  -- per (job, earner) whatever the status, so both probe rows cannot hang off one gig.
+  -- Every review below is written against THIS gig, because reviews_insert_auth requires
+  -- a verified booking on the review's own job_id — the amendment steps stay on `jid`,
+  -- whose booking is the confirmed one they need.
+  insert into public.jobs (poster_id, title, category, pay, pay_type, location, description, status)
+  values (uid, 'reach probe — verified', 'Odd Jobs', 100, 'flat', 'Probe', 'probe', 'open')
+  returning id into jid2;
+  insert into public.bookings (job_id, earner_id, status) values (jid2, uid, 'verified')
   returning id into b_ver;
 
   perform set_config('request.jwt.claims',
@@ -338,7 +346,7 @@ begin
   begin
     perform set_config('role', 'authenticated', true);
     insert into public.reviews (job_id, reviewer_id, reviewed_user_id, author, role, rating, text, date)
-    values (jid, uid, uid, 'Poster', 'earner', 1, 'probe review while blocked', 'probe');
+    values (jid2, uid, uid, 'Poster', 'earner', 1, 'probe review while blocked', 'probe');
     perform set_config('role', 'postgres', true);
     raise exception 'FIX FAILED: a blocked party published a review';
   exception
@@ -352,11 +360,24 @@ begin
 
   -- (d) SUSPENDED, with no block at all: the other half of each clause.
   delete from public.blocks where blocker_id = uid and blocked_id = uid;
+  -- Suspension is written under SERVICE_ROLE CLAIMS, not merely as the postgres DB
+  -- role. guard_profiles_write pins suspended_at for anyone who is not service_role and
+  -- it reads the JWT CLAIMS, not the database role — so writing it while the claims
+  -- still say `authenticated` silently pins it back to null, the staging never happens,
+  -- and the assertion below fails against a guard that is in fact working. The claims
+  -- are restored immediately afterwards, because the point of (d) is what an
+  -- authenticated suspended user can do.
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   update public.profiles set suspended_at = now() where id = uid;
+  if not private.is_suspended(uid) then
+    raise exception 'staging failed: suspended_at did not stick, so (d) would prove nothing';
+  end if;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', uid::text, 'role', 'authenticated')::text, true);
   begin
     perform set_config('role', 'authenticated', true);
     insert into public.reviews (job_id, reviewer_id, reviewed_user_id, author, role, rating, text, date)
-    values (jid, uid, uid, 'Poster', 'earner', 1, 'probe review while suspended', 'probe');
+    values (jid2, uid, uid, 'Poster', 'earner', 1, 'probe review while suspended', 'probe');
     perform set_config('role', 'postgres', true);
     raise exception 'FIX FAILED: a suspended party published a review';
   exception
@@ -378,14 +399,23 @@ begin
   raise notice 'a suspended poster cannot move the amendment note either';
 
   -- (e) NEITHER: both writes work again, so this is a condition and not a freeze.
+  -- Lifted under service_role claims for the same reason (d) set it that way:
+  -- guard_profiles_write reads the claims, so clearing it as `authenticated` would pin
+  -- the suspension in place and this step would fail against a working guard.
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   update public.profiles set suspended_at = null where id = uid;
+  if private.is_suspended(uid) then
+    raise exception 'staging failed: the suspension could not be lifted, so (e) would prove nothing';
+  end if;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', uid::text, 'role', 'authenticated')::text, true);
   perform set_config('role', 'authenticated', true);
   update public.bookings set amendment_note = 'probe note D' where id = b_conf;
   insert into public.reviews (job_id, reviewer_id, reviewed_user_id, author, role, rating, text, date)
-  values (jid, uid, uid, 'Poster', 'earner', 5, 'probe review, unimpeded', 'probe');
+  values (jid2, uid, uid, 'Poster', 'earner', 5, 'probe review, unimpeded', 'probe');
   perform set_config('role', 'postgres', true);
   select amendment_note into note from public.bookings where id = b_conf;
-  select count(*) into n from public.reviews where job_id = jid;
+  select count(*) into n from public.reviews where job_id = jid2;
   if note is distinct from 'probe note D' or n <> 1 then
     raise exception 'the fix is a blanket freeze, not a condition (note=%, reviews=%)', note, n;
   end if;

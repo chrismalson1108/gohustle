@@ -33,8 +33,9 @@
 -- starts_at, so earner-claim-payment refuses it permanently with NO_SCHEDULE
 -- (index.ts:82-89) — the earner's only self-service payout path when a poster ghosts
 -- is closed for the life of the row — and ctl_live_booking_without_schedule_anchor
--- reports it forever as reason 'no_slot_id' (20260812090000:29). Detection already
--- existed; prevention did not.
+-- reports it as reason 'no_slot_id' from the moment it is accepted (that control is
+-- scoped to confirmed/completed by 20260812100000, so an open application is invisible
+-- to it). Detection already existed, one step too late; prevention did not exist at all.
 --
 -- Reachable even though Browse hides the gig (isJobBookable is slot-aware): the
 -- poster's public profile lists their `status = 'open'` gigs with no slot check
@@ -131,23 +132,31 @@ begin
   raise notice 'a slot-less booking on a slotted gig is refused — the reported bug is closed';
 
   -- 2. THE DISCRIMINATION: without the trigger the very same insert succeeds, and
-  --    lands in exactly the dead end the control names.
+  --    lands in exactly the dead end the header describes.
   drop trigger trg_a_guard_booking_requires_slot on public.bookings;
-  insert into public.bookings (job_id, earner_id, status) values (jid, earner, 'pending')
+  insert into public.bookings (job_id, earner_id, status) values (jid, earner, 'confirmed')
   returning id into bid;
   raise notice 'discriminates: with the trigger dropped the identical row inserts fine — that row is the defect';
 
   if bid is null or (select slot_id from public.bookings where id = bid) is not null then
     raise exception 'staging wrong: the probe booking did not end up slot-less';
   end if;
-  -- And it is unsettleable: the schedule-anchor control already sees it, which is why
-  -- this was detectable but not preventable.
+
+  -- And it is unsettleable, which is why this was detectable but not preventable.
+  --
+  -- Staged as CONFIRMED deliberately. ctl_live_booking_without_schedule_anchor is
+  -- scoped `status in ('confirmed','completed')` — 20260812100000 narrowed it there on
+  -- purpose, because a pending or declined booking has nothing left to settle. So the
+  -- control cannot see this row while the application is merely open; it sees it the
+  -- moment the poster accepts, which is the same moment the second escrow hold lands
+  -- on their card. That is exactly the harm this trigger prevents, and staging the row
+  -- as 'pending' here asserted something the control was never meant to do.
   select count(*) into n
     from public.ctl_live_booking_without_schedule_anchor() where entity_id = bid::text;
   if n <> 1 then
-    raise exception 'expected ctl_live_booking_without_schedule_anchor to report the phantom booking, got % rows', n;
+    raise exception 'expected ctl_live_booking_without_schedule_anchor to report the accepted phantom booking, got % rows', n;
   end if;
-  raise notice 'the phantom booking is reported by ctl_live_booking_without_schedule_anchor as no_slot_id — detection without prevention is what this fixes';
+  raise notice 'once accepted, the phantom booking is reported as no_slot_id — detection without prevention is what this fixes';
 
   delete from public.bookings where id = bid;
   create trigger trg_a_guard_booking_requires_slot

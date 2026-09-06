@@ -132,7 +132,7 @@ revoke execute on function public.expire_stale_pending_bookings(int) from public
 -- service_role claim would prove nothing. The claim is CLEARED before either call.
 do $$
 declare
-  uid uuid; jid uuid; sid uuid; bid uuid;
+  uid uuid; jid uuid; jid2 uuid; sid uuid; sid2 uuid; bid uuid;
   n int; st text; slot_taken boolean;
   old_body_raised boolean := false;
   err text;
@@ -215,8 +215,21 @@ begin
   -- are a human's job; a sweep that now works must not have become a sweep that
   -- tidies those away.
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  insert into public.bookings (job_id, earner_id, status)
-  values (jid, uid, 'pending') returning id into bid;
+  -- A SECOND GIG, with its own slot, because this booking has to be shaped like a real
+  -- one on two counts the first staging does not satisfy:
+  --   · bookings_job_id_earner_id_key is one booking per (job, earner) regardless of
+  --     status, so reusing the first gig collides with the row just cancelled above.
+  --   · Since 20260906033000 a slot-less booking on a gig that HAS slots is refused by
+  --     guard_booking_requires_slot — that is the defect that migration closes. Staging
+  --     one here would be testing that guard rather than this sweep, and would fail
+  --     before the sweep ever ran.
+  insert into public.jobs (poster_id, title, category, pay, pay_type, location, description, status)
+  values (uid, 'stale pending expiry probe — started row', 'Odd Jobs', 100, 'flat', 'Probe', 'probe', 'open')
+  returning id into jid2;
+  insert into public.job_slots (job_id, label) values (jid2, 'Flexible — Contact to Schedule')
+  returning id into sid2;
+  insert into public.bookings (job_id, earner_id, slot_id, status)
+  values (jid2, uid, sid2, 'pending') returning id into bid;
   update public.bookings
      set created_at = now() - interval '30 days', started_at = now() - interval '29 days'
    where id = bid;
