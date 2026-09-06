@@ -747,7 +747,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **58 controls are registered**: 56 run in-database and 2 are `external`. Every
+- **60 controls are registered**: 58 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -760,6 +760,24 @@ only runs when a human opens a page.
 - **`pg_cron`**: `controls_sweep_and_page` hourly at `:05` (vesting, then all controls,
   then pages **only if something newly needs a human**), `controls_digest` daily 13:05
   UTC (always emails, with Claude triage via `controls-alert`).
+- ⚠️ **Every alert leaves the database from inside those two cron jobs, so pg_cron is a
+  single point of silence — and it is watched from OUTSIDE, by a Vercel cron.** Stop the
+  scheduler and nothing errors: `controls.last_run_at` freezes, no finding is written, no
+  email is sent, and the only tell is an amber banner on `/controls`. No control can
+  catch that, because a control is run by the thing that stopped. So the check lives in
+  `admin/app/api/controls-heartbeat` (scheduled `35 * * * *` in `admin/vercel.json`,
+  authenticated with `CRON_SECRET`): it calls the `controls_heartbeat()` RPC and emails
+  through **its own Resend transport**, never through `controls-alert` and never gated on
+  `app_flags.controls_alert` — a watcher sharing a transport with what it watches watches
+  nothing. A failed RPC pages too; only a clean `ok` is silent. **Routes under `/api` are
+  excluded from `proxy.ts`'s matcher** because a cron carries no session cookie and the
+  signed-out redirect would 307 it to `/login`, which Vercel records as a successful
+  invocation — so every `/api` handler must authenticate itself. The database watches
+  that end back: `ctl_heartbeat_absent` fires when the check-ins stop, and arms itself
+  when the first one arrives (the seeded `grace_until` in `app_flags.controls_heartbeat`
+  is removed by the first successful call, and expires after 7 days so a never-wired
+  switch becomes a finding). `ctl_cron_not_scheduled` covers the half the sweep can still
+  see — the digest unscheduled, or a job left inactive.
 - Controls are **functions, never SQL text in a table** — a stored executable body would
   hand anyone with console write access arbitrary `SECURITY DEFINER` execution.
   `run_control` validates `fn_name` against `^ctl_[a-z0-9_]+$` **and** `pg_proc`.

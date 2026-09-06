@@ -116,6 +116,10 @@ describe('every admin console page is reachable', () => {
     // the point is that somebody looked at it, not that the list is long.
     const KNOWN = {
       '/(console)/users/[id]/export': 'GDPR data export for one user (PII)',
+      // Machine-called, no session: the Vercel cron dead-man's switch on pg_cron.
+      // Authenticates with CRON_SECRET and is excluded from proxy.ts's matcher —
+      // see __tests__/controlsHeartbeat.test.js for why both halves are load-bearing.
+      '/api/controls-heartbeat': 'external heartbeat on the control sweep (no PII)',
     };
     const unlisted = handlers.filter((h) => !(h in KNOWN));
     expect({ unlisted_route_handlers: unlisted }).toEqual({ unlisted_route_handlers: [] });
