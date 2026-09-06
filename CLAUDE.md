@@ -875,6 +875,19 @@ which booking). `kind` is `fee_override`, `bonus` or `poster_discount` (the firs
   `promo_redeem_attempts` — **attempts, not successes**, or a brute-force sweep that
   only ever fails would never register.
 - An exhausted budget **still lets the booking succeed** at the standing rate.
+- ⚠️ **The `/promotions` cost preview is an UPPER BOUND, and it priced at 10% until
+  2026-09-06.** `estimate_campaign_cost` is the only number an operator has when they
+  choose `budget_cents` and `max_redemptions`, and it handed the literal `1000` to
+  `platform_fee_cents`/`poster_discount_headroom` in four places — the same founding-rate
+  literal the charge path was corrected off TWICE (`20260806220000`, `20260813140000`).
+  At the live 700 bps it overstated a fee waiver and a poster discount by 2x on the $50
+  default gig, so a budget sized from it funded twice the uses it promised (a rate RISE
+  inverts that and exhausts the budget early). It now reads `fee_bps_at(now())`. It stays
+  an upper bound for `fee_override`: the real charge is measured against the booking's
+  PINNED baseline, `least(standing, tier_fee_bps(earner))`, and a per-campaign preview has
+  no earner to resolve a tier for — the returned `note` the console renders says so and
+  names the rate it used. `__tests__/campaignCostPreviewRate.test.js` fails if any of the
+  three benefit-costing functions goes back to a literal rate.
 
 ### Referral bonuses
 `bonus_ledger`, **vest-on-outcome**: created when the *referred* person's gig reaches
