@@ -71,18 +71,29 @@ refunds. `pending` makes winning that race worthless. Enforced in all three deci
 
 ## Deploying an update
 
-The Vercel project has **Root Directory = `admin/`**, so this works from the repo root
-and builds the admin app rather than the Expo app beside it:
+Run it **from `admin/`**, and pass the team scope:
 
 ```bash
-npx vercel@latest --prod --yes
+cd admin && npx vercel@latest --prod --yes --scope go-hustlr
 ```
+
+Both halves of that command are load-bearing, and this block said neither until
+2026-09-06:
+
+- **`cd admin`** — the Vercel project does have Root Directory = `admin/`, but the CLI
+  picks its project from the `.vercel/` link in the directory it runs in, and the repo
+  root's link is `gohustle`, the **website**. From the repo root this command deploys the
+  website and prints a success URL, leaving the console exactly as stale as before.
+- **`--scope go-hustlr`** — `gohustlr-admin` belongs to the `go-hustlr` **team** while
+  the CLI signs in as the personal account `mainmail-1145`. Without it the deploy fails
+  with a flat `"Not authorized"` / `deploy_failed`, which reads like an expired login;
+  re-authenticating does not help.
 
 Then verify the domain actually moved — a successful build is not the same as a
 promoted alias:
 
 ```bash
-npx vercel@latest inspect https://admin.gohustlr.com
+npx vercel@latest inspect https://admin.gohustlr.com --scope go-hustlr
 ```
 
 The deployment id it reports must match the one the deploy printed.

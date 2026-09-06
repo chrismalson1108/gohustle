@@ -275,7 +275,7 @@ Non-atomic get-or-create; two overlapping POSTs mint two Express accounts, the l
 
 ## 3. FIX ORDER
 
-Each item is tagged **[M]** migration (`supabase db push --linked`), **[F]** edge-function redeploy, **[C]** client release, **[A]** admin console (`cd admin && npx vercel --prod` — it does **not** auto-deploy), **[CFG]** config/runbook only.
+Each item is tagged **[M]** migration (`supabase db push --linked`), **[F]** edge-function redeploy, **[C]** client release, **[A]** admin console (`cd admin && npx vercel --prod --scope go-hustlr` — it does **not** auto-deploy), **[CFG]** config/runbook only.
 
 ### Before the live-key cutover — non-negotiable
 
@@ -312,7 +312,7 @@ Each item is tagged **[M]** migration (`supabase db push --linked`), **[F]** edg
 - **F4's migration must ship before its edge function**, and must keep the 4-arg shim alive for the deploy window or refunds break mid-rollout.
 - **F2's control change is part of F2's migration**, not a follow-up.
 - **No new client build reads a new column** in any of these fixes except F16 (`authorizedCents` comes from the edge function, not the DB), so the usual migration-before-build hazard is limited to F1/F2, where the RPCs must exist before the functions call them.
-- **Admin console changes (F4, F9) do not auto-deploy** — `cd admin && npx vercel --prod`.
+- **Admin console changes (F4, F9) do not auto-deploy** — `cd admin && npx vercel --prod --scope go-hustlr`.
 
 ---
 

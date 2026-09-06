@@ -158,7 +158,13 @@ cd admin && npx vercel --prod --scope go-hustlr
 CLI logs in as the personal account `mainmail-1145`, so the bare command documented here
 until 2026-08-14 fails with a flat `"Not authorized"` / `deploy_failed` — which reads like
 an expired login rather than a missing flag, and the obvious response (re-authenticate)
-fixes nothing.
+fixes nothing. **`cd admin` is the other load-bearing half**: the CLI picks its project
+from the `.vercel/` link in the directory it runs in, and the repo root's link is
+`gohustle` — the **website** — so the same command run from there deploys the wrong
+project and prints a success URL. Fixing this file on 2026-08-14 fixed only this file:
+`DEPLOY.md`, `admin/README.md` (which positively instructed the repo-root run) and the
+2026-08-12 audit runbooks all still printed the bare command until 2026-09-06.
+`__tests__/adminDeployCommand.test.js` now holds every document to the hook's version.
 
 The app runs in the **custom GoHustlr dev client, not Expo Go** — `expo-dev-client` is
 installed and the app's native modules (Stripe, maps, notifications, Google sign-in)
@@ -737,6 +743,7 @@ it is the second half of a change that has not been done yet.
 | `definerAnonExecute.test.js` | a new `SECURITY DEFINER` function shipping with the grant line everyone writes — `grant execute … to authenticated;` and nothing else. The 2026-07-26 sweep was one statement, not a default-privilege change, so every function created after it inherits anon's EXECUTE (and PUBLIC's) again; both roles must be revoked, or the anon key calls it. Two had drifted (`resolve_category_slug`, the 4-arg `capped_override_bps`) before this replay existed. `view_gig_share` is the one allowed exception |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
 | `edgeDepsPinned.test.js` | an edge function importing a floating dependency range — 32 hand-deploys on 32 days each resolved their own supabase-js, and the local type-check reads the developer's cache rather than production |
+| `adminDeployCommand.test.js` | a document printing an admin-console deploy command that cannot work as written — no `--scope go-hustlr` (flat "Not authorized"), or run from the repo root (deploys the website instead). The console only ships by hand, so the command in the doc IS the deploy mechanism |
 | `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
