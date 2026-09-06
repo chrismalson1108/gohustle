@@ -1001,6 +1001,20 @@ only runs when a human opens a page.
   of today's six, so the next kill switch is covered the moment it is added; a row that is
   MEANT to sit off carries `value.off_is_normal` — today only
   `bonus_cash_payout_enabled`.
+  ⚠️ **`app_flags` holds THREE kinds of row and `/flags` must not render them alike.**
+  Feature kill switches · the two alert channels · CONFIG rows (`stripe_mode`,
+  `storage_public_origin`, `controls_heartbeat`) whose payload is `value` and whose
+  `enabled` bit is read by nothing. Until 2026-09-06 all twelve shared one toggle, one
+  confirm dialog and one success sentence written for the first kind, so muting the safety
+  pager mid-incident told the operator that *users* were now seeing a "temporarily paused"
+  message — the opposite of what had happened — and never mentioned that the mute lapses by
+  itself in 24 hours. `admin/app/(console)/flags/guide.ts` is now the one place the console
+  says what a flag is and what flipping it does; the enforcement list is rendered from it,
+  muting a pager demands a written reason (`disabled_reason`, a column nothing wrote), and
+  `stripe_mode` is edited BY VALUE with a typed confirmation — which is what 20260814080000
+  meant by "/flags can flip it at cutover" and what no code did.
+  `__tests__/flagsConsoleDescribesEveryKey.test.js` reads the seeds off disk and fails if a
+  new flag arrives undescribed.
 - TWO registry rows are `external = true` — `stripe_reconciliation` and `stripe_webhook_config`,
   both `fn_name = 'external:reconcile-stripe'`. `run_all_controls` filters them out (it iterates
   `where enabled and not external`), so they run only via `controls_sweep_and_page`'s HTTP dispatch
