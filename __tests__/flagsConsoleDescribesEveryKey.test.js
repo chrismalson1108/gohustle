@@ -40,9 +40,15 @@ const pageCode = stripComments(pageSrc);
 // ── Every key any migration seeds into app_flags ─────────────────────────────
 // Line comments stripped first (the migration prose quotes flag keys). The key is the
 // first literal after a values-tuple's own open paren; the negative lookbehind keeps
-// `jsonb_build_object('url', …)` inside the same tuple from reading as a key. Probe
-// inserts inside DO blocks are included deliberately — they only ever name real keys,
-// and a probe naming a key the console cannot describe is worth failing on too.
+// `jsonb_build_object('url', …)` inside the same tuple from reading as a key.
+//
+// Probe inserts inside DO blocks are still scanned, because a probe naming a REAL key
+// the console cannot describe is worth failing on. The one exception is a key prefixed
+// `probe_`: 20260906085000 stages `probe_unknown_switch_enabled` precisely to prove its
+// control fires on a switch the console does not describe, so that key is unknown BY
+// DESIGN and rolls back with the probe. This guard's original note claimed probes "only
+// ever name real keys"; that stopped being true the moment a control about unknown keys
+// needed one. Real keys never carry the prefix — nothing seeds a `probe_` row.
 function seededKeys() {
   const keys = new Set();
   for (const f of fs.readdirSync(MIG_DIR).filter((n) => n.endsWith('.sql')).sort()) {
@@ -50,7 +56,9 @@ function seededKeys() {
     for (const m of sql.matchAll(
       /insert\s+into\s+public\.app_flags\s*\([^)]*\)\s*values([\s\S]*?);/gi,
     )) {
-      for (const k of m[1].matchAll(/(?<![A-Za-z0-9_])\(\s*'([a-z0-9_]+)'/g)) keys.add(k[1]);
+      for (const k of m[1].matchAll(/(?<![A-Za-z0-9_])\(\s*'([a-z0-9_]+)'/g)) {
+        if (!k[1].startsWith('probe_')) keys.add(k[1]);
+      }
     }
   }
   return [...keys].sort();

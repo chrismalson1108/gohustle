@@ -134,7 +134,7 @@ export async function setStripeMode(formData: FormData): Promise<ActionResult> {
     ctx = await requireFreshAdmin("admin");
   } catch (e) {
     if (e instanceof AdminAuthError) {
-      return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
+      return denyResult(e);
     }
     throw e;
   }
