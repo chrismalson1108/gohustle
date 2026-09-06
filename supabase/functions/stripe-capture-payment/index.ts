@@ -125,33 +125,25 @@ function reconcileToStripe(
 // credit still 'applied' on a declined/cancelled booking).
 async function returnUnusedFeeCredit(
   supabase: SupabaseClient,
-  args: {
-    bookingId: string;
-    paymentId: string;
-    gigAmountCents: number;
-    feeBps: number;
-    discountCents: number;
-    captureCents: number;
-    capturePct: number;
-    feeCents: number;
-    floorCents: number;
-  },
+  args: { bookingId: string; paymentId: string },
 ): Promise<void> {
   try {
-    const { data: noCreditCalc } = await supabase.rpc('platform_fee_cents', {
-      p_amount_cents: args.gigAmountCents,
-      p_fee_bps: args.feeBps,
+    // ONE definition of the delivered figure, shared with record_refund
+    // (20260906023000_refund_returns_the_credit_the_capture_delivered.sql). It used to be
+    // computed inline here and a SECOND, different way in the refund path — and the two
+    // disagreed on exactly the shapes this branch produces, a capture below 100% and any
+    // capture carrying a poster discount, so a later partial refund handed the earner
+    // back nothing. The RPC reads the row's PERSISTED split, so it is also the figure
+    // Stripe actually settled on rather than the one we asked for (reconcileToStripe may
+    // have moved it) — which is why every caller runs it after the status flip.
+    const { data: delivered, error: delErr } = await supabase.rpc('fee_credit_delivered_cents', {
+      p_payment_id: args.paymentId,
     });
-    if (!Number.isFinite(Number(noCreditCalc))) return;
-    const noCreditFull = Math.max(0, Number(noCreditCalc) - args.discountCents);
-    const noCreditAtCapture = Math.min(
-      args.captureCents,
-      Math.max(Math.round(noCreditFull * args.capturePct), args.floorCents),
-    );
-    const delivered = Math.max(0, noCreditAtCapture - args.feeCents);
+    if (delErr) throw delErr;
+    if (!Number.isFinite(Number(delivered))) return;
     const { data: returned, error: retErr } = await supabase.rpc('return_unused_fee_credit', {
       p_booking: args.bookingId,
-      p_delivered_cents: delivered,
+      p_delivered_cents: Math.max(0, Number(delivered)),
     });
     if (retErr) throw retErr;
     if (Number(returned) > 0) {
@@ -447,17 +439,7 @@ Deno.serve(async (req: Request) => {
         // the capture can re-derive this same call from the ledger alone.
         settledPct = capturePct;
         if (creditCents > 0) {
-          await returnUnusedFeeCredit(supabase, {
-            bookingId,
-            paymentId: payment.id,
-            gigAmountCents,
-            feeBps: safeBps(payment.fee_bps),
-            discountCents,
-            captureCents,
-            capturePct,
-            feeCents,
-            floorCents: Number(floorCalc),
-          });
+          await returnUnusedFeeCredit(supabase, { bookingId, paymentId: payment.id });
         }
       } else {
         // Recompute the FULL split from the AUTHORIZED amount (amount_cents is never
@@ -533,23 +515,7 @@ Deno.serve(async (req: Request) => {
         capturedGigCents = settledTotal + Math.round(discountCents * observedPct);
 
         if (creditCents > 0 && settledTotal < authorizedTotal) {
-          const { data: floorRecalc, error: floorRecalcErr } = await supabase.rpc('platform_fee_cents', {
-            p_amount_cents: settledTotal,
-            p_fee_bps: 0,
-          });
-          if (!floorRecalcErr && Number.isFinite(Number(floorRecalc))) {
-            await returnUnusedFeeCredit(supabase, {
-              bookingId,
-              paymentId: payment.id,
-              gigAmountCents,
-              feeBps: safeBps(payment.fee_bps),
-              discountCents,
-              captureCents: settledTotal,
-              capturePct: observedPct,
-              feeCents: payment.fee_cents ?? 0,
-              floorCents: Number(floorRecalc),
-            });
-          }
+          await returnUnusedFeeCredit(supabase, { bookingId, paymentId: payment.id });
         }
       }
     }
