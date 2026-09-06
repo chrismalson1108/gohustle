@@ -324,7 +324,15 @@ describe('every table is discoverable from CLAUDE.md', () => {
     // before removing the row from the doc.
     // Comments stripped first: a migration that EXPLAINS why it did not drop something
     // would otherwise fail a docs test for a sentence. Same trap as the parity guards.
-    const dropSrc = allSql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+    // `alter publication … drop table x` is removed first. It reads as a drop and is not
+    // one: it changes REPLICATION MEMBERSHIP and leaves the table exactly where it was.
+    // 20260906110000 stages one in a rolled-back probe to prove its own assertion
+    // discriminates, and without this the enumerator would report the notifications table
+    // as deleted from the schema.
+    const dropSrc = allSql
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*--.*$/gm, '')
+      .replace(/alter\s+publication\s+[^;]*;/gi, '');
     const drops = [...dropSrc.matchAll(/drop table[^;]{0,60}/gi)].map((m) => m[0].replace(/\s+/g, ' ').trim());
     expect(`drops: ${drops.join(' | ') || 'none'}`).toBe('drops: none');
   });
