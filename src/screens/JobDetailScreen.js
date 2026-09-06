@@ -20,6 +20,7 @@ import MessageSheet from '../components/MessageSheet';
 import { submitReport, REPORT_REASONS } from '../lib/moderation';
 import { findProhibited } from '../lib/contentFilter';
 import { categoryLabel, sameCategory } from '../../shared/categories.js';
+import { bookingBlockReason } from '../../shared/filters.js';
 import { MIN_JOB_PAY, validateJobPay } from '../data/mockData';
 import { logModerationBlock } from '../lib/moderation';
 import { getFeeBps, feeBpsSync, platformFeeCents, effectiveFeeLabel, feeLabel, feeBreakdown } from '../lib/pricing';
@@ -169,6 +170,12 @@ export default function JobDetailScreen({ route, navigation }) {
   const needsPosterRating = currentBooking?.status === 'verified' && currentBooking?.posterRating == null;
   const canMessage = !!currentBooking && ['pending','confirmed','completed'].includes(currentBooking.status);
 
+  // The SAME rule the Book handler applies, so the footer can never invite a tap the
+  // handler is going to refuse — which is the shape of the bug this replaced: the
+  // button read "Book this gig" on a gig whose only slot was already taken.
+  const bookBlock = bookingBlockReason(job, selectedSlot);
+  const bookUnavailable = bookBlock === 'all_slots_taken' || bookBlock === 'slots_expired';
+
   // Address privacy: exact street address only for the poster or an accepted
   // earner; everyone else sees the city-level label (coords are already ~1km).
   const showExactAddress = canSeeExactAddress({ isPoster: isOwnJob, bookingStatus: currentBooking?.status });
@@ -203,19 +210,24 @@ export default function JobDetailScreen({ route, navigation }) {
   };
 
   const handleBook = async () => {
-    // A slot is selectable only if it's untaken AND not in the past — mirror
-    // SlotPicker, which HIDES past slots. Counting past slots as "available" made
-    // a gig whose only slots have passed demand a selection the UI never shows,
-    // so Book just buzzed with no explanation (a dead-end).
-    const now = Date.now();
-    const selectableSlots = (job.slots || []).filter(s => !s.taken && (!s.startsAt || new Date(s.startsAt).getTime() > now));
-    const hasScheduledSlots = (job.slots || []).some(s => s.startsAt);
-    if (hasScheduledSlots && selectableSlots.length === 0) {
+    // ONE rule, shared with the footer label and with the web client: a gig that has
+    // slots can only be booked THROUGH one of them. The old guards here refused only
+    // when the job had DATED slots and none was selectable, so a gig whose single
+    // undated "Flexible" slot was already taken fell through both of them and booked
+    // with slot_id = null — a phantom booking outside bookings_one_active_per_slot,
+    // with no schedule earner-claim-payment can ever settle against.
+    const blockReason = bookingBlockReason(job, selectedSlot);
+    if (blockReason === 'slots_expired') {
       haptic.error();
       showToast({ icon: '🕒', title: 'No available times', message: "This gig's time slots have all passed. Message the poster to arrange a new time." });
       return;
     }
-    if (!selectedSlot && selectableSlots.length > 0) {
+    if (blockReason === 'all_slots_taken' || blockReason === 'slot_taken') {
+      haptic.error();
+      showToast({ icon: '🔒', title: 'Fully booked', message: 'Every time slot on this gig is taken. Message the poster if you want to be next.' });
+      return;
+    }
+    if (blockReason === 'select_slot') {
       haptic.error();
       showToast({ icon: '👆', title: 'Pick a time', message: 'Select an available time slot to book this gig.' });
       return;
@@ -652,13 +664,22 @@ export default function JobDetailScreen({ route, navigation }) {
             )}
           </View>
         ) : (
-          <TouchableOpacity style={styles.bookBtn} onPress={handleBook} activeOpacity={0.85}>
-            <Text style={styles.bookBtnText} numberOfLines={1}>
-              {selectedSlot
-                ? (counterPrice ? `Book · Counter $${counterPrice}` : 'Book this gig')
-                : job.slots?.some(s => !s.taken)
-                  ? 'Select a time slot first'
-                  : 'Book this gig'
+          <TouchableOpacity
+            style={[styles.bookBtn, bookUnavailable && styles.bookBtnDisabled]}
+            onPress={handleBook}
+            disabled={bookUnavailable}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.bookBtnText, bookUnavailable && styles.bookBtnTextDisabled]} numberOfLines={1}>
+              {bookBlock === 'slots_expired'
+                ? 'No times left'
+                : bookBlock === 'all_slots_taken' || bookBlock === 'slot_taken'
+                  ? 'Fully booked'
+                  : bookBlock === 'select_slot'
+                    ? 'Select a time slot first'
+                    : counterPrice
+                      ? `Book · Counter $${counterPrice}`
+                      : 'Book this gig'
               }
             </Text>
           </TouchableOpacity>
@@ -860,6 +881,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center',
   },
   bookBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  // A gig with no slot left is not a button to press — the label says so and the
+  // press is refused, rather than offering "Book this gig" on work nobody can take.
+  bookBtnDisabled: { backgroundColor: colors.divider },
+  bookBtnTextDisabled: { color: colors.textSecondary },
   ownJobBanner: {
     backgroundColor: colors.background, borderRadius: radii.md,
     paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center',
