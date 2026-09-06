@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -49,7 +49,7 @@ export async function resolveFinding(formData: FormData): Promise<ActionResult> 
     revalidatePath("/controls");
     return { ok: true, message: "Closed. It will re-open on the next sweep if the condition still holds." };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not close that finding." };
   }
 }
@@ -73,7 +73,7 @@ export async function setControlEnabled(formData: FormData): Promise<ActionResul
     revalidatePath("/controls");
     return { ok: true, message: enabled ? `${key} enabled.` : `${key} disabled — you are no longer being told about this.` };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not change that control." };
   }
 }
@@ -131,7 +131,7 @@ export async function runSweepNow(): Promise<ActionResult> {
         : "SQL controls ran. The Stripe checks could NOT be dispatched — reconciliation and webhook config were not verified.",
     };
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: e.reason };
+    if (e instanceof AdminAuthError) return denyResult(e);
     return { ok: false, message: "Could not run the sweep." };
   }
 }

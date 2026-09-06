@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError, requireFreshAdmin } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, requireFreshAdmin, denyResult } from "@/lib/guard";
 import { audit, auditRead } from "@/lib/audit";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/config";
@@ -26,13 +26,7 @@ async function run(
   try {
     ctx = await requireFreshAdmin("finance");
   } catch (e) {
-    // Surface stale_mfa as its own sentinel so the caller can offer a code prompt and
-    // retry. Collapsing it into "Not authorized." — as this did — made every step-up
-    // action here a dead end no matter what the UI offered, because the reason the UI
-    // keys on never reached it. Genuine denials still read as denials.
-    if (e instanceof AdminAuthError) {
-      return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
-    }
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {

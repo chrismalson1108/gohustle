@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { replyTicket, setTicketStatus, setTicketPriority, claimTicket, aiDraft, type ActionResult } from "../actions";
+import { replyTicket, setTicketStatus, setTicketPriority, claimTicket, aiDraft } from "../actions";
+import ReauthPrompt from "../../ReauthPrompt";
+import { useStepUp } from "../../useStepUp";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 
@@ -25,7 +27,11 @@ export default function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [drafting, startDraft] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  // Every action on this screen is plain requireAdmin("support"), and the 12h session
+  // cap lives inside requireAdmin — so an agent who left the ticket open since morning
+  // was told "Not authorized." on a reply they are perfectly entitled to send.
+  const stepUp = useStepUp();
+  const result = stepUp.result;
 
   function send() {
     const fd = new FormData();
@@ -33,21 +39,33 @@ export default function Composer({
     fd.set("body", body);
     files.forEach((f) => fd.append("images", f));
     start(async () => {
-      const r = await replyTicket(fd);
-      setResult(r);
-      if (r.ok) {
-        setBody("");
-        setFiles([]);
-        if (fileRef.current) fileRef.current.value = "";
-      }
+      // Clearing inside the thunk keeps the typed reply and its attachments intact while
+      // the code prompt is up; the replay posts the captured FormData either way.
+      await stepUp.run(async () => {
+        const r = await replyTicket(fd);
+        if (r.ok) {
+          setBody("");
+          setFiles([]);
+          if (fileRef.current) fileRef.current.value = "";
+        }
+        return r;
+      });
     });
   }
 
   function draft() {
     startDraft(async () => {
-      const r = await aiDraft(ticketId);
-      if (r.ok && r.draft) setBody((b) => (b ? b + "\n\n" + r.draft : r.draft!));
-      else setResult({ ok: false, message: r.message ?? "AI draft failed." });
+      // aiDraft's result carries the draft and an OPTIONAL message, so it is normalised
+      // to the { ok, message } shape useStepUp keys on. The message is passed through
+      // untouched — collapsing it here would swallow the "stale_mfa" sentinel.
+      await stepUp.run(async () => {
+        const r = await aiDraft(ticketId);
+        if (r.ok && r.draft) {
+          setBody((b) => (b ? b + "\n\n" + r.draft : r.draft!));
+          return { ok: true, message: "" };
+        }
+        return { ok: r.ok, message: r.message ?? "AI draft failed." };
+      });
     });
   }
 
@@ -66,21 +84,21 @@ export default function Composer({
     const fd = new FormData();
     fd.set("ticketId", ticketId);
     fd.set("status", s);
-    start(async () => setResult(await setTicketStatus(fd)));
+    start(async () => { await stepUp.run(() => setTicketStatus(fd)); });
   }
 
   function claim(release: boolean) {
     const fd = new FormData();
     fd.set("ticketId", ticketId);
     if (release) fd.set("release", "1");
-    start(async () => setResult(await claimTicket(fd)));
+    start(async () => { await stepUp.run(() => claimTicket(fd)); });
   }
 
   function prio(p: string) {
     const fd = new FormData();
     fd.set("ticketId", ticketId);
     fd.set("priority", p);
-    start(async () => setResult(await setTicketPriority(fd)));
+    start(async () => { await stepUp.run(() => setTicketPriority(fd)); });
   }
 
   return (
@@ -156,7 +174,10 @@ export default function Composer({
           ) : null}
         </div>
 
-        {result && (
+        {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
+        {/* A successful AI draft has nothing to say — its result IS the text now in the
+            box — so an empty message renders nothing rather than a blank line. */}
+        {result?.message && (
           <p className={`mt-2 text-sm ${result.ok ? "text-emerald-700" : "text-[var(--danger)]"}`}>{result.message}</p>
         )}
 

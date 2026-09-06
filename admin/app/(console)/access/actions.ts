@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireFreshAdmin, AdminAuthError } from "@/lib/guard";
+import { requireFreshAdmin, AdminAuthError, denyResult } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -25,14 +25,6 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // back.
 async function adminCtx() {
   return requireFreshAdmin("admin");
-}
-
-// Surface stale_mfa as its own sentinel so the calling component can offer a code prompt
-// and retry (useStepUp keys on this exact string). Collapsing it into "Not authorized."
-// makes a recoverable denial read as a revoked role. Genuine denials still read as
-// denials.
-function denial(e: AdminAuthError): ActionResult {
-  return { ok: false, message: e.reason === "stale_mfa" ? "stale_mfa" : "Not authorized." };
 }
 
 // Invite one or many. Pasting a list is the actual workflow — you invite a cohort,
@@ -63,7 +55,7 @@ export async function inviteEmails(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return denial(e);
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 
@@ -93,7 +85,7 @@ export async function revokeEmail(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return denial(e);
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {
@@ -155,7 +147,7 @@ export async function setOpenBeta(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return denial(e);
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
   try {

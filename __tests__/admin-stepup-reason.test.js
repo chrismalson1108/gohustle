@@ -12,8 +12,15 @@ const path = require('path');
 // "Not authorized.", discarding the reason. Wiring ReauthPrompt into those screens was
 // therefore not enough on its own: the client could never learn that a code would fix
 // it, so the action dead-ended anyway. Both halves have to hold, so both are asserted.
+//
+// The MECHANISM moved: the mapping is now `denyResult` in admin/lib/guard.ts, one
+// definition instead of the five hand-rolled copies (and the three other surfaces that
+// had it wrong). So the sentinel is asserted where it is now produced, and each surface
+// is asserted to route through it — checking for the literal string in every actions.ts
+// would fail on correct code, which is how a guard gets deleted rather than fixed.
 // ─────────────────────────────────────────────────────────────────────────────
 const ROOT = path.join(__dirname, '..', 'admin', 'app', '(console)');
+const GUARD = path.join(__dirname, '..', 'admin', 'lib', 'guard.ts');
 const SURFACES = [
   'pricing/actions.ts',
   'flags/actions.ts',
@@ -23,13 +30,21 @@ const SURFACES = [
 ];
 
 describe('admin step-up: the reason survives to the client', () => {
+  test('denyResult is where the sentinel is produced', () => {
+    const src = fs.readFileSync(GUARD, 'utf8');
+    // The one definition, and it must emit the bare word the client compares against —
+    // AdminAuthError.message is "admin auth failed: stale_mfa", which matches nothing.
+    expect(src).toMatch(
+      /export function denyResult\(e: AdminAuthError\)[\s\S]{0,200}?e\.reason === "stale_mfa" \? "stale_mfa" :/,
+    );
+  });
+
   test.each(SURFACES)('%s propagates stale_mfa rather than flattening it', (rel) => {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     // It must guard on AdminAuthError somewhere...
     expect(src).toMatch(/e instanceof AdminAuthError/);
-    // ...and be able to emit the sentinel, either as the literal or via e.reason
-    // (AdminAuthError.reason IS "stale_mfa"; pricing forwards it that way).
-    expect(src).toMatch(/stale_mfa|e\.reason/);
+    // ...and hand it to the shared mapping (or, historically, emit the sentinel itself).
+    expect(src).toMatch(/denyResult|stale_mfa|e\.reason/);
     // The exact regression: swallowing the reason into a flat denial.
     expect(src).not.toMatch(
       /if \(e instanceof AdminAuthError\) return \{ ok: false, message: "Not authorized\." \};/,

@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { notifyUser, type ActionResult } from "./actions";
+import { useRef, useTransition } from "react";
+import { notifyUser } from "./actions";
+import ReauthPrompt from "../../ReauthPrompt";
+import { useStepUp } from "../../useStepUp";
 
 export default function NotifyForm({ userId }: { userId: string }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
@@ -14,9 +17,11 @@ export default function NotifyForm({ userId }: { userId: string }) {
       action={(fd) =>
         start(async () => {
           fd.set("userId", userId);
-          const r = await notifyUser(fd);
-          setResult(r);
-          if (r.ok) formRef.current?.reset();
+          await stepUp.run(async () => {
+            const r = await notifyUser(fd);
+            if (r.ok) formRef.current?.reset();
+            return r;
+          });
         })
       }
       className="space-y-2"
@@ -46,6 +51,7 @@ export default function NotifyForm({ userId }: { userId: string }) {
           {pending ? "Sending…" : "Send notification"}
         </button>
       </div>
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <p className={`text-sm ${result.ok ? "text-emerald-700" : "text-[var(--danger)]"}`}>{result.message}</p>
       )}

@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { openThreadWithUser, type ActionResult } from "./actions";
+import { openThreadWithUser } from "./actions";
+import ReauthPrompt from "../ReauthPrompt";
+import { useStepUp } from "../useStepUp";
 
 const CATEGORIES = [
   { key: "safety", label: "Safety" },
@@ -31,7 +33,8 @@ export default function OpenThreadForm({
   defaultSubject?: string;
 }) {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+  const stepUp = useStepUp();
+  const result = stepUp.result;
   const [category, setCategory] = useState<string>(defaultCategory);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -43,9 +46,11 @@ export default function OpenThreadForm({
           fd.set("userId", userId);
           fd.set("category", category);
           if (bookingId) fd.set("bookingId", bookingId);
-          const r = await openThreadWithUser(fd);
-          setResult(r);
-          if (r.ok) formRef.current?.reset();
+          await stepUp.run(async () => {
+            const r = await openThreadWithUser(fd);
+            if (r.ok) formRef.current?.reset();
+            return r;
+          });
         })
       }
       className="space-y-2"
@@ -109,6 +114,7 @@ export default function OpenThreadForm({
         conversation on this topic, this is added to it rather than starting a second one.
       </p>
 
+      {stepUp.needed && <ReauthPrompt onVerified={stepUp.retry} onCancel={stepUp.cancel} />}
       {result && (
         <p className={`text-sm ${result.ok ? "text-emerald-700" : "text-[var(--danger)]"}`}>{result.message}</p>
       )}

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, AdminAuthError, type AdminContext } from "@/lib/guard";
+import { requireAdmin, AdminAuthError, denyResult, type AdminContext } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 export interface ActionResult {
@@ -162,7 +162,7 @@ export async function promoteCategory(formData: FormData): Promise<ActionResult>
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 
@@ -217,7 +217,7 @@ export async function renameCategory(formData: FormData): Promise<ActionResult> 
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 
@@ -299,7 +299,7 @@ export async function mergeCategory(formData: FormData): Promise<ActionResult> {
   try {
     ctx = await adminCtx();
   } catch (e) {
-    if (e instanceof AdminAuthError) return { ok: false, message: "Not authorized." };
+    if (e instanceof AdminAuthError) return denyResult(e);
     throw e;
   }
 

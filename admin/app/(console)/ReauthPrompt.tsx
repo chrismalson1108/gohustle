@@ -5,11 +5,16 @@ import { createBrowserClient } from "@supabase/ssr";
 
 // Step-up re-authentication.
 //
-// Shown when a sensitive action comes back with "stale_mfa" — the session is valid and
-// the role is right, but the second factor was satisfied too long ago to prove the
-// person at the keyboard is still the one who passed it. A stolen laptop, a hijacked
-// cookie, or a borrowed unlocked screen all satisfy AAL2; none of them survive being
-// asked for a code that is only on the operator's phone.
+// Shown when an action comes back with "stale_mfa" — the session is valid and the role is
+// right, but the second factor was satisfied too long ago to prove the person at the
+// keyboard is still the one who passed it. A stolen laptop, a hijacked cookie, or a
+// borrowed unlocked screen all satisfy AAL2; none of them survive being asked for a code
+// that is only on the operator's phone.
+//
+// TWO clocks reach here and the copy has to cover both: requireFreshAdmin's 5-minute
+// step-up window on money and access actions, and requireAdmin's own 12-hour session cap,
+// which applies to EVERY action — so this prompt now appears on a dispute or a support
+// reply that carries no step-up of its own.
 //
 // Verifying mints a token with a fresh amr timestamp, so the retry passes without the
 // operator re-entering anything else.
@@ -51,8 +56,10 @@ export default function ReauthPrompt({
     <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
       <div className="text-xs font-semibold text-amber-900">Confirm it&rsquo;s you</div>
       <p className="mt-0.5 text-xs text-amber-900">
-        This action moves money or changes access, so it needs a current code from your
-        authenticator — not just a valid session.
+        This needs a current code from your authenticator, not just a valid session —
+        either the action moves money or changes access, or this console session has
+        passed its 12-hour re-verification point. Your access is intact; enter a code and
+        it runs.
       </p>
       <div className="mt-2 flex items-center gap-1.5">
         <input
