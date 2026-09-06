@@ -4,7 +4,15 @@ Wipes the accumulated **test activity** from the production database so beta use
 from a clean slate, while leaving **accounts, identity and the legal audit trail intact**.
 
 > **Not yet executed.** Written 2026-07-22 while the app was still TestFlight-only on
-> Stripe **test** keys. Nothing in here has been run against production.
+> Stripe **test** keys.
+>
+> ⚠️ **Re-verified against the live schema 2026-09-06, and it was incomplete.** Twelve
+> tables that hold activity did not exist when this was drafted — support threads,
+> safety check-ins, gig share links, Stripe payout events, the promo/bonus ledgers, the
+> assistant's staged actions and the client error sink. Running the original list would
+> have left test support tickets and a LIVE share link (which discloses an exact street
+> address) in a database advertised as clean. Storage was missing too. Both are fixed
+> below. Re-verify again before running: this file has now been wrong once.
 
 Run this **once**, immediately before opening the beta — after the last round of internal
 testing, before the first real user signs up.
@@ -111,7 +119,37 @@ delete from conversation_state;
 delete from tip_ledger;
 delete from disputes;
 
+-- ── ADDED 2026-09-06. Every table below postdates this runbook's first draft
+-- (2026-07-22) and would otherwise SURVIVE the purge. Verified against the live
+-- schema on the day: support and safety carried real test rows, and a live share
+-- link is a disclosure, not clutter.
+delete from support_ticket_messages;
+delete from support_tickets;
+delete from gig_shares;          -- a share link reveals an exact address; do not leave one live
+delete from safety_checkins;
+delete from stripe_payouts;      -- test-mode payout events
+delete from refund_ledger;
+delete from promo_redemptions;
+delete from promo_grants;
+delete from promo_redeem_attempts;
+delete from bonus_ledger;
+delete from assistant_pending_actions;
+delete from client_errors;       -- test-run crash/edge noise; keeps /errors meaningful on day one
+
 commit;
+```
+
+### Storage (not covered by any cascade)
+
+Objects are not FK'd to these tables, so the purge leaves them behind. Clear the
+activity buckets and KEEP `avatars` — profile photos belong to the accounts you are
+preserving.
+
+```sql
+delete from storage.objects
+ where bucket_id in ('job-photos', 'chat-photos', 'completion-photos',
+                     'support-photos', 'receipts');
+-- Do NOT touch bucket_id = 'avatars'.
 ```
 
 ### Reset the profile counters
@@ -132,7 +170,11 @@ update profiles set
   rating               = 5.0,    -- app default for "no reviews yet"
   review_count         = 0,
   poster_rating        = null,
-  poster_review_count  = 0;
+  poster_review_count  = 0,
+  -- ADDED 2026-09-06: trigger-maintained from job inserts, so after the purge it
+  -- still names the categories of gigs that no longer exist and drives the "your
+  -- recent categories" chips in every picker.
+  recent_category_slugs = '{}';
 ```
 
 > Do **not** touch `verified`, `id_verification_status`, `student_verified`,
