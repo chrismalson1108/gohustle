@@ -243,8 +243,17 @@ export default function SupportScreen({ navigation, route }) {
 
   const addPhotos = async () => {
     haptic.selection();
+    // pickImages resolves to { canceled, denied?, uris } — NEVER an array. Testing
+    // `res.length` on that object is always undefined, so photos stayed [] and every
+    // ticket went out text-only, including the safety reports this button exists for.
     const res = await pickImages({ multiple: true });
-    if (res?.length) setPhotos(prev => [...prev, ...res].slice(0, 6));
+    if (res.canceled) {
+      if (res.denied) {
+        Alert.alert('Photos access needed', 'Allow photo access in Settings to attach photos.');
+      }
+      return;
+    }
+    setPhotos(prev => [...prev, ...res.uris].slice(0, 6));
   };
 
   const send = async () => {
