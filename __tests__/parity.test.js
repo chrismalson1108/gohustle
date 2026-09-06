@@ -82,13 +82,43 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     expect(labels).toEqual(expect.arrayContaining(['Browse', 'My Jobs', 'Hire', 'Messages', 'You']));
   });
 
+  // ⚠️ These are checked against the prompt's TAB SENTENCE, not the whole prompt.
+  //
+  // A bare `prompt.includes(label)` was vacuous for exactly the tab whose rename this
+  // block was written after: the prompt is sliced from "You are **Hustlr AI**", so
+  // includes('You') is satisfied by its own first word — rename the tab back to
+  // "Profile" and the suite stayed green. 'Hire' was weak the same way, satisfied by the
+  // substring inside 'Hiring', which is the other stale name.
+  const tabsLine = prompt.split('\n').find((l) => /^- The tabs are /.test(l)) ?? '';
+  // Only the enumeration: the rest of the line legitimately QUOTES the old names in
+  // `do not call them "Hiring" or "Profile"`.
+  const tabsEnumeration = tabsLine.split(/They are named exactly that/)[0];
+
+  it('the prompt still enumerates the tabs in one line', () => {
+    // Everything below reads this line, so its absence must fail loudly rather than
+    // quietly making four assertions vacuous.
+    expect(`tabs line: ${tabsLine ? 'present' : 'MISSING FROM PROMPT'}`).toBe('tabs line: present');
+    expect(tabsLine).toMatch(/do not call them/i);
+  });
+
   labels.forEach((label) => {
     it(`names the "${label}" tab as the app names it`, () => {
       // Catches the exact drift that happened: a renamed tab the prompt never heard
       // about, so the assistant sends people to a tab that is not called that.
-      expect(`${label}: ${prompt.includes(label) ? 'known' : 'MISSING FROM PROMPT'}`)
+      // Word-bounded, so "Hire" cannot be satisfied by "Hiring".
+      const named = new RegExp(`(^|[^A-Za-z])${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z]|$)`)
+        .test(tabsEnumeration);
+      expect(`${label}: ${named ? 'known' : 'MISSING FROM THE PROMPT’S TAB LINE'}`)
         .toBe(`${label}: known`);
     });
+  });
+
+  it('does not enumerate a tab by a name the app retired', () => {
+    // The regression this block exists for, stated directly: "Hiring" and "Profile" are
+    // what the prompt called Hire and You for months after they were renamed.
+    const stale = ['Hiring', 'Profile'].filter((n) => tabsEnumeration.includes(n));
+    expect(`retired names in the tab line: ${stale.join(', ') || 'none'}`)
+      .toBe('retired names in the tab line: none');
   });
 
   // Curated on purpose. Not every screen belongs in the prompt — internal and
