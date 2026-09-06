@@ -108,6 +108,11 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // the screen existed the prompt told the model there was nowhere to send them,
     // which is now false.
     ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
+    // Added 2026-09-05 with the share-link revoke control. The share/SOS bar has
+    // existed since 2026-08-06 and the prompt never mentioned it, so the assistant
+    // could not answer the two questions it most obviously generates — "how do I stop
+    // sharing my location" and "how do I get help right now".
+    ['stopping a location share', /Stop sharing my location/i],
   ];
 
   MUST_KNOW.forEach(([what, re]) => {
