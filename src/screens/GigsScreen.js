@@ -541,6 +541,25 @@ export default function GigsScreen({ navigation }) {
           );
         })}
 
+        {/* The poster's own ledger. Payments has always been registered in GigsStack
+            and nothing in the stack navigated to it, so the one screen that shows a
+            poster what they were CHARGED — the receipt, the pinned fee rate, the
+            remainder released on a partial capture — was unreachable from the tab
+            where they do the hiring. Past is where they come looking for it. */}
+        {tab === 'past' && (
+          <TouchableOpacity
+            style={styles.payAlert}
+            onPress={() => { haptic.light(); navigation.navigate('Payments'); }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="swap-vertical" size={18} color={colors.primary} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.payAlertTitle} numberOfLines={1}>Transactions</Text>
+              <Text style={styles.payAlertSub} numberOfLines={2}>Every charge, fee and refund on the gigs you hired for →</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* ===== PAST: completed / declined history ===== */}
         {tab === 'past' && pastBookings.length === 0 && (
           <View style={styles.empty}>

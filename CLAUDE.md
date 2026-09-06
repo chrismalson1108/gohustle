@@ -330,7 +330,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `ManageBookingsScreen` | Legacy poster booking view. **Registered in ProfileStack but unreachable** — nothing navigates to it; the last entry point was deleted in `bc5cc0a`. `GigsScreen` superseded it. Delete it or re-link it; don't build against it. |
 | `ProfileScreen` (tab "You") | Stats, badges, reviews received, "Manage my gigs" (→ Gigs tab), the money hub (→ `PayoutSetup`), Tax Center, TrophyCase, Reviews, Alerts, Notification settings, Availability, Find People, identity + student verification, Settings link. **The Saved gigs/people rows are NOT here** — they were deliberately deleted as duplicates and live only in Settings; and the money row goes to `PayoutSetup`, not to `Payments` (Transactions), which this screen does not link to at all. **No sign out here — it lives only in Settings** (deliberate: it sat one mis-tap away on the most-opened tab). No role toggle — every user can both earn and post. Pull-to-refresh. |
 | `ExpensesScreen` (Tax Center) | Full tax tracker — **Expenses / Income** segments, year net-profit summary (platform earnings + card tips + logged cash income − expenses) with a ~27% set-aside hint, add expense (category/receipt → `receipts` bucket) or cash income (`income_entries` table), delete, and a combined year-end **tax summary CSV** export via Share. Helpers in `src/lib/expenses.js`. ⚠️ **Platform income comes from `platformIncomeForYear` in `shared/taxFormat.js`, which values each verified booking at its PINNED `amount_cents_quoted` and nets it at that booking's own `fee_bps_quoted`** — never the list pay (that valued every hourly gig at one hour) and never the current rate card. A failed read is an error state with a retry, not an empty year: the totals show a dash and Export refuses. The web Tax Center (`web/app/(app)/profile/taxes/page.tsx`) shares all of it. Nested in ProfileStack as `Expenses`. |
-| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks — but **only Earn and Profile have an entry point** (`EarnScreen`, `PayoutSetupScreen`, `SettingsScreen`); nothing in GigsStack navigates here, so a poster cannot reach their own ledger from the Hire tab. That is a gap, not a design. |
+| `PaymentsScreen` (route `Payments`, nav title **Transactions**) | The money ledger, both sides. Earnings / Spending segments, range + status filters, six-month trend, per-transaction receipt showing THAT booking's pinned fee rate, CSV export, and Bank deposits with real Stripe arrival dates. Registered in Earn/Gigs/Profile stacks, and **all three now have an entry point** — `EarnScreen`, `PayoutSetupScreen`/`SettingsScreen`, and (since 2026-09-06) the Transactions row at the top of `GigsScreen`'s **Past** segment. Until then GigsStack registered the route and nothing in the stack navigated to it, so the poster — the party who was *charged* — could not reach their own ledger from the tab where they hire. `__tests__/ledgerEntryPoints.test.js` now fails on any route a stack registers that nothing in that stack navigates to, unless it is excused there with a reason. |
 | `PayoutSetupScreen` (route `PayoutSetup`) | The **money hub**, and the one screen that carries both sides: "Get paid for work" (connect/manage a Connect bank for earners) and "Pay for gigs" (add/change/remove the card on file for posters). Stripe is surfaced only as a trust line. Entry points: ProfileScreen, GigsScreen, EarnScreen. Connect onboarding from here is step-up gated — see **Two-factor**. |
 | `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
 | `SecurityScreen` (route `Security`) | Two-factor: enroll (deep-link first), recovery codes, disable (requires a current code). Prompted from PayoutSetup once a bank is connected. |
@@ -503,9 +503,26 @@ rate limiting and staging.
   from the SERVER's summary. Injected gig text can make the model stage something; it
   cannot produce the tap. Do not "simplify" this back into a prompt instruction.
 - **Its system prompt is a parity-tested artifact.** `__tests__/parity.test.js` fails if
-  the prompt does not name every tab as the app names it, or cannot point at
-  Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
-  pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
+  the prompt does not name every tab as the app names it, or cannot point at every
+  destination `MUST_KNOW` pins — Transactions, bank-deposit timing, Tax Center, Support,
+  two-factor, escrow, who pays the fee, and (added 2026-09-06) claiming payment on a gig
+  the poster never verified, redeeming a code, the on-gig safety tools, report/block,
+  identity + student verification, invites, saved gigs and people, the alerts inbox and
+  its settings, availability, Insights, and closing an account. **Adding a user-facing
+  feature means adding it to `MUST_KNOW` there.** The twelve added at once were not new
+  features: they had shipped on both clients and the prompt had never been told, so the
+  assistant answered "I'm not sure — ask Support" to questions one tap answers, and
+  answered a ghosted earner with the escrow line instead of the button that pays them.
+- ⚠️ **Two clients, two "where to find it" blocks.** The request body carries
+  `client: 'web' | 'mobile'` (anything else, including an older app build that sends
+  nothing, is treated as the app) and the prompt swaps `PLACES_MOBILE` for `PLACES_WEB`.
+  This exists because ONE block, written for the phone, was served to gohustlr.com as
+  well: "You → Payments & payouts → Transactions" and "Messages → GoHustlr Support"
+  name screens the website does not have, so the prompt's own "never invent a screen"
+  rule was broken on one of the two surfaces. The parity suite runs every `MUST_KNOW`
+  check against BOTH blocks, checks each `Settings → …` row it names against that
+  client's own Settings rows, and fails if the web block hands out an app-only screen.
+  **When the website gains one of the app-only screens, move it out of the web block.**
 
 ## Edge functions (`supabase/functions/`) — 32, each deployed by hand
 
@@ -682,7 +699,7 @@ it is the second half of a change that has not been done yet.
 
 | Guard | Stops |
 |---|---|
-| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point at Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow, and who pays the fee · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
+| `parity.test.js` | tab routes drifting from `send-push`'s `KNOWN_TABS` (breaks every push deep-link, silently, on device only) · **Hustlr AI's prompt going stale** — it must name every tab as the app names it and be able to point — on BOTH clients — at every destination `MUST_KNOW` pins · brand colours drifting between `shared/theme.js` and `web/app/globals.css` |
 | `categories.test.js` | JS `categorySlug()` ≠ SQL `category_slug()` |
 | `pricing.test.js` | `shared/pricing.js` ≠ the fee migration |
 | `supportGuardDrift.test.js` | a guard rewrite dropping the `app.support_reopen` exemption (has happened twice; makes customer replies invisible to the support queue) |
@@ -691,6 +708,7 @@ it is the second half of a change that has not been done yet.
 | `assistantGate.test.js` | the assistant's confirmation gate degrading back into a prompt instruction |
 | `partyPoliciesSuspensionAgnostic.test.js` | a party-scoped policy going back to `join public.jobs` to decide who is a party. A policy subquery runs as the QUERYING role, so it inherits `jobs_select_all` — which hides a suspended poster's job — and suspending someone then erased their counterparty's message thread, chat photos, completion photos and dispute, from the counterparty only. Use `private.is_booking_party` (20260906041000) |
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
+| `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
 Add the destination to `MUST_KNOW` in `parity.test.js` and it fails until Hustlr AI
