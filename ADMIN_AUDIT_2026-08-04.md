@@ -307,7 +307,7 @@ The **operational** layer is about a weekend behind.
 | # | Item | Evidence |
 |---|---|---|
 | 12 | **Live Stripe key cutover** | `src/lib/stripeClient.js:3` hardcodes `pk_test_`; `eas.json` has no `env` block on any profile. Blocked in source. **S** |
-| 13 | **Staging environment + CI** | Exactly one Supabase project ref in the tree (`nfioebqsgmmzhbksxozc`) and **zero** `.github/workflows`. Every migration and function deploy lands straight on production, ungated. Web auto-deploys on each master push; admin needs a manual `vercel --prod`. **M** |
+| 13 | **Staging environment + CI** | Exactly one Supabase project ref in the tree (`nfioebqsgmmzhbksxozc`) and **zero** `.github/workflows`. Every migration and function deploy lands straight on production, ungated. Web auto-deploys on each master push; admin needs a manual `cd admin && vercel --prod --scope go-hustlr`. **M** |
 | 14 | **Database indexes** | `supabase/schema.sql` declares none. No index on `bookings.earner_id`, `messages.booking_id`, `payments.booking_id`, `job_slots.job_id`, `jobs.poster_id`. Invisible at 16 profiles; a seq scan per screen at 5,000. **S** |
 | 15 | **Backup + restore drill** | Confirm PITR retention and actually restore into a scratch project once. **S** |
 | 16 | **Capture-hold enforcement + 48h SLA** (§5) | **M** |

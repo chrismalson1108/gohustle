@@ -112,7 +112,7 @@ somewhere else, the directory name changes to match the new path.
   dry-run locally. Runtime verification needs a **Supabase branch database** or **Stripe
   test mode**. This is why parsed-off-disk tests carry so much weight in the plan.
 - **`gohustlr-admin` does not auto-deploy.** Pushing a migration without
-  `cd admin && npx vercel --prod` half-deploys several of the fixes — and for the admin
+  `cd admin && npx vercel --prod --scope go-hustlr` half-deploys several of the fixes — and for the admin
   login throttle, that exact half-deployed state *is* the bug.
 - **Budget ~13% fix-induced regressions.** July fixed 54 findings and introduced 7. Two of
   the findings in this report are regressions from earlier fix rounds.
