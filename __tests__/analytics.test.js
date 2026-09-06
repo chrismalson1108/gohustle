@@ -1,4 +1,5 @@
 import { computeEarnerInsights, computeAreaInsights } from '../src/lib/insights';
+import { transformBooking } from '../shared/transforms.js';
 
 // Helper to build a verified booking quickly. `date` is the completedAt timestamp.
 function vb({ location, pay, counterOffer, tipAmount, date, status = 'verified' }) {
@@ -140,5 +141,59 @@ describe('analytics.computeAreaInsights', () => {
       { location: 'Miami, FL', pay: 'NaN', category: '' },
     ]);
     expect(rows[0]).toEqual({ area: 'Miami, FL', jobCount: 2, avgPay: null, topCategory: null });
+  });
+});
+
+// ── An hourly booking is worth pay x hours, not pay ───────────────────────────
+// earnedFor used to be `counterOffer ?? job.pay` with no glance at payType,
+// estimatedHours or the pinned amount_cents_quoted, so "Best day" valued a 6-hour
+// $25/hr gig at $25. These go through the REAL transformBooking, because both of the
+// missing fields are things that transform already provides and this one did not read.
+describe('analytics.computeEarnerInsights values hourly work at its real duration', () => {
+  // 2026-06-05 is a Friday.
+  const dbRow = (over = {}) => ({
+    id: 'b1',
+    job_id: 'j1',
+    status: 'verified',
+    completed_at: '2026-06-05T09:00:00Z',
+    amount_cents_quoted: 15000, // pinned by trg_z_pin_booking_amount: 25 x 6 x 100
+    fee_bps_quoted: 700,
+    job: {
+      id: 'j1',
+      title: 'House clean',
+      pay: '25',
+      pay_type: 'hourly',
+      estimated_hours: '6',
+      location: 'Austin, TX',
+    },
+    ...over,
+  });
+
+  test('uses the pinned amount_cents_quoted, not the hourly rate', () => {
+    const ins = computeEarnerInsights([transformBooking(dbRow())]);
+    // The old body read job.pay and produced 25.
+    expect(ins.mostProfitableDay).toEqual({ label: 'Friday', total: 150 });
+  });
+
+  test('falls back to pay x hours when the booking predates the amount pin', () => {
+    const ins = computeEarnerInsights([transformBooking(dbRow({ amount_cents_quoted: null }))]);
+    expect(ins.mostProfitableDay).toEqual({ label: 'Friday', total: 150 });
+  });
+
+  test('an accepted counter-offer is still per hour on an hourly gig', () => {
+    const b = transformBooking(dbRow({ amount_cents_quoted: null, counter_offer: '30' }));
+    expect(computeEarnerInsights([b]).mostProfitableDay).toEqual({ label: 'Friday', total: 180 });
+  });
+
+  test('a flat gig is NOT multiplied by estimated_hours', () => {
+    const b = transformBooking(
+      dbRow({ amount_cents_quoted: null, job: { ...dbRow().job, pay_type: 'flat', estimated_hours: '6' } }),
+    );
+    expect(computeEarnerInsights([b]).mostProfitableDay).toEqual({ label: 'Friday', total: 25 });
+  });
+
+  test('the tip is added on top of the full hourly value', () => {
+    const b = transformBooking(dbRow({ tip_amount: '20' }));
+    expect(computeEarnerInsights([b]).mostProfitableDay).toEqual({ label: 'Friday', total: 170 });
   });
 });

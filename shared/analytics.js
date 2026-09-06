@@ -3,16 +3,27 @@
 // it only reads the booking shapes produced by transformBooking, so the same
 // function powers the mobile "My Jobs" dashboard and the web my-jobs page.
 import { resolveCategorySlug, categoryLabel } from './categories.js';
+import { bookingGrossDollars } from './taxFormat.js';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// Dollars an earner actually made on a booking: the agreed price (a counter-offer
-// overrides the job's listed pay) plus any tip.
+// Dollars an earner actually made on a booking: the booking's own value plus any tip.
+//
+// The value is bookingGrossDollars — the pinned `amount_cents_quoted` where the row has
+// one, otherwise pay x hours off the job embed. This USED to be
+// `counterOffer ?? job.pay`, which never looked at payType or estimatedHours and so
+// valued an hourly gig at its RATE: a 6-hour $25/hr gig counted as $25, and "Best day"
+// disagreed with Transactions by a factor of the hours on the commonest gig shape on
+// the platform. transformBooking has carried both estimatedHours and amountCentsQuoted
+// all along; this function simply never read them.
+//
+// Gross, not net: this is "what the day was worth", the same figure the ledger shows
+// before the fee. MoneyGoalCard deliberately nets instead, because a goal tracker
+// measures what actually lands.
 function earnedFor(b) {
-  const base = b?.counterOffer != null ? Number(b.counterOffer) : Number(b?.job?.pay);
-  const pay = Number.isFinite(base) ? base : 0;
+  const pay = bookingGrossDollars(b);
   const tip = Number(b?.tipAmount) || 0;
-  return pay + tip;
+  return (Number.isFinite(pay) ? pay : 0) + tip;
 }
 
 // Weekday name for the booking, preferring when the work was completed, then when
