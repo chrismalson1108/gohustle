@@ -211,13 +211,35 @@ export default function AssistantWidget() {
 
   // These switch conversation context, so they're blocked mid-send (and their
   // buttons disabled) — otherwise an in-flight reply could clobber the new view.
-  const newChat = () => {
+  // Same silence as the app's + button, and the same fix — see the long note in
+  // src/components/AssistantButton.js. Mid-conversation this wipes the thread with no
+  // acknowledgement (a tester read that as "kills the chat with no way to get it back");
+  // on an already-fresh chat it sets state that is already set, so nothing moves. The
+  // thread is safe either way — it persists server-side as soon as the assistant replies
+  // and the History button reopens it — but the user has to be told that.
+  //
+  // `newChat` is also called by deleteThread when the OPEN thread is the one deleted; a
+  // toast pointing at history would be wrong there, so that path says its own piece.
+  const newChat = (announce = true) => {
     if (busy) return;
+    const hadConversation = messages.length > 1 || !!threadId;
     stopListening();
     setError(null);
     setThreadId(null);
     setMessages([{ role: "assistant", content: GREETING }]);
     setView("chat");
+    if (!announce) return;
+    showToast(hadConversation
+      ? {
+          icon: "💬",
+          title: "New chat started",
+          message: "Your last conversation is saved — open History to reopen it.",
+        }
+      : {
+          icon: "💬",
+          title: "You're on a new chat",
+          message: "Ask anything, or describe a gig to post.",
+        });
   };
 
   const openHistory = async () => {
@@ -250,7 +272,9 @@ export default function AssistantWidget() {
     try {
       await deleteThread(id);
       setThreads((ts) => ts.filter((t) => t.id !== id));
-      if (id === threadId) newChat();
+      // Deleting the conversation you are currently in: reset the view, but do NOT
+      // point the user at History for a thread that no longer exists there.
+      if (id === threadId) newChat(false);
     } catch {
       setError("Couldn't delete that conversation.");
     }
@@ -292,7 +316,7 @@ export default function AssistantWidget() {
             </div>
             {/* size-11 (44px) on each: these were 32px squares stacked three
                 across in the corner of a sheet, the hardest thing to hit on a phone. */}
-            <button onClick={newChat} disabled={busy} aria-label="New chat" title="New chat" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15 disabled:opacity-40">
+            <button onClick={() => newChat()} disabled={busy} aria-label="New chat" title="New chat" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15 disabled:opacity-40">
               <Plus className="size-5" />
             </button>
             <button onClick={openHistory} disabled={busy} aria-label="Past conversations" title="Past conversations" className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/15 disabled:opacity-40">

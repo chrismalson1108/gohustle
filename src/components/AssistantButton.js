@@ -36,6 +36,12 @@ export default function AssistantButton() {
   const [pendingConfirm, setPendingConfirm] = useState(null);
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [error, setError] = useState(null);
+  // Feedback for the + button, rendered INSIDE the modal on purpose. The app's toast
+  // (AchievementToast) is an absolutely-positioned view in the root tree, and this sheet
+  // is a React Native <Modal> — a separate native window on iOS — so a toast fired from
+  // here is presented UNDERNEATH it and the user sees nothing. zIndex does not cross
+  // that boundary. Caught on device, after the toast version looked correct in code.
+  const [notice, setNotice] = useState(null);
   const scrollRef = useRef(null);
   const haptic = useHaptic();
   const insets = useSafeAreaInsets();
@@ -108,6 +114,7 @@ export default function AssistantButton() {
     const trimmed = (text || '').trim();
     if (!trimmed || busy) return;
     haptic?.light?.();
+    setNotice(null);
     setInput('');
     setError(null);
     const next = [...messages, { role: 'user', content: trimmed }];
@@ -129,16 +136,36 @@ export default function AssistantButton() {
 
   // Context-switching actions — blocked mid-send so an in-flight reply can't
   // clobber the new view (and the buttons are disabled while busy).
+  // ONE button, two opposite complaints, both from the same silence.
+  //
+  // A tester reported "the + kills the AI chat feed with no way to get it back", and
+  // separately the + was reported as doing nothing at all. Both are this function, in
+  // its two states: mid-conversation it wipes the thread instantly with no warning and
+  // no acknowledgement, and on an already-fresh chat it sets the state that is already
+  // set, so nothing moves on screen.
+  //
+  // Nothing is actually lost — the thread is persisted server-side the moment the
+  // assistant replies, and the clock icon RIGHT NEXT to this one reopens it (verified on
+  // device: cleared, opened history, restored in full). But a user who believes their
+  // conversation was destroyed has lost exactly as much trust as one whose conversation
+  // really was, so the fix is to say what happened and where it went.
   const newChat = () => {
     if (busy) return;
+    // The greeting bubble is render-only, so a lone greeting is not a conversation.
+    const hadConversation = messages.length > 1 || !!threadId;
     setError(null);
     setThreadId(null);
     setMessages([{ role: 'assistant', content: GREETING }]);
     setView('chat');
+    haptic?.light?.();
+    setNotice(hadConversation
+      ? 'New chat started. Your last conversation is saved — tap the clock to reopen it.'
+      : "You're already on a new chat — ask anything, or describe a gig to post.");
   };
 
   const openHistory = async () => {
     if (busy) return;
+    setNotice(null);
     setView('history');
     setLoadingThreads(true);
     try { setThreads(await listThreads()); } catch { setThreads([]); }
@@ -297,6 +324,7 @@ export default function AssistantButton() {
                 </ScrollView>
 
                 {/* Composer */}
+                {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 <View style={[styles.composer, { paddingBottom: insets.bottom + 12 }]}>
                   <TextInput
@@ -472,6 +500,7 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: radii.pill, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
+  noticeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', paddingHorizontal: 20, paddingTop: 8 },
   errorText: { color: colors.urgent, fontSize: 13, fontWeight: '600', paddingHorizontal: 20, paddingTop: 8 },
   histPanel: { flex: 1, backgroundColor: colors.background },
   histBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 20, paddingVertical: 12 },
