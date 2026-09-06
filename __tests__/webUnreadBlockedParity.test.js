@@ -86,7 +86,11 @@ describe('the unread badge drops the conversations the inbox hides', () => {
         // Poster bookings carry the earner inline; an earner booking's poster comes
         // from the jobs feed. Resolving only one side leaves the other unfiltered.
         expect(region).toMatch(/earner\??\.(id)/);
-        expect(region).toMatch(/posterId/);
+        // The poster side may be resolved inline or through shared/lifecycle's
+        // bookingPosterId(booking, jobs) — the mobile client uses the helper, which is
+        // the same resolution the Messages hub and every notify() call site use. What
+        // this guards is that BOTH sides are resolved, not which spelling does it.
+        expect(region).toMatch(/posterId|bookingPosterId/i);
       });
     });
   }
