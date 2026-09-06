@@ -196,13 +196,51 @@ async function recordReversal(
   if (!raisedBy) return bookingId;
 
   const { data: existing } = await supabase
-    .from('disputes').select('id').eq('booking_id', bookingId).ilike('reason', `%${externalId}%`).maybeSingle();
+    .from('disputes').select('id, reason').eq('booking_id', bookingId)
+    .ilike('reason', `%${externalId}%`).maybeSingle();
   if (!existing) {
     await supabase.from('disputes').insert({
       booking_id: bookingId,
       raised_by: raisedBy,
       reason: reason.slice(0, 500),
     });
+    return bookingId;
+  }
+
+  // ── A SECOND refund on the SAME charge ──────────────────────────────────────
+  //
+  // For charge.refunded, externalId is the CHARGE id — and it is identical for every
+  // refund taken against that charge. Stripe fires one event per refund, each carrying
+  // the new CUMULATIVE amount_refunded. Filing no second row is right: one row per
+  // Stripe object is what makes this idempotent under redelivery. Leaving that row's
+  // FIGURE at the first refund's total was not.
+  //
+  // ctl_external_reversal_not_ledgered reads the cents out of the newest row's prose and
+  // fires while it exceeds payments.refunded_cents. So once an operator ledgered refund
+  // #1, the stale figure made every later Dashboard refund on that charge invisible to
+  // it — money out of the platform balance with nothing on the board, until
+  // reconcile-stripe's window happened to cover the charge. Its control comment claimed
+  // "the latest refund row already carries the total refunded"; nothing made that true.
+  //
+  // Only ever FORWARDS, and only over our own template: an out-of-order redelivery
+  // carries an older, smaller cumulative total, and a row whose text is not ours belongs
+  // to a person (the "report a problem" flow writes here too) and must not be rewritten.
+  if (kind === 'refund' && stripeRefundedCents !== null) {
+    const priorReason = (existing as { reason?: string | null }).reason ?? '';
+    // The same shape ctl_external_reversal_not_ledgered demands of a webhook-written row.
+    const mine = priorReason.match(
+      /^Stripe refund on charge \S+ \([A-Za-z]{3} ([0-9]+\.[0-9]{2}) refunded\)$/,
+    );
+    const priorCents = mine ? Math.round(Number(mine[1]) * 100) : null;
+    if (priorCents !== null && stripeRefundedCents > priorCents) {
+      await supabase.from('disputes')
+        .update({ reason: reason.slice(0, 500) })
+        .eq('id', (existing as { id: string }).id);
+      console.log(
+        `recordReversal: refund total on ${externalId} moved ${priorCents}c → ` +
+        `${stripeRefundedCents}c; updated the disputes row so the control can see it`,
+      );
+    }
   }
   return bookingId;
 }
