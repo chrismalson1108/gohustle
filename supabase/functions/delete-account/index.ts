@@ -1,5 +1,7 @@
 // Account deletion (Apple 5.1.1(v) / Play / GDPR-CCPA). The caller deletes their
-// OWN account: validate the JWT, remove their storage objects (buckets don't
+// OWN account: validate the JWT, require step-up when the account has a verified
+// factor (the 2FA gate in both clients is client-side, so a password alone reached
+// this irreversible endpoint), remove their storage objects (buckets don't
 // cascade), then the profile is SCRUBBED and the auth row is emptied and permanently
 // banned. It is deliberately NOT deleted: profiles_id_fkey cascades from auth.users, and
 // that cascade reaches jobs → bookings → payments, i.e. the COUNTERPARTY's financial
@@ -7,6 +9,7 @@
 // Financial records of record remain in Stripe.
 import Stripe from 'npm:stripe@22';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { requireStepUp } from '../_shared/stepUp.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -48,6 +51,33 @@ Deno.serve(async (req: Request) => {
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
     const { data: { user }, error: authErr } = await admin.auth.getUser(token);
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+
+    // STEP-UP, for the same reason the two payout functions have it.
+    //
+    // The 2FA gate is CLIENT-SIDE in both apps: a password sign-in on an account with
+    // a verified factor returns a REAL session at aal1, and MfaChallengeScreen /
+    // web/app/mfa merely decline to render past it (AuthContext.js:208-211 says so
+    // outright — "the server still refuses anything that needs aal2"). Nothing about
+    // that gate involves this function, which is reachable with a bare token and no
+    // body: a phished password alone was enough to tombstone the profile, free the
+    // email, ban the auth row for a hundred years and revoke every session, silently
+    // and irreversibly. The typed-username gauntlet in the client is not a control.
+    //
+    // So this is exactly the case _shared/stepUp.ts describes: if the account HAS a
+    // factor, the token must have satisfied it. No factor still proceeds — refusing
+    // there would lock people out of their own deletion right for not enrolling, which
+    // is the "our posture, their cost" mistake that module exists to avoid. Failing
+    // closed on a lookup error is the module's behaviour and the right one here: an
+    // irreversible action must not run on "we could not tell".
+    const step = await requireStepUp(admin, user.id, token);
+    if (!step.ok) {
+      const body = { ...step.body! };
+      // The shared message names payout details. Say what is actually being gated.
+      if (body.error === 'MFA_REQUIRED') {
+        body.message = 'Enter your authenticator code to delete your account.';
+      }
+      return json(body, step.status!);
+    }
 
     // 0. Refuse while money is in flight.
     //
