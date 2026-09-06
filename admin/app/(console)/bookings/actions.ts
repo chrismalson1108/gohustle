@@ -146,12 +146,40 @@ export async function reopenBooking(formData: FormData): Promise<ActionResult> {
     if (b.status === "cancelled") {
       throw new Error("This booking was cancelled and its hold released — re-opening it would leave no escrow behind the work.");
     }
+    // ── The SAME reasoning, applied to every other status ────────────────────
+    // The line above states the invariant and then only checks one status for it.
+    // 'confirmed' means "a real Stripe authorization is behind this work" — that is
+    // the whole reason accept-booking exists as a service-role edge function rather
+    // than a client write, and guard_bookings_write early-returns for service_role, so
+    // nothing in the database re-checks it for us here.
+    //
+    // A 'pending' booking has no hold yet (it is minted when the poster accepts) and a
+    // 'declined' one either never had a hold or had it voided by stripe-cancel-payment
+    // — both are the shape the cancelled branch refuses, and the panel enabled Re-open
+    // for both. So ask the payments row instead of the booking status, and FAIL CLOSED:
+    // no row is the pending case and is exactly as unfunded as a voided one.
+    //
+    // The intended use is unaffected: Re-open's job is undoing a one-sided or forced
+    // 'completed', and capture only happens at verify, so those rows are 'authorized'.
+    const { data: pay, error: payErr } = await ctx.service
+      .from("payments").select("status").eq("booking_id", bookingId).maybeSingle();
+    if (payErr) {
+      throw new Error(
+        `Couldn't check whether this booking still has an escrow hold (${payErr.message}). Nothing was changed — retry in a moment.`,
+      );
+    }
+    if (pay?.status !== "authorized") {
+      throw new Error(
+        `There is no live escrow hold behind this booking (${pay ? `the payment is "${pay.status}"` : "no payment row"}), so re-opening it would put the earner back to work against nothing. ` +
+          "The poster has to accept it again — that is what places the hold.",
+      );
+    }
     const { error } = await ctx.service
       .from("bookings")
       .update({ status: "confirmed", earner_done: false, poster_done: false })
       .eq("id", bookingId);
     if (error) throw new Error(error.message);
-    return { was: b.status, __message: "Re-opened as confirmed. Both done-flags cleared." };
+    return { was: b.status, hold: pay.status, __message: "Re-opened as confirmed. Both done-flags cleared." };
   });
 }
 

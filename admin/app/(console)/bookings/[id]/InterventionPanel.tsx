@@ -98,9 +98,20 @@ export default function InterventionPanel({
         >
           Force complete
         </button>
+        {/* 'confirmed' means a live Stripe authorization is behind the work — that is
+            what accept-booking exists to attest. Re-opening a booking with no hold puts
+            the earner back to work against nothing, so the button follows the money,
+            not the status: pending has no hold yet, declined's was voided. The action
+            re-checks this server-side; disabling here is only so the operator is not
+            invited into a refusal. */}
         <button
           className={btn}
-          disabled={pending || settled || status === "cancelled"}
+          disabled={pending || settled || status === "cancelled" || paymentStatus !== "authorized"}
+          title={
+            paymentStatus === "authorized"
+              ? undefined
+              : "No live escrow hold behind this booking — the poster has to accept it again, which is what places the hold."
+          }
           onClick={() => fire(reopenBooking, "Re-open this booking as confirmed?")}
         >
           Re-open
