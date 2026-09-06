@@ -8,10 +8,35 @@ const { findProhibited } = require('../src/lib/contentFilter');
 // backstop trigger. A term added to one but not the others is a moderation gap
 // (security audit finding). This test fails loudly if they drift.
 const ROOT = path.join(__dirname, '..');
+const MIGRATIONS = path.join(ROOT, 'supabase', 'migrations');
 
-function quotedTerms(text, startMarker, endMarker) {
+// The DB copy is whichever `create or replace` lands LAST — resolve it instead of
+// naming a file. This test used to hard-code 20260715060000_moderation_normalize_parity
+// one line under a comment saying the newest definition is the one that wins, and the
+// newest has been 20260726050000_moderation_plural_suffix since 2026-07-26. Two ways
+// that bites: a term added to shared plus a NEW migration fails here until someone
+// edits 20260715060000 — a migration production has already applied, which is exactly
+// the file/production drift CLAUDE.md forbids — and, the other way round, a new
+// migration whose term list drifts from shared is invisible to the test that exists to
+// catch it. Same helper as __tests__/supportGuardDrift.test.js.
+function newestDefining(fnName) {
+  const hits = fs
+    .readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .filter((f) =>
+      new RegExp(`create or replace function public\\.${fnName}\\b`, 'i').test(
+        fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'),
+      ),
+    )
+    .sort();
+  if (!hits.length) return null;
+  const file = hits[hits.length - 1];
+  return { file, sql: fs.readFileSync(path.join(MIGRATIONS, file), 'utf8') };
+}
+
+function quotedTerms(text, startMarker, endMarker, source) {
   const start = text.indexOf(startMarker);
-  if (start === -1) throw new Error(`marker not found: ${startMarker}`);
+  if (start === -1) throw new Error(`marker not found: ${startMarker}${source ? ` (in ${source})` : ''}`);
   const rest = text.slice(start + startMarker.length);
   const end = rest.indexOf(endMarker);
   const block = end === -1 ? rest : rest.slice(0, end);
@@ -19,25 +44,27 @@ function quotedTerms(text, startMarker, endMarker) {
   return terms.sort();
 }
 
+// The live DB definition — resolved, not named. Every assertion below that reads SQL
+// reads THIS file, and reports its name on failure so the test says what it measured.
+const backstop = newestDefining('contains_prohibited');
+
 describe('moderation blocklist stays in sync across all three copies', () => {
   const shared = quotedTerms(
     fs.readFileSync(path.join(ROOT, 'shared/contentFilter.js'), 'utf8'),
     'const BLOCKED = [',
     '];',
+    'shared/contentFilter.js',
   );
   const assistant = quotedTerms(
     fs.readFileSync(path.join(ROOT, 'supabase/functions/assistant/index.ts'), 'utf8'),
     'const BLOCKED_TERMS = [',
     '];',
-  );
-  // Read the term array from the LATEST migration that redefines the array — the
-  // create-or-replace with the newest timestamp is the one that wins live.
-  const sql = quotedTerms(
-    fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260715060000_moderation_normalize_parity.sql'), 'utf8'),
-    'terms text[] := array[',
-    '];',
+    'supabase/functions/assistant/index.ts',
   );
 
+  test('a migration defines the DB backstop', () => {
+    expect(backstop).not.toBeNull();
+  });
   test('shared has terms', () => {
     expect(shared.length).toBeGreaterThan(0);
   });
@@ -45,7 +72,8 @@ describe('moderation blocklist stays in sync across all three copies', () => {
     expect(assistant).toEqual(shared);
   });
   test('DB backstop (contains_prohibited) matches shared', () => {
-    expect(sql).toEqual(shared);
+    const sql = quotedTerms(backstop.sql, 'terms text[] := array[', '];', backstop.file);
+    expect(`${backstop.file}: ${JSON.stringify(sql)}`).toBe(`${backstop.file}: ${JSON.stringify(shared)}`);
   });
 });
 
@@ -54,13 +82,12 @@ describe('moderation blocklist stays in sync across all three copies', () => {
 // drift in the normalization steps is just as much a moderation gap as a drift in
 // the terms (a variant caught by one layer but not another = inverted defense in
 // depth). These tests assert the normalization steps agree between the shared client
-// filter and the documented DB normalization in the latest parity migration.
+// filter and the DB normalization in the migration that currently defines the function.
 describe('moderation normalization stays in sync (client filter vs DB backstop)', () => {
-  // Latest migration that redefines contains_prohibited with the full normalization.
-  const parity = fs.readFileSync(
-    path.join(ROOT, 'supabase/migrations/20260715060000_moderation_normalize_parity.sql'),
-    'utf8',
-  );
+  // Same resolved definition the term-list assertion reads — a migration that
+  // redefines the function must carry the normalization forward with it.
+  const parity = backstop.sql;
+  const where = backstop.file;
 
   // 1. NFKC fold — a fullwidth-character variant of a known blocked term must be
   //    caught by the shared client filter (fullwidth 'cocaine').
@@ -68,6 +95,9 @@ describe('moderation normalization stays in sync (client filter vs DB backstop)'
     const fullwidth = 'ｃｏｃａｉｎｅ'; // U+FF43 U+FF4F ... → 'cocaine' under NFKC
     expect(fullwidth.normalize('NFKC').toLowerCase()).toBe('cocaine');
     expect(findProhibited(fullwidth)).toBe('cocaine');
+  });
+  test('DB backstop NFKC-folds and lowercases like the client', () => {
+    expect(`${where}: ${/lower\(normalize\(/.test(parity)}`).toBe(`${where}: true`);
   });
 
   // 2. Zero-width strip — U+200B/200C/200D/FEFF interleaved into a blocked term must
@@ -80,7 +110,7 @@ describe('moderation normalization stays in sync (client filter vs DB backstop)'
   test('DB backstop strips the same four zero-width codepoints (U+200B/200C/200D/FEFF)', () => {
     // The migration strips them via translate(low, chr(8203)||chr(8204)||chr(8205)||chr(65279), '').
     for (const cp of [8203, 8204, 8205, 65279]) {
-      expect(parity).toContain(`chr(${cp})`);
+      expect(`${where}: chr(${cp}) ${parity.includes(`chr(${cp})`)}`).toBe(`${where}: chr(${cp}) true`);
     }
   });
 
@@ -90,7 +120,7 @@ describe('moderation normalization stays in sync (client filter vs DB backstop)'
     expect(findProhibited('o-n-l-y-f-a-n-s')).toBe('onlyfans');
   });
   test('DB backstop strips the same in-word separators', () => {
-    expect(parity).toContain("translate(low, '._*-', '')");
+    expect(`${where}: ${parity.includes("translate(low, '._*-', '')")}`).toBe(`${where}: true`);
   });
 
   // 4. Leet fold — the digit/symbol → letter mapping must be identical in both, and
@@ -102,6 +132,6 @@ describe('moderation normalization stays in sync (client filter vs DB backstop)'
   test('DB backstop leet fold maps the same digits/symbols to the same letters', () => {
     // Client LEET_MAP: 0→o 1→i 3→e 4→a 5→s 7→t 8→b @→a $→s.
     // DB: translate(low, '0134578@$', 'oieastbas') — same from/to ordering.
-    expect(parity).toContain("translate(low, '0134578@$', 'oieastbas')");
+    expect(`${where}: ${parity.includes("translate(low, '0134578@$', 'oieastbas')")}`).toBe(`${where}: true`);
   });
 });
