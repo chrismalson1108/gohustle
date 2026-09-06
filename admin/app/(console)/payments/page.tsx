@@ -2,10 +2,14 @@ import Link from "next/link";
 import { requireAdminPage } from "@/lib/guard";
 import { fmtCents, fmtDate } from "@/lib/format";
 import { Section, Pill, statusTone } from "@/lib/ui";
+import { capturedCents, netCollectedCents, refundedCents } from "@/lib/money";
 import { STRIPE_DASHBOARD_BASE as STRIPE_BASE } from "@/lib/config";
 import { auditRead } from "@/lib/audit";
 
 export const metadata = { title: "Payments & disputes" };
+
+// Not a value payments.status can ever hold — see the filter branch below.
+const REFUNDED_FILTER = "refunded";
 
 export default async function PaymentsPage({
   searchParams,
@@ -18,10 +22,20 @@ export default async function PaymentsPage({
 
   let payQ = ctx.service
     .from("payments")
-    .select("id, booking_id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, fee_bps, status, captured_at, created_at")
+    // refunded_cents/refunded_at/refund_reason are not decoration. A refund never
+    // moves `status` (see @/lib/money), so without them a charge that was handed
+    // back in full renders here as a live `captured` collection for the full amount.
+    .select(
+      "id, booking_id, payment_intent_id, amount_cents, fee_cents, earner_amount_cents, fee_bps, status, captured_at, created_at, refunded_cents, refunded_at, refund_reason",
+    )
     .order("created_at", { ascending: false })
     .limit(60);
-  if (statusFilter) payQ = payQ.eq("status", statusFilter);
+  // "refunded" is a PSEUDO-status. payments.status is CHECK-constrained to
+  // authorized/captured/cancelled/failed, so a refund is only ever visible as a
+  // non-zero refunded_cents — filtering it with .eq("status", …) would match nothing
+  // and quietly report "no refunds".
+  if (statusFilter === REFUNDED_FILTER) payQ = payQ.gt("refunded_cents", 0);
+  else if (statusFilter) payQ = payQ.eq("status", statusFilter);
 
   const [disputesRes, paymentsRes, payoutsRes] = await Promise.all([
     ctx.service
@@ -66,7 +80,7 @@ export default async function PaymentsPage({
     : [];
   const userById = new Map(payoutUsers.map((u) => [u.id, u]));
 
-  const STATUSES = ["", "authorized", "captured", "cancelled", "failed"];
+  const FILTERS = ["", "authorized", "captured", "cancelled", "failed", REFUNDED_FILTER];
 
   return (
     <div className="space-y-6">
@@ -184,7 +198,7 @@ export default async function PaymentsPage({
         title={`Payments (${paymentsRes.data?.length ?? 0})`}
         right={
           <div className="flex gap-1 text-xs">
-            {STATUSES.map((s) => (
+            {FILTERS.map((s) => (
               <Link
                 key={s || "all"}
                 href={s ? `/payments?status=${s}` : "/payments"}
@@ -209,7 +223,11 @@ export default async function PaymentsPage({
                     less than that — as little as half — so labelling it "Charged"
                     overstated what was actually collected, by up to 2x. */}
                 <th className="py-1 pr-4">Authorized</th>
+                {/* Net of refunds. A refund leaves `status` on 'captured', so a
+                    charge handed back in full used to sit here as a green
+                    `captured` pill showing the whole amount as collected. */}
                 <th className="py-1 pr-4">Captured</th>
+                <th className="py-1 pr-4">Refunded</th>
                 <th className="py-1 pr-4">Fee</th>
                 {/* The rate PINNED to each booking, not today's. It cannot be
                     derived from the row: fee ÷ authorized renders bps × pct on a
@@ -227,6 +245,7 @@ export default async function PaymentsPage({
               {(paymentsRes.data ?? []).map((p) => {
                 const b = bookingById.get(p.booking_id);
                 const job = b ? jobById.get(b.job_id) : null;
+                const refunded = refundedCents(p);
                 return (
                   <tr key={p.id} className="border-t border-[var(--line)]">
                     <td className="py-2 pr-4">
@@ -234,17 +253,52 @@ export default async function PaymentsPage({
                         {job?.title ?? p.booking_id.slice(0, 8)}
                       </Link>
                     </td>
-                    <td className="py-2 pr-4"><Pill tone={statusTone(p.status)}>{p.status}</Pill></td>
+                    <td className="py-2 pr-4">
+                      <Pill tone={statusTone(p.status)}>{p.status}</Pill>
+                      {refunded > 0 && (
+                        <span className="ml-1 inline-block align-middle">
+                          <Pill tone="red">
+                            {refunded >= capturedCents(p) ? "refunded" : "part refunded"}
+                          </Pill>
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 pr-4">{fmtCents(p.amount_cents)}</td>
                     {/* Actually collected. stripe-capture-payment documents the
                         captured total as earner_amount_cents + fee_cents (amount_cents
                         stays at the original authorization), so this is the honest
                         figure for a partial capture. Only meaningful once captured. */}
                     <td className="py-2 pr-4">
-                      {p.status === "captured"
-                        ? fmtCents((p.earner_amount_cents ?? 0) + (p.fee_cents ?? 0))
-                        : "—"}
+                      {p.status === "captured" ? (
+                        refunded > 0 ? (
+                          <>
+                            <span>{fmtCents(netCollectedCents(p))}</span>
+                            <span className="block text-xs text-[var(--muted)]">
+                              {fmtCents(capturedCents(p))} less refund
+                            </span>
+                          </>
+                        ) : (
+                          fmtCents(capturedCents(p))
+                        )
+                      ) : (
+                        "—"
+                      )}
                     </td>
+                    <td className="py-2 pr-4">
+                      {refunded > 0 ? (
+                        <span className="text-[var(--danger)]" title={p.refund_reason ?? ""}>
+                          {fmtCents(refunded)}
+                          {p.refunded_at ? (
+                            <span className="block text-xs text-[var(--muted)]">{fmtDate(p.refunded_at)}</span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="text-[var(--muted)]">—</span>
+                      )}
+                    </td>
+                    {/* Unchanged on a refund: fee_cents is what was captured, and
+                        record_refund does not rewrite it. The Refunded column is
+                        where the reversal shows. */}
                     <td className="py-2 pr-4">{fmtCents(p.fee_cents)}</td>
                     <td className="py-2 pr-4">
                       {p.fee_bps == null
