@@ -412,6 +412,16 @@ rate limiting and staging.
   the prompt does not name every tab as the app names it, or cannot point at
   Transactions, bank-deposit timing, Tax Center, Support, two-factor, escrow and who
   pays the fee. **Adding a user-facing feature means adding it to `MUST_KNOW` there.**
+- ⚠️ **Two clients, two "where to find it" blocks.** The request body carries
+  `client: 'web' | 'mobile'` (anything else, including an older app build that sends
+  nothing, is treated as the app) and the prompt swaps `PLACES_MOBILE` for `PLACES_WEB`.
+  This exists because ONE block, written for the phone, was served to gohustlr.com as
+  well: "You → Payments & payouts → Transactions" and "Messages → GoHustlr Support"
+  name screens the website does not have, so the prompt's own "never invent a screen"
+  rule was broken on one of the two surfaces. The parity suite runs every `MUST_KNOW`
+  check against BOTH blocks, checks each `Settings → …` row it names against that
+  client's own Settings rows, and fails if the web block hands out an app-only screen.
+  **When the website gains one of the app-only screens, move it out of the web block.**
 
 ## Edge functions (`supabase/functions/`) — 32, each deployed by hand
 

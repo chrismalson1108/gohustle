@@ -73,7 +73,25 @@ describe('push deep-links still point at real tabs', () => {
 describe('Hustlr AI knows what the app actually looks like', () => {
   const app = read('App.js');
   const assistant = read('supabase/functions/assistant/index.ts');
-  const prompt = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+  const shared = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+
+  // ONE function, TWO clients, and they do not have the same screens. Both POST the
+  // same body, so the prompt used to hard-code the phone's navigation for everyone —
+  // "You → Payments & payouts → Transactions" and "Messages → GoHustlr Support" name
+  // screens gohustlr.com does not have. The prompt now carries a per-client block and
+  // the caller says which surface it is; every check below runs against BOTH of the
+  // prompts a real user can be served, not just the phone's.
+  const placesBlock = (name) => {
+    const m = assistant.match(new RegExp('const ' + name + ' = `([\\s\\S]*?)`;'));
+    if (!m) throw new Error(`${name} is missing from supabase/functions/assistant/index.ts`);
+    return m[1];
+  };
+  const PLACES = { mobile: placesBlock('PLACES_MOBILE'), web: placesBlock('PLACES_WEB') };
+  const CLIENTS = ['mobile', 'web'];
+  // The template interpolates ${places}; put each block back to get the prompt that
+  // client is actually served. Function replacement, so a $ in the block is literal.
+  const promptFor = (c) => shared.replace('${places}', () => PLACES[c]);
+  const prompt = promptFor('mobile');
 
   const labels = [...app.matchAll(/<Tab\.Screen\s+name="[A-Za-z]+"\s+component=\{\w+\}\s+options=\{\{ title: '([^']+)'/g)]
     .map((m) => m[1]);
@@ -88,6 +106,60 @@ describe('Hustlr AI knows what the app actually looks like', () => {
       // about, so the assistant sends people to a tab that is not called that.
       expect(`${label}: ${prompt.includes(label) ? 'known' : 'MISSING FROM PROMPT'}`)
         .toBe(`${label}: known`);
+    });
+  });
+
+  // ── The assistant can tell the two clients apart at all ───────────────────
+  // Without this the per-client block is decoration: the server would still send
+  // every user the same directions.
+  describe('is told which client is asking', () => {
+    it('reads a client field off the request and passes it to the prompt', () => {
+      const code = codeOnly(assistant);
+      expect(code).toMatch(/client\?:\s*string/);
+      expect(code).toMatch(/body\.client === 'web'/);
+      expect(code).toMatch(/buildSystemPrompt\(user\.id, profile \?\? \{\}, client\)/);
+    });
+
+    it('the app says it is the app', () => {
+      expect(codeOnly(read('src/lib/assistantClient.js'))).toMatch(/client:\s*'mobile'/);
+    });
+
+    it('the website says it is the website', () => {
+      expect(codeOnly(read('web/lib/assistant.ts'))).toMatch(/client:\s*"web"/);
+    });
+  });
+
+  // ── A named Settings row has to be a row that client HAS ──────────────────
+  // This is the check that would have caught the original defect: the one prompt
+  // told website users to open "Settings → Security", which on the website is
+  // titled "Two-factor authentication".
+  const rowTitles = (src) => [...src.matchAll(/title:\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  const SETTINGS_ROWS = {
+    mobile: rowTitles(read('src/screens/SettingsScreen.js')),
+    web: rowTitles(read('web/app/(app)/settings/page.tsx')),
+  };
+
+  CLIENTS.forEach((c) => {
+    it(`every "Settings → …" row the ${c} prompt names exists in ${c} Settings`, () => {
+      const named = [...PLACES[c].matchAll(/Settings → ([^,.;\n·]+)/g)].map((m) => m[1].trim());
+      expect(named.length).toBeGreaterThan(0);
+      const invented = named.filter((t) => !SETTINGS_ROWS[c].includes(t));
+      expect(`${c} names rows that do not exist: ${invented.join(', ') || 'none'}`)
+        .toBe(`${c} names rows that do not exist: none`);
+    });
+  });
+
+  // ── The website block must not hand out app-only screens ──────────────────
+  // Both of these are real screens — on a phone. On gohustlr.com they are nowhere,
+  // and a user told to open one concludes the feature is broken.
+  const APP_ONLY = [
+    ['the Transactions ledger screen', /→ Transactions/],
+    ['the in-app Support conversation', /Messages → GoHustlr Support/],
+  ];
+  APP_ONLY.forEach(([what, re]) => {
+    it(`does not send website users to ${what}`, () => {
+      expect(`${what}: ${re.test(PLACES.web) ? 'POINTS AT A SCREEN THE WEBSITE LACKS' : 'ok'}`)
+        .toBe(`${what}: ok`);
     });
   });
 
@@ -110,10 +182,14 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     ['where stored memories live', /Hustlr AI remembers|Settings → What/i],
   ];
 
-  MUST_KNOW.forEach(([what, re]) => {
-    it(`can point someone at ${what}`, () => {
-      expect(`${what}: ${re.test(prompt) ? 'known' : 'MISSING FROM PROMPT'}`)
-        .toBe(`${what}: known`);
+  // Run against BOTH prompts. A destination the website answers differently still
+  // has to be answered — "it is in the phone app" is an answer; silence is not.
+  CLIENTS.forEach((c) => {
+    MUST_KNOW.forEach(([what, re]) => {
+      it(`can point a ${c} user at ${what}`, () => {
+        expect(`${c}/${what}: ${re.test(promptFor(c)) ? 'known' : 'MISSING FROM PROMPT'}`)
+          .toBe(`${c}/${what}: known`);
+      });
     });
   });
 

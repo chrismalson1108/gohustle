@@ -111,6 +111,11 @@ const MODELS = {
 };
 const MAX_TOOL_ITERATIONS = 8;
 
+// Which app the person is talking to. GoHustlr ships two clients against this one
+// function and they do NOT have the same screens, so "where do I find X" has two
+// different right answers — see PLACES_MOBILE / PLACES_WEB below.
+type ClientSurface = 'web' | 'mobile';
+
 // The gig taxonomy is open-ended now (public.categories: ~200 seeded categories plus
 // whatever users create), and this file cannot import shared/categories.js — it runs on
 // Deno with no bundler, the same reason findProhibited and maskLocation below are
@@ -247,7 +252,14 @@ Deno.serve(async (req: Request) => {
       // Set by the CLIENT when the user taps a confirmation card. Handled below,
       // before any model call.
       confirm_action_id?: string;
+      // Which surface is asking. Both clients POST the same body, so without this the
+      // one system prompt had to hard-code ONE app's navigation — and it hard-coded
+      // the phone's, sending website users to screens the website does not have. Any
+      // value other than 'web' (including an older mobile build that sends nothing)
+      // is treated as the app, which is what those builds actually are.
+      client?: string;
     };
+    const client: ClientSurface = body.client === 'web' ? 'web' : 'mobile';
     // ── CONFIRM PATH ──────────────────────────────────────────────────────────
     // A human tapped a confirmation card. This runs BEFORE the model is involved and
     // never calls it: the action executes from the payload stored at stage time, so
@@ -364,7 +376,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const { data: profile } = await sb.rpc('my_profile'); // owner's full row (private cols revoked from direct reads)
-    const system = buildSystemPrompt(user.id, profile ?? {});
+    const system = buildSystemPrompt(user.id, profile ?? {}, client);
     // Cache the large, stable tools+system prefix. A cache_control breakpoint on
     // the system block also covers the tool definitions that render before it, so
     // every loop iteration (and every follow-up turn within ~5 min) reuses it at
@@ -1795,7 +1807,30 @@ function pickModel(history: Array<{ role: string; content: string }>): string {
   return complex ? MODELS.smart : MODELS.balanced;
 }
 
-function buildSystemPrompt(userId: string, profile: Json): string {
+// ── Where things live, PER CLIENT ───────────────────────────────────────────
+// The two clients share this function, these tools and every rule above — but not
+// their screens. Until 2026-09-06 there was one block here, written for the phone,
+// and the website got it verbatim: "You → Payments & payouts → Transactions" and
+// "Messages → GoHustlr Support" name screens gohustlr.com does not have, so the
+// prompt's own "never invent a screen" rule was being broken on one of the two
+// surfaces it serves. Keep both blocks answering the SAME questions — the parity
+// suite runs every MUST_KNOW check against each of them separately, and checks that
+// each "Settings → …" row it names is a row that client's Settings actually has.
+const PLACES_MOBILE = `- Places people ask about, so you can point them straight there:
+  · Money in and out — You → Payments & payouts → Transactions. Every charge, fee, refund, tip and escrow hold, filterable by date and status, exportable as CSV.
+  · When money reaches their bank — the Bank deposits list on that same screen, with real arrival dates. Releasing a gig moves money to their payout account; their bank deposit follows on Stripe's schedule, so "released" and "in my bank" are different moments and it is worth saying so.
+  · Taxes — You → Tax Center: expenses, mileage, cash income, and a year-end summary.
+  · A human — Messages → GoHustlr Support, or Settings → Contact support. Real people answer, they can attach photos, and a reply reopens a resolved conversation. If someone is upset, out of pocket, or describing something unsafe, offer this early rather than trying to solve it yourself.
+  · Two-factor authentication — Settings → Security. Worth mentioning if they ask about account safety or have just connected a bank; it also produces recovery codes they should save.`;
+
+const PLACES_WEB = `- They are using GoHustlr on the WEBSITE (gohustlr.com) in a browser, not the phone app. The website has the same tabs and most of the same screens, but not all of them — never send them somewhere only the app has. Places people ask about:
+  · Money in and out — the itemised ledger (every charge, fee, refund, tip and escrow hold, with CSV export) is the Transactions screen in the GoHustlr phone app; the website does not have it yet. On the website, You → Payments & payouts is where they connect a bank to get paid and manage the card they pay with, and You → Tax Center totals what they have earned. Say plainly that the itemised list is app-only rather than sending them hunting for it here.
+  · When money reaches their bank — releasing a gig moves money to their payout account; their bank deposit follows on Stripe's schedule, so "released" and "in my bank" are different moments and it is worth saying so. The dated list of deposits is one of the app-only screens.
+  · Taxes — You → Tax Center: expenses, cash income, and a year-end summary.
+  · A human — Settings → Contact support, which opens a message to the support team; the gohustlr.com/contact page does the same thing. Real people answer. The two-way support conversation with photo attachments is in the phone app. If someone is upset, out of pocket, or describing something unsafe, offer this early rather than trying to solve it yourself.
+  · Two-factor authentication — Settings → Two-factor authentication. Worth mentioning if they ask about account safety or have just connected a bank; it also produces recovery codes they should save.`;
+
+function buildSystemPrompt(userId: string, profile: Json, client: ClientSurface = 'mobile'): string {
   const name = (profile.name as string) || 'there';
   const role = (profile.role as string) || 'earner';
   const skills = Array.isArray(profile.skills) ? (profile.skills as string[]).join(', ') : 'none set';
@@ -1810,6 +1845,7 @@ function buildSystemPrompt(userId: string, profile: Json): string {
     ? `\n\nThings you remember about ${name} from past chats (use them to be a better coach):\n${memory.map((m) => `- ${m}`).join('\n')}`
     : '';
   const today = new Date().toISOString().slice(0, 10);
+  const places = client === 'web' ? PLACES_WEB : PLACES_MOBILE;
 
   return `You are **Hustlr AI**, the built-in assistant for GoHustlr — a gig marketplace built for college students.
 
@@ -1820,12 +1856,7 @@ How GoHustlr works:
 - The platform fee comes out of the EARNER's payout — it is not added to what the poster pays — and the rate is fixed per booking when it is made, so an older booking keeps the rate it was struck at. Never quote a fee percentage from memory; the tools that report money already use the right one.
 - Tips, and partial refunds when something goes wrong, both exist and are settled through the same escrow.
 - The tabs are Browse (find gigs), My Jobs (work you booked), Hire (gigs you posted), Messages, and You (stats, XP levels, badges). They are named exactly that — do not call them "Hiring" or "Profile".
-- Places people ask about, so you can point them straight there:
-  · Money in and out — You → Payments & payouts → Transactions. Every charge, fee, refund, tip and escrow hold, filterable by date and status, exportable as CSV.
-  · When money reaches their bank — the Bank deposits list on that same screen, with real arrival dates. Releasing a gig moves money to their payout account; their bank deposit follows on Stripe's schedule, so "released" and "in my bank" are different moments and it is worth saying so.
-  · Taxes — You → Tax Center: expenses, mileage, cash income, and a year-end summary.
-  · A human — Messages → GoHustlr Support, or Settings → Contact support. Real people answer, they can attach photos, and a reply reopens a resolved conversation. If someone is upset, out of pocket, or describing something unsafe, offer this early rather than trying to solve it yourself.
-  · Two-factor authentication — Settings → Security. Worth mentioning if they ask about account safety or have just connected a bank; it also produces recovery codes they should save.
+${places}
 - Never invent a screen, a setting or a policy. If you are not certain the app does something, say you are not sure and point them at Support rather than guessing — a confident wrong answer about money is worse than no answer.
 
 The signed-in user:
