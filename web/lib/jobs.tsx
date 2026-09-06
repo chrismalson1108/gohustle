@@ -82,12 +82,16 @@ const JOB_MINI_BASE = "id, title, pay, pay_type, estimated_hours, location, cate
 // Cancellation-fee policy (record/display only — NO money moves). 15% of the
 // booking's effective pay (counterOffer ?? job pay; hourly is multiplied by
 // estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
-// transformJob row from state.jobs (carries payType + estimatedHours); booking.job
-// is a thin embed and may lack estimatedHours.
+// transformJob row from state.jobs (carries payType + estimatedHours).
+//
+// `hours` falls back to the booking's own job EMBED, which transformBooking maps for
+// exactly this reason. Reading it only from `fullJob` meant that whenever no full row
+// was available, payType still resolved to 'hourly' from the embed while hours
+// collapsed to 1, valuing the booking at its hourly RATE.
 export function computeEffectivePay(booking: Booking, fullJob?: Job): number {
   const payType = fullJob?.payType ?? booking?.job?.payType;
   const basePay = booking?.counterOffer ?? Number(fullJob?.pay ?? booking?.job?.pay ?? 0);
-  const hours = Number(fullJob?.estimatedHours) || 1;
+  const hours = Number(fullJob?.estimatedHours ?? booking?.job?.estimatedHours) || 1;
   const effective = payType === "hourly" ? basePay * hours : basePay;
   return Number.isFinite(effective) ? effective : 0;
 }

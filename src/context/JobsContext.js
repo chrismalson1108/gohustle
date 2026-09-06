@@ -38,12 +38,17 @@ const LEGACY_BOOKINGS_CACHE = 'bookings_v1';
 // ─── Cancellation-fee policy (record/display only — NO money moves) ──────────
 // 15% of the booking's effective pay (counterOffer ?? job pay; hourly is multiplied
 // by estimated hours), floored at $5, rounded to a whole dollar. `fullJob` is the
-// transformJob row from state.jobs (carries payType + estimatedHours); booking.job
-// is a thin embed and may lack estimatedHours.
+// transformJob row from state.jobs (carries payType + estimatedHours).
+//
+// `hours` falls back to the booking's own job EMBED, which transformBooking now maps
+// for exactly this reason. Reading it only from `fullJob` meant that whenever no full
+// row was available — a finished gig that has aged out of the browse feed, or a caller
+// that passes none at all — payType still resolved to 'hourly' from the embed while
+// hours collapsed to 1, and the booking was valued at its hourly RATE.
 export function computeEffectivePay(booking, fullJob) {
   const payType = fullJob?.payType ?? booking?.job?.payType;
   const basePay = booking?.counterOffer ?? Number(fullJob?.pay ?? booking?.job?.pay) ?? 0;
-  const hours = Number(fullJob?.estimatedHours) || 1;
+  const hours = Number(fullJob?.estimatedHours ?? booking?.job?.estimatedHours) || 1;
   const effective = payType === 'hourly' ? basePay * hours : basePay;
   return Number.isFinite(effective) ? effective : 0;
 }

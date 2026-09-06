@@ -71,15 +71,27 @@ function findProhibited(text: string | null | undefined): string | null {
 // Context-aware moderation PARITY with the manual write paths. PostJob/Settings run
 // TWO layers: the keyword filter findProhibited AND the moderate-text edge function
 // (a Claude classifier that catches harassment/threats/grooming/scams and banned
-// INTENT phrased in clean words the keyword list can't). The assistant's create_gig
-// and update_profile must run the SAME second layer or "ask Hustlr AI to post…"
-// becomes a way around it. Calls moderate-text with the caller's own JWT; FAILS OPEN
-// on any error/timeout, exactly like the client wrapper (src/lib/moderation.js), so a
-// provider hiccup never wedges posting — the keyword filter + DB trigger remain the
-// hard backstop.
-async function moderateViaEdge(token: string, text: string, surface: string): Promise<boolean> {
+// INTENT phrased in clean words the keyword list can't). The assistant's create_gig,
+// update_profile and remember must run the SAME second layer or "ask Hustlr AI to
+// post…" becomes a way around it. Calls moderate-text with the caller's own JWT.
+//
+// FAILS OPEN on a provider outage or timeout — a moderation hiccup must never wedge
+// posting, and the keyword filter + DB trigger remain the hard backstop. It FAILS
+// CLOSED on a 429, which is a different animal and used to be treated as the same
+// one: this returned true for any !res.ok, and moderate-text's quota is PER USER and
+// shared between a caller's direct calls and the ones the assistant forwards on their
+// behalf. So twenty junk moderate-text calls in a minute disabled this layer for
+// everything the assistant would write for that user in that minute — a self-service
+// kill switch for the exact control that catches clean-worded scams and grooming,
+// including the `remember` text that is replayed into every future system prompt.
+// Rate limiting a safety control must not disable it. src/lib/moderation.js was fixed
+// for this same reasoning; the comment here still claimed to mirror it while doing the
+// opposite.
+type ModerationVerdict = { allowed: boolean; rateLimited?: boolean };
+
+async function moderateViaEdge(token: string, text: string, surface: string): Promise<ModerationVerdict> {
   const clean = String(text ?? '').trim();
-  if (!clean) return true;
+  if (!clean) return { allowed: true };
   try {
     const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/moderate-text`, {
       method: 'POST',
@@ -91,13 +103,25 @@ async function moderateViaEdge(token: string, text: string, surface: string): Pr
       body: JSON.stringify({ text: clean, surface }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return true; // fail open (mirror the client wrapper)
-    const data = await res.json().catch(() => ({}));
-    return (data as { allowed?: boolean })?.allowed !== false;
+    const data = (await res.json().catch(() => ({}))) as { allowed?: boolean; error?: string };
+    // Self-inflicted quota exhaustion — the caller's own, since the JWT is theirs.
+    // Both shapes checked: the status, and the body marker moderate-text sends with it.
+    if (res.status === 429 || data?.error === 'rate_limited') {
+      return { allowed: false, rateLimited: true };
+    }
+    if (!res.ok) return { allowed: true }; // fail open on a 5xx / gateway failure
+    return { allowed: data?.allowed !== false };
   } catch {
-    return true; // fail open on network/timeout
+    return { allowed: true }; // fail open on network/timeout
   }
 }
+
+// A blocked-for-quota answer must not accuse the user of writing something banned —
+// they did not, and telling them so sends them rewriting clean text forever.
+const RATE_LIMITED_REPLY = JSON.stringify({
+  error: 'rate_limited',
+  message: "I couldn't run the safety check on that — we've checked too many things in the last minute. Give it a minute and ask me again.",
+});
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 // Model routing — use the cheapest model that still nails the task (the owner
@@ -920,7 +944,9 @@ async function createGig(sb: SupabaseClient, userId: string, input: Json, action
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
   // Layer 2: context-aware moderate-text (catches clean-worded harassment/scam/etc).
-  if (!(await moderateViaEdge(token, `${title}\n${description}`, 'gig'))) {
+  const gigVerdict = await moderateViaEdge(token, `${title}\n${description}`, 'gig');
+  if (gigVerdict.rateLimited) return RATE_LIMITED_REPLY;
+  if (!gigVerdict.allowed) {
     return JSON.stringify({ error: 'prohibited_content', message: "That gig contains content that isn't allowed on GoHustlr, so I can't post it." });
   }
   // ONE staged confirmation per request. This counted 'gig_created' actions until the
@@ -1364,8 +1390,12 @@ async function updateProfile(sb: SupabaseClient, userId: string, input: Json, ac
   if (badProfile) {
     return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
   }
-  if (profileText.trim() && !(await moderateViaEdge(token, profileText, 'bio'))) {
-    return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+  if (profileText.trim()) {
+    const profileVerdict = await moderateViaEdge(token, profileText, 'bio');
+    if (profileVerdict.rateLimited) return RATE_LIMITED_REPLY;
+    if (!profileVerdict.allowed) {
+      return JSON.stringify({ error: 'prohibited_content', message: "That profile text contains content that isn't allowed, so I didn't save it." });
+    }
   }
 
   // Try the full patch; if a suite column doesn't exist yet (42703), fall back to
@@ -1597,8 +1627,12 @@ async function remember(sb: SupabaseClient, userId: string, input: Json, actions
   if (findProhibited(fact)) {
     return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
   }
-  // Layer 2: context-aware moderate-text (fails open, exactly as the other two do).
-  if (!(await moderateViaEdge(token, fact, 'note'))) {
+  // Layer 2: context-aware moderate-text (fails open on an outage, closed on a 429,
+  // exactly as the other two do). This is the surface that needs the 429 branch most:
+  // a remembered fact outlives the conversation that produced it.
+  const noteVerdict = await moderateViaEdge(token, fact, 'note');
+  if (noteVerdict.rateLimited) return RATE_LIMITED_REPLY;
+  if (!noteVerdict.allowed) {
     return JSON.stringify({ error: 'prohibited_content', message: "I can't save that as a note about you." });
   }
   const { data: profile } = await sb.rpc('my_profile');

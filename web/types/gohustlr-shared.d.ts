@@ -290,6 +290,12 @@ declare module "@gohustlr/shared" {
   export function isAdult(dob: string | Date | null | undefined, now?: Date): boolean;
 
   // ── taxFormat ──
+  // Today (or a given Date) in the VIEWER's time zone as YYYY-MM-DD — never the UTC
+  // date, which is already tomorrow for most of the US every evening.
+  // Overloaded because the no-argument call cannot fail: `new Date()` is always a
+  // valid date, and making every caller null-check today's date would be noise.
+  export function localDateISO(): string;
+  export function localDateISO(dt: Date | string | number): string | null;
   export const EXPENSE_CATEGORIES: { id: string; label: string; ion: string }[];
   export const INCOME_SOURCES: { id: string; label: string; ion: string }[];
   export function categoryMeta(id: string): { id: string; label: string; ion: string };
@@ -298,9 +304,20 @@ declare module "@gohustlr/shared" {
   export function buildTaxSummaryCSV(args: {
     year: number | string;
     stripeIncome: number;
+    // Card tips paid through the platform. Optional: they get their own CSV row and
+    // are not fee-bearing, so they cannot be folded into stripeIncome.
+    tipIncome?: number;
     income: Array<Record<string, unknown>>;
     expenses: Array<Record<string, unknown>>;
   }): string;
+  // Booking-shaped inputs stay structural here: the concrete Booking type lives in
+  // web/lib/types.ts and the shared package cannot import it.
+  export function bookingGrossDollars(booking: unknown, fullJob?: unknown): number;
+  export function platformIncomeForYear(args?: {
+    bookings?: unknown[] | null;
+    year: number | string;
+    jobById?: { get(id: string): unknown } | null;
+  }): { earnings: number; tips: number; total: number };
 
   // ── contentFilter ──
   export function findProhibited(text: string): string | null;
