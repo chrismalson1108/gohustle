@@ -521,7 +521,11 @@ It writes into the same `client_errors` table the console renders at `/errors`, 
 `platform='edge'` with the function name in `app_version`, and it never throws. Supabase's
 own function logs exist, but nobody watches them and they are not searchable next to the
 rest of the console — which is how "the poster pressed pay and it silently didn't work"
-stayed invisible until someone complained.
+stayed invisible until someone complained. **The sink is now watched on a schedule too**:
+until 20260906051000 its only readers were the `/errors` page and a dashboard tile, both
+of which run when a human opens them, so a rotated Stripe key on a Friday evening was
+found on Monday. `ctl_edge_errors_burst` pages when one edge function writes 3+ fatal or
+10+ total rows inside 90 minutes.
 
 **Money & escrow**
 
