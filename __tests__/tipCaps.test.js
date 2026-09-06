@@ -656,4 +656,50 @@ describe('a refunded tip actually reaches the reversal', () => {
     expect(after.slice(0, 700)).toMatch(/logServerError/);
     expect(after.slice(0, 700)).toMatch(/fatal:\s*true/);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // …and then STOPS. The tip branch used to fall through to the disputes insert.
+  //
+  // The skip logic below it reads the `payment` row, which is null for a tip, so
+  // neither `inFlight` nor `alreadyLedgered` could suppress anything — and the row it
+  // wrote carried the TIP's charge id in the machine template, on the GIG's booking.
+  // ctl_external_reversal_not_ledgered matches that template and joins disputes to
+  // payments on booking_id, so the gig's captured, never-refunded payment was reported
+  // as carrying an unledgered reversal, with a remedy ("Record chargeback") whose
+  // effect is to write refunded_cents onto a charge nobody refunded — misstating the
+  // poster's receipt and voiding any referral bonus sourced from that booking.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('the tip branch returns before anything can file a disputes row', () => {
+    const fn = code.slice(code.indexOf('async function recordReversal'));
+    const rpc = fn.indexOf('record_tip_reversal');
+    const insert = fn.search(/from\(['"]disputes['"]\)[\s\S]{0,80}?\.insert\(/);
+    expect(rpc).toBeGreaterThan(-1);
+    expect(insert).toBeGreaterThan(-1);
+
+    // The branch must hand back the tip's booking id — the caller still emails the
+    // admin with it — and it must do so before the insert is reachable.
+    const ret = fn.slice(rpc).search(/return\s+tip\.booking_id\s*;/);
+    expect(`tip branch returns its own booking id: ${ret > -1}`)
+      .toBe('tip branch returns its own booking id: true');
+    expect(rpc + ret).toBeLessThan(insert);
+
+    // And it must not ALSO assign into the shared bookingId, which is what carried
+    // execution onward into the dispute path.
+    const branch = fn.slice(rpc, rpc + ret);
+    expect(branch).not.toMatch(/bookingId\s*=\s*tip\.booking_id/);
+  });
+
+  it('the control that misread those rows still matches the machine template', () => {
+    // If this template ever stops matching, the paragraph above stops being the reason
+    // the tip row was harmful — and this test would be asserting nothing.
+    const ctl = fs3.readFileSync(
+      path3.join(__dirname, '..', 'supabase', 'migrations',
+        '20260814060000_reversal_reason_trust_and_ticket_photo_scope.sql'),
+      'utf8',
+    );
+    expect(ctl).toMatch(/Stripe refund on charge%/);
+    expect(ctl).toMatch(/join public\.payments p|from public\.payments p/);
+    const template = code.match(/Stripe refund on charge \$\{[^}]+\}/);
+    expect(template).toBeTruthy();
+  });
 });

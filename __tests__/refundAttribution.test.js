@@ -143,6 +143,43 @@ describe('the reversal control does not instruct an operator into a second refun
     // 20260813160000.
     expect(remedy).not.toMatch(/Record chargeback \(or Refund\), so record_refund writes refunded_cents and debits the earner/);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // …and it does not aim that remedy at a reversed TIP.
+  //
+  // stripe-webhook's tip fallback used to fall through and file a disputes row carrying
+  // the TIP's charge id, in this control's exact template, on the GIG's booking. The
+  // control then reported the gig's captured, never-refunded payment as unledgered and
+  // printed "Record chargeback" — which writes refunded_cents onto a charge nobody
+  // refunded, misstating the poster's receipt and making vest_bonuses void any referral
+  // bonus sourced from that booking. The writer is fixed; rows written before that are
+  // indistinguishable by shape (the reason carries a charge/dispute id, payments stores
+  // the PaymentIntent id), so the control still REPORTS them — a suppressed reversal is
+  // the worse failure — and changes only what it tells the operator to do.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('names the reversed-tip case and withholds the destructive instruction there', () => {
+    const sql = latestDefining('ctl_external_reversal_not_ledgered');
+    expect(sql).toMatch(/tip_ledger/);
+    expect(sql).toMatch(/LIKELY A REVERSED TIP/);
+    const tipArm = sql.slice(sql.indexOf('LIKELY A REVERSED TIP'));
+    const arm = tipArm.slice(0, tipArm.indexOf('end'));
+    expect(arm).toMatch(/Do NOT press Record chargeback/);
+    // The imperative itself must be absent from this arm, not merely caveated.
+    expect(arm).not.toMatch(/Use admin console -> booking -> Record chargeback/);
+  });
+
+  it('the tip hint changes the wording only — never which rows are returned', () => {
+    // A heuristic that SUPPRESSED would trade a false positive for a false negative on a
+    // money control. tip_ledger may appear in the projection and in a hint CTE, and must
+    // not appear in the WHERE that selects findings.
+    const sql = latestDefining('ctl_external_reversal_not_ledgered');
+    const from = sql.lastIndexOf('where p.status');
+    expect(from).toBeGreaterThan(-1);
+    // Bounded by the end of the function body — the probe below it stages tip rows on
+    // purpose and is not part of the predicate.
+    const where = sql.slice(from, sql.indexOf('$function$', from));
+    expect(where).not.toMatch(/tip/i);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
