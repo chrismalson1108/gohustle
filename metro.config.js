@@ -6,7 +6,7 @@
 // which stays watched.
 //
 // This matters concretely: admin/ pins react/react-dom 19.2.4 while the app is on
-// 19.1.0, so a stray resolution into admin/node_modules yields two Reacts and the
+// 19.2.0, so a stray resolution into admin/node_modules yields two Reacts and the
 // invalid-hook-call crash that is notoriously hard to trace back to here. admin/
 // was missing from this list until 2026-08-06.
 const { getDefaultConfig } = require('expo/metro-config');

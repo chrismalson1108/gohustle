@@ -10,8 +10,8 @@ Built with Expo (React Native) targeting iOS and Android, with a web preview ava
 
 | Layer | Technology |
 |---|---|
-| Framework | Expo SDK 54 / React Native 0.81.5 |
-| Language | JavaScript (React 19.1.0) |
+| Framework | Expo SDK 55 / React Native 0.83.10 |
+| Language | JavaScript (React 19.2.0) |
 | Navigation | React Navigation v7 (bottom-tabs + native-stack) |
 | State | React Context + useReducer |
 | Backend | Supabase (PostgreSQL, Auth, Realtime, RLS) |
@@ -27,7 +27,7 @@ Built with Expo (React Native) targeting iOS and Android, with a web preview ava
 - **Node.js** v18 or higher — [nodejs.org](https://nodejs.org)
 - **npm** v9 or higher (comes with Node)
 - **Expo Go** app on your phone — install from the [App Store](https://apps.apple.com/app/expo-go/id982107779) or [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-  - Must be the **SDK 54** build. If you have an older version, update it from the store.
+  - Must be the **SDK 55** build. If you have an older version, update it from the store.
 
 ### 1. Clone the repo
 
