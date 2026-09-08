@@ -42,7 +42,15 @@ function liveBody(fnName) {
   let body = null;
   for (const f of files) {
     const src = fs.readFileSync(path.join(MIGRATIONS, f), 'utf8');
-    const re = new RegExp(`create or replace function public\\.${fnName}\\s*\\(([\\s\\S]*?)\\n\\$\\$;`, 'g');
+    // ⚠️ BOTH dollar-quote spellings. This matched only `$$;` until 2026-09-08, so a
+    // function redefined with the `$function$` delimiter — which is what `pg_get_functiondef`
+    // emits, and therefore what anyone copying a live body writes — was invisible here and
+    // the helper silently returned an OLDER definition. A drift guard that reads the wrong
+    // body is worse than none: it passes while asserting against history.
+    const re = new RegExp(
+      `create or replace function public\\.${fnName}\\s*\\(([\\s\\S]*?)\\n\\$(?:function)?\\$;`,
+      'g',
+    );
     const hits = [...src.matchAll(re)];
     if (hits.length) body = hits[hits.length - 1][0];
   }
@@ -575,5 +583,70 @@ describe('the proposed percentage the poster is told is the one on the record', 
     // hardcoded 48 is wrong on exactly the bookings with least runway.
     expect(`${_who} hardcodes 48 hours: ${/48 hours to reply/.test(toast)}`)
       .toBe(`${_who} hardcodes 48 hours: false`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Silence has to actually stand, and a payment RECORD is not an adjustment.
+//
+// Two holes, both found by driving respond_to_dispute against production on 2026-09-08.
+//
+// 1. A refund/chargeback record — the bare row stripe-webhook's recordReversal files,
+//    with no proposed_pct and no clock — was ANSWERABLE. The earner accepts it, branch 2
+//    reads `coalesce(d.proposed_pct, 100)` and returns ONE HUNDRED, and settle-disputes
+//    stamps pct_paid and resolved_at. The earner has just closed the row whose entire job
+//    was to block earner-claim-payment while the reversal is unexplained. Measured: due
+//    pct went NULL -> 100. 20260909040000 guarded branch 3 against exactly this shape;
+//    branch 2 never got the guard.
+//
+// 2. CLAUDE.md says "the earner said nothing past settle_after -> proposed_pct (SILENCE
+//    STANDS)". It did not. settle-disputes runs hourly, so between settle_after passing
+//    and the sweep firing there is up to 59 minutes in which the row is already DUE and
+//    nothing has captured it. Measured: window closed with due_pct 60, the earner
+//    contested inside the gap, due_pct became NULL. That is a strategy, not a tie — wait
+//    out the clock, then contest, and branch 4 pays 100% five days later.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a reply cannot retract a settlement the clock already decided', () => {
+  const rpc = liveBody('respond_to_dispute');
+  const settle = liveBody('dispute_settlement_pct');
+
+  it('both functions are resolvable', () => {
+    expect(rpc).toBeTruthy();
+    expect(settle).toBeTruthy();
+  });
+
+  it('respond_to_dispute refuses a row that carries no proposal', () => {
+    expect(codeOnly(rpc)).toMatch(/if d\.proposed_pct is null then\s*\n\s*raise exception/);
+  });
+
+  it('respond_to_dispute refuses a reply after the window closed', () => {
+    const code = codeOnly(rpc);
+    expect(code).toMatch(/d\.settle_after is not null and now\(\) >= d\.settle_after/);
+    // And it must be a REFUSAL, not a silent pin.
+    const branch = code.slice(code.indexOf('d.settle_after is not null and now()'));
+    expect(branch.slice(0, 400)).toMatch(/raise exception/);
+  });
+
+  it('the refusal names the percentage on the correct side of the sign', () => {
+    // `%%%` in a raise parses as literal-percent then placeholder, which rendered
+    // "paid at %60". Built by concatenation so a format parser cannot reorder it.
+    expect(codeOnly(rpc)).not.toMatch(/paid at %%%/);
+    expect(codeOnly(rpc)).toMatch(/proposed_pct, 100\)::text \|\| '%/);
+  });
+
+  it('dispute_settlement_pct refuses to price a row with no proposal', () => {
+    const code = codeOnly(settle);
+    const guardAt = code.indexOf('d.proposed_pct is null then return null');
+    const branch2At = code.indexOf("d.response_stance = 'accept'");
+    expect(`the no-proposal guard exists: ${guardAt > -1}`).toBe('the no-proposal guard exists: true');
+    // It must come BEFORE branch 2, or branch 2's coalesce still invents a 100.
+    expect(`guard precedes branch 2: ${guardAt < branch2At}`).toBe('guard precedes branch 2: true');
+  });
+
+  it('branch 2 no longer coalesces a missing proposal to 100', () => {
+    const code = codeOnly(settle);
+    const b2 = code.slice(code.indexOf("d.response_stance = 'accept'"), code.indexOf('responded_at is null'));
+    expect(`branch 2 still coalesces to 100: ${/coalesce\(d\.proposed_pct, 100\)/.test(b2)}`)
+      .toBe('branch 2 still coalesces to 100: false');
   });
 });
