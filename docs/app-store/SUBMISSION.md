@@ -8,7 +8,13 @@ reasoning), `TESTFLIGHT.md` (build + upload mechanics), `KNOWN_RISKS.md` (the ri
 register this cites), `BETA_QA_PLAN.md` (the manual passes to walk before shipping).
 
 Screenshots are in `docs/app-store/screenshots/`. Regenerate with
-`node scripts/app-store-screenshots/render.mjs`.
+`node scripts/app-store-screenshots/render.mjs`. Paste-ready copy, one plain file per
+field, is in `docs/app-store/listing/`.
+
+Driving the App Store Connect UI with a local browser agent instead of filling it in by
+hand? `COWORK_PROMPT.md` in this directory is the self-contained instruction set — same
+answers, plus the guardrails (never press submit, never guess, stop and ask) that a agent
+clicking through a live app record needs.
 
 ---
 
