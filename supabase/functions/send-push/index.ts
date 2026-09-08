@@ -92,16 +92,26 @@ Deno.serve(async (req: Request) => {
         .eq('id', notificationId).maybeSingle();
       if (nErr) return json({ error: 'lookup_failed' }, 503);
       if (!n) return json({ sent: 0, skipped: 'no_such_notification' });
-      // ONE type today. Widening this is a deliberate act, not a side effect of some
-      // other trigger learning to call the dispatcher.
-      if (n.type !== 'dispute') return json({ sent: 0, skipped: 'type_not_dispatched' });
+      // A WHITELIST of what may be dispatched — not of what is. Only rows explicitly
+      // handed to dispatch_notification() ever reach here, so adding a type widens what
+      // is possible, never what happens by itself. Widening it is a deliberate act, not
+      // a side effect of some other writer learning to call the dispatcher.
+      //   dispute — the reply deadline (20260909160000)
+      //   booking — a payout account that blocked a booking, which only the EARNER can
+      //             fix and which they previously heard nothing about at all
+      const DISPATCHABLE = new Set(['dispute', 'booking']);
+      if (!DISPATCHABLE.has(n.type)) return json({ sent: 0, skipped: 'type_not_dispatched' });
       userId = n.user_id;
       title = n.title;
       body = n.body;
       // 'payment' so the recipient's own payments_push / payments_email preferences
       // decide delivery — this is money, and the settings screen says so. The inbox row
       // already exists (that is what we are dispatching), so it is not written again.
-      data = { ...(n.data ?? {}), type: 'payment', tab: 'EarnTab' };
+      // The CATEGORY the recipient's own preferences are read under, and the email
+      // template. A dispute is money; a blocked booking is a booking.
+      data = n.type === 'dispute'
+        ? { ...(n.data ?? {}), type: 'payment', tab: 'EarnTab' }
+        : { ...(n.data ?? {}), type: 'booking', tab: (n.data as { tab?: string } | null)?.tab ?? 'EarnTab' };
     }
 
     // ── Support-reply path ───────────────────────────────────────────────────

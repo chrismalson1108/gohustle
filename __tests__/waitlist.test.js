@@ -93,8 +93,8 @@ describe('an opt-out cannot be blocked, deferred, or reached by a scanner', () =
     const scopeIf = exp.indexOf('if (scope === "invitable")');
     expect(isNull).toBeGreaterThan(-1);
     expect(isNull).toBeLessThan(scopeIf);
-    // Double opt-in gets no scope exception either. The confirmation email tells an
-    // unconfirmed person "we won't write again" in as many words.
+    // Double opt-in gets no scope exception either: an unconfirmed address is never
+    // mailed anything but the confirmation itself.
     expect(confirmed).toBeGreaterThan(-1);
     expect(confirmed).toBeLessThan(scopeIf);
   });
@@ -388,5 +388,19 @@ describe('the unsubscribe page asks before it acts', () => {
     // They came here to be off the list. If the row is gone they are off the list.
     expect(unsubBtn).toMatch(/res\.status === 404[\s\S]{0,120}setState\("gone"\)/);
     expect(unsubBtn).toMatch(/state === "done" \|\| state === "gone"/);
+  });
+});
+
+describe('the confirmation email describes the cap it actually has', () => {
+  // It said "Ignore this email and nothing happens — we won't write again", while
+  // LIFETIME_EMAIL_CAP is 3: somebody who types a stranger's address into the form can
+  // make that note arrive three times. The cap is right and deliberate (a cooldown would
+  // allow 144 a day); the sentence promising one send was not.
+  it('names the real number instead of promising a single send', () => {
+    const body = fn.slice(fn.indexOf("Didn&rsquo;t sign up?"), fn.indexOf("Didn&rsquo;t sign up?") + 400);
+    expect(body).not.toMatch(/won&rsquo;t write again|won't write again/);
+    expect(body).toMatch(/two more times/);
+    // …and still says the important half: nothing else happens without a confirmation.
+    expect(body).toMatch(/unless you confirm/);
   });
 });

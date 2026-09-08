@@ -29,7 +29,23 @@ setSettlementFnName('stripe-capture-payment');
 // response window shorter than this leaves no room for the earner to answer AND for the
 // settler to capture afterwards, so below it we decline to hold at all.
 const HOLD_LIFE_HOURS = 7 * 24;
-const MIN_RUNWAY_HOURS = 36;
+// ── DERIVED FROM BRANCH 4, NOT FROM THE HOLD ────────────────────────────────────────
+//
+// The authorization dies at 7 days, but a CONTESTED case is decided long before that:
+// dispute_settlement_pct branch 4 captures it in FULL at held_since + 5 days. 36 hours of
+// runway therefore admitted a proposal until held_since + 5.5 days — already PAST the
+// moment the case would be auto-decided. Made there and contested, it was captured at the
+// next hourly sweep with nobody having read it, and
+// ctl_dispute_contested_unadjudicated filed its "you have two days" finding on the same
+// sweep that took the money. The promise both clients make — that a person reads the
+// case — had no time left to be kept.
+//
+// 60 = the 48 hours branch 4 leaves, plus the same 12 hours of margin dispute_set_defaults
+// uses for the hourly sweep and a retry. Below it, NO_ROOM_TO_HOLD captures in full and
+// says so plainly, which is the honest answer for a report this late and is refundable.
+const AUTO_CAPTURE_DAYS = 5;      // dispute_settlement_pct branch 4
+const SETTLE_MARGIN_HOURS = 12;   // dispute_set_defaults' own margin
+const MIN_RUNWAY_HOURS = (7 - AUTO_CAPTURE_DAYS) * 24 + SETTLE_MARGIN_HOURS;
 
 
 const corsHeaders = {

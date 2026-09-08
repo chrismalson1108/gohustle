@@ -116,3 +116,36 @@ describe('both settle paths verify payout capability against Stripe', () => {
     });
   }
 });
+
+describe('a booking blocked by payout setup names the state, and reaches the earner', () => {
+  const pi = codeOnly(read('stripe-create-payment-intent/index.ts'));
+  const push = codeOnly(read('send-push/index.ts'));
+
+  // One sentence — "The earner hasn't set up their payout account yet" — was returned for
+  // four different states: never started, started and unfinished, finished but under
+  // Stripe review, and Stripe unreachable. It is true of the first only, and the poster
+  // acts on it: they decline, or they wait for something that is not going to happen.
+  it('distinguishes the four states rather than collapsing them', () => {
+    expect(pi).toMatch(/'never_started' \| 'unfinished' \| 'restricted' \| 'unknown'/);
+    expect(pi).toMatch(/acc\.details_submitted \? 'restricted' : 'unfinished'/);
+    // A failed Stripe call is "we could not ask", never a definite claim about somebody
+    // else's account.
+    expect(pi).toMatch(/catch \(_\) \{[\s\S]{0,200}payoutReason = 'unknown'/);
+    expect(pi).toMatch(/reason: payoutReason/);
+  });
+
+  it('tells the EARNER, who is the only person who can fix it', () => {
+    const block = pi.slice(pi.indexOf("if (payoutReason !== 'unknown')"));
+    expect(block).toMatch(/from\('notifications'\)\.insert/);
+    expect(block).toMatch(/user_id: booking\.earner_id/);
+    // …and out of the app, not only into an inbox they have to open the app to see.
+    expect(block).toMatch(/rpc\('dispatch_notification'/);
+  });
+
+  it('the dispatch whitelist admits the type, and reads the right preference category', () => {
+    expect(push).toMatch(/DISPATCHABLE = new Set\(\['dispute', 'booking'\]\)/);
+    // A dispute is money and a blocked booking is a booking — the recipient's own
+    // per-category preferences decide delivery either way.
+    expect(push).toMatch(/n\.type === 'dispute'/);
+  });
+});

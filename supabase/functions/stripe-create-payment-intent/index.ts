@@ -118,17 +118,69 @@ Deno.serve(async (req: Request) => {
     // never fire — leaving onboarded stuck at false. If it's false, verify LIVE before
     // blocking the booking (and sync the cache so later reads are correct).
     let earnerOnboarded = !!earnerAcct?.onboarded;
+    // ── FOUR STATES, NOT ONE ──────────────────────────────────────────────────
+    //
+    // "The earner hasn't set up their payout account yet" was returned for all of:
+    // never started, started and unfinished, finished but under Stripe review or waiting
+    // on a document, and Stripe unreachable. It is only true of the first, and the poster
+    // acts on it — they decline, or they wait for something that is not going to happen.
+    // Reported as a `reason` so the poster's message can be accurate without leaking the
+    // earner's account details.
+    let payoutReason: 'never_started' | 'unfinished' | 'restricted' | 'unknown' =
+      earnerAcct?.account_id ? 'unfinished' : 'never_started';
     if (!earnerOnboarded && earnerAcct?.account_id) {
       try {
         const acc = await stripe.accounts.retrieve(earnerAcct.account_id);
         earnerOnboarded = !!(acc.details_submitted && acc.charges_enabled && acc.payouts_enabled);
         if (earnerOnboarded) {
           await supabase.from('stripe_accounts').update({ onboarded: true }).eq('account_id', earnerAcct.account_id);
+        } else {
+          payoutReason = acc.details_submitted ? 'restricted' : 'unfinished';
         }
-      } catch (_) { /* fall through to the not-onboarded response */ }
+      } catch (_) {
+        // We could not ask. Saying "they haven't set it up" would be a definite claim we
+        // cannot support, about somebody else's account.
+        payoutReason = 'unknown';
+      }
     }
     if (!earnerOnboarded) {
-      return json({ error: 'EARNER_NO_PAYOUT', message: "The earner hasn't set up their payout account yet." }, 400);
+      const POSTER_MESSAGE: Record<string, string> = {
+        never_started: "This worker hasn't set up their payout account yet, so we can't hold the payment. We've let them know.",
+        unfinished: "This worker started setting up their payout account but hasn't finished. We've let them know.",
+        restricted: "This worker's payout account is being reviewed by Stripe, so we can't hold the payment yet. We've let them know — try again shortly.",
+        unknown: "We couldn't check this worker's payout account just now. Nothing was charged — please try again in a moment.",
+      };
+
+      // ── TELL THE EARNER. They are the only person who can fix it ─────────────
+      //
+      // Until now the poster saw a refusal and the earner heard nothing at all: their
+      // application simply never got accepted, with no way to know why. Skipped when we
+      // could not reach Stripe, because that is our problem and not theirs.
+      if (payoutReason !== 'unknown') {
+        const EARNER_MESSAGE: Record<string, string> = {
+          never_started: 'Someone tried to book you, but we could not hold their payment because your payout account is not set up. Open You → Payments & payouts to add it.',
+          unfinished: 'Someone tried to book you, but your payout setup is not finished, so we could not hold their payment. Open You → Payments & payouts to complete it.',
+          restricted: 'Someone tried to book you, but Stripe is still reviewing your payout account. Open You → Payments & payouts to see what it needs.',
+        };
+        try {
+          const { data: note } = await supabase.from('notifications').insert({
+            user_id: booking.earner_id,
+            type: 'booking',
+            title: 'A booking could not be confirmed',
+            body: EARNER_MESSAGE[payoutReason],
+            data: { tab: 'ProfileTab', booking_id: bookingId },
+          }).select('id').single();
+          // …and out of the app, through the same rail a dispute deadline uses. An inbox
+          // row they have to open the app to see is the failure this is fixing.
+          if (note?.id) await supabase.rpc('dispatch_notification', { p_notification_id: note.id });
+        } catch (_) { /* best-effort: the poster's refusal is the important half */ }
+      }
+
+      return json({
+        error: 'EARNER_NO_PAYOUT',
+        reason: payoutReason,
+        message: POSTER_MESSAGE[payoutReason],
+      }, 400);
     }
 
     // TS cannot connect earnerOnboarded back to earnerAcct — they are separate

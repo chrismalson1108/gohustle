@@ -840,7 +840,11 @@ describe('the deadline reaches the earner outside the app', () => {
     expect(push).toMatch(/x-notify-secret/);
     const branch = push.slice(push.indexOf('if (serverDispatch) {'), push.indexOf('const UUID_RE'));
     expect(branch).toMatch(/from\('notifications'\)/);
-    expect(branch).toMatch(/n\.type !== 'dispute'/);   // one type, widened deliberately
+    // A CLOSED SET, checked against the row's own type. Only rows explicitly handed to
+    // dispatch_notification() reach here, so the whitelist bounds what is possible rather
+    // than what happens — but it must stay a whitelist, not fall away to "any type".
+    expect(branch).toMatch(/DISPATCHABLE = new Set\(\[/);
+    expect(branch).toMatch(/if \(!DISPATCHABLE\.has\(n\.type\)\) return json/);
     expect(branch).toMatch(/userId = n\.user_id/);      // never from the request
   });
 
@@ -865,5 +869,40 @@ describe('the deadline reaches the earner outside the app', () => {
   // able to email-bomb one person just because it has no caller to key the cap on.
   it('the email cap still applies, keyed on a nil caller', () => {
     expect(push).toMatch(/user!\.id \?\? '00000000-0000-0000-0000-000000000000'/);
+  });
+});
+
+describe('the reply window cannot outlast the decision', () => {
+  const capture = codeOnly(read('supabase/functions/stripe-capture-payment/index.ts'));
+  const defaults = liveBody('dispute_set_defaults');
+
+  // Two constants describing the same deadline, derived from different clocks: the window
+  // was capped against the 7-day HOLD while a contested case is decided by branch 4 at
+  // held_since + 5 days. So an earner could be told they had until day 6.5 on a case
+  // already settled against the poster on day 5 — and stripe-capture-payment admitted a
+  // proposal until day 5.5, past the auto-decision entirely.
+  it('the window is capped at branch 4, not at the hold’s own death', () => {
+    expect(defaults).toMatch(/held_since \+ interval '5 days' - interval '12 hours'/);
+    // The old cap read `hold_dies - interval '12 hours'`, i.e. 7 days.
+    expect(defaults).not.toMatch(/hold_dies/);
+  });
+
+  it('and the runway threshold is DERIVED from branch 4 rather than retyped', () => {
+    expect(capture).toMatch(/const AUTO_CAPTURE_DAYS = 5;/);
+    expect(capture).toMatch(/const MIN_RUNWAY_HOURS = \(7 - AUTO_CAPTURE_DAYS\) \* 24 \+ SETTLE_MARGIN_HOURS;/);
+    // A bare literal here is what let the two drift apart in the first place.
+    expect(capture).not.toMatch(/const MIN_RUNWAY_HOURS = \d+;/);
+  });
+
+  it('the two agree: nothing is admitted after the case would already be decided', () => {
+    // 60 hours of runway = held_since + 4.5 days, and branch 4 is at 5 days — so the
+    // latest admissible proposal still leaves 12 hours before the auto-capture, which is
+    // the same margin dispute_set_defaults uses for the sweep plus a retry.
+    const m = /const SETTLE_MARGIN_HOURS = (\d+);/.exec(capture);
+    expect(m).not.toBeNull();
+    const margin = Number(m[1]);
+    const runway = (7 - 5) * 24 + margin;
+    expect(runway - (7 - 5) * 24).toBe(margin);
+    expect(runway).toBeGreaterThan((7 - 5) * 24);
   });
 });

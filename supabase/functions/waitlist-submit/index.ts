@@ -427,7 +427,7 @@ async function sendConfirmEmail(
                     <a href="${esc(confirmUrl)}" style="display:inline-block; background:#5038FF; color:#FEF4E5; font-family:'Inter',Arial,sans-serif; font-size:16px; font-weight:600; text-decoration:none; padding:15px 34px; border-radius:14px;">Confirm my email</a>
                   </td></tr>
                   <tr><td style="padding:6px 44px 4px;">
-                    <p style="margin:0; font-family:'Inter',Arial,sans-serif; font-size:13px; line-height:1.6; color:#9A93AD;">Didn&rsquo;t sign up? Ignore this email and nothing happens &mdash; we won&rsquo;t write again.</p>
+                    <p style="margin:0; font-family:'Inter',Arial,sans-serif; font-size:13px; line-height:1.6; color:#9A93AD;">Didn&rsquo;t sign up? Ignore this &mdash; nothing happens unless you confirm. If this address is entered on the form again you could get this note up to two more times; after that we stop, and we never send anything else.</p>
                   </td></tr>
                   <tr><td style="padding:26px 44px 34px; border-top:1px solid #E4DFD3;">
                     <p style="margin:0 0 8px; font-family:'Inter',Arial,sans-serif; font-size:13px; line-height:1.5;">
