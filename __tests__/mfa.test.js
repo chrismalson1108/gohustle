@@ -127,6 +127,42 @@ describe('enrollment is built for a phone, not a laptop', () => {
     expect(body).toMatch(/Two-factor is now ON/);
   });
 
+  it('every enrollment sets an ISSUER, because that is the only string the authenticator shows', () => {
+    // friendly_name is stored on OUR side and never leaves it. The authenticator shows
+    // the otpauth issuer, and GoTrue falls back to the Site URL's HOST when it is
+    // omitted. Measured against production 2026-09-09:
+    //   omitted → otpauth://totp/gohustlr.com:you@x.com?…&issuer=gohustlr.com
+    //   set     → otpauth://totp/GoHustlr:you@x.com?…&issuer=GoHustlr
+    // So the website and the console both filed themselves under "gohustlr.com" while
+    // SecurityScreen, MfaChallengeScreen and /team all name the entry "GoHustlr" or
+    // "GoHustlr Admin" — a name that was not in the user's authenticator. For an admin
+    // holding both factors that is worse than cosmetic: two indistinguishable entries,
+    // and a code from the wrong one is rejected as wrong (challengeAndVerify is scoped
+    // to the factorId it is handed).
+    const sites = [
+      ['src/lib/mfa.js', /issuer: 'GoHustlr'/],
+      ['web/lib/mfa.ts', /issuer: APP_FACTOR_NAME/],
+      ['admin/app/mfa/page.tsx', /issuer: "GoHustlr Admin"/],
+    ];
+    sites.forEach(([file, re]) => {
+      const src = read(file);
+      const at = src.indexOf('mfa.enroll(');
+      expect(`${file}: enroll found`).toBe(at > -1 ? `${file}: enroll found` : `${file}: NO ENROLL`);
+      const call = src.slice(at, at + 400);
+      expect(`${file}: ${re.test(call)}`).toBe(`${file}: true`);
+    });
+  });
+
+  it('the issuer matches the name our own screens tell people to look for', () => {
+    // Two surfaces, two names, and they must be DISTINCT — an admin holds both factors
+    // permanently, so one shared issuer would make the authenticator list two identical
+    // entries and preferredFactor's whole reason for existing would be undone.
+    const lib = read('src/lib/mfa.js');
+    expect(lib).toMatch(/export const APP_FACTOR_NAME = 'GoHustlr'/);
+    expect(lib).toMatch(/export const ADMIN_FACTOR_NAME = 'GoHustlr Admin'/);
+    expect(read('admin/app/mfa/page.tsx')).not.toMatch(/issuer: "GoHustlr"[,\s]/);
+  });
+
   it('tells the truth about the logo', () => {
     // An otpauth URI carries issuer/label/secret and no image; authenticators show
     // icons from their own catalogues. Claiming otherwise sets up a "did it work?"

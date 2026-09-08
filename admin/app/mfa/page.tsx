@@ -119,9 +119,17 @@ export default function MfaPage() {
     for (const f of factors?.all ?? []) {
       if (f.status === "unverified") await supabase.auth.mfa.unenroll({ factorId: f.id });
     }
+    // `issuer` is what the authenticator DISPLAYS; friendly_name never leaves our side.
+    // Omitting it made GoTrue fall back to the Site URL host, so a console factor filed
+    // itself as "gohustlr.com" — and an admin who also enrolled on the website got two
+    // entries reading "gohustlr.com" and "GoHustlr", neither of which is the
+    // "GoHustlr Admin" this page and /team both name. CLAUDE.md already records that a
+    // code typed from the wrong entry is rejected as wrong, which is the whole cost of
+    // two entries you cannot tell apart.
     const { data: enrolled, error: enrollErr } = await supabase.auth.mfa.enroll({
       factorType: "totp",
       friendlyName: "GoHustlr Admin",
+      issuer: "GoHustlr Admin",
     });
     if (enrollErr || !enrolled) {
       setError(enrollErr?.message ?? "Could not start enrollment.");

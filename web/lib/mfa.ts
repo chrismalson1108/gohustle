@@ -142,9 +142,20 @@ export async function startEnrollment(): Promise<Enrollment> {
 
   // The SAME friendly name the app uses. It is how /team reads which surface a factor
   // came from, and enrolling under a third name would make that column lie.
+  //
+  // `issuer` is separate and NOT optional in practice. friendly_name is stored on our
+  // side; the only thing that reaches the authenticator is the otpauth issuer, and when
+  // it is omitted GoTrue falls back to the Site URL's HOST. Measured against production
+  // 2026-09-09:
+  //   omitted → otpauth://totp/gohustlr.com:you@x.com?…&issuer=gohustlr.com
+  //   set     → otpauth://totp/GoHustlr:you@x.com?…&issuer=GoHustlr
+  // So the website used to file itself under "gohustlr.com" while SecurityScreen and
+  // MfaChallengeScreen both tell the user to open the entry called "GoHustlr" — a name
+  // that was not in their authenticator.
   const { data, error } = await supabase.auth.mfa.enroll({
     factorType: "totp",
-    friendlyName: "GoHustlr",
+    friendlyName: APP_FACTOR_NAME,
+    issuer: APP_FACTOR_NAME,
   });
   if (error || !data) throw new MfaError(error?.message ?? "Could not start setup.", "enroll_failed");
 
