@@ -31,7 +31,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
     ctx.service.from("jobs").select("id, title, poster_id, status").eq("id", booking.job_id).maybeSingle(),
     ctx.service.from("profiles").select("id, name, username").eq("id", booking.earner_id).maybeSingle(),
     ctx.service.from("payments").select("*").eq("booking_id", id).maybeSingle(),
-    ctx.service.from("disputes").select("id, reason, pct_paid, raised_by, created_at").eq("booking_id", id),
+    ctx.service
+      .from("disputes")
+      .select("id, reason, pct_paid, proposed_pct, resolution_pct, response_stance, responded_at, status, raised_by, created_at")
+      .eq("booking_id", id),
     // NEWEST 200, reversed below for chronological display. Ordering ascending
     // with a limit returned the OLDEST 200 — so on a thread longer than that, the
     // page silently hid the recent messages, which are the ones a moderation
@@ -394,9 +397,26 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <ul className="text-sm">
             {disputeRes.data!.map((d) => (
               <li key={d.id} className="border-t border-[var(--line)] py-2 first:border-0">
-                <span className="font-medium">{d.reason ?? "dispute"}</span>
-                {d.pct_paid != null ? <span className="text-[var(--muted)]"> · pay {Number(d.pct_paid)}%</span> : null}
-                <span className="text-[var(--muted)]"> · {fmtDate(d.created_at)}</span>
+                {/* An operator opens THIS page because of a dispute, and this section
+                    was terminal: the reason, a percentage, no way through. The case file
+                    is where both sides and the evidence are. */}
+                <Link href={`/disputes/${d.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                  {d.reason ?? "dispute"}
+                </Link>
+                <span className="text-[var(--muted)]">
+                  {" · "}
+                  {d.pct_paid != null
+                    ? `settled at ${Number(d.pct_paid)}%`
+                    : d.resolution_pct != null
+                      ? `decided ${d.resolution_pct}% · awaiting sweep`
+                      : d.responded_at
+                        ? d.response_stance === "contest"
+                          ? "contested — needs a decision"
+                          : `earner accepted ${d.proposed_pct ?? 100}%`
+                        : `asked ${d.proposed_pct ?? 100}% · awaiting reply`}
+                  {" · "}
+                  {fmtDate(d.created_at)}
+                </span>
               </li>
             ))}
           </ul>

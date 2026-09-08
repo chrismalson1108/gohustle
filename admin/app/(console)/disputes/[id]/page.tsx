@@ -234,7 +234,7 @@ export default async function DisputeCasePage({ params }: { params: Promise<{ id
       <div className="grid gap-5 lg:grid-cols-2">
         <Section title={`Reported by ${nameOf(d.raised_by)}`}>
           <p className="text-sm">{d.reason || <span className="text-[var(--muted)]">No reason given.</span>}</p>
-          <Photos label="Their photos" urls={reportPhotos} />
+          <Photos label="The poster's photos" urls={reportPhotos} />
           <p className="mt-3 text-xs text-[var(--muted)]">{fmtDate(d.created_at)}</p>
         </Section>
 
@@ -245,7 +245,7 @@ export default async function DisputeCasePage({ params }: { params: Promise<{ id
                 {stance === "accept" ? `Accepted the ${proposed}%.` : "Disputes this."}
               </p>
               {d.response_note && <p className="mt-1 text-sm">{d.response_note}</p>}
-              <Photos label="Their photos" urls={replyPhotos} />
+              <Photos label="The earner's photos" urls={replyPhotos} />
               <p className="mt-3 text-xs text-[var(--muted)]">{fmtDate(d.responded_at)}</p>
             </>
           ) : (

@@ -51,6 +51,8 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     notesRes,
     loginHistoryRes,
     stripeRes,
+    disputesByRes,
+    disputesAgainstRes,
   ] = await Promise.all([
     ctx.service.auth.admin.getUserById(id),
     ctx.service
@@ -103,7 +105,40 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .limit(50),
     ctx.service.rpc("admin_user_login_history", { target: id, lim: 10 }),
     ctx.service.from("stripe_accounts").select("account_id, onboarded").eq("user_id", id).maybeSingle(),
+    // PAYMENT disputes, both directions. The file already showed reports in both
+    // directions and showed disputes in neither — so a poster who asks to pay 50% on
+    // every gig they book looked spotless on the one page a support agent opens about
+    // them. That is the serial-reducer pattern, and this is where it becomes visible.
+    ctx.service
+      .from("disputes")
+      .select("id, booking_id, reason, proposed_pct, pct_paid, resolution_pct, response_stance, responded_at, status, created_at")
+      .eq("raised_by", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    // respondent_id is stamped at insert by dispute_set_defaults (20260909010000).
+    // Rows created before that migration carry NULL and will not appear here; there are
+    // none in production, and this is the honest predicate rather than a booking join
+    // that would silently disagree with the dispute's own idea of who must answer.
+    ctx.service
+      .from("disputes")
+      .select("id, booking_id, reason, proposed_pct, pct_paid, resolution_pct, response_stance, responded_at, status, created_at")
+      .eq("respondent_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
+
+  // What a dispute is actually DOING right now, in one phrase. pct_paid is the only
+  // marker of money having moved; everything before it is a live process.
+  const disputeState = (d: {
+    pct_paid: number | null; resolution_pct: number | null;
+    responded_at: string | null; response_stance: string | null; proposed_pct: number | null;
+  }) => {
+    if (d.pct_paid != null) return `settled at ${Number(d.pct_paid)}%`;
+    if (d.resolution_pct != null) return `decided ${d.resolution_pct}% · awaiting sweep`;
+    if (d.responded_at && d.response_stance === "contest") return "contested — needs a decision";
+    if (d.responded_at) return `accepted ${d.proposed_pct ?? 100}%`;
+    return `asked ${d.proposed_pct ?? 100}% · awaiting reply`;
+  };
 
   const authUser = authUserRes.data?.user ?? null;
   const stripeAccount = stripeRes.data;
@@ -396,6 +431,52 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                         </Link>
                       </>
                     )}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Section title={`Payment disputes raised (${disputesByRes.data?.length ?? 0})`}>
+          {(disputesByRes.data ?? []).length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">None.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(disputesByRes.data ?? []).map((d) => (
+                <li key={d.id} className="border-t border-[var(--line)] py-2 first:border-0">
+                  <Link href={`/disputes/${d.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                    {d.reason ?? "no reason given"}
+                  </Link>
+                  <p className="text-xs text-[var(--muted)]">
+                    {disputeState(d)} · {fmtDate(d.created_at)} ·{" "}
+                    <Link href={`/bookings/${d.booking_id}`} className="text-[var(--brand)] hover:underline">
+                      booking
+                    </Link>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        <Section title={`Payment disputes against (${disputesAgainstRes.data?.length ?? 0})`}>
+          {(disputesAgainstRes.data ?? []).length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">None.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(disputesAgainstRes.data ?? []).map((d) => (
+                <li key={d.id} className="border-t border-[var(--line)] py-2 first:border-0">
+                  <Link href={`/disputes/${d.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                    {d.reason ?? "no reason given"}
+                  </Link>
+                  <p className="text-xs text-[var(--muted)]">
+                    {disputeState(d)} · {fmtDate(d.created_at)} ·{" "}
+                    <Link href={`/bookings/${d.booking_id}`} className="text-[var(--brand)] hover:underline">
+                      booking
+                    </Link>
                   </p>
                 </li>
               ))}
