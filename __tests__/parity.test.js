@@ -1007,9 +1007,21 @@ describe('Hustlr AI does not guarantee a review the auto-capture overrides', () 
         .toBe(`${c}: unconditional promises []`);
     });
 
-    it(`${c}: says what happens when the hold runs out before anyone decides`, () => {
-      expect(`${c}: names the auto-capture: ${/hold runs out|paid in FULL/i.test(prompt)}`)
+    it(`${c}: says what happens when nobody decides in time`, () => {
+      expect(`${c}: names the auto-capture: ${/paid in FULL/i.test(prompt)}`)
         .toBe(`${c}: names the auto-capture: true`);
+    });
+
+    // AND NAMES THE RIGHT DEADLINE. Every user-facing description of branch 4 used to say
+    // the full capture happens "when the card hold runs out" — day 7. It actually happens
+    // at coalesce(authorized_at, created_at) + 5 days, in dispute_settlement_pct. Two days
+    // early, on the number both parties use to decide whether to bother replying.
+    it(`${c}: dates the auto-capture from the hold, not from its expiry`, () => {
+      const wrong = /hold runs out|hold expires|seven days|7 days/i.test(prompt);
+      expect(`${c}: says the hold expiry is the trigger: ${wrong}`)
+        .toBe(`${c}: says the hold expiry is the trigger: false`);
+      expect(`${c}: names five days: ${/five days|5 days/i.test(prompt)}`)
+        .toBe(`${c}: names five days: true`);
     });
   });
 });

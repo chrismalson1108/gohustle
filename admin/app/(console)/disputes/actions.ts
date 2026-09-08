@@ -194,6 +194,13 @@ export async function decideDispute(formData: FormData): Promise<ActionResult> {
         resolution_pct: pct,
         resolution_note: note,
         assigned_to: ctx.user.id,
+        // WHEN the decision was made — not that it was settled. The two are different and
+        // the difference is load-bearing: ctl_dispute_settlement_overdue (critical) used to
+        // measure lateness from `settle_after`, which can be 48 hours AFTER a decision made
+        // the case due, so a decision the hourly settler dropped was invisible for up to
+        // ~50 hours while this queue showed it as decided and both parties had been told it
+        // was over. The control now measures from here (20260909150000).
+        decided_at: new Date().toISOString(),
         // Deliberately NOT resolved_at / resolved_by / status — settle-disputes stamps
         // those when the capture actually succeeds. A dispute that reads "resolved"
         // while the money is still held is the one state this queue must never show.

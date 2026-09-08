@@ -766,3 +766,39 @@ describe('force cancel is the third hold-touching operation, and it checks too',
     expect(body.slice(i - 500, i)).toMatch(/Boolean\(openDispute\)/);
   });
 });
+
+describe('the deadline is read from the right clock, everywhere', () => {
+  const casePage = read('admin/app/(console)/disputes/[id]/page.tsx');
+  const decide = read('admin/app/(console)/disputes/actions.ts');
+  const ctl = liveBody('ctl_dispute_settlement_overdue');
+
+  // `created_at` is the FIRST hold ever placed on a booking; a recovery re-hold
+  // deliberately leaves it alone and writes authorized_at instead (20260806150000). Both
+  // server-side hold-age reads were corrected when the two-party model shipped and this
+  // one — the ONLY screen that shows an operator the branch-4 deadline — was missed, so a
+  // re-held booking showed a date that had already passed.
+  it('the console case page dates the auto-capture from the live hold', () => {
+    expect(casePage).toMatch(/authorized_at\s*\?\?\s*pay\?\.created_at/);
+    // and nothing still measures a deadline off created_at alone
+    expect(casePage).not.toMatch(/plus\(pay\?\.created_at,/);
+    // the column has to be selected, or the coalesce silently always takes created_at
+    expect(casePage).toMatch(/\.select\("id, status[^"]*authorized_at/);
+  });
+
+  // settle_after is the due time for exactly ONE of dispute_settlement_pct's branches.
+  // An operator's decision is due immediately while settle_after may be 48h out; branch 4
+  // is due on the hold's age, up to a day and a half before settle_after.
+  it('the critical control measures from when the money became due', () => {
+    expect(ctl).toMatch(/resolution_pct is not null then coalesce\(d\.decided_at, d\.settle_after\)/);
+    expect(ctl).toMatch(/interval '5 days'/);
+    expect(ctl).toMatch(/due\.due_at < now\(\) - interval '2 hours'/);
+  });
+
+  it('and the console stamps the timestamp that arm depends on', () => {
+    expect(decide).toMatch(/decided_at: new Date\(\)\.toISOString\(\)/);
+    // …without stamping resolved_at, which would unblock earner-claim-payment and let a
+    // FULL capture override the very decision being recorded.
+    const upd = decide.slice(decide.indexOf('resolution_pct: pct'), decide.indexOf('.eq("id", disputeId)'));
+    expect(upd).not.toMatch(/resolved_at:/);
+  });
+});

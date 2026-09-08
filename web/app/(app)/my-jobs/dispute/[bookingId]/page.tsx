@@ -196,7 +196,7 @@ export default function DisputePage() {
                 {!settled && dispute.response_stance === "contest" && (
                   <p className="m-0 mt-3 text-sm text-ink-soft">
                     Nothing is paid while this is open. Someone from GoHustlr reads both sides
-                    — and if we have not decided before the card hold runs out, you are paid in
+                    — and if we have not decided within about five days of the payment being held, you are paid in
                     FULL rather than the amount they asked for.
                   </p>
                 )}

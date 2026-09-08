@@ -50,10 +50,28 @@ for (const f of files) {
   let m;
   while ((m = re.exec(sql)) !== null) {
     const name = m[1];
-    // From this definition to the revoke that always follows it, or the next definition.
+    // From this definition to whichever comes first: the revoke that usually follows it,
+    // the NEXT function definition in the file, or EOF.
+    //
+    // The "or the next definition" half was described here and never implemented: when a
+    // control had no matching revoke line the slice ran to the end of the FILE and
+    // swallowed every neighbouring control's kinds. In 20260909010000 that gave
+    // ctl_dispute_settlement_overdue credit for `reduction_without_consent` and
+    // `respondent_never_told`, which belong to the two functions defined after it — so
+    // this test was asserting that a control still emits kinds it never emitted, and would
+    // have reported a false loss the moment that control was legitimately redefined
+    // elsewhere. Which is exactly what happened on 2026-09-08.
     const from = m.index;
-    const revoke = sql.indexOf(`revoke execute on function public.${name}`, from);
-    const body = sql.slice(from, revoke === -1 ? sql.length : revoke);
+    const bounds = [
+      sql.indexOf(`revoke execute on function public.${name}`, from),
+      (() => {
+        const next = /create or replace function public\./gi;
+        next.lastIndex = from + 1;
+        const hit = next.exec(sql);
+        return hit ? hit.index : -1;
+      })(),
+    ].filter((i) => i !== -1);
+    const body = sql.slice(from, bounds.length ? Math.min(...bounds) : sql.length);
     latestBody[name] = body;
     const kinds = [...body.matchAll(/'kind',\s*'([a-z0-9_]+)'/gi)].map((k) => k[1]);
     // CASE-selected kinds too — a control may pick a kind per row.

@@ -79,7 +79,7 @@ export default async function DisputeCasePage({ params }: { params: Promise<{ id
       : Promise.resolve({ data: null }),
     ctx.service
       .from("payments")
-      .select("id, status, amount_cents, fee_cents, earner_amount_cents, refunded_cents, fee_bps, created_at, payment_intent_id")
+      .select("id, status, amount_cents, fee_cents, earner_amount_cents, refunded_cents, fee_bps, created_at, authorized_at, payment_intent_id")
       .eq("booking_id", d.booking_id)
       .maybeSingle(),
   ]);
@@ -126,8 +126,18 @@ export default async function DisputeCasePage({ params }: { params: Promise<{ id
   const atPct = (p: number) => (holdCents == null ? null : Math.round((holdCents * p) / 100));
 
   const replyDue = d.settle_after as string | null;
-  const capDeadline = plus(pay?.created_at, 5); // dispute_settlement_pct branch 4
-  const holdExpiry = plus(pay?.created_at, 7); // Stripe cancels an uncaptured PI here
+  // ── coalesce(authorized_at, created_at), like EVERY other hold-age read ────────────
+  //
+  // `created_at` is the FIRST hold ever placed on this booking; stripe-create-payment-intent
+  // upserts on booking_id and deliberately leaves it alone on a recovery re-hold, writing
+  // authorized_at instead (20260806150000). So on any re-held booking this page — the ONLY
+  // screen that shows an operator the branch-4 deadline — judged a fresh hold by a dead
+  // clock and showed a date that had already passed, on the page where the date IS the
+  // decision. Both server-side reads were corrected when the two-party model shipped; this
+  // one was missed, and disputeTwoParty.test.js now pins it with them.
+  const heldSince = pay?.authorized_at ?? pay?.created_at;
+  const capDeadline = plus(heldSince, 5); // dispute_settlement_pct branch 4
+  const holdExpiry = plus(heldSince, 7); // Stripe cancels an uncaptured PI here
 
   const stance = d.responded_at ? (d.response_stance as string) : null;
   const subject = job?.title ? `The problem reported on "${job.title}"` : "A reported problem on your gig";
@@ -201,7 +211,7 @@ export default async function DisputeCasePage({ params }: { params: Promise<{ id
               </p>
             )}
             {held && holdExpiry && (
-              <p className={isPast(plus(pay?.created_at, 6)) ? "text-[var(--danger)]" : "text-[var(--muted)]"}>
+              <p className={isPast(plus(heldSince, 6)) ? "text-[var(--danger)]" : "text-[var(--muted)]"}>
                 Stripe cancels an uncaptured authorization around {fmtDate(holdExpiry)}. After that nobody can
                 be paid for this gig.
               </p>
