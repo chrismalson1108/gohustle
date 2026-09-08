@@ -70,6 +70,10 @@ export default function DisputePage() {
   const settled = dispute?.pct_paid != null;
   const answered = !!dispute?.responded_at;
   const isRespondent = !!dispute && user?.id === dispute.respondent_id;
+  // The poster reaches this same page to watch their own report, and every label below
+  // is perspective-dependent — "$30 of your pay is on hold" is about their money, not
+  // the reader's, and reads as a bug on a screen about somebody else's money.
+  const isRaiser = !!dispute && user?.id === dispute.raised_by;
   const amountCents = booking?.amountCentsQuoted ?? null;
   const atStake = amountCents != null ? Math.round((amountCents * (100 - proposed)) / 100) : null;
   const hoursLeft = dispute?.settle_after
@@ -148,32 +152,42 @@ export default function DisputePage() {
             {/* What is at stake, in money. A percentage of an unstated number is not
                 something a person can act on. */}
             <div className="rounded-2xl bg-white p-6 text-center shadow-[var(--shadow-card)]">
-              <p className="m-0 text-sm text-ink-soft">The poster asked to pay</p>
+              <p className="m-0 text-sm text-ink-soft">{isRaiser ? "You asked to pay" : "The poster asked to pay"}</p>
               <p className="m-0 text-[46px] font-extrabold leading-none tracking-tight text-ink">{proposed}%</p>
               {atStake != null && (
                 <p className="m-0 mt-1 text-[15px] text-ink-soft">
-                  {money(atStake / 100)} of your pay is on hold
+                  {isRaiser
+                    ? `${money(atStake / 100)} comes back to you if this stands`
+                    : `${money(atStake / 100)} of your pay is on hold`}
                 </p>
               )}
               {!settled && !answered && hoursLeft != null && (
                 <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 text-xs font-bold text-warning-deep">
                   <Clock className="size-3.5" />
-                  {hoursLeft > 0 ? `${hoursLeft} hour${hoursLeft === 1 ? "" : "s"} left to reply` : "The reply window has closed"}
+                  {hoursLeft > 0
+                    ? `${hoursLeft} hour${hoursLeft === 1 ? "" : "s"} left ${isRaiser ? "for them to reply" : "to reply"}`
+                    : "The reply window has closed"}
                 </span>
               )}
             </div>
 
             <section className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)]">
-              <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">What they said</h2>
+              <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">
+                {isRaiser ? "What you said" : "What they said"}
+              </h2>
               <p className="m-0 text-[15px] leading-relaxed text-ink">{dispute.reason || "No reason given."}</p>
-              <SignedPhotoStrip label="Their photos" values={dispute.photos} bucket="completion-photos" />
+              <SignedPhotoStrip label={isRaiser ? "Your photos" : "Their photos"} values={dispute.photos} bucket="completion-photos" />
             </section>
 
             {answered ? (
               <section className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)]">
-                <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">Your reply</h2>
+                <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">
+                  {isRaiser ? "Their reply" : "Your reply"}
+                </h2>
                 <p className="m-0 mb-1 text-[15px] font-bold text-ink">
-                  {dispute.response_stance === "accept" ? "You accepted the adjustment." : "You disputed this."}
+                  {dispute.response_stance === "accept"
+                    ? isRaiser ? "They accepted the adjustment." : "You accepted the adjustment."
+                    : isRaiser ? "They disputed this." : "You disputed this."}
                 </p>
                 {dispute.response_note && (
                   <p className="m-0 text-[15px] leading-relaxed text-ink">{dispute.response_note}</p>
@@ -185,7 +199,16 @@ export default function DisputePage() {
                   </p>
                 )}
               </section>
-            ) : settled ? null : isRespondent ? (
+            ) : settled ? null : isRaiser ? (
+              <section className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)]">
+                <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">Waiting for them</h2>
+                <p className="m-0 text-[15px] leading-relaxed text-ink-soft">
+                  They have been told, and can accept or reply until{" "}
+                  {dispute.settle_after ? new Date(dispute.settle_after).toLocaleString() : "the window closes"}. If they
+                  say nothing, this settles at {proposed}% on its own — you do not need to do anything.
+                </p>
+              </section>
+            ) : isRespondent ? (
               <section className="rounded-2xl bg-white p-6 shadow-[var(--shadow-card)]">
                 <h2 className="m-0 mb-3 text-xs font-bold tracking-wide text-ink-muted uppercase">Your side</h2>
                 {!contesting ? (

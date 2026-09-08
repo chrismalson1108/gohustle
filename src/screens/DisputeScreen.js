@@ -64,6 +64,10 @@ export default function DisputeScreen({ route, navigation }) {
   useEffect(() => { load(); }, [load]);
 
   const isRespondent = dispute && user?.id === dispute.respondent_id;
+  // The poster opens this same screen from Hire to watch their own report. Every label
+  // below is perspective-dependent, and getting it wrong on a money screen reads as a
+  // bug about somebody else's money.
+  const isRaiser = dispute && user?.id === dispute.raised_by;
   const settled = dispute?.pct_paid != null;
   const answered = !!dispute?.responded_at;
 
@@ -172,11 +176,13 @@ export default function DisputeScreen({ route, navigation }) {
     >
       {/* What is at stake, first and in money. */}
       <View style={styles.hero}>
-        <Text style={styles.heroLabel}>The poster asked to pay</Text>
+        <Text style={styles.heroLabel}>{isRaiser ? 'You asked to pay' : 'The poster asked to pay'}</Text>
         <Text style={styles.heroPct}>{proposed}%</Text>
         {atStake != null && (
           <Text style={styles.heroSub}>
-            {formatMoney(atStake / 100)} of your pay is on hold
+            {isRaiser
+              ? `${formatMoney(atStake / 100)} comes back to you if this stands`
+              : `${formatMoney(atStake / 100)} of your pay is on hold`}
           </Text>
         )}
         {!settled && !answered && hoursLeft != null && (
@@ -184,7 +190,7 @@ export default function DisputeScreen({ route, navigation }) {
             <Ionicons name="time-outline" size={14} color={colors.warningDeep} style={{ marginRight: 5 }} />
             <Text style={styles.clockText}>
               {hoursLeft > 0
-                ? `${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} left to reply`
+                ? `${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} left ${isRaiser ? 'for them to reply' : 'to reply'}`
                 : 'The reply window has closed'}
             </Text>
           </View>
@@ -192,11 +198,11 @@ export default function DisputeScreen({ route, navigation }) {
       </View>
 
       {/* Their side. */}
-      <Section title="What they said">
+      <Section title={isRaiser ? 'What you said' : 'What they said'}>
         <Text style={styles.reason}>{dispute.reason || 'No reason given.'}</Text>
         {dispute.photos?.length > 0 && (
           <>
-            <Text style={styles.subLabel}>Their photos</Text>
+            <Text style={styles.subLabel}>{isRaiser ? 'Your photos' : 'Their photos'}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip}>
               {dispute.photos.map((p) => (
                 <SignedImage key={p} value={p} bucket="completion-photos" style={styles.photo} />
@@ -208,9 +214,11 @@ export default function DisputeScreen({ route, navigation }) {
 
       {/* Your side. */}
       {answered ? (
-        <Section title="Your reply">
+        <Section title={isRaiser ? 'Their reply' : 'Your reply'}>
           <Text style={styles.stance}>
-            {dispute.response_stance === 'accept' ? 'You accepted the adjustment.' : 'You disputed this.'}
+            {dispute.response_stance === 'accept'
+              ? (isRaiser ? 'They accepted the adjustment.' : 'You accepted the adjustment.')
+              : (isRaiser ? 'They disputed this.' : 'You disputed this.')}
           </Text>
           {dispute.response_note ? <Text style={styles.reason}>{dispute.response_note}</Text> : null}
           {dispute.response_photos?.length > 0 && (
@@ -226,7 +234,15 @@ export default function DisputeScreen({ route, navigation }) {
             </Text>
           )}
         </Section>
-      ) : settled ? null : isRespondent ? (
+      ) : settled ? null : isRaiser ? (
+        <Section title="Waiting for them">
+          <Text style={styles.note}>
+            They have been told, and can accept or reply until{' '}
+            {dispute.settle_after ? new Date(dispute.settle_after).toLocaleString() : 'the window closes'}.
+            If they say nothing, this settles at {proposed}% on its own — you do not need to do anything.
+          </Text>
+        </Section>
+      ) : isRespondent ? (
         <Section title="Your side">
           {mode !== 'contest' ? (
             <>
