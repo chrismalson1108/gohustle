@@ -1026,12 +1026,16 @@ A fresh clone needs `git config core.hooksPath .githooks` once.
 
 ### Money probes — `node scripts/probe-money.mjs`
 
-**`npm test` asserts what the CODE says; these assert what the DATABASE does.** Seven
+**`npm test` asserts what the CODE says; these assert what the DATABASE does.** Nine
 rolled-back probes stage real rows against production and report what actually happened:
 the promotion chain and its three ways of ending, the poster-discount split, referral
 accrual/vesting/clawback, tip caps and reversal idempotency, whether every critical money
-control discriminates, the rate card and the loyalty ladder, and the two dispute defects
-found on 2026-09-08.
+control discriminates, the rate card and the loyalty ladder, the dispute defects found on
+2026-09-08, **the booking state machine AS ENFORCED** (every transition from every status
+as each party — a SILENT PIN is the dangerous outcome, because PostgREST returns no error
+and the client reports success on a write the database discarded), and **the contested
+path with branch 4** (silence must not settle a contest; branch 4 must fire at 5 days and
+not 4; the control must warn two days before the auto-capture).
 
 Run them after any money change, and after any `db push` that touches a guard, a control
 or a money RPC. `node scripts/probe-money.mjs 30 50` runs a subset by filename prefix.
