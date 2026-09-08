@@ -132,6 +132,14 @@ export const FLAG_GUIDE: Record<string, FlagGuide> = {
       "The hourly sweep and the daily digest stop paging. Controls still run and still record findings — you just are not told. Users see no difference. The mute lapses on its own after 24 hours.",
     onMeans: "The sweep and the digest page again.",
   },
+  notify_dispatch: {
+    kind: "alert_channel",
+    enforcedAt:
+      "dispatch_notification(), called by dispute_notify_respondent when a payment adjustment is proposed. value.url + value.secret + value.anon_key; it POSTs send-push, which owns the Expo fan-out, the per-category preference check and the branded email.",
+    offMeans:
+      "Dispute deadlines stop leaving the app. The Alerts inbox row is still written — that is the durable record — but the push and the email do not go, so an earner who does not open the app is never told they have hours to answer a reduction, and the sweep then settles at the amount the poster asked for. USERS SEE A DIFFERENCE, unlike the other two channels. The mute lapses on its own after 24 hours.",
+    onMeans: "A proposed adjustment reaches the earner on their phone and by email again.",
+  },
 
   // ── Configuration rows: the payload is `value` ─────────────────────────────
   stripe_mode: {

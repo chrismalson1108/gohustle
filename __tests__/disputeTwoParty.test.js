@@ -802,3 +802,68 @@ describe('the deadline is read from the right clock, everywhere', () => {
     expect(upd).not.toMatch(/resolved_at:/);
   });
 });
+
+describe('the deadline reaches the earner outside the app', () => {
+  const push = codeOnly(read('supabase/functions/send-push/index.ts'));
+  const trg = liveBody('dispute_notify_respondent');
+  const dispatch = liveBody('dispatch_notification');
+  const ctl = liveBody('ctl_alert_not_dispatching');
+
+  // Every dispute notice was inbox-only. dispute_notify_respondent writes the row
+  // in-transaction (deliberately), but this project had no database→push rail at all:
+  // send-push authenticates a signed-in user's token and a trigger has no user. So "you
+  // have until X to reply" reached an earner only if they opened the app, and branch 3
+  // then settled at the poster's figure on a silence we never actually broke — while the
+  // notification settings screen promised an email for that category.
+  it('the trigger hands the row it wrote to the dispatcher', () => {
+    expect(trg).toMatch(/returning id into n_id/);
+    expect(trg).toMatch(/perform public\.dispatch_notification\(n_id\)/);
+  });
+
+  it('the dispatcher is config-driven and silent when unconfigured, never throwing', () => {
+    // An exception here would roll back the caller's transaction — including the
+    // notification we are trying to deliver. ctl_alert_not_dispatching is what makes a
+    // muted channel visible instead.
+    expect(dispatch).toMatch(/from public\.app_flags where key = 'notify_dispatch'/);
+    expect(dispatch).toMatch(/then\s*\n?\s*return;/);
+    expect(dispatch).not.toMatch(/raise exception/);
+  });
+
+  it('and the channel is watched exactly like the two alert channels', () => {
+    expect(ctl).toMatch(/'notify_dispatch'/);
+    expect(ctl).toMatch(/\('controls_alert'\), \('safety_alert'\), \('notify_dispatch'\)/);
+  });
+
+  // The service path in send-push is the narrowest in that file: one id in, everything
+  // else read from a row the database itself wrote.
+  it('send-push accepts a secret-authenticated dispatch and derives everything server-side', () => {
+    expect(push).toMatch(/x-notify-secret/);
+    const branch = push.slice(push.indexOf('if (serverDispatch) {'), push.indexOf('const UUID_RE'));
+    expect(branch).toMatch(/from\('notifications'\)/);
+    expect(branch).toMatch(/n\.type !== 'dispute'/);   // one type, widened deliberately
+    expect(branch).toMatch(/userId = n\.user_id/);      // never from the request
+  });
+
+  it('it fails closed on an unreadable or muted flag rather than falling through', () => {
+    const auth = push.slice(push.indexOf('if (dispatchSecret)'), push.indexOf('} else {'));
+    expect(auth).toMatch(/return json\(\{ error: 'Unauthorized' \}, 401\)/);
+    expect(auth).toMatch(/flagErr \|\| !expected\?\.enabled \? '' :/);
+  });
+
+  it('and does not write a second inbox row for the one it is dispatching', () => {
+    expect(push).toMatch(/if \(!isAdminNotice && !serverDispatch\)/);
+  });
+
+  // A block is a user-to-user control and there is no user here; suppressing a payment
+  // deadline over a social setting would cost the earner money.
+  it('a block does not suppress it, and the wording is not swapped for a template', () => {
+    expect(push).toMatch(/isSupportReply \|\| isAdminNotice \|\| serverDispatch/);
+    expect(push).toMatch(/const hasLiveRelationship = serverDispatch \|\|/);
+  });
+
+  // …but it is still bounded per recipient. A trigger that somehow loops must not be
+  // able to email-bomb one person just because it has no caller to key the cap on.
+  it('the email cap still applies, keyed on a nil caller', () => {
+    expect(push).toMatch(/user!\.id \?\? '00000000-0000-0000-0000-000000000000'/);
+  });
+});

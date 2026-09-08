@@ -30,9 +30,38 @@ const capture = codeOnly(read('_shared/settleEscrow.ts') + '\n' + read('stripe-c
 const claim = codeOnly(read('earner-claim-payment/index.ts'));
 
 describe('both settle paths verify payout capability against Stripe', () => {
+  // ── WHAT GATES A CAPTURE vs WHAT GATES THE CACHE ──────────────────────────
+  //
+  // A capture is a DESTINATION charge: the platform is merchant of record and the
+  // connected account only has to RECEIVE the transfer — the `transfers` capability.
+  // `payouts_enabled` is a different thing (does Stripe move that balance to their bank)
+  // and goes false for ordinary temporary reasons. Requiring it refused captures Stripe
+  // would have accepted: the work was done, the hold was live, and the gig paid $0 until
+  // the authorization lapsed, on an account that would have paid out by itself.
+  //
+  // The cache keeps the STRICTER bar, because stripe_accounts.onboarded is read at ACCEPT
+  // time and promoting a paused account there would let bookings be taken for somebody
+  // who cannot be paid out.
+  it('settling asks for the transfers capability, not for payouts_enabled', () => {
+    const h = codeOnly(helper);
+    const capable = h.slice(h.indexOf('const transfersActive'), h.indexOf('fullyOnboarded'));
+    expect(capable).toMatch(/capabilities\?\.transfers === 'active'/);
+    expect(capable).toMatch(/const capable = !!\(acc\.details_submitted && transfersActive\)/);
+    expect(capable).not.toMatch(/payouts_enabled/);
+  });
+
+  it('but only a fully onboarded account is promoted in the cache', () => {
+    const h = codeOnly(helper);
+    const promote = h.slice(h.indexOf('const fullyOnboarded'));
+    expect(promote).toMatch(/details_submitted && acc\.charges_enabled && acc\.payouts_enabled/);
+    // …and the write is gated on THAT, never on the looser capture test.
+    expect(promote).toMatch(/if \(fullyOnboarded\)[\s\S]{0,200}onboarded: true/);
+  });
+
   it('the shared helper exists and asks Stripe', () => {
     expect(codeOnly(helper)).toMatch(/stripe\.accounts\.retrieve/);
-    // The full triple — details_submitted alone does not mean money can move.
+    // All three still appear — they are the bar for promoting the CACHE. What changed is
+    // that the capture no longer waits on the last one; see the two tests above.
     expect(codeOnly(helper)).toMatch(/details_submitted/);
     expect(codeOnly(helper)).toMatch(/charges_enabled/);
     expect(codeOnly(helper)).toMatch(/payouts_enabled/);

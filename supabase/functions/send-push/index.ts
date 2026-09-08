@@ -34,14 +34,75 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // Require a valid signed-in caller.
-    const authToken = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authToken);
-    if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+    // ── SERVER DISPATCH: the database calling out ────────────────────────────
+    //
+    // Every dispute notice was INBOX-ONLY. `dispute_notify_respondent` writes the row
+    // in-transaction (deliberately — the old notice was an unawaited client fetch), but
+    // there was no database→push rail at all: this function authenticates a signed-in
+    // user's token, and a trigger has no user. So "you have 48 hours to reply, or this
+    // is paid at the amount they asked for" reached an earner ONLY if they happened to
+    // open the app, and branch 3 then settled on a silence the platform never actually
+    // broke. The notification SETTINGS screen promises an email for this category.
+    //
+    // Authenticated by a shared secret from `app_flags.notify_dispatch`, the same shape
+    // as the two alert channels. It is deliberately the NARROWEST path in this file:
+    // the caller supplies one id and nothing else, the recipient and the wording are
+    // read from a row the database itself wrote, and the type is fixed here. There is
+    // no way to aim it, and nothing about it is caller-authored.
+    //
+    // The gateway still requires a JWT — the trigger sends the ANON key as its bearer,
+    // which is public — so this adds no unauthenticated surface and config.toml is
+    // unchanged.
+    const dispatchSecret = req.headers.get('x-notify-secret') ?? '';
+    let serverDispatch = false;
+    let user: { id: string | null } | null = null;
+    let authToken = '';
+
+    if (dispatchSecret) {
+      const { data: flag, error: flagErr } = await supabase
+        .from('app_flags').select('value, enabled').eq('key', 'notify_dispatch').maybeSingle();
+      // FAIL CLOSED on an unreadable flag, and on a channel switched off or missing its
+      // secret — never fall through to the user path, where an absent Authorization
+      // header would produce a confusing 401 instead of the real reason.
+      const expected = (flag as { value?: { secret?: string }; enabled?: boolean } | null);
+      const secret = flagErr || !expected?.enabled ? '' : (expected?.value?.secret ?? '');
+      if (!secret || dispatchSecret !== secret) return json({ error: 'Unauthorized' }, 401);
+      serverDispatch = true;
+      user = { id: null };
+    } else {
+      // Require a valid signed-in caller.
+      authToken = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
+      const { data: { user: u }, error: authErr } = await supabase.auth.getUser(authToken);
+      if (authErr || !u) return json({ error: 'Unauthorized' }, 401);
+      user = u;
+    }
 
     const payload = await req.json();
-    const { title, body, data, adminNotice, supportTicketId } = payload;
+    let { title, body, data } = payload;
+    const { adminNotice, supportTicketId, notificationId } = payload;
     let { userId } = payload;
+
+    // Everything about a dispatched notice comes from the row the database wrote.
+    if (serverDispatch) {
+      if (typeof notificationId !== 'string') {
+        return json({ error: 'notificationId required' }, 400);
+      }
+      const { data: n, error: nErr } = await supabase
+        .from('notifications').select('user_id, type, title, body, job_id, data')
+        .eq('id', notificationId).maybeSingle();
+      if (nErr) return json({ error: 'lookup_failed' }, 503);
+      if (!n) return json({ sent: 0, skipped: 'no_such_notification' });
+      // ONE type today. Widening this is a deliberate act, not a side effect of some
+      // other trigger learning to call the dispatcher.
+      if (n.type !== 'dispute') return json({ sent: 0, skipped: 'type_not_dispatched' });
+      userId = n.user_id;
+      title = n.title;
+      body = n.body;
+      // 'payment' so the recipient's own payments_push / payments_email preferences
+      // decide delivery — this is money, and the settings screen says so. The inbox row
+      // already exists (that is what we are dispatching), so it is not written again.
+      data = { ...(n.data ?? {}), type: 'payment', tab: 'EarnTab' };
+    }
 
     // ── Support-reply path ───────────────────────────────────────────────────
     // Support moved in-app. The console has always emailed its replies, which was
@@ -145,8 +206,8 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'userId must be a valid user id' }, 400);
     }
 
-    // Don't notify yourself.
-    if (userId === user.id) return json({ sent: 0, skipped: 'self' });
+    // Don't notify yourself. (No caller on a server dispatch, so nothing to compare.)
+    if (!serverDispatch && userId === user!.id) return json({ sent: 0, skipped: 'self' });
 
     // Block enforcement. H2 (20260710030000_block_enforcement.sql) made blocking a
     // real server-side control for messages and new bookings, but this endpoint was
@@ -174,7 +235,11 @@ Deno.serve(async (req: Request) => {
     // block against whoever happens to be behind a staff account silently switch off
     // every support push to that person, safety notices included, while the console
     // reported success. Users who want less support contact get that by not writing in.
-    if (isSupportReply || isAdminNotice) {
+    // A server dispatch joins support and admin notices here for the same reason: a
+    // block is a user-to-user control and there is no user on this path. Suppressing a
+    // payment deadline because the two parties blocked each other would cost the earner
+    // money over a social setting.
+    if (isSupportReply || isAdminNotice || serverDispatch) {
       // fall through to delivery
     } else {
     const { data: blockRows, error: blockErr } = await supabase
@@ -196,7 +261,7 @@ Deno.serve(async (req: Request) => {
     // endpoint can't be used to plant arbitrary alerts in a stranger's inbox. We
     // also collect the shared job_ids so a caller can only deep-link to a gig the
     // two users actually transacted on.
-    const [asEarner, asPoster] = await Promise.all([
+    const [asEarner, asPoster] = serverDispatch ? [{ data: [] }, { data: [] }] as never : await Promise.all([
       supabase.from('bookings').select('id, job_id, status, jobs!bookings_job_id_fkey!inner(poster_id)')
         .eq('earner_id', user.id).eq('jobs.poster_id', userId),
       supabase.from('bookings').select('id, job_id, status, jobs!bookings_job_id_fkey!inner(poster_id)')
@@ -206,7 +271,7 @@ Deno.serve(async (req: Request) => {
     // An admin has no booking with the user they're moderating — that's the point.
     // Neither does a support agent with the user who wrote in; the ticket IS the
     // relationship, and it was verified above.
-    if (!sharedRows.length && !isAdminNotice && !isSupportReply) {
+    if (!sharedRows.length && !isAdminNotice && !isSupportReply && !serverDispatch) {
       return json({ error: 'Not allowed to notify this user' }, 403);
     }
     const sharedJobIds = new Set(sharedRows.map((r: any) => r.job_id).filter(Boolean));
@@ -227,7 +292,10 @@ Deno.serve(async (req: Request) => {
     // accepted means the parties are genuinely transacting and caller text (message
     // previews, amendment notes) is expected. A merely-pending one does not, so the
     // wording is server-defined and the sender contributes nothing but the type.
-    const hasLiveRelationship = sharedRows.some((r: any) =>
+    // A server dispatch's wording was written by the database, not by a counterparty,
+    // so the anti-spoof template swap below must not replace it — it would turn a named
+    // deadline into "there's an update on one of your gigs".
+    const hasLiveRelationship = serverDispatch || sharedRows.some((r: any) =>
       ['confirmed', 'completed', 'verified'].includes(r.status));
 
     // Anti-spam rate limit: cap sends per caller so a booking counterparty can't
@@ -236,7 +304,8 @@ Deno.serve(async (req: Request) => {
     // assistant_rate pattern. Best-effort — fail open if the table is missing, but
     // log loudly so a missing cap is surfaced in monitoring, not hidden.
     try {
-      await supabase.from('push_send_rate').insert({ user_id: user.id });
+      if (serverDispatch) throw new Error('__skip__');  // no caller to rate-limit
+      await supabase.from('push_send_rate').insert({ user_id: user!.id });
       const sinceMin = new Date(Date.now() - 60_000).toISOString();
       const { count } = await supabase
         .from('push_send_rate')
@@ -248,7 +317,9 @@ Deno.serve(async (req: Request) => {
       supabase.from('push_send_rate').delete().eq('user_id', user.id)
         .lt('created_at', new Date(Date.now() - 3_600_000).toISOString()).then(() => {}, () => {});
     } catch (e) {
-      console.error('send-push: rate-limit check unavailable (cap NOT enforced):', e);
+      if ((e as Error)?.message !== '__skip__') {
+        console.error('send-push: rate-limit check unavailable (cap NOT enforced):', e);
+      }
     }
 
     // Harden caller-supplied content against notification spoofing / phishing and
@@ -367,7 +438,7 @@ Deno.serve(async (req: Request) => {
     // The admin console writes its own inbox row before calling us (it needs the
     // record persisted even if push then fails), so skip ours — otherwise the user
     // sees the same warning twice in their Alerts list.
-    if (!isAdminNotice) {
+    if (!isAdminNotice && !serverDispatch) {
       try {
         await supabase.from('notifications').insert({
           user_id: userId,
@@ -448,7 +519,12 @@ Deno.serve(async (req: Request) => {
       const EMAIL_CAP_PER_HR = 5;
       let emailThrottled = false;
       try {
-        const emailKey = await deriveKey(user.id, userId, 'email');
+        // A server dispatch has no caller, so the (caller, recipient) key gets a nil
+        // uuid on the caller side. The cap still applies PER RECIPIENT on this channel
+        // — skipping it entirely would let a trigger that somehow loops email-bomb one
+        // person, and the whole point of this ledger is that nobody can.
+        const emailKey = await deriveKey(
+          user!.id ?? '00000000-0000-0000-0000-000000000000', userId, 'email');
         await supabase.from('push_send_rate').insert({ user_id: emailKey });
         const sinceHr = new Date(Date.now() - 3_600_000).toISOString();
         const { count } = await supabase

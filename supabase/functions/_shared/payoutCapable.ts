@@ -81,8 +81,30 @@ export async function payoutCapable(
 
   try {
     const acc = await stripe.accounts.retrieve(accountId);
-    const capable = !!(acc.details_submitted && acc.charges_enabled && acc.payouts_enabled);
-    if (capable) {
+
+    // ── ASK FOR WHAT THE CHARGE ACTUALLY NEEDS ────────────────────────────────
+    //
+    // A capture here is a DESTINATION charge: the platform is the merchant of record and
+    // the connected account only has to be able to RECEIVE the transfer, which is the
+    // `transfers` capability. `payouts_enabled` governs something else entirely — whether
+    // Stripe moves that balance on to their bank — and it goes false for ordinary,
+    // temporary reasons: a review, a bank re-verification, a missing document.
+    //
+    // Requiring it refused a capture Stripe would have accepted. The work was done, the
+    // hold was live, and the gig paid $0 while the authorization ran down to nothing — on
+    // an account Stripe was perfectly willing to credit, and which would have paid out by
+    // itself once the pause lifted. A paused payout delays the earner's bank transfer,
+    // which is Stripe's business; it must not delay their earnings.
+    const transfersActive = acc.capabilities?.transfers === 'active';
+    const capable = !!(acc.details_submitted && transfersActive);
+
+    // The CACHE keeps its stricter meaning. `stripe_accounts.onboarded` is read at
+    // ACCEPT time by stripe-create-payment-intent and by stripe-connect-status, where
+    // "fully set up" is the right bar — promoting an account with paused payouts to
+    // onboarded would let bookings be accepted for somebody who cannot yet be paid out.
+    // So a merely transfers-capable account settles, and does not get promoted.
+    const fullyOnboarded = !!(acc.details_submitted && acc.charges_enabled && acc.payouts_enabled);
+    if (fullyOnboarded) {
       // Sync the cache so the next reader — and the controls — see the truth.
       await supabase.from('stripe_accounts').update({ onboarded: true }).eq('account_id', accountId);
     }
