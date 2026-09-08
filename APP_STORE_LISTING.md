@@ -127,8 +127,9 @@ Key answers: all violence/sexual/drug/gambling/profanity descriptors = **None**;
 | Financial — Other (tax center, earnings) | ✅ | ✅ | ❌ | App Functionality |
 | Purchases — Purchase History | ✅ | ✅ | ❌ | App Functionality |
 | Other — Date of Birth / Age | ✅ | ✅ | ❌ | App Functionality (18+ gate) |
-| Usage Data — Product Interaction | ❌ today (analytics off) | — | — | ⚠️ flip to ✅ when you add PostHog/Amplitude |
-| Diagnostics — Crash Data | ❌ today (Sentry off) | — | — | ⚠️ flip to ✅ when you add Sentry |
+| Usage Data — Product Interaction | ❌ (`track()` never transmits) | — | — | ⚠️ flip to ✅ when you add PostHog/Amplitude |
+| Diagnostics — Crash Data | ✅ | ✅ | ❌ | App Functionality — see the correction below |
+| Diagnostics — Other Diagnostic Data | ✅ | ✅ | ❌ | App Functionality |
 | Sensitive Info — Gov ID/selfie | ❌ (Stripe Identity hosted) | — | — | verify you never pull raw doc back |
 
 **Tracking = NO across the board** (no ATT/IDFA, no ad SDKs).
@@ -137,7 +138,17 @@ Key answers: all violence/sexual/drug/gambling/profanity descriptors = **None**;
 1. **Precise Location:** GPS is used only on-device (distance sort, mileage) and never persisted — could be marked "not collected." But your privacy policy says you collect GPS, so it's marked collected to match + be review-safe. Decide the stance and align the label with the policy.
 2. **Payment Info:** Card data goes into Stripe's SDK/hosted flow; your backend never stores card numbers. Recommended to declare Payment Info anyway (most marketplaces do). Confirm no PAN/CVV ever hits your servers/logs.
 3. **ID verification (Sensitive Info):** Document + selfie are handled entirely by Stripe Identity; app never receives them → marked not collected. Confirm you never pull the raw doc back via Stripe API.
-4. **Analytics/Diagnostics are OFF today** so marked not-collected. The moment you add a PostHog/Sentry key, you MUST update the label (Usage Data + Diagnostics, linked to identity).
+4. ⚠️ **CORRECTED 2026-09-08 — Diagnostics IS collected.** This table previously marked it
+   not-collected on the reasoning that `SENTRY_DSN` is null. That is wrong, and the wrong
+   version was published to App Store Connect before the code was checked. There is no
+   third-party crash SDK, but `captureError` (`src/lib/analytics.js`) POSTs to the
+   `log-client-error` edge function, which inserts into `client_errors` with a `user_id`
+   foreign key to `profiles`; the root `ErrorBoundary` sends render crashes through it with
+   `fatal: true`. **The absence of a vendor SDK is not the absence of collection** — check the
+   first-party sink before answering this question again.
+
+   **Usage Data is genuinely not collected**: `track()` writes an in-memory ring buffer and a
+   `__DEV__` console line, and transmits nothing. That flips the day `ANALYTICS_KEY` is set.
 
 ---
 

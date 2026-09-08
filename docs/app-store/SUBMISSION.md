@@ -264,10 +264,11 @@ there is no ATT prompt, no IDFA and no ad SDK in the build.
 | Financial Info — Other (earnings, Tax Center) | Yes | Yes | App Functionality |
 | Purchases — Purchase History | Yes | Yes | App Functionality |
 | Other Data — Date of Birth | Yes | Yes | App Functionality (18+ gate) |
+| Diagnostics — Crash Data | Yes | Yes | App Functionality |
+| Diagnostics — Other Diagnostic Data | Yes | Yes | App Functionality |
 | Contact Info — Phone | No | — | not collected |
 | Sensitive Info — Gov ID / selfie | No | — | Stripe Identity hosted; the app never receives the document |
-| Usage Data — Product Interaction | No | — | analytics keys are unset today |
-| Diagnostics — Crash Data | No | — | Sentry DSN is unset today |
+| Usage Data — Product Interaction | No | — | `track()` only writes an in-memory ring buffer |
 
 Three of these are judgment calls, explained in full in `APP_STORE_LISTING.md`:
 
