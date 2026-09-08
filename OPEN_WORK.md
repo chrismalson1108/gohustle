@@ -212,7 +212,25 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 >   (`refunded_cents <= amount_cents`), which is stronger than a control — the impossible
 >   row cannot be written at all.
 >
-> What was NOT exercised live: the Stripe capture leg itself. See the note above.
+> * **THE CAPTURE LEG IS NOW EXERCISED, with real money.** 2026-09-08, Stripe test mode,
+>   a fully verified Connect account: a $100 gig held, accepted (the hold verified before
+>   confirm), completed by both parties and captured — Stripe received 10000, application
+>   fee 700, transfer created, the earner's Connect balance showed 9300 and
+>   `profiles.earnings_total` showed 93.00, identical. Then a $200 gig taken through the
+>   FULL two-party dispute path: proposed at 60% (nothing captured, payment still
+>   authorized), an honest retry answered idempotently, a CHANGED percentage refused with
+>   409 `ADJUSTMENT_ALREADY_PROPOSED`, the earner accepted (settle_after moved to
+>   responded_at to the microsecond), and `settle-disputes` captured 12000 with fee 840 and
+>   earner 11160 — Connect balance 20460, `earnings_total` 204.60, exact. Tips charged and
+>   capped. A real $40 partial refund fired the webhook, filed the reversal record, and
+>   `ctl_external_reversal_not_ledgered` named it at `unledgered_cents=4000` once past its
+>   24-hour grace, with the correct "Record chargeback, do NOT press Refund" remedy.
+> * **The Tax Center fix, demonstrated on that money:** valued from the pin it reports
+>   $309.00; valued from the ledger it reports $234.60; what actually reached the bank was
+>   $234.60. A $74.40 overstatement removed on one disputed booking.
+>
+> Production was returned to its exact baseline afterwards, `client_errors` included.
+
 
 > **2026-09-08 — a working payments audit added 71 rows here and closed 10.**
 > 24 read-only finders swept the money surface; every finding was attacked by independent
@@ -236,10 +254,11 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 > by moving money. The earner's Connect onboarding was left `state: incomplete`. Treat
 > every row below as reproducing in code, not as reproduced against a live charge.
 
-## Closed (254)
+## Closed (255)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
+| high | webhook | **Every successful tip filed a FATAL error, and three tips in an evening pages the on-call.** Tips write NO `payments` row — `stripe-tip` mints its own PaymentIntent and records it only in `tip_ledger` — so `payment_intent.succeeded` found nothing and logged `succeeded for unknown payment_intent` with `fatal: true`. REPRODUCED WITH REAL MONEY 2026-09-08: two live tips through `stripe-tip`, two fatal rows, one per tip. `ctl_edge_errors_burst` pages at three fatal rows from one function inside 90 minutes, so a normal Friday evening wakes somebody about money that moved exactly as designed — and it does it through the same channel that would report a genuinely unknown charge, which is how an alert teaches its reader to ignore it. Was OPEN_WORK's own `webhook` row, previously confirmed only by reading. _(audit-2026-09-08/live-money.)_ | The `!row` branch now asks `tip_ledger` before concluding the ledger cannot account for the PaymentIntent: a known tip logs to the function log and returns, anything else keeps the fatal row — which is the case the branch exists for. `__tests__/tipCaps.test.js`, proved to discriminate. Deployed. |
 | medium | pricing | **The loyalty ladder cannot reward anybody at the rate the platform charges.** `fee_tiers` holds three rungs at 900/800/700 bps and the standing rate has been 700 since 2026-08-12. The pinned fee is LOWEST-WINS, so the best rung a 50-gig veteran reaches delivers `least(700,700)` = exactly what a first-timer pays. Not live harm — all three ship `enabled=false` — but it becomes harm the moment somebody enables them on /pricing believing they have given their best earners a discount: nobody's fee moves and nothing says so. `ctl_fee_tier_ladder_inverted` compares rungs to each other and `ctl_fee_tier_below_floor` compares them to the processing floor; neither compares a rung to the STANDING RATE, which is the only comparison that decides whether a rung does anything. Measured live 2026-09-08. _(audit-2026-09-08/live-probe.)_ | `20260909090000` adds `ctl_fee_tier_inert` (medium) — fires on any ENABLED rung at or above the standing rate, silent on a disabled one and on one that genuinely beats it. Deliberately does NOT rewrite the rungs: what the ladder should pay is a pricing decision, and this control is what makes sure it gets taken rather than missed. |
 | low | admin-console | **The /promotions cost preview renders the standing rate as "7.%" and tells a bonus campaign about a fee waiver it does not have.** `to_char(fee_bps/100.0,'FM990.99')` — FM strips insignificant zeros, so an exact 7.00 loses its digits and keeps its decimal point. Every whole-percentage rate renders this way, which is every rate the platform has ever set. This is the sentence an operator reads while choosing `budget_cents` and `max_redemptions`. The caveat was also fee-waiver copy shown on all three kinds: a `bonus` costs its FACE VALUE with no floor and no tier, so calling it an upper bound invites under-budgeting. Verified live 2026-09-08. _(audit-2026-09-08/live-probe.)_ | `20260909100000` trims the trailing '.' and gives each kind its own caveat. Arithmetic untouched and asserted unchanged by the probe — it was checked against production and is correct for all three kinds; only the prose was wrong. |
 | medium | rls | **The publishable key still held table grants on four money tables, so RLS was the only layer.** Measured against production 2026-09-08 with the real anon key — the one in the app bundle and on gohustlr.com: `bookings` anon SELECT/INSERT/UPDATE, and `payments`, `stripe_accounts`, `stripe_customers` anon SELECT. Every other money table already had the stronger posture (no grant at all, so the request is refused before a policy is consulted). Nothing leaked — the policies are auth.uid()-scoped and anon read zero rows — but one policy regression on any of the four would have been directly reachable by the public, where the same regression on `disputes` would still be refused. 20260812040000 did this sweep for 28 tables using "is a policy backing this command" as its rule, which is not role-aware; these four are its residue. _(audit-2026-09-08/live-probe.)_ | `20260909080000` revokes all four from anon and asserts both halves: anon holds nothing, and `authenticated` keeps every grant the app uses. Provably breaks nothing — anon already read zero rows. `__tests__/anonMoneyGrants.test.js`, proved to discriminate. |

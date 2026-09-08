@@ -349,6 +349,32 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (!row) {
+          // ── A TIP IS NOT AN UNKNOWN CHARGE ────────────────────────────────
+          //
+          // Tips write NO payments row — stripe-tip mints its own PaymentIntent and
+          // records it only in tip_ledger — so every successful tip landed here and was
+          // filed as a FATAL error. Measured live 2026-09-08: two tips, two fatal rows.
+          //
+          // That is not merely noise. ctl_edge_errors_burst pages the on-call at three
+          // fatal rows from one function inside 90 minutes, so THREE TIPS IN AN EVENING
+          // pages somebody about money that moved exactly as designed — and it does it by
+          // burying the real signal, because the same control is what would tell you
+          // about a genuine unknown charge. An alert channel that cries wolf on the happy
+          // path is worse than no channel: the next reader discounts it.
+          //
+          // Ask tip_ledger before concluding the ledger cannot account for this. A tip we
+          // know about is expected and silent; anything else keeps the fatal row, which is
+          // the case this branch exists for — Stripe holding money against a
+          // PaymentIntent nothing in this database explains.
+          const { data: tipRow } = await supabase
+            .from('tip_ledger')
+            .select('id, booking_id')
+            .eq('payment_intent_id', pi.id)
+            .maybeSingle();
+          if (tipRow) {
+            console.log(`stripe-webhook: payment_intent.succeeded is tip ${tipRow.id} on booking ${tipRow.booking_id} — no payments row expected`);
+            break;
+          }
           // /errors, not the function log nobody reads: Stripe has money against a
           // PaymentIntent this ledger cannot account for.
           await logServerError('stripe-webhook',

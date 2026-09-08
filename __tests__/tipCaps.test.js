@@ -703,3 +703,48 @@ describe('a refunded tip actually reaches the reversal', () => {
     expect(template).toBeTruthy();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A successful tip must not page the on-call.
+//
+// Tips write NO payments row — stripe-tip mints its own PaymentIntent and records it
+// only in tip_ledger — so `payment_intent.succeeded` found nothing and filed a FATAL
+// "succeeded for unknown payment_intent" error. Measured against production on
+// 2026-09-08 by sending two real tips: two fatal rows, one per tip.
+//
+// ctl_edge_errors_burst pages at THREE fatal rows from one function inside 90 minutes.
+// So three tips in an evening wakes somebody about money that moved exactly as designed,
+// and — worse — it does it through the same channel that would report a genuinely
+// unknown charge. An alert that fires on the happy path teaches its reader to ignore it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a successful tip does not file a fatal error', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase/functions/stripe-webhook/index.ts'), 'utf8',
+  );
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  // The whole `if (!row)` block on the succeeded path.
+  const block = code.slice(code.indexOf('if (!row) {'), code.indexOf('const received ='));
+
+  it('asks tip_ledger before calling a PaymentIntent unknown', () => {
+    expect(block).toMatch(/from\('tip_ledger'\)/);
+    expect(block).toMatch(/\.eq\('payment_intent_id', pi\.id\)/);
+  });
+
+  it('the tip check comes BEFORE the fatal log, not after it', () => {
+    const tipAt = block.indexOf("from('tip_ledger')");
+    const fatalAt = block.indexOf('succeeded for unknown payment_intent');
+    expect(`tip lookup precedes the fatal log: ${tipAt > -1 && tipAt < fatalAt}`)
+      .toBe('tip lookup precedes the fatal log: true');
+  });
+
+  it('a known tip returns without logging anything fatal', () => {
+    expect(block).toMatch(/if \(tipRow\)[\s\S]{0,300}break;/);
+  });
+
+  it('a genuinely unknown PaymentIntent is STILL fatal — that is what the branch is for', () => {
+    expect(block).toMatch(/succeeded for unknown payment_intent[\s\S]{0,200}fatal: true/);
+  });
+});
