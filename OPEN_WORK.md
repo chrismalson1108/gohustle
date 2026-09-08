@@ -45,7 +45,7 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 >
 > **The control board is clean: 0 open findings, 0 controls errored, 73 registered.**
 
-## Open (101)
+## Open (102)
 
 | Sev | Area | Finding | Fix |
 |---|---|---|---|
@@ -176,6 +176,34 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 | low | tax | **A booking carrying a referral fee credit under-reports the earner's income, because the netting ignores the pinned fee_credit_cents** — `shared/taxFormat.js:109`. Ran the real functions: a $100 gig at 700 bps carrying a $5.00 referral fee credit. `earnerNetAfterCreditCents(10000, 700, 500)` = 9655 — the earner is actually paid $96.55 (the credit is spent down to the $3.45 Stripe-cost floor, per settleEscrow.ts's fee call). `earnerNetCents(10000, 700)` = 9300, so the Tax Center reports $93.00. Understated by $3.55 on that booking; the shortfall is bounded pe _(audit-2026-09-08/tax-center, 1/1 confirm.)_ | Subsumed by finding 1 — reading `payments.earner_amount_cents` gets the credit right by construction, because settleEscrow already applied it. If the pin-based path is kept as the pre-payments-row fallback, pass the fourth pin: `earnerNetAfterCreditCents(amountCents, feeBpsQuoted, feeCreditCents)`. Add a credited-booki |
 | low | tips | **Reporting a problem silently throws away the tip the poster selected on the same sheet, with no error and no trace** — `src/components/CompletionModal.js:232`. Poster opens Verify & Rate, taps the $10 tip chip (the sheet now reads 'Charged to your saved card and sent to Sam'), then also ticks 'There was a problem — pay a reduced amount' at 75% and writes a reason. stripe-capture-payment returns {adjustment:'proposed'}, the client takes the early return, and the sheet closes on the toast 'Sent to the worker — they have 48 hours to reply.' The $10 tip is n _(audit-2026-09-08/tips, 2/2 confirm.)_ | Either (a) charge the tip on the proposed path too — move the `if (tipCents && tipCents >= 50)` block above the `adjustment === 'proposed'` early return in both src/context/JobsContext.js and web/lib/jobs.tsx, since stripe-tip already accepts a 'completed' booking and a tip is not contingent on the disputed gig amount; |
 | low | webhook | **A charged-back TIP emails the operator that the gig booking is "flagged (auto-settlement suppressed)" when nothing was flagged and the escrow is still fully settleable** — `supabase/functions/stripe-webhook/index.ts:108`. A poster tips $20 on booking B, then disputes that tip charge with their bank. `charge.dispute.created` arrives, `recordReversal` reverses the tip in `tip_ledger` and returns B, and the admin is emailed "Chargeback opened: usd 20.00 / Booking: B / The booking is flagged (auto-settlement suppressed); review and respond in Stripe." No `disputes` row exists for B. If B's escrow is still `authorized`  _(audit-2026-09-08/webhook, 2/2 confirm.)_ | Make `recordReversal` return which of the two things it did rather than a bare booking id — e.g. `{ bookingId, filed: boolean, kind: 'tip' / 'escrow' }` — and have both email callers render the suppression sentence only when a `disputes` row was actually written. For the tip branch the correct copy names `tip_ledger.re |
+
+| low | referrals | **`vest_bonuses` tests `p.status = 'refunded'`, a value the CHECK constraint forbids** — `payments_status_check` allows only pending/authorized/captured/cancelled/failed, so that arm of both void passes is unreachable dead code. Harmless today because the sibling arm `coalesce(p.refunded_cents,0) > 0` is what actually fires, and it was proved to fire live. It matters as a false belief encoded in a money function: someone changing how refunds are recorded could reasonably think the status arm was the backstop. Confirmed 2026-09-08 against live pg_proc and the live constraint; `vest_bonuses` is the ONLY function in the schema that tests for that value. _(audit-2026-09-08/live-probe.)_ | Drop the dead arm, or add 'refunded' to the CHECK if a distinct terminal status is actually wanted — but not both. |
+
+> **Verified CLEAN against production on 2026-09-08, by rolled-back probe on the real
+> functions — not by reading them.** These are the money paths that were exercised and
+> held:
+>
+> * **Fee arithmetic** — 3,174 `(amount, bps, credit)` cases generated from
+>   `shared/pricing.js` and computed by production. Zero disagreements.
+> * **Promotions** — a `fee_override` grant pinned the booking at 0 bps (lowest-wins),
+>   the campaign was charged 355c (exactly `fee(700bps)` minus the processing floor on a
+>   $100 gig), and once the 400c budget was exhausted the next booking still succeeded at
+>   the standing 700 bps.
+> * **Referrals / bonus ledger** — bonus minted `pending` on verify; an OPEN dispute on
+>   the source booking held vesting; closing it vested to `payable`; `consume_fee_credit`
+>   took exactly the 355c of headroom above the Stripe floor and **left the 145c
+>   remainder payable** rather than forfeiting it; and refunding the source booking voided
+>   the bonus *after* it had already vested — the late-void path 20260814150000 added.
+> * **Tips** — `reserve_tip_slot` is a WRITE returning a reservation key, so the cap gate
+>   cannot be raced by a lock-free read; an over-cap tip was refused with
+>   `tip_cap_booking` and its real headroom; releasing returned the headroom;
+>   `record_tip_reversal` reversed 2000c and a webhook REDELIVERY at the same cumulative
+>   target moved nothing.
+> * **Refunds** — `record_refund` twice on one `external_id` wrote ONE `refund_ledger` row
+>   and debited once; the earner's share of a $50 refund on a $100/7% gig came out at
+>   4650c, which is the split that never touches the platform fee.
+>
+> What was NOT exercised live: the Stripe capture leg itself. See the note above.
 
 > **2026-09-08 — a working payments audit added 71 rows here and closed 10.**
 > 24 read-only finders swept the money surface; every finding was attacked by independent
