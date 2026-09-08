@@ -91,9 +91,18 @@ function sample(expr) {
 }
 
 // Every template literal handed to recordReversal() as its reason argument.
+//
+// A trailing `%` marks a SQL LIKE PATTERN, not a reason being written —
+// `markExternalStatus` matches the row this webhook filed for a dispute by exactly that
+// prefix. Sampling it as a reason reports a false mismatch (it can never satisfy an
+// anchored `…$` pattern, because it is deliberately open-ended). It is not merely
+// skipped: `the matcher and the writer share one template` below asserts the two stay in
+// step, which is the invariant that actually matters here.
+const LIKE_PATTERN = /\(%$/;
 function webhookReasons() {
   const out = [];
   for (const m of webhook.matchAll(/`(Stripe [^`]*)`/g)) {
+    if (LIKE_PATTERN.test(m[1])) continue;
     out.push(m[1].replace(/\$\{([^}]*)\}/g, (_, e) => sample(e)));
   }
   return out;
@@ -228,3 +237,27 @@ function codeWriters(needle) {
   }
   return hits;
 }
+
+describe('the matcher and the writer share one template', () => {
+  // markExternalStatus finds the reversal record by LIKE-ing the reason stripe-webhook
+  // wrote for that dispute. If the writer's template ever changes shape and the matcher
+  // does not, the outcome of every chargeback silently stops being recorded — the row
+  // stays `open`, ctl_external_reversal_not_ledgered waits 75 days, and a genuinely LOST
+  // chargeback goes unledgered for that whole time with nothing saying so.
+  it('the LIKE prefix is a real prefix of the chargeback reason it has to match', () => {
+    const matcher = webhook.match(/`(Stripe chargeback [^`]*\(%)`/);
+    expect(matcher).not.toBeNull();
+    const written = [...webhook.matchAll(/`(Stripe chargeback [^`]*)`/g)]
+      .map((m) => m[1])
+      .filter((t) => !/\(%$/.test(t));
+    expect(written.length).toBeGreaterThan(0);
+
+    // Compare with the interpolations collapsed — the writer names `dispute.id` and the
+    // matcher names `disputeId`, and they are the same value by construction.
+    const shape = (t) => t.replace(/\$\{[^}]*\}/g, '<id>');
+    const prefix = shape(matcher[1]).replace(/%$/, '');
+    for (const t of written) {
+      expect(shape(t).startsWith(prefix)).toBe(true);
+    }
+  });
+});

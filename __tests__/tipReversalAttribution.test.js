@@ -87,7 +87,13 @@ describe('the tip branch never reaches the booking-level dispute insert', () => 
     // If a tip chargeback is ever wanted as an abuse signal it needs its OWN template,
     // one the control's two anchored regexes do not match. Until that decision is made,
     // there must be no third template at all.
-    const templates = webhook.match(/`Stripe (refund on charge|chargeback) [^`]*`/g) ?? [];
+    // A trailing `(%` is a SQL LIKE PATTERN, not a reason. markExternalStatus finds the
+    // row this webhook already filed for a dispute by that prefix; it mints nothing, so
+    // counting it as a third template would fail this test for the opposite of the reason
+    // it exists. reversalReasonParity.test.js asserts the matcher and the writer stay in
+    // step, which is the invariant that keeps that exclusion honest.
+    const templates = (webhook.match(/`Stripe (refund on charge|chargeback) [^`]*`/g) ?? [])
+      .filter((t) => !/\(%`$/.test(t));
     expect(templates).toHaveLength(2);
     for (const t of templates) expect(t).not.toMatch(/tip/i);
   });

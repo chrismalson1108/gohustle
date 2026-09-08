@@ -48,6 +48,34 @@ async function emailAdmin(subject: string, html: string): Promise<void> {
 // poster capture path) treat as "under dispute", so this ALSO suppresses any further
 // auto-capture on the booking. Idempotent: keyed on the Stripe object id embedded in
 // the reason, so Stripe redeliveries don't duplicate. Returns the booking_id if found.
+/**
+ * Stamp Stripe's own verdict onto the reversal record this webhook filed for that dispute.
+ *
+ * Matched on the dispute id embedded in the machine template `recordReversal` writes,
+ * anchored so a poster's free-text "report a problem" reason can never be caught by it —
+ * the same rule ctl_external_reversal_not_ledgered applies to the same column. The column
+ * is service-role-only (guard_disputes_write pins it), because a party who could write it
+ * could tell the control a lost chargeback was won.
+ */
+async function markExternalStatus(
+  supabase: SupabaseClient,
+  disputeId: string,
+  status: 'open' | 'won' | 'lost',
+): Promise<void> {
+  const { error } = await supabase
+    .from('disputes')
+    .update({ external_status: status })
+    .like('reason', `Stripe chargeback ${disputeId} (%`);
+  if (error) {
+    // Loud on a verdict, quiet on the opening stamp: a missing 'lost' keeps the money
+    // unledgered AND keeps the control silent until the 75-day backstop, which is exactly
+    // the shape this change exists to remove.
+    await logServerError('stripe-webhook',
+      `could not mark dispute ${disputeId} as ${status}: ${error.message}`,
+      { dispute_id: disputeId }, { fatal: status === 'lost' });
+  }
+}
+
 async function recordReversal(
   supabase: SupabaseClient,
   paymentIntentId: string | null,
@@ -800,6 +828,12 @@ Deno.serve(async (req: Request) => {
           `Stripe chargeback ${dispute.id} (${dispute.reason ?? 'unknown'}, ${dispute.currency ?? 'usd'} ${amount})`,
           'chargeback',
         );
+        // Mark the record as an OPEN card dispute. ctl_external_reversal_not_ledgered's
+        // chargeback arm waits for this to become 'lost' before it tells anybody to write
+        // refunded_cents — because reconcile-stripe deliberately expects our ledger to
+        // still read 0 while a dispute is open, and following the old unconditional remedy
+        // opened a CRITICAL finding next door. See 20260909140000.
+        if (bookingId) await markExternalStatus(supabase, dispute.id, 'open');
         await emailAdmin(
           `⚠️ Chargeback opened: ${dispute.currency ?? 'usd'} ${amount}`,
           `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
@@ -810,6 +844,47 @@ Deno.serve(async (req: Request) => {
             <p style="color:#6B6482;font-size:12px;">Dispute ${esc(dispute.id)}${piId ? ` · PI ${esc(piId)}` : ''}. The booking is flagged (auto-settlement suppressed); review and respond in Stripe.</p>
           </div>`,
         );
+        break;
+      }
+
+      case 'charge.dispute.closed': {
+        // THE OUTCOME. Nothing recorded this until 20260909140000, so for the whole 30-75
+        // day life of a card dispute the two reversal controls contradicted each other:
+        // ctl_external_reversal_not_ledgered said "record the chargeback" while
+        // reconcile-stripe counted only `status === 'lost'` and made any recorded figure a
+        // CRITICAL mismatch. If the platform then WON, refunded_cents permanently claimed
+        // money had been returned on a charge nobody reversed — and record_refund is
+        // add-only, so there was no way back. The state existed at Stripe; we just could
+        // not see it.
+        const closed = event.data.object as Stripe.Dispute;
+        // `warning_closed` is an early-warning that resolved without funds being taken, so
+        // it is a win for ledger purposes. Anything else unexpected is left OPEN
+        // deliberately — the control's 75-day backstop then reports it rather than us
+        // guessing an outcome and writing it into the money.
+        const outcome = closed.status === 'lost'
+          ? 'lost'
+          : (closed.status === 'won' || closed.status === 'warning_closed')
+            ? 'won'
+            : null;
+        if (outcome) {
+          await markExternalStatus(supabase, closed.id, outcome);
+          if (outcome === 'lost') {
+            const lostAmount = ((closed.amount ?? 0) / 100).toFixed(2);
+            await emailAdmin(
+              `Chargeback LOST: ${closed.currency ?? 'usd'} ${lostAmount}`,
+              `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#363636;">
+                <p style="font-size:16px;"><strong>A card dispute closed against us.</strong></p>
+                <p><strong>Amount:</strong> ${esc((closed.currency ?? 'usd').toUpperCase())} ${esc(lostAmount)}</p>
+                <p><strong>Reason:</strong> ${esc(String(closed.reason ?? 'unknown'))}</p>
+                <p style="color:#6B6482;font-size:12px;">Dispute ${esc(closed.id)}. The money is gone for good, so it now belongs in <code>refunded_cents</code> — the control will ask for it within the hour.</p>
+              </div>`,
+            );
+          }
+        } else {
+          await logServerError('stripe-webhook',
+            `dispute ${closed.id} closed with an unmapped status "${closed.status}" — left open for the 75-day backstop`,
+            { dispute_id: closed.id }, { fatal: false });
+        }
         break;
       }
 

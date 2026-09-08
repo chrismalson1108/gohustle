@@ -227,6 +227,42 @@ export async function forceCancel(formData: FormData): Promise<ActionResult> {
       );
     }
 
+    // ── A LIVE ADJUSTMENT STOPS THIS BEFORE ANY WRITE ────────────────────────
+    //
+    // Force cancel is the THIRD hold-touching operation, and it did not get the guard
+    // `settle` and `release_hold` got. The ordering below is deliberate and correct in
+    // every other case, but over a live dispute it produced the one state neither order
+    // protects against: the booking write succeeds, `release_hold` is then refused by
+    // admin-payment-action's `dispute_open`, and the operator is told to press a button
+    // that will refuse them too. Cancelled booking, live authorization, live dispute, and
+    // settle-disputes still holding a row against a booking that no longer exists as work.
+    //
+    // So the check moves ahead of both writes. Same predicate as the edge function's, and
+    // FAIL CLOSED for the same reason: an unreadable disputes table is not evidence that
+    // there is no dispute.
+    const { data: liveDispute, error: dispErr } = await ctx.service
+      .from("disputes")
+      .select("id, proposed_pct, response_stance")
+      .eq("booking_id", bookingId)
+      .is("pct_paid", null)
+      .not("proposed_pct", "is", null)
+      .maybeSingle();
+    if (dispErr) {
+      throw new Error(
+        `Couldn't check whether this booking has a live payment adjustment (${dispErr.message}). ` +
+          `Nothing was changed — retry in a moment.`,
+      );
+    }
+    if (liveDispute) {
+      throw new Error(
+        `This booking has a live payment adjustment (${liveDispute.proposed_pct}% proposed` +
+          `${liveDispute.response_stance ? `, the worker ${liveDispute.response_stance}ed` : ", awaiting the worker"}). ` +
+          `Cancelling would void the hold the adjustment is meant to pay from, and the worker would ` +
+          `become unpayable. Decide it at /disputes/${liveDispute.id} first — the hourly sweep then ` +
+          `settles it at the agreed amount. Nothing was changed.`,
+      );
+    }
+
     // ── The GUARDED booking write FIRST, the irreversible Stripe call SECOND ──
     // This used to void the hold first, so that a cancelled gig never left funds held.
     // But the bookings write can REFUSE: trg_guard_started_booking_cancel raises on

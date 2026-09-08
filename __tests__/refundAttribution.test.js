@@ -172,7 +172,13 @@ describe('the in-flight refund marker cannot stick forever', () => {
 describe('the reversal control does not instruct an operator into a second refund', () => {
   it('the remedy no longer offers Refund as an equivalent option', () => {
     const sql = latestDefining('ctl_external_reversal_not_ledgered');
-    const remedy = sql.slice(sql.indexOf("'remedy'"), sql.indexOf("'remedy'") + 1200);
+    // Anchored on the STANDARD arm's own opening line, not on a byte count from 'remedy'.
+    // A fixed +1200 window broke the moment 20260909140000 added the "outcome never
+    // arrived" branch above it — and a slice that can drift off its target is a guard that
+    // reports on whatever happens to be nearby.
+    const start = sql.indexOf('The money ALREADY moved at Stripe');
+    expect(start).toBeGreaterThan(-1);
+    const remedy = sql.slice(start, sql.indexOf('LIKELY A REVERSED TIP', start));
     expect(remedy).toMatch(/Do NOT press Refund/);
     // The old string promised a debit that the chargeback op has not performed since
     // 20260813160000.
@@ -317,5 +323,56 @@ describe('the external-reversal control reads both templates', () => {
     // typed note, which lands in the same column verbatim.
     expect(body).toMatch(/\^Stripe refund on charge \(ch\|py\)_/);
     expect(body).toMatch(/\^Stripe chargeback \(dp\|du\)_/);
+  });
+});
+
+describe('a chargeback is only actionable once Stripe has decided it', () => {
+  // Nothing recorded the OUTCOME of a card dispute until 20260909140000, so for the whole
+  // 30-75 day life of one the two reversal controls demanded opposite things:
+  // ctl_external_reversal_not_ledgered printed "Record chargeback" unconditionally, while
+  // reconcile-stripe counts only `status === 'lost'` and makes any recorded figure a
+  // CRITICAL mismatch. Following the printed remedy on a dispute the platform then WON
+  // left refunded_cents permanently claiming money was returned on a charge nobody
+  // reversed — add-only, with no reversing op anywhere.
+  const ctl = latestDefining('ctl_external_reversal_not_ledgered');
+
+  it('the control waits for the verdict before it asks for a ledger write', () => {
+    expect(ctl).toMatch(/external_status = 'lost'/);
+    // …and a REFUND is untouched by any of it: it has no external_status and never will.
+    expect(ctl).toMatch(/not d\.is_chargeback/);
+  });
+
+  it('but a verdict that never arrives still surfaces — missing data is not "nothing to do"', () => {
+    expect(ctl).toMatch(/interval '75 days'/);
+    expect(ctl).toMatch(/THE OUTCOME OF THIS CHARGEBACK NEVER ARRIVED/);
+  });
+
+  it('the webhook writes the verdict, from Stripe rather than from a guess', () => {
+    expect(webhook).toMatch(/case 'charge\.dispute\.closed'/);
+    expect(webhook).toMatch(/markExternalStatus\(/);
+    // An unmapped status is left OPEN on purpose, so the 75-day backstop reports it
+    // instead of us inventing an outcome and writing it into the money.
+    expect(webhook).toMatch(/unmapped status/);
+    // A lost verdict we failed to store keeps the money unledgered AND the control quiet.
+    expect(webhook).toMatch(/fatal: status === 'lost'/);
+  });
+
+  it('and it is matched on the machine template, never on a poster’s free text', () => {
+    const helper = webhook.slice(
+      webhook.indexOf('async function markExternalStatus'),
+      webhook.indexOf('async function recordReversal'),
+    );
+    expect(helper).toMatch(/Stripe chargeback \$\{disputeId\} \(%/);
+  });
+
+  it('reconcile-stripe requires the subscription the whole thing depends on', () => {
+    const rec = read('supabase', 'functions', 'reconcile-stripe', 'index.ts');
+    const required = rec.slice(rec.indexOf('REQUIRED_ACCOUNT_EVENTS'), rec.indexOf('REQUIRED_CONNECT_EVENTS'));
+    expect(required).toContain('charge.dispute.closed');
+  });
+
+  it('the column is service-role only — a party could otherwise call a loss a win', () => {
+    const guard = latestDefining('guard_disputes_write');
+    expect(guard).toMatch(/new\.external_status\s*:=\s*old\.external_status/);
   });
 });

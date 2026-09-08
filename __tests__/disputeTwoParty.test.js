@@ -724,3 +724,45 @@ describe('a full capture cannot silently step over a live reduction', () => {
     expect(closeBlock).toMatch(/logServerError\([\s\S]*?fatal: true/);
   });
 });
+
+describe('force cancel is the third hold-touching operation, and it checks too', () => {
+  const actions = read('admin/app/(console)/bookings/actions.ts');
+  const panel = read('admin/app/(console)/bookings/[id]/InterventionPanel.tsx');
+  const start = actions.indexOf('export async function forceCancel');
+  const cancel = actions.slice(start, actions.indexOf('export async function', start + 10));
+
+  it('slices the right function (guards the slice itself)', () => {
+    expect(cancel).toContain('booking.force_cancel');
+    expect(cancel.length).toBeGreaterThan(500);
+  });
+
+  // The write order below it is deliberate — booking first, Stripe second, because
+  // trg_guard_started_booking_cancel can refuse and a voided hold cannot be un-voided.
+  // But over a live dispute BOTH orders strand something: the booking write succeeds and
+  // admin-payment-action's `dispute_open` then refuses the hold, leaving a cancelled
+  // booking with a live authorization, a live dispute, and an operator told to press a
+  // button this same panel disables. So the check has to precede both writes.
+  it('refuses on a live adjustment BEFORE it writes anything', () => {
+    const iCheck = cancel.indexOf('.from("disputes")');
+    const iWrite = cancel.indexOf('.update({ status: "cancelled" })');
+    expect(iCheck).toBeGreaterThan(-1);
+    expect(iWrite).toBeGreaterThan(-1);
+    expect(iCheck).toBeLessThan(iWrite);
+  });
+
+  it('uses the same predicate as the edge function, and fails closed', () => {
+    expect(cancel).toMatch(/\.is\("pct_paid", null\)/);
+    expect(cancel).toMatch(/\.not\("proposed_pct", "is", null\)/);
+    // An unreadable disputes table is not evidence that there is no dispute.
+    expect(cancel).toMatch(/if \(dispErr\)[\s\S]{0,200}throw new Error/);
+  });
+
+  it('and the button is disabled, so the UI does not offer what the action refuses', () => {
+    // Skip the import list first — `forceCancel` appears there too, and a slice taken
+    // from the import tests nothing at all.
+    const body = panel.slice(panel.indexOf('export default'));
+    const i = body.indexOf('forceCancel');
+    expect(i).toBeGreaterThan(-1);
+    expect(body.slice(i - 500, i)).toMatch(/Boolean\(openDispute\)/);
+  });
+});

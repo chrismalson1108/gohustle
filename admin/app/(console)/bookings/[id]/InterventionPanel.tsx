@@ -146,9 +146,15 @@ export default function InterventionPanel({
             a refusal costs nothing. Say so in the confirm rather than hiding the button —
             "Clear started" then Force cancel is the same override with an extra step and
             no extra thought. */}
+        {/* A LIVE ADJUSTMENT DISABLES THIS TOO, exactly as it disables Release hold and
+            Settle below. Force cancel is the third hold-touching operation and was the
+            only one still offered over a live dispute: it cancelled the booking, then hit
+            admin-payment-action's `dispute_open` refusal on the hold, and told the
+            operator to press "Release hold" — which this same panel had already disabled.
+            The action refuses before any write now; this keeps the UI from offering it. */}
         <button
           className={danger}
-          disabled={pending || settled || status === "cancelled"}
+          disabled={pending || settled || status === "cancelled" || Boolean(openDispute)}
           onClick={() =>
             fire(
               forceCancel,

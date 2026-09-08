@@ -118,9 +118,17 @@ describe('the panel tells the operator what they are overriding', () => {
   test('Force cancel is still reachable on a started booking', () => {
     // Hiding it would only push the operator through "Clear started" — the same
     // override with an extra step and no extra thought.
-    const btn = PANEL.slice(PANEL.indexOf('fire(\n              forceCancel'));
-    expect(btn.length).toBeGreaterThan(0);
-    expect(PANEL).toMatch(/disabled=\{pending \|\| settled \|\| status === "cancelled"\}/);
+    // Assert the INTENT — `startedAt` must not gate the button — rather than pinning the
+    // whole expression. The literal form broke when 20260909140000 added
+    // `|| Boolean(openDispute)`, which is a legitimate and different reason to disable:
+    // over a live adjustment the action refuses before it writes, so offering the button
+    // would only produce the refusal. Pinning the string made this test object to a
+    // condition it has no opinion about.
+    const i = PANEL.indexOf('forceCancel', PANEL.indexOf('export default'));
+    expect(i).toBeGreaterThan(-1);
+    const btn = PANEL.slice(i - 500, i);
+    expect(btn).toMatch(/disabled=\{[^}]*status === "cancelled"/);
+    expect(btn).not.toMatch(/disabled=\{[^}]*startedAt/);
   });
 
   test('the confirm branches on startedAt', () => {

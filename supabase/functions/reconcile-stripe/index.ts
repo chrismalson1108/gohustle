@@ -597,6 +597,12 @@ const REQUIRED_ACCOUNT_EVENTS = [
   "payment_intent.amount_capturable_updated",
   "charge.refunded",
   "charge.dispute.created",
+  // The OUTCOME of a card dispute. Without it, disputes.external_status never leaves
+  // 'open', ctl_external_reversal_not_ledgered's chargeback arm waits 75 days before it
+  // reports anything, and a genuinely LOST chargeback stays unledgered for that whole
+  // time. Subscribing this is what turns that control from a guess into a fact
+  // (20260909140000).
+  "charge.dispute.closed",
   "identity.verification_session.verified",
   "identity.verification_session.requires_input",
   "identity.verification_session.canceled",
