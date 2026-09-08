@@ -16,22 +16,38 @@ export default function PayoutStatusCard({
   failed,
   resuming,
   noWebSession,
+  isNative,
   onFinishSetup,
 }: {
   /** null while loading. */
   status: ConnectStatus | null;
   failed: boolean;
   resuming: boolean;
-  /** Visitor has no web session — almost always a mobile user returning from Stripe. */
+  /** Visitor has no web session. On its own this says NOTHING about which device they
+   *  are on — see the branch below. */
   noWebSession?: boolean;
+  /** The APP started this flow (`?native=1`, set by stripe-connect-onboard). */
+  isNative?: boolean;
   onFinishSetup: () => void;
 }) {
-  // Mobile users land here inside an in-app browser that shares NO session with the
-  // native app (the app's session lives in AsyncStorage). We can't read their payout
-  // status, and we must NOT send them to /profile/payouts — that route is gated and
-  // bounces to /login, which reads as "the app logged me out and made me sign up
-  // again". Terminal state: send them back to the app, which re-checks status itself.
-  if (noWebSession) {
+  // ── No web session. WHICH no-web-session is it? ────────────────────────────
+  //
+  // These were one branch, and that was the bug. A user who finishes onboarding in a
+  // DESKTOP browser has no gohustlr.com session either, so they were shown the mobile
+  // screen and handed an `gohustlr://` link — which on a Mac or a PC silently does
+  // nothing at all. No error, no fallback, no way forward: the button just sits there.
+  // Reported from a real desktop run on 2026-09-08.
+  //
+  // `?native=1` is the discriminator and it was already being read one component up: the
+  // edge function sets it only when the PHONE started the flow. Without it, the flow did
+  // not come from the app and "head back to the app" is not an instruction the person can
+  // follow.
+  if (noWebSession && isNative) {
+    // Genuinely from the app: an in-app browser that shares no session with the native
+    // app (whose session lives in AsyncStorage). We cannot read their payout status, and
+    // must NOT send them to /profile/payouts — that route is gated and bounces to
+    // /login, which reads as "the app logged me out". Send them back to the app, which
+    // re-checks status itself.
     return (
       <Shell>
         <Badge tone="neutral">
@@ -45,6 +61,35 @@ export default function PayoutStatusCard({
         <a href="gohustlr://" className={buttonClasses("primary", "lg", "mt-5 w-full")}>
           Open Hustlr
         </a>
+        {/* The scheme only resolves where the app is installed. If the tap does nothing,
+            say what to do instead rather than leaving a dead button. */}
+        <p className="mt-3 text-sm text-ink-soft">
+          Nothing happened? Just switch to the Hustlr app — your details are already saved.
+        </p>
+      </Shell>
+    );
+  }
+
+  if (noWebSession) {
+    // A browser that did not come from the app and is not signed in here. Their details
+    // ARE saved — Stripe redirected them, which only happens after submission — so lead
+    // with that, then give them the one thing that actually works: signing in.
+    return (
+      <Shell>
+        <Badge tone="success">
+          <CheckCircle2 className="size-9" />
+        </Badge>
+        <Heading>Your details were submitted</Heading>
+        <Body>
+          Stripe has what it needs. Sign in to see your payout status — or just open the Hustlr
+          app, where it will already be up to date.
+        </Body>
+        <Link
+          href="/login?next=/profile/payouts"
+          className={buttonClasses("primary", "lg", "mt-5 w-full")}
+        >
+          Sign in to check payouts
+        </Link>
       </Shell>
     );
   }
