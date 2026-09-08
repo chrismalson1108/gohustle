@@ -3,6 +3,12 @@
 Prepared for App Store Connect (app Apple ID `6790460957`, bundle `com.gohustlr.app`).
 **Review before publishing.** Nothing here is submitted for App Review without your go-ahead.
 
+> **Submitting?** Work from **`docs/app-store/SUBMISSION.md`** — it is the field-by-field
+> pack (final copy, review notes, privacy answers, build commands, blocking issues) built
+> from this draft. This file stays the place the *rationale* lives: why each category, why
+> each privacy answer, what the judgment calls were. Screenshots are generated into
+> `docs/app-store/screenshots/` by `scripts/app-store-screenshots/render.mjs`.
+
 ---
 
 ## ⚠️ Must change before PUBLIC submission (fine while TestFlight-only)
@@ -149,7 +155,10 @@ _(Full text also generated — includes the closed-beta/demo-account explanation
 ---
 
 ## What still needs YOU
-- **Screenshots** — required; must be real captures from the app (we'll grab these once it's installable via TestFlight).
+- **Screenshots** — generated into `docs/app-store/screenshots/` at both required sizes
+  (1320 × 2868 and 1284 × 2778). They are RENDERED from the app's own tokens and components,
+  not captured from a device, so spot-check them against a TestFlight build before
+  uploading and regenerate rather than hand-editing.
 - **Price** — set Free (assumed) or choose a tier.
 - **Demo accounts** — create + pre-verify the two above, add to beta allowlist.
 - **Decide the 3 privacy judgment calls** above.
