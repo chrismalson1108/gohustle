@@ -98,15 +98,53 @@ export function bookingGrossDollars(booking, fullJob) {
  * `jobById` is optional (a Map from job id to the full job row); it only matters for
  * bookings predating the amount pin.
  */
-export function platformIncomeForYear({ bookings, year, jobById } = {}) {
+export function platformIncomeForYear({ bookings, year, jobById, entryByBookingId } = {}) {
   const y = String(year);
   let earnings = 0;
   let tips = 0;
   (bookings || []).forEach((b) => {
     if (b?.status !== 'verified') return;
     if (!String(b?.completedAt || '').startsWith(y)) return;
-    const gross = bookingGrossDollars(b, jobById?.get?.(b.jobId));
-    earnings += bookingNetDollars(gross, b?.feeBpsQuoted);
+
+    // ── WHAT REACHED THEM, NOT WHAT WAS AUTHORIZED ────────────────────────
+    //
+    // The pin (`amountCentsQuoted`) is the agreed price, and it is deliberately
+    // immutable — settleEscrow leaves `payments.amount_cents` at the full hold on a
+    // partial capture, and record_refund touches neither the booking's status nor its
+    // pin. So a booking settled at 50% after a dispute, and a booking captured in full
+    // and then refunded, both stay `verified` with the same pin and the same
+    // completed_at, and both used to be declared here at the FULL amount.
+    //
+    // On a $200 disputed gig this told the earner they made $186 when $93 reached their
+    // bank, prompted them to set aside ~27% of a number half again too big, and wrote
+    // "$186.00" onto the CSV line they hand an accountant — over-declaring income to the
+    // IRS on exactly the booking where the money is most likely to have moved.
+    // /profile/transactions showed $93.00 for the same booking on the same day, because
+    // shared/ledger.js reads the payment row. This now reads the same place.
+    //
+    // The arithmetic is the ledger's, not a second copy: settled total minus the
+    // earner's share of any refund, which is what `debit_earnings` actually took off
+    // their balance.
+    // Keyed off the LEDGER ENTRY rather than a second read of `payments`, so the Tax
+    // Center and Transactions cannot disagree by construction — which was the whole
+    // complaint. `netCents` is settled earner amount minus their share of any refund,
+    // plus the tip; the tip is added separately below, so subtract it back out here.
+    const entry = entryByBookingId?.get?.(b.id);
+    if (entry) {
+      if (entry.settled) {
+        earnings += Math.max(0, (entry.netCents || 0) - (entry.tipCents || 0)) / 100;
+      }
+      // Not settled — a released or never-completed hold paid them nothing. Declaring
+      // the pin here is how a cancelled gig became taxable income. (earnings += 0)
+    } else {
+      // No entry — a booking predating the ledger, or a reader that was not given one.
+      // Fall back to the pin, which is what this always did.
+      const gross = bookingGrossDollars(b, jobById?.get?.(b.jobId));
+      earnings += bookingNetDollars(gross, b?.feeBpsQuoted);
+    }
+
+    // Tips are not fee-bearing and are not reduced by a gig refund; a REVERSED tip is
+    // recorded in tip_ledger.reversed_cents, which bookings.tip_amount does not track.
     tips += Number(b?.tipAmount) || 0;
   });
   return { earnings, tips, total: earnings + tips };

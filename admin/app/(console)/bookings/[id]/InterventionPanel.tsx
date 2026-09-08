@@ -19,6 +19,7 @@ export default function InterventionPanel({
   paymentStatus,
   refundableCents,
   canIntervene,
+  openDispute,
 }: {
   bookingId: string;
   status: string;
@@ -32,6 +33,16 @@ export default function InterventionPanel({
    * remit is payments, refunds, escrow and payout intervention.
    */
   canIntervene: boolean;
+  /**
+   * The live adjustment on this booking, if there is one — pct_paid null with a
+   * proposed_pct. Both hold-touching ops are refused by admin-payment-action while it
+   * exists (`dispute_open`), because settle would capture the FULL amount over a
+   * reduction the parties may already have agreed, and release_hold would void the
+   * authorization settle-disputes needs, after which nothing can pay the earner.
+   * Offering a button that can only error is how an operator concludes the console is
+   * broken and goes to the Stripe Dashboard instead.
+   */
+  openDispute: { id: string; proposed_pct: number | null; response_stance: string | null } | null;
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -153,10 +164,31 @@ export default function InterventionPanel({
 
       <div className="border-t border-[var(--line)] pt-3">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">Money</p>
+        {openDispute && (
+          // Say WHY the two hold buttons are dead, and where the decision actually lives.
+          // Without this the panel reads as broken on exactly the booking an operator
+          // opened it for.
+          <p className="mb-2 rounded-lg border border-[var(--line)] bg-[var(--wash)] px-3 py-2 text-xs">
+            The escrow on this booking belongs to a live payment adjustment —{" "}
+            <strong>{openDispute.proposed_pct}% proposed</strong>
+            {openDispute.response_stance
+              ? `, the worker ${openDispute.response_stance}ed`
+              : ", awaiting the worker"}
+            . Settling would charge the poster the full amount over it, and releasing the
+            hold would leave the worker unpayable, so both are blocked here. Decide it on{" "}
+            <a
+              href={`/disputes/${openDispute.id}`}
+              className="font-medium text-[var(--brand)] hover:underline"
+            >
+              the dispute
+            </a>{" "}
+            — the hourly sweep pays it at the agreed amount.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <button
             className={btn}
-            disabled={pending || paymentStatus !== "authorized"}
+            disabled={pending || paymentStatus !== "authorized" || Boolean(openDispute)}
             onClick={() => fire(releaseHold, "Void the escrow hold? The poster is never charged.")}
           >
             Release hold
@@ -167,7 +199,7 @@ export default function InterventionPanel({
               nothing here to send them to, and the hold voided at ~7 days unpaid. */}
           <button
             className={btn}
-            disabled={pending || paymentStatus !== "authorized"}
+            disabled={pending || paymentStatus !== "authorized" || Boolean(openDispute)}
             onClick={() =>
               fire(
                 settleHold,

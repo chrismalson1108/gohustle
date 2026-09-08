@@ -23,6 +23,11 @@ export default function ConnectReturnStatus() {
   const [failed, setFailed] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [noWebSession, setNoWebSession] = useState(false);
+  // Did the APP start this flow? `?native=1` is set by stripe-connect-onboard when the
+  // caller is the phone. It is the only thing that distinguishes "you are in an in-app
+  // browser, go back to the app" from "you are in a desktop browser and simply are not
+  // signed in here" — two situations that were being shown the same screen.
+  const [isNative, setIsNative] = useState(false);
 
   // ── Hand the app back to itself ─────────────────────────────────────────────
   //
@@ -37,8 +42,9 @@ export default function ConnectReturnStatus() {
   // the real status page below must still be there. Runs once.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const isNative = new URLSearchParams(window.location.search).get("native") === "1";
-    if (!isNative) return;
+    const native = new URLSearchParams(window.location.search).get("native") === "1";
+    setIsNative(native);
+    if (!native) return;
     window.location.replace(APP_RETURN);
   }, []);
 
@@ -91,6 +97,7 @@ export default function ConnectReturnStatus() {
         failed={failed}
         resuming={resuming}
         noWebSession={noWebSession}
+        isNative={isNative}
         onFinishSetup={onFinishSetup}
       />
     </main>

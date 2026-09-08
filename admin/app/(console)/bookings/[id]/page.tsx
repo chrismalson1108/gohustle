@@ -326,6 +326,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               : 0
           }
           canIntervene={roleSatisfies(ctx.role, "finance")}
+          // A live adjustment owns this hold, and both hold-touching ops would break it:
+          // settle captures the FULL amount over a reduction the parties may already have
+          // agreed, and release_hold voids the authorization settle-disputes needs, after
+          // which nothing can pay the earner. admin-payment-action refuses both with
+          // `dispute_open`; this stops the console offering a button that can only error.
+          // The Disputes section below carries the link to decide it.
+          openDispute={
+            (disputeRes.data ?? []).find(
+              (d) => d.pct_paid === null && d.proposed_pct !== null,
+            ) ?? null
+          }
         />
       </Section>
 

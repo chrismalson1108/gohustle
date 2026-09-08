@@ -966,10 +966,23 @@ export function JobsProvider({ children }) {
       // dispute — not from here. The old fire-and-forget notify() from this client was
       // the ONLY thing telling them, and it returned false on any failure and never
       // retried.
+      // ⚠️ THE RECORDED FIGURE, NOT THE ONE THAT WAS TYPED, and the server's own
+      // deadline rather than a flat 48. A retry on a booking that already carries a
+      // proposal is answered from the STORED row, so narrating `pct` here told a poster
+      // who reopened the sheet and changed their mind that the new number was on the
+      // record when the old one still was. And the window is derived —
+      // dispute_set_defaults takes least(now+48h, hold_dies-12h) and can floor at an
+      // hour — so "48 hours" was wrong on exactly the bookings with least runway.
+      const agreedPct = Number.isFinite(Number(capture?.proposedPct))
+        ? Number(capture.proposedPct)
+        : Math.round(pct * 100);
+      const replyBy = capture?.settleAfter ? new Date(capture.settleAfter) : null;
       showToast({
         icon: '⏳',
         title: 'Sent to the worker',
-        message: `They have 48 hours to reply. If they don't, ${Math.round(pct * 100)}% is paid automatically.`,
+        message: replyBy
+          ? `They can reply until ${replyBy.toLocaleString()}. If they don't, ${agreedPct}% is paid automatically.`
+          : `If they don't reply, ${agreedPct}% is paid automatically.`,
       });
       track('job_verified', { rating, paymentMethod, disputed: true, proposed: true });
       await refreshBookings();

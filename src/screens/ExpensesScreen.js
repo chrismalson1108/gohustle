@@ -16,6 +16,7 @@ import {
   expensesByJob, platformIncomeForYear, localDateISO,
 } from '../lib/expenses';
 import { IRS_MILEAGE_RATE } from '../lib/finance';
+import { fetchLedger } from '../lib/payments';
 import { colors, radii, shadows } from '../theme';
 import KeyboardDoneBar, { KEYBOARD_DONE_ID } from '../components/KeyboardDoneBar';
 
@@ -62,6 +63,9 @@ export default function ExpensesScreen() {
   // "we could not read what you logged" — see the load() comment below.
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Earner-side ledger entries, keyed by booking. What the platform ACTUALLY settled,
+  // as opposed to what was agreed — see platformIncomeForYear.
+  const [entryByBookingId, setEntryByBookingId] = useState(new Map());
 
   const [adding, setAdding] = useState(false);
   const [amount, setAmount] = useState('');
@@ -91,12 +95,22 @@ export default function ExpensesScreen() {
     let ex = [];
     try {
       setError(null);
-      const [rows, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
+      // The ledger is loaded in the SAME try as the books, and its failure is the same
+      // kind of failure: without it every settled-below-full and refunded gig silently
+      // reverts to its pinned price, which over-states income on exactly the bookings
+      // where money moved. An error card is the honest answer; a confident wrong total
+      // that Export writes into a CSV is not.
+      const [rows, inc, ledger] = await Promise.all([
+        fetchExpenses(user.id), fetchIncome(user.id), fetchLedger(user.id),
+      ]);
       ex = rows;
       setExpenses(rows); setIncome(inc);
+      setEntryByBookingId(new Map(
+        (ledger || []).filter((e) => e.side === 'earner').map((e) => [e.bookingId, e]),
+      ));
       setLoaded(true);
     } catch (e) {
-      setError(e?.message || 'Could not load your expenses and income.');
+      setError(e?.message || 'Could not load your expenses, income and platform earnings.');
       setLoading(false);
       return;
     }
@@ -140,9 +154,19 @@ export default function ExpensesScreen() {
   // amount PINNED at insert, and nets it at that booking's OWN pinned rate. Card tips
   // are added separately: stripe-tip pays them to the earner through the platform, so
   // "card payments are already counted" has to be true of them too.
+  //
+  // ⚠️ VALUED FROM THE LEDGER, NOT FROM THE PIN. The pin is the agreed price and is
+  // deliberately immutable: settleEscrow leaves payments.amount_cents at the full hold
+  // on a partial capture, and record_refund touches neither the booking's status nor
+  // its pin. So a gig settled at 50% after a dispute, and one captured and then
+  // refunded, both stay `verified` carrying the full pin — and both were declared here
+  // at the full amount while /profile/transactions showed the real figure for the same
+  // booking on the same day. On a $200 disputed gig that told the earner they made $186
+  // when $93 reached their bank, and wrote $186.00 onto the CSV they hand an accountant.
+  // Passing the ledger entries makes the two screens agree by construction.
   const jobById = new Map((jobs || []).map((j) => [j.id, j]));
   const { earnings: platformEarnings, tips: platformTips, total: platformIncome } =
-    platformIncomeForYear({ bookings, year, jobById });
+    platformIncomeForYear({ bookings, year, jobById, entryByBookingId });
 
   const grossIncome = platformIncome + cashTotal;
   const net = grossIncome - expTotal;

@@ -1013,10 +1013,21 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         .eq("id", bookingId);
       if (holdErr) console.warn("Hold rating error:", holdErr.message);
       dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { earnerRating: rating, paymentMethod } });
+      // ⚠️ THE RECORDED FIGURE, NOT THE ONE THAT WAS TYPED, and the server's own
+      // deadline rather than a flat 48 — see the mobile twin. This surface is the more
+      // exposed of the two: /hiring re-offers "Verify & rate" on any `completed` booking
+      // with no dispute lookup at all, and a proposal deliberately leaves the booking
+      // `completed`, so reopening the sheet and changing the number is one tap away.
+      const agreedPct = Number.isFinite(Number(capture?.proposedPct))
+        ? Number(capture!.proposedPct)
+        : Math.round((pct as number) * 100);
+      const replyBy = capture?.settleAfter ? new Date(capture.settleAfter as string) : null;
       showToast({
         icon: "⏳",
         title: "Sent to the worker",
-        message: `They have 48 hours to reply. If they don't, ${Math.round((pct as number) * 100)}% is paid automatically.`,
+        message: replyBy
+          ? `They can reply until ${replyBy.toLocaleString()}. If they don't, ${agreedPct}% is paid automatically.`
+          : `If they don't reply, ${agreedPct}% is paid automatically.`,
       });
       track("job_verified", { rating, paymentMethod, disputed: true, proposed: true });
       await loadPosterBookings();

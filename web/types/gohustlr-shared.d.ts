@@ -338,6 +338,13 @@ declare module "@gohustlr/shared" {
     bookings?: unknown[] | null;
     year: number | string;
     jobById?: { get(id: string): unknown } | null;
+    // Earner-side ledger entries keyed by booking id. Structural, like the booking
+    // inputs above: the concrete LedgerEntry lives in web/lib/payments.ts and the
+    // shared package cannot import it. Only these three fields are read — a settled
+    // entry's net, less the tip, which is counted separately.
+    entryByBookingId?: {
+      get(id: string): { settled?: boolean; netCents?: number; tipCents?: number } | undefined;
+    } | null;
   }): { earnings: number; tips: number; total: number };
 
   // ── contentFilter ──

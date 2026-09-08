@@ -325,6 +325,55 @@ booking carrying an unresolved dispute.
   production; `disputeTwoParty.test.js` holds the three client selects to the grant list.
 - **`__tests__/disputeTwoParty.test.js`** holds the whole shape together.
 
+**Five defects found by auditing the model on 2026-09-08, the day after it shipped.** All
+five are the same species: a rule the new design depends on that some OLDER code, written
+when the poster's tap still captured, does not know about.
+
+- ⚠️ **`disputes_one_live_proposal_per_booking` — a PARTIAL unique index — is the
+  idempotency check, not the SELECT in `stripe-capture-payment`.** That guard was
+  read-then-decide, which two taps on "report a problem" beat: each row arms its own clock
+  in `dispute_set_defaults` and fires its own `dispute_notify_respondent`, so the earner
+  got two deadlines and two percentages for one gig, and `settle-disputes` stamped the
+  second row with whatever the FIRST collected. The index is partial on
+  `pct_paid is null and proposed_pct is not null` so a NO_ROOM_TO_HOLD record and a
+  `recordReversal` row still coexist with a live proposal; the function's read is scoped
+  the same way, because unscoped `.maybeSingle()` returns `{data:null, error}` the moment a
+  booking holds two of anything and only `data` was read. A 23505 now means "already
+  proposed", never a 500.
+- ⚠️ **`guard_disputes_write` must let `respond_to_dispute` move `settle_after`
+  EARLIER — and only earlier.** It pinned the column unconditionally, four lines above the
+  `if not responding` block, so the one write the accept path exists to make was silently
+  reverted: an earner who ACCEPTED waited out the full window while both parties were told
+  "it will be paid shortly". The exemption is directional on purpose — a respondent who
+  could write it freely would extend their own deadline until Stripe voided the hold, which
+  pays nobody. `ctl_dispute_accept_not_expedited` (high) watches it against data.
+- ⚠️ **`admin-payment-action` refuses `settle` and `release_hold` while a live adjustment
+  owns the hold** (`dispute_open`, failing closed on an unreadable read). Both were offered
+  on exactly the state a proposal leaves — `payment='authorized'`, `booking='completed'` —
+  on exactly the page an operator opens because of a dispute. `settle` captured the FULL
+  hold over a reduction the parties may already have agreed ($200 charged where 60% was
+  accepted), and `release_hold` voided the authorization the settler needs, after which
+  nothing in this repo can pay that earner. Every sibling path already refused;
+  this was the last one that did not. The console's two hold buttons are gated on the same
+  fact and say why.
+- ⚠️ **`settle-disputes` isolates each dispute in its own try/catch.** Every failure inside
+  `settleEscrow` is a returned `{ok:false}` the loop handles — except the two
+  `stripe.paymentIntents.capture` calls, which THROW. One poisoned row (a voided
+  PaymentIntent whose payments row still reads `authorized`) aborted the whole batch, and
+  the listing is oldest-first so it went first. This is the only thing that pays a held
+  gig, so one stuck row starved every other earner until their own holds lapsed — and the
+  outer catch logs with an EMPTY context, so `/errors` named neither the dispute nor the
+  booking.
+- ⚠️ **A `.rpc()` parameter name is part of the signature, and getting it wrong fails
+  SILENTLY.** `settle-disputes` called `recompute_user_rating({ p_user })` against
+  `recompute_user_rating(target uuid)`; PostgREST answers "function does not exist",
+  supabase-js RESOLVES with that error rather than throwing, and the result was discarded —
+  so every settled dispute published the poster's held review onto the earner's profile
+  while `profiles.rating` never moved, with nothing in `/errors`. `deno check` cannot see
+  it (the argument object is untyped). `__tests__/rpcParamNames.test.js` parses every
+  `create function` in `supabase/migrations/` and the legacy `.sql` files and checks all 74
+  statically-resolvable call sites against them.
+
 **⚠️ Status vocabulary is deliberately UNCHANGED.** `'open'` = awaiting a response,
 `'investigating'` = contested. Both were already in the CHECK, so `vest_bonuses` — which
 gates a third party's referral bonus on `status in ('open','investigating')` — keeps
@@ -955,6 +1004,8 @@ it is the second half of a change that has not been done yet.
 | `edgeDepsPinned.test.js` | an edge function importing a floating dependency range — 32 hand-deploys on 32 days each resolved their own supabase-js, and the local type-check reads the developer's cache rather than production |
 | `adminDeployCommand.test.js` | a document printing an admin-console deploy command that cannot work as written — no `--scope go-hustlr` (flat "Not authorized"), or run from the repo root (deploys the website instead). The console only ships by hand, so the command in the doc IS the deploy mechanism |
 | `disputeTwoParty.test.js` | the accused party losing their answer. A reduction going back to a capture inside the poster's own request (`pct_paid` written at proposal time), the settlement percentage being re-decided in TypeScript instead of asked of `dispute_settlement_pct`, the console deciding BELOW what the poster asked for or stamping `resolved_at` before the money moved, or either client keeping the read and losing `respond_to_dispute` |
+| `rpcParamNames.test.js` | a `.rpc('fn', {…})` call site naming a parameter the function does not have. PostgREST resolves an RPC by name AND argument names, supabase-js RESOLVES with the error instead of throwing, and a call site that discards the result then fails in total silence for ever — which is how every settled dispute published a review that never moved the earner's rating |
+| `adminTierParity.test.js` (third block) | a console action and the EDGE FUNCTION behind it disagreeing about tier. The other two blocks hold the console's UI to the console's own guard and are structurally blind to this: `requireFreshAdmin("finance")` in front of a `requireAdminCaller(req,'admin')` made every money intervention dead for the tier created to perform them, *after* `run()` had already written the audit row |
 | `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**
@@ -972,6 +1023,28 @@ about deployment rather than code:
 - otherwise → JS-only, ships over the air
 
 A fresh clone needs `git config core.hooksPath .githooks` once.
+
+### Money probes — `node scripts/probe-money.mjs`
+
+**`npm test` asserts what the CODE says; these assert what the DATABASE does.** Seven
+rolled-back probes stage real rows against production and report what actually happened:
+the promotion chain and its three ways of ending, the poster-discount split, referral
+accrual/vesting/clawback, tip caps and reversal idempotency, whether every critical money
+control discriminates, the rate card and the loyalty ladder, and the two dispute defects
+found on 2026-09-08.
+
+Run them after any money change, and after any `db push` that touches a guard, a control
+or a money RPC. `node scripts/probe-money.mjs 30 50` runs a subset by filename prefix.
+
+⚠️ **Every probe ends in `raise exception`, so its transaction is discarded** — they stage
+jobs, bookings, payments, disputes, promotions and ledger rows and none of it persists.
+The runner REFUSES a file with no rollback raise, because a probe that stops raising
+starts writing to production. NOTICE is invisible over the management API, so a probe
+reports by raising rather than by `raise notice`.
+
+They exist because three defects got past the whole suite: a booking accepting two live
+dispute proposals, an accepted reduction whose settlement clock never moved, and a loyalty
+ladder every rung of which is at or above the standing rate.
 
 ### What is deliberately NOT automated
 No agent rewrites code, prompts or migrations unattended. In a single day of supervised
@@ -1142,7 +1215,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **80 controls are registered**: 78 run in-database and 2 are `external`. Every
+- **82 controls are registered**: 80 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and

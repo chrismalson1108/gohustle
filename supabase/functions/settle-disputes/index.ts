@@ -77,6 +77,23 @@ Deno.serve(async (req: Request) => {
     const failed: string[] = [];
 
     for (const d of rows ?? []) {
+     // ── PER-DISPUTE ISOLATION ─────────────────────────────────────────────
+     //
+     // Every failure inside settleEscrow is a RETURNED {ok:false} that the loop handles
+     // with `continue` — except the two `stripe.paymentIntents.capture` calls, which are
+     // unguarded and THROW. A thrown SDK error unwound past this loop to the single outer
+     // catch, so one poisoned dispute aborted the entire batch and D2…D50 were never
+     // reached. The condition is deterministic (a voided PaymentIntent whose row still
+     // reads 'authorized' because the canceled webhook was missed — the exact state
+     // reconcile-stripe exists for), so it repeated on every sweep, for ever.
+     //
+     // This function is, by its own header, the only thing that pays a held gig. One
+     // stuck row therefore starved every other earner on the platform until their own
+     // authorizations lapsed at ~7 days — and the outer catch logs with an EMPTY context,
+     // so /errors named neither the dispute nor the booking that did it.
+     //
+     // Oldest-first ordering guarantees the poisoned row is processed FIRST.
+     try {
       // ONE definition of the outcome. Null means not due yet.
       const { data: pctRaw, error: pctErr } = await supabase.rpc('dispute_due_pct', { p_dispute: d.id });
       if (pctErr) {
@@ -163,8 +180,20 @@ Deno.serve(async (req: Request) => {
       await notifyOutcome(supabase, d.id, d.booking_id, paidPct);
 
       settled.push(d.id);
+     } catch (e) {
+       // Fatal for THIS dispute, and the batch continues. Carries the ids the outer
+       // catch could not, so /errors names the row that needs a human.
+       await logServerError(FN,
+         `settlement threw for dispute ${d.id} on booking ${d.booking_id}: `
+         + `${e instanceof Error ? e.message : String(e)}`,
+         { dispute_id: d.id, booking_id: d.booking_id }, { fatal: true });
+       failed.push(d.id);
+       continue;
+     }
     }
 
+    // `failed` is reported, never swallowed: ctl_dispute_settlement_overdue is the
+    // control that must see a row this function could not pay.
     return json({ ok: true, settled: settled.length, skipped: skipped.length, failed: failed.length });
   } catch (err) {
     await logServerError(FN, `unhandled: ${err instanceof Error ? err.message : String(err)}`, {}, { fatal: true });
@@ -203,7 +232,20 @@ async function publishHeldReview(
       text: b.review_text ?? null,
       date: new Date().toISOString(),
     });
-    await supabase.rpc('recompute_user_rating', { p_user: b.earner_id });
+    // `target`, not `p_user`. The live signature is recompute_user_rating(target uuid)
+    // and both clients call it that way (JobsContext.js:684, web/lib/jobs.tsx:765); this
+    // call site invented a parameter name that does not exist, so PostgREST answered
+    // "function ... does not exist" every time. supabase.rpc RESOLVES with {error}, it
+    // does not throw, and the result was discarded — so the surrounding try/catch never
+    // saw it and nothing was logged. The review row landed on the earner's profile while
+    // profiles.rating and review_count stayed where they were: a settled dispute
+    // published a rating that counted for nothing.
+    const { error: rateErr } = await supabase.rpc('recompute_user_rating', { target: b.earner_id });
+    if (rateErr) {
+      await logServerError(FN,
+        `could not recompute the rating for earner ${b.earner_id} after publishing the held review: ${rateErr.message}`,
+        { booking_id: bookingId });
+    }
   } catch (e) {
     await logServerError(FN, `could not publish the held review for ${bookingId}: ${String((e as Error)?.message ?? e)}`,
       { booking_id: bookingId });
