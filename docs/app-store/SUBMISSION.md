@@ -74,7 +74,35 @@ This is a decision, not something to paper over. Options, best first:
 Whichever you pick, the reviewer must **never** land in a Stripe Connect onboarding form —
 pre-complete Connect onboarding and identity verification on the demo earner.
 
-### 1.5 The remaining pre-flight items
+### 1.5 The iOS location purpose string does not cover mileage tracking
+
+`app.json` declares, in both `NSLocationWhenInUseUsageDescription` and the `expo-location`
+plugin:
+
+> GoHustlr uses your location to show gigs near you and sort them by distance.
+
+The app reads location for **three** things, and that string describes one of them:
+
+| Where | What it does | Covered? |
+|---|---|---|
+| `HomeScreen` | one-shot fix for distance sort | yes |
+| `LocationPicker` | "use my location" to fill a gig or profile location | loosely |
+| `EarnScreen` | **`watchPositionAsync` — continuous tracking during a drive, to auto-log mileage into the Tax Center** | **no** |
+
+Continuous tracking that feeds a tax-deduction record is not "show gigs near you and sort
+them by distance". Apple checks purpose strings against observed behaviour, and a user
+reading that prompt would not expect a drive tracker. Replace both copies with one string
+that covers all three:
+
+> GoHustlr uses your location to show gigs near you, sort them by distance, and — when you
+> start a drive — to log your mileage for your tax records.
+
+This is native config, so it needs a rebuild; batch it with the version change in §1.1.
+Foreground permission is correct and should stay — the tracker uses `watchPositionAsync`
+under when-in-use only, and there is no `UIBackgroundModes: location`, which keeps the app
+out of the far heavier background-location review path.
+
+### 1.6 The remaining pre-flight items
 
 - **`beta_allowlist` must keep its `'*'` row** through review, or the reviewer cannot sign
   up at all. (This is also why `ctl_waitlist_invite_broken` stays deliberately silent —
