@@ -30,7 +30,13 @@ const fs = require('fs');
 const path = require('path');
 
 const FN = path.join(__dirname, '..', 'supabase', 'functions');
-const capture = fs.readFileSync(path.join(FN, 'stripe-capture-payment', 'index.ts'), 'utf8');
+// The capture path is TWO files since 2026-09-09: a poster's reduction became a
+// proposal, so the actual Stripe capture moved to _shared/settleEscrow.ts where
+// stripe-capture-payment and settle-disputes both call it. Reading only one of them
+// would leave every assertion below passing against a file the money no longer
+// flows through. Concatenated, so the guards keep their meaning wherever it lives.
+const capture = fs.readFileSync(path.join(FN, '_shared', 'settleEscrow.ts'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(FN, 'stripe-capture-payment', 'index.ts'), 'utf8');
 const webhook = fs.readFileSync(path.join(FN, 'stripe-webhook', 'index.ts'), 'utf8');
 const accept = fs.readFileSync(path.join(FN, 'accept-booking', 'index.ts'), 'utf8');
 
@@ -70,7 +76,11 @@ describe('capture claims the row before the Stripe call', () => {
         expect.objectContaining({ window: expect.stringContaining('claimForCapture(') }),
       );
       expect(window).toContain('BOOKING_CHANGED');
-      expect(window).toMatch(/}, 409\);/);
+      // Either shape of the same refusal: `json(..., 409)` while this lived in the edge
+      // function, and `{ ok: false, …, status: 409 }` now that the capture is a module
+      // whose caller decides the HTTP response. What matters is that the claim failing
+      // ABORTS with a 409 rather than falling through to the Stripe call.
+      expect(window).toMatch(/}, 409\);|status: 409,/);
     }
   });
 
@@ -141,44 +151,29 @@ describe('capture reconciles the ledger to what Stripe collected', () => {
 // capturedGigCents is the flag that means "a capture ran in THIS invocation" — it is
 // assigned only inside the not-yet-captured block, and the settle call already used it.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('the dispute row follows the capture, not the request', () => {
-  const fs2 = require('fs');
-  const path2 = require('path');
-  const src = fs2.readFileSync(
-    path2.join(__dirname, '..', 'supabase', 'functions', 'stripe-capture-payment', 'index.ts'),
+describe('the dispute row now PRECEDES the capture', () => {
+  // This block asserted the opposite until 2026-09-09, and was right to: the row was
+  // written AFTER an irreversible capture, so gating it on `capturePctFinal < 1 &&
+  // settledPct < 1` — the caller having asked AND the ledger agreeing — was the only
+  // thing stopping a poster fabricating a "50% paid" record against a settled booking.
+  //
+  // A reduction is a PROPOSAL now. The row is written before any money moves, pct_paid
+  // stays NULL until settle-disputes captures, and fabricating one charges the
+  // fabricator their own gig at their own number — so the gate has nothing left to
+  // defend and its absence is the point.
+  const idx = fs.readFileSync(
+    path.join(FN, 'stripe-capture-payment', 'index.ts'),
     'utf8',
   );
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-  it('gates the insert on a REDUCED settlement having actually happened', () => {
-    // `settledPct` joined the gate when the retry-after-a-mid-flight-death case was
-    // fixed (see captureRetryBookkeeping.test.js): capturedGigCents is now also
-    // assigned on the recovery path, so it alone no longer means "less than the full
-    // amount was taken". settledPct is that fact, derived from the ledger.
-    expect(code).toMatch(
-      /if \(capturedGigCents !== null && capturePctFinal < 1 && settledPct < 1\)/,
-    );
-    // The bare form is the bug: pct alone is the caller's claim.
-    expect(code).not.toMatch(/if \(capturePctFinal < 1\) \{\s*\n\s*const \{ data: existingDispute/);
+  it('nothing in the capture path writes pct_paid any more', () => {
+    expect(idx).not.toMatch(/pct_paid:/);
   });
 
-  it('uses the same did-a-capture-run flag the benefit settle uses', () => {
-    // Both consequences of a capture should hang off one fact, or they drift apart.
-    expect(code).toMatch(/if \(capturedGigCents !== null\)/);
-  });
-
-  it('capturedGigCents is never assigned before the not-yet-captured block', () => {
-    // If it were assigned unconditionally the flag would mean nothing and the gate above
-    // would silently become a no-op.
-    //
-    // It IS now assigned in a second place — the recovery branch that runs when this
-    // function died between the Stripe capture and its own bookkeeping. That branch is
-    // downstream of the block, and it derives what happened from the ledger
-    // (earner_amount_cents + fee_cents vs amount_cents) rather than from the request,
-    // which is why the dispute gate above needed settledPct as well.
-    const guard = code.indexOf("if (payment.status !== 'captured')");
-    const firstAssign = code.indexOf('capturedGigCents = ');
-    expect(guard).toBeGreaterThan(-1);
-    expect(firstAssign).toBeGreaterThan(guard);
+  it('the proposal is recorded without a Stripe call', () => {
+    const branch = idx.slice(idx.indexOf('if (wantsPartial) {'), idx.indexOf('// ── Full pay'));
+    expect(branch).toMatch(/from\('disputes'\)\.insert\(/);
+    expect(branch).not.toMatch(/paymentIntents\.capture/);
   });
 });
+

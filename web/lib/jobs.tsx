@@ -241,6 +241,8 @@ interface VerifyArgs {
   pct?: number;
   tipCents?: number;
   disputeReason?: string | null;
+  /** Storage paths under the poster's own uid in the private completion-photos bucket. */
+  disputePhotos?: string[];
 }
 
 const JobsContext = createContext<JobsValue | null>(null);
@@ -948,7 +950,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
   const verifyAndRate: JobsValue["verifyAndRate"] = async (
     bookingId,
-    { rating, reviewText, paymentMethod, pct, tipCents, disputeReason },
+    { rating, reviewText, paymentMethod, pct, tipCents, disputeReason, disputePhotos },
   ) => {
     const partial = typeof pct === "number" && pct > 0 && pct < 1;
 
@@ -958,6 +960,17 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     if (reviewTerm) {
       logModerationBlock(reviewTerm, "review", reviewText);
       showToast({ icon: "🚫", title: "Review not allowed", message: "That review contains words that aren't allowed. Please edit it and try again." });
+      return;
+    }
+
+    // Same filter on the reduction reason, for the same reason: the earner now reads it
+    // at /my-jobs/dispute/[bookingId] and in their alerts inbox. Unfiltered accusatory
+    // text delivered under our own name is not a smaller problem than an unfiltered
+    // review published under theirs.
+    const reasonTerm = disputeReason ? findProhibited(disputeReason) : null;
+    if (reasonTerm) {
+      logModerationBlock(reasonTerm, "dispute_reason", disputeReason ?? undefined);
+      showToast({ icon: "🚫", title: "Not allowed", message: "That reason contains words that aren't allowed. Please edit it and try again." });
       return;
     }
 
@@ -975,11 +988,47 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     // 'Payment not found' = a pre-Stripe booking with no hold → continue, but remember
     // no money moved so we don't record a meaningless dispute.
+    let capture: Awaited<ReturnType<typeof stripeEdge.capturePayment>> | undefined;
     try {
-      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined);
+      capture = await stripeEdge.capturePayment(
+        bookingId,
+        partial ? pct : undefined,
+        partial ? disputeReason : undefined,
+        partial ? disputePhotos : undefined,
+      );
     } catch (err) {
       if (!(err as Error).message?.includes("Payment not found")) throw err;
       // no hold to capture (pre-Stripe booking) — continue to record the rating
+    }
+
+    // ── A reduction is a PROPOSAL now, not a settlement ───────────────────────
+    // Mirror of src/context/JobsContext.js. The booking must NOT be marked verified:
+    // guard_bookings_write refuses completed→verified without a captured payment and
+    // would silently revert it, leaving the sheet reporting a success that did not
+    // happen. Rating and review are held and published at settlement.
+    if (capture?.adjustment === "proposed") {
+      const { error: holdErr } = await supabase
+        .from("bookings")
+        .update({ earner_rating: rating, review_text: reviewText || null, payment_method: paymentMethod })
+        .eq("id", bookingId);
+      if (holdErr) console.warn("Hold rating error:", holdErr.message);
+      dispatch({ type: "UPDATE_BOOKING_STATUS", id: bookingId, patch: { earnerRating: rating, paymentMethod } });
+      showToast({
+        icon: "⏳",
+        title: "Sent to the worker",
+        message: `They have 48 hours to reply. If they don't, ${Math.round((pct as number) * 100)}% is paid automatically.`,
+      });
+      track("job_verified", { rating, paymentMethod, disputed: true, proposed: true });
+      await loadPosterBookings();
+      return;
+    }
+
+    if (capture?.capturedInFull) {
+      showToast({
+        icon: "ℹ️",
+        title: "Paid in full",
+        message: capture.message || "The card hold was about to expire, so this was paid in full. Contact support for a refund.",
+      });
     }
 
     const patch = {

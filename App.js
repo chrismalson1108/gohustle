@@ -31,6 +31,7 @@ import EditJobScreen        from './src/screens/EditJobScreen';
 import SettingsScreen       from './src/screens/SettingsScreen';
 import ProfileSettingsScreen from './src/screens/ProfileSettingsScreen';
 import PayoutSetupScreen    from './src/screens/PayoutSetupScreen';
+import DisputeScreen from './src/screens/DisputeScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
 import ExpensesScreen       from './src/screens/ExpensesScreen';
 import LegalScreen          from './src/screens/LegalScreen';
@@ -137,6 +138,7 @@ function EarnStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="EarnMain"  component={EarnScreen} />
+      <Stack.Screen name="Dispute"   component={DisputeScreen} options={{ ...DETAIL_OPTS, title: 'Payment adjustment' }} />
       <Stack.Screen name="Payments"  component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="UserProfile" component={PublicProfileScreen} options={DETAIL_OPTS} />
@@ -150,6 +152,7 @@ function GigsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="GigsMain"  component={GigsScreen} />
+      <Stack.Screen name="Dispute"   component={DisputeScreen} options={{ ...DETAIL_OPTS, title: 'Payment adjustment' }} />
       <Stack.Screen name="Payments"  component={PaymentsScreen} options={{ ...DETAIL_OPTS, title: 'Transactions' }} />
       <Stack.Screen name="PostJob"   component={PostJobScreen} options={DETAIL_OPTS} />
       <Stack.Screen name="JobDetail" component={JobDetailScreen} options={DETAIL_OPTS} />

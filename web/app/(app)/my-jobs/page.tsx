@@ -6,6 +6,7 @@ import {
   Briefcase, MessageCircle, Check, Camera, X, FileText, Play,
   ChevronDown, Star, Clock, AlertCircle, Car, DollarSign, ArrowLeftRight,
 } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 import { useJobs } from "@/lib/jobs";
 import { useUser } from "@/lib/user";
 import { useAuth } from "@/lib/auth";
@@ -155,6 +156,25 @@ export default function MyJobsPage() {
     .sort((a, b) => (tab === "active" ? Number(needsAction(b)) - Number(needsAction(a)) : 0));
 
   // Cross-segment nudges (Airbnb-style alert band): only render when there's a decision waiting.
+  // Payment adjustments the poster has proposed on this earner's bookings. Their own
+  // rows through the party policy; only the columns the banner needs, because selecting
+  // * would pull assigned_to and resolved_by, which are STAFF ids.
+  const [openDisputes, setOpenDisputes] = useState<Record<string, { proposed_pct: number | null; responded_at: string | null }>>({});
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { data } = await supabase
+        .from("disputes")
+        .select("booking_id, proposed_pct, responded_at, pct_paid")
+        .is("pct_paid", null);
+      if (!alive) return;
+      const byBooking: Record<string, { proposed_pct: number | null; responded_at: string | null }> = {};
+      (data ?? []).forEach((d) => { byBooking[d.booking_id as string] = d as never; });
+      setOpenDisputes(byBooking);
+    })();
+    return () => { alive = false; };
+  }, [bookings]);
+
   const pendingAmendments = bookings.filter((b) => b.amendmentStatus === "pending");
   const unrated = bookings.filter((b) => b.status === "verified" && !b.posterRating);
 
@@ -355,6 +375,17 @@ export default function MyJobsPage() {
               gig long before it could share it or raise an alarm, so an earner working
               from a phone browser had the server-side check-in timer and nothing they
               could reach for themselves. */}
+          {openDisputes[b.id] && (
+            <Link
+              href={`/my-jobs/dispute/${b.id}`}
+              className="mt-2 flex items-center gap-2 rounded-xl bg-urgent-light px-3 py-2.5 text-sm font-semibold text-urgent hover:opacity-90"
+            >
+              <AlertCircle className="size-4 shrink-0" />
+              {openDisputes[b.id].responded_at
+                ? "Your reply is with GoHustlr"
+                : `The poster asked to pay ${openDisputes[b.id].proposed_pct ?? 100}% — reply`}
+            </Link>
+          )}
           <SafetyBar bookingId={b.id} />
           {/* The sentence owns a full line whenever the row is narrow — beside
               the button it compressed to a 3-4 line sliver at 320-360px. Basis +

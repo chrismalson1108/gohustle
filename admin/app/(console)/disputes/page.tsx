@@ -30,9 +30,9 @@ export default async function DisputesPage({
 
   let q = ctx.service
     .from("disputes")
-    .select("id, booking_id, raised_by, reason, pct_paid, status, resolution_note, resolved_at, created_at", {
-      count: "exact",
-    })
+    // ONE string literal, not a concatenation: supabase-js infers the row type from the
+    // literal, and `"a" + "b"` widens it to GenericStringError on every column.
+    .select("id, booking_id, raised_by, reason, pct_paid, status, resolution_note, resolved_at, created_at, proposed_pct, responded_at, response_stance, settle_after, resolution_pct", { count: "exact" })
     .order("created_at", { ascending: false })
     .limit(100);
   q = showClosed ? q.not("resolved_at", "is", null) : q.is("resolved_at", null);
@@ -72,8 +72,8 @@ export default async function DisputesPage({
         <div>
           <h1 className="text-2xl font-semibold">Disputes</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            An open dispute blocks the earner from claiming payment on that booking. Closing it
-            unblocks them.
+            A poster asked to pay less than the agreed amount. The escrow is HELD, not captured,
+            until the earner answers or you decide — open a case to read both sides.
           </p>
         </div>
         <div className="flex gap-2 text-sm">
@@ -106,19 +106,37 @@ export default async function DisputesPage({
               const pay = payBy.get(d.booking_id) as
                 | { status: string; fee_cents: number; earner_amount_cents: number; refunded_cents: number }
                 | undefined;
-              const captured = pay ? (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0) : null;
+              // `earner_amount_cents + fee_cents` is what was CAPTURED — and it only means
+              // that on a captured row. On an `authorized` one those columns hold the pinned
+              // full-amount split of money nobody has taken yet, so labelling it "collected"
+              // reported a charge that has not happened.
+              const total = pay ? (pay.earner_amount_cents ?? 0) + (pay.fee_cents ?? 0) : null;
+              const held = pay?.status === "authorized";
+              const stance = d.responded_at ? (d.response_stance as string | null) : null;
               return (
                 <li key={d.id} className="rounded-lg border border-[var(--line)] p-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">
+                        <Link href={`/disputes/${d.id}`} className="font-medium text-[var(--brand)] hover:underline">
                           {b ? titleOf.get(b.job_id) ?? "Untitled gig" : "Unknown gig"}
-                        </span>
+                        </Link>
                         <Pill tone={d.resolved_at ? "green" : d.status === "investigating" ? "amber" : "red"}>
                           {d.status ?? "open"}
                         </Pill>
-                        {d.pct_paid != null && <Pill tone="amber">{Number(d.pct_paid)}% paid</Pill>}
+                        {d.pct_paid != null ? (
+                          <Pill tone="green">settled at {Number(d.pct_paid)}%</Pill>
+                        ) : d.resolution_pct != null ? (
+                          <Pill tone="amber">decided {d.resolution_pct}% · awaiting sweep</Pill>
+                        ) : stance === "contest" ? (
+                          <Pill tone="red">contested — needs you</Pill>
+                        ) : stance === "accept" ? (
+                          <Pill tone="green">earner accepted {d.proposed_pct ?? 100}%</Pill>
+                        ) : (
+                          <Pill tone="amber">
+                            asked {d.proposed_pct ?? 100}% · reply due {fmtDate(d.settle_after)}
+                          </Pill>
+                        )}
                       </div>
 
                       {d.reason && <p className="mt-1 text-sm">{d.reason}</p>}
@@ -132,7 +150,7 @@ export default async function DisputesPage({
                         <Link href={`/bookings/${d.booking_id}`} className="text-[var(--brand)] hover:underline">
                           open booking
                         </Link>
-                        {captured != null && ` · collected ${fmtCents(captured)}`}
+                        {total != null && ` · ${held ? "held" : "collected"} ${fmtCents(total)}`}
                         {pay?.refunded_cents ? ` · refunded ${fmtCents(pay.refunded_cents)}` : ""}
                         {" · "}
                         {fmtDate(d.created_at)}
@@ -145,11 +163,19 @@ export default async function DisputesPage({
                       )}
                     </div>
 
-                    <DisputeControls
-                      disputeId={String(d.id)}
-                      status={d.status ?? "open"}
-                      canResolve={canResolve}
-                    />
+                    <div className="flex flex-col items-end gap-2">
+                      <Link
+                        href={`/disputes/${d.id}`}
+                        className="rounded-lg bg-[var(--brand)] px-2.5 py-1 text-xs font-semibold text-white"
+                      >
+                        Review case →
+                      </Link>
+                      <DisputeControls
+                        disputeId={String(d.id)}
+                        status={d.status ?? "open"}
+                        canResolve={canResolve}
+                      />
+                    </div>
                   </div>
                 </li>
               );

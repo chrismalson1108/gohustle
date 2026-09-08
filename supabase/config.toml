@@ -68,3 +68,12 @@ verify_jwt = false
 #   internet starts returning 401 — including the one legal obligation in the file.
 [functions.waitlist-submit]
 verify_jwt = false
+
+# settle-disputes — dispatched by controls_sweep_and_page over pg_net with the
+#   x-controls-secret shared secret from app_flags.controls_alert, never by a user. It is
+#   the ONLY thing that pays a dispute now that a poster's reduction is a proposal, so a
+#   gateway 401 here does not degrade a feature — it strands held escrow until the Stripe
+#   authorization lapses at about seven days, after which nobody can be paid.
+#   ctl_dispute_settlement_overdue is registered CRITICAL for exactly that reason.
+[functions.settle-disputes]
+verify_jwt = false

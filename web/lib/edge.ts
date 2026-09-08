@@ -51,8 +51,22 @@ export const stripeEdge = {
   // Server-verified accept: confirms the booking ONLY if a real escrow hold exists.
   acceptBooking: (bookingId: string) =>
     callEdgeFunction<{ ok: boolean }>("accept-booking", { bookingId }),
-  capturePayment: (bookingId: string, pct?: number, disputeReason?: string | null) =>
-    callEdgeFunction("stripe-capture-payment", { bookingId, pct, disputeReason }),
+  // disputePhotos was missing here until 2026-09-09, so the SAME report filed from the
+  // website carried no evidence at all while the app's carried up to six photos — and
+  // the earner's right to see what they are accused of is only as good as what was sent.
+  capturePayment: (
+    bookingId: string,
+    pct?: number,
+    disputeReason?: string | null,
+    disputePhotos?: string[],
+  ) =>
+    callEdgeFunction<{
+      success?: boolean;
+      adjustment?: string;
+      settleAfter?: string | null;
+      capturedInFull?: boolean;
+      message?: string;
+    }>("stripe-capture-payment", { bookingId, pct, disputeReason, disputePhotos }),
   tip: (bookingId: string, tipCents: number) =>
     callEdgeFunction("stripe-tip", { bookingId, tipCents }),
   cancelPayment: (bookingId: string) =>

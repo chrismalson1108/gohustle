@@ -903,6 +903,18 @@ export function JobsProvider({ children }) {
       return false;
     }
 
+    // The reason for a reduction is DELIVERED now, not just filed: the earner reads it
+    // on the Dispute screen, in their alerts inbox and in a push. It was the only free
+    // text on this sheet that skipped the filter the review beside it passes through —
+    // which made it the one way to put an unfiltered accusation in front of the person
+    // it names, over the platform's own signature.
+    const reasonTerm = disputeReason && findProhibited(disputeReason);
+    if (reasonTerm) {
+      logModerationBlock(reasonTerm, 'dispute_reason', disputeReason);
+      showToast({ icon: '🚫', title: 'Not allowed', message: "That reason contains words that aren't allowed. Please edit it and try again." });
+      return false;
+    }
+
     // Validate state BEFORE moving any money: capture/verify only makes sense on a
     // completed booking that isn't already finalized — otherwise we could capture
     // escrow (or log a dispute) for a cancelled/declined/already-verified booking.
@@ -922,8 +934,9 @@ export function JobsProvider({ children }) {
     // status write below would be silently reverted by the trigger (PostgREST returns
     // no error) and the booking would sit in 'completed' after we reported success.
     // Surface an honest failure instead of a fake verify.
+    let capture;
     try {
-      await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined, partial ? disputePhotos : undefined);
+      capture = await stripeEdge.capturePayment(bookingId, partial ? pct : undefined, partial ? disputeReason : undefined, partial ? disputePhotos : undefined);
     } catch (err) {
       if (err.message?.includes('Payment not found')) {
         captureError(err, { op: 'verifyAndRate.capture', bookingId });
@@ -931,6 +944,46 @@ export function JobsProvider({ children }) {
         return false;
       }
       throw err;
+    }
+
+    // ── A reduction is a PROPOSAL now, not a settlement ───────────────────────
+    //
+    // The server left the authorization standing and recorded what we asked for; the
+    // earner has 48 hours to accept or contest, and settle-disputes captures after that.
+    // So this booking must NOT be marked verified here — guard_bookings_write refuses
+    // completed→verified without a captured payment and would silently revert it,
+    // leaving the modal reporting a success that did not happen. The rating and review
+    // are written now and PUBLISHED at settlement: a 1★ on a public profile before the
+    // earner has spoken is the same fait accompli in reputation that the money was.
+    if (capture?.adjustment === 'proposed') {
+      const { error: holdErr } = await supabase
+        .from('bookings')
+        .update({ earner_rating: rating, review_text: reviewText || null, payment_method: paymentMethod })
+        .eq('id', bookingId);
+      if (holdErr) { console.warn('Hold rating error:', holdErr.message); }
+      dispatch({ type: 'UPDATE_BOOKING_STATUS', id: bookingId, patch: { earnerRating: rating, paymentMethod } });
+      // The earner's notice is written by the server, in the same transaction as the
+      // dispute — not from here. The old fire-and-forget notify() from this client was
+      // the ONLY thing telling them, and it returned false on any failure and never
+      // retried.
+      showToast({
+        icon: '⏳',
+        title: 'Sent to the worker',
+        message: `They have 48 hours to reply. If they don't, ${Math.round(pct * 100)}% is paid automatically.`,
+      });
+      track('job_verified', { rating, paymentMethod, disputed: true, proposed: true });
+      await refreshBookings();
+      return true;
+    }
+
+    // The hold was too close to expiring to pause. The server captured in full rather
+    // than let the authorization lapse, which would have paid the earner nothing.
+    if (capture?.capturedInFull) {
+      showToast({
+        icon: 'ℹ️',
+        title: 'Paid in full',
+        message: capture.message || 'The card hold was about to expire, so this was paid in full. Contact support for a refund.',
+      });
     }
 
     const patch = {

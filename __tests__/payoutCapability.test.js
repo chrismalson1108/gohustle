@@ -21,7 +21,12 @@ const read = (p) => fs.readFileSync(path.join(FN, p), 'utf8');
 const codeOnly = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 const helper = read('_shared/payoutCapable.ts');
-const capture = codeOnly(read('stripe-capture-payment/index.ts'));
+// The capture path is TWO files since 2026-09-09: a poster's reduction became a
+// proposal, so the actual Stripe capture moved to _shared/settleEscrow.ts where
+// stripe-capture-payment and settle-disputes both call it. Reading only one of them
+// would leave every assertion below passing against a file the money no longer
+// flows through. Concatenated, so the guards keep their meaning wherever it lives.
+const capture = codeOnly(read('_shared/settleEscrow.ts') + '\n' + read('stripe-capture-payment/index.ts'));
 const claim = codeOnly(read('earner-claim-payment/index.ts'));
 
 describe('both settle paths verify payout capability against Stripe', () => {

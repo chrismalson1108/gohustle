@@ -35,7 +35,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = fs.readFileSync(
-  path.join(__dirname, '..', 'supabase', 'functions', 'stripe-capture-payment', 'index.ts'),
+  path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'settleEscrow.ts'),
   'utf8',
 );
 
@@ -43,7 +43,7 @@ const SRC = fs.readFileSync(
 // function's OWN arithmetic rather than a copy of it that can drift.
 function constExpr(name) {
   const m = new RegExp(`const ${name} = ([^;]+);`).exec(SRC);
-  if (!m) throw new Error(`stripe-capture-payment no longer defines ${name}`);
+  if (!m) throw new Error(`_shared/settleEscrow.ts no longer defines ${name}`);
   return m[1];
 }
 
@@ -101,18 +101,60 @@ describe('the retry after a mid-flight death re-derives what was settled', () =>
   });
 });
 
-describe('the dispute record is authorised by the ledger, not by the request', () => {
-  test('the gate requires BOTH the caller asking and the money having moved that way', () => {
-    // capturePctFinal alone would let a poster fabricate one; settledPct alone would
-    // file a dispute for an external partial capture nobody reported. Both.
-    expect(SRC).toMatch(
-      /if \(capturedGigCents !== null && capturePctFinal < 1 && settledPct < 1\) \{/,
-    );
+describe('the dispute record now PRECEDES the money, and only the settler stamps it', () => {
+  // ── This block used to assert the opposite, and was right to at the time ──────
+  //
+  // The capture path used to WRITE the dispute row, gated on `capturePctFinal < 1 &&
+  // settledPct < 1` — the caller having asked AND the ledger agreeing — with
+  // `pct_paid: Math.round(settledPct * 100)`. That gate existed because the row was
+  // written AFTER an irreversible capture, so the only defence against a fabricated
+  // one was to check the money had actually moved that way.
+  //
+  // Since 2026-09-09 a reduction is a PROPOSAL: the row is written before any capture,
+  // pct_paid stays NULL until settle-disputes captures, and the fabrication the old
+  // gate defended against is impossible by construction — a row with no money behind
+  // it settles to the poster's own number and charges them, which is not an attack.
+  const CAPTURE = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase', 'functions', 'stripe-capture-payment', 'index.ts'),
+    'utf8',
+  );
+  const SETTLER = fs.readFileSync(
+    path.join(__dirname, '..', 'supabase', 'functions', 'settle-disputes', 'index.ts'),
+    'utf8',
+  );
+
+  test('the proposal is written with NO capture, and pct_paid is left null', () => {
+    const branch = CAPTURE.slice(CAPTURE.indexOf('if (wantsPartial) {'), CAPTURE.indexOf('// ── Full pay'));
+    expect(branch).toMatch(/from\('disputes'\)\.insert\(/);
+    expect(branch).toMatch(/proposed_pct: Math\.round\(capturePctFinal \* 100\)/);
+    // The one thing that must NOT be in this branch.
+    expect(branch).not.toMatch(/pct_paid:/);
+    expect(branch).not.toMatch(/paymentIntents\.capture/);
   });
 
-  test('pct_paid is written from what was settled, never from the request', () => {
-    expect(SRC).toMatch(/pct_paid: Math\.round\(settledPct \* 100\)/);
-    expect(SRC).not.toMatch(/pct_paid: Math\.round\(capturePctFinal \* 100\)/);
+  test('the insert is CHECKED — a failed write used to leave no trail at all', () => {
+    const branch = CAPTURE.slice(CAPTURE.indexOf('if (wantsPartial) {'), CAPTURE.indexOf('// ── Full pay'));
+    expect(branch).toMatch(/if \(dErr \|\| !created\)/);
+    expect(branch).toMatch(/fatal: true/);
+  });
+
+  test('only the settler writes pct_paid, and from the LEDGER not from a request', () => {
+    expect(SETTLER).toMatch(/const paidPct = Math\.round\(result\.settledPct \* 100\)/);
+    expect(SETTLER).toMatch(/pct_paid: paidPct/);
+    // Compare-and-set on the null, so two overlapping sweeps cannot both settle one row.
+    expect(SETTLER).toMatch(/\.is\('pct_paid', null\)/);
+    expect(CAPTURE).not.toMatch(/pct_paid:/);
+  });
+
+  test('the outcome is asked of the database, never decided in TypeScript', () => {
+    // public.dispute_settlement_pct is the one definition. A second copy here is how
+    // the console, the controls and the settler start disagreeing about who is owed what.
+    expect(SETTLER).toMatch(/rpc\('dispute_due_pct'/);
+    // It may SELECT those columns (the list is for logging); it must not branch on them.
+    // A second copy of the four-branch rule here is how the settler, the console and
+    // the controls start disagreeing about who is owed what.
+    expect(SETTLER).not.toMatch(/response_stance ===|responded_at ===|resolution_pct \?\?|settle_after </);
+    expect(SETTLER).not.toMatch(/proposed_pct \?\?/);
   });
 
   test('settledPct defaults to a full settlement and is only narrowed by evidence', () => {

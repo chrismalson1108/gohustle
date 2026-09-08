@@ -58,8 +58,20 @@ describe('Hire > Past does not call a cancelled booking completed', () => {
   it('only verifyAndRate can produce the rating the row reads', () => {
     // Why the fallback always fired for cancelled rows: earnerRating comes from
     // bookings.earner_rating, written nowhere but the verify path.
+    //
+    // TWO writes since 2026-09-09, both inside verifyAndRate: a reduction is now a
+    // proposal, so that branch holds the rating on the booking WITHOUT flipping the
+    // status (the public review is published by settle-disputes when the money moves).
+    // The property this guards is unchanged — nothing outside verifyAndRate writes it —
+    // so the test asserts that rather than a count, which was only ever a proxy.
     const ctx = fs.readFileSync(path.join(ROOT, 'src', 'context', 'JobsContext.js'), 'utf8');
-    const writes = ctx.match(/earner_rating:/g) || [];
-    expect(writes.length).toBe(1);
+    const verifyAt = ctx.indexOf('const verifyAndRate = async');
+    const nextFn = ctx.indexOf('\n  const ', verifyAt + 40);
+    const verifyBody = ctx.slice(verifyAt, nextFn > -1 ? nextFn : ctx.length);
+    const all = ctx.match(/earner_rating:/g) || [];
+    const inVerify = verifyBody.match(/earner_rating:/g) || [];
+    expect(`${inVerify.length} of ${all.length} writes are inside verifyAndRate`)
+      .toBe(`${all.length} of ${all.length} writes are inside verifyAndRate`);
+    expect(all.length).toBeGreaterThan(0);
   });
 });

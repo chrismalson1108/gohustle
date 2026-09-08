@@ -120,7 +120,7 @@ describe('the capture side still hands over a scaled gig value', () => {
   // the ratio above would read 1 on a partial and the defect would be back with the
   // database looking innocent.
   const SRC = fs.readFileSync(
-    path.join(ROOT, 'supabase', 'functions', 'stripe-capture-payment', 'index.ts'),
+    path.join(ROOT, 'supabase', 'functions', '_shared', 'settleEscrow.ts'),
     'utf8',
   );
 

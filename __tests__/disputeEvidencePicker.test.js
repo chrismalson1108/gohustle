@@ -74,7 +74,8 @@ describe('the photos the picker now collects are the ones the promise is about',
   });
 
   it('and the server stores them on the dispute row', () => {
-    const capture = read('supabase', 'functions', 'stripe-capture-payment', 'index.ts');
+    const capture = read('supabase', 'functions', '_shared', 'settleEscrow.ts')
+      + '\n' + read('supabase', 'functions', 'stripe-capture-payment', 'index.ts');
     expect(capture).toMatch(/disputeReason, disputePhotos \} = await req\.json\(\)/);
     expect(capture).toMatch(/Array\.isArray\(disputePhotos\)/);
   });

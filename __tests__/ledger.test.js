@@ -435,7 +435,7 @@ describe('settledGrossCents', () => {
 // other direction. Pin the comment that documents the contract.
 it('stripe-capture-payment still treats amount_cents as immutable', () => {
   const fn = require('fs').readFileSync(
-    require('path').join(__dirname, '..', 'supabase/functions/stripe-capture-payment/index.ts'), 'utf8');
+    require('path').join(__dirname, '..', 'supabase/functions/_shared/settleEscrow.ts'), 'utf8');
   expect(fn).toMatch(/amount_cents is never overwritten/);
   // No update statement may set it. The lookbehind is load-bearing: a bare
   // /amount_cents:/ also matches `earner_amount_cents:`, which the capture path

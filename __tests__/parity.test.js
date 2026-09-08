@@ -271,6 +271,13 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     ['availability and class schedule', /Availability & schedule/],
     ['market insights', /Browse → Insights/],
     ['closing an account', /Manage your account/],
+    // Added 2026-09-08 with the two-party dispute flow. The earner's side of this is
+    // the single most alarming notification the platform sends — "the poster asked to
+    // pay you 50%" — and it is on a 48-hour clock. Before the flow existed there was
+    // nothing to point at; now there is, and an assistant that answers "I'm not sure,
+    // ask Support" costs the person the window.
+    ['answering a reported problem', /48 hours to accept/],
+    ['reporting a problem with finished work', /There was a problem/],
   ];
 
   // Run against BOTH prompts. A destination the website answers differently still

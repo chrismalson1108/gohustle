@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import ScreenHeader from '../components/ScreenHeader';
 import JobCard from '../components/JobCard';
+import { supabase } from '../lib/supabase';
 import BookingStatusBadge from '../components/BookingStatusBadge';
 import MessageSheet from '../components/MessageSheet';
 import { useUser } from '../context/UserContext';
@@ -540,6 +541,25 @@ export default function EarnScreen({ navigation }) {
     return null;
   };
 
+  // ── Open payment adjustments against this earner ──────────────────────────
+  // Their own rows, through the party policy. Only the columns the banner needs —
+  // selecting * would pull assigned_to and resolved_by, which are STAFF ids.
+  const [openDisputes, setOpenDisputes] = useState({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('disputes')
+        .select('id, booking_id, proposed_pct, responded_at, pct_paid, settle_after')
+        .is('pct_paid', null);
+      if (!alive) return;
+      const byBooking = {};
+      (data ?? []).forEach((d) => { byBooking[d.booking_id] = d; });
+      setOpenDisputes(byBooking);
+    })();
+    return () => { alive = false; };
+  }, [bookings]);
+
   // Active / Awaiting: rich JobCard + a meta block with one primary action.
   const renderActiveCard = ({ job: j, booking }) => {
     const status = booking.status;
@@ -564,6 +584,30 @@ export default function EarnScreen({ navigation }) {
                 </Text>
               </Text>
             </View>
+          )}
+
+          {/* A payment adjustment the poster has proposed. Above the amendment card
+              because it has a clock on it and money behind it: say nothing for 48
+              hours and the poster's number is what gets paid. */}
+          {openDisputes[booking.id] && (
+            <TouchableOpacity
+              style={styles.disputeCard}
+              onPress={() => navigation.navigate('Dispute', { bookingId: booking.id })}
+            >
+              <View style={styles.amendCardTitleRow}>
+                <Ionicons name="alert-circle" size={15} color={colors.urgent} style={{ marginRight: 6 }} />
+                <Text style={styles.disputeCardTitle} numberOfLines={1}>
+                  {openDisputes[booking.id].responded_at
+                    ? 'Your reply is with GoHustlr'
+                    : `The poster asked to pay ${openDisputes[booking.id].proposed_pct ?? 100}%`}
+                </Text>
+              </View>
+              <Text style={styles.disputeCardBody}>
+                {openDisputes[booking.id].responded_at
+                  ? 'Nothing is paid until someone has read both sides.'
+                  : 'See why, and reply — tap to open.'}
+              </Text>
+            </TouchableOpacity>
           )}
 
           {/* Amendment notifications — a change request requires a decision, so it stays inline */}
@@ -1101,6 +1145,11 @@ const styles = StyleSheet.create({
   amendCard: {
     backgroundColor: colors.warningLight, borderRadius: radii.md, padding: 16, marginTop: 12,
   },
+  disputeCard: {
+    backgroundColor: colors.urgentLight, borderRadius: 14, padding: 13, marginTop: 10,
+  },
+  disputeCardTitle: { fontSize: 14, fontWeight: '700', color: colors.urgent, flexShrink: 1 },
+  disputeCardBody: { fontSize: 13, color: colors.textSecondary, marginTop: 3, lineHeight: 18 },
   amendCardTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   amendCardTitle: { fontSize: 13, fontWeight: '700', color: colors.warningDeep, flexShrink: 1 },
   amendCardNote: { fontSize: 13, color: colors.textPrimary, lineHeight: 19, marginBottom: 12 },

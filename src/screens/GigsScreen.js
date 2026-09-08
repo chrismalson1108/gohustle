@@ -102,6 +102,24 @@ export default function GigsScreen({ navigation }) {
   );
 
   // Group bookings by jobId
+  // Adjustments this poster proposed and that have not settled. Party-scoped by RLS;
+  // only the columns the banner needs, so no staff id is fetched.
+  const [openDisputes, setOpenDisputes] = useState({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('disputes')
+        .select('id, booking_id, proposed_pct, responded_at, pct_paid')
+        .is('pct_paid', null);
+      if (!alive) return;
+      const byBooking = {};
+      (data ?? []).forEach((d) => { byBooking[d.booking_id] = d; });
+      setOpenDisputes(byBooking);
+    })();
+    return () => { alive = false; };
+  }, [posterBookings]);
+
   const bookingsByJob = posterBookings.reduce((acc, b) => {
     const id = b.jobId;
     if (!acc[id]) acc[id] = [];
@@ -516,6 +534,8 @@ export default function GigsScreen({ navigation }) {
                         onMarkDone={() => handleMarkDone(booking)}
                         onCancel={() => handleCancel(booking)}
                         onVerify={() => setVerifyTarget(booking)}
+                        dispute={openDisputes[booking.id]}
+                        onOpenDispute={() => navigation.navigate('Dispute', { bookingId: booking.id })}
                         onMessage={() => setMsgTarget({
                           bookingId: booking.id,
                           jobTitle: job.title,
@@ -740,7 +760,7 @@ function PastBookingCard({ booking, onViewEarner, onRebook }) {
   );
 }
 
-function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange, onViewEarner, onDismissAmendment }) {
+function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDone, onCancel, onVerify, onMessage, onRequestChange, onViewEarner, onDismissAmendment, dispute, onOpenDispute }) {
   const earnerName = booking.earner?.name || 'Someone';
   const initial    = booking.earner?.avatarInitial || earnerName[0]?.toUpperCase() || '?';
   const status     = booking.status;
@@ -840,7 +860,17 @@ function BookingRow({ booking, jobTitle, loading, onAccept, onDecline, onMarkDon
               <Text style={styles.waitingText} numberOfLines={2}>Waiting for earner to confirm…</Text>
             </View>
           )}
-          {status === 'completed' && (
+          {dispute && (
+            <TouchableOpacity style={styles.adjustBanner} onPress={onOpenDispute} activeOpacity={0.85}>
+              <Ionicons name="time-outline" size={13} color={colors.warningDeep} style={{ marginRight: 6 }} />
+              <Text style={styles.waitingText} numberOfLines={2}>
+                {dispute.responded_at
+                  ? 'They replied — GoHustlr is reviewing it'
+                  : `You asked to pay ${dispute.proposed_pct ?? 100}% · waiting for their reply`}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {status === 'completed' && !dispute && (
             <TouchableOpacity style={styles.verifyBtn} onPress={onVerify} activeOpacity={0.85}>
               <Ionicons name="star" size={15} color="#fff" style={{ marginRight: 6 }} />
               <Text style={styles.verifyText} numberOfLines={1}>Verify & rate {earnerName}</Text>
@@ -1064,6 +1094,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', marginBottom: 8,
   },
   markDoneText: { fontSize: 13, fontWeight: '700', color: '#fff', flexShrink: 1 },
+  adjustBanner: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.warningLight,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8,
+  },
   waitingBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.warningLight, borderRadius: radii.md,

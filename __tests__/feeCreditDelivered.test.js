@@ -48,7 +48,13 @@ function latestDefining(fnName) {
   };
 }
 
-const capture = read('supabase', 'functions', 'stripe-capture-payment', 'index.ts');
+// The capture path is TWO files since 2026-09-09: a poster's reduction became a
+// proposal, so the actual Stripe capture moved to _shared/settleEscrow.ts where
+// stripe-capture-payment and settle-disputes both call it. Reading only one of them
+// would leave every assertion below passing against a file the money no longer
+// flows through. Concatenated, so the guards keep their meaning wherever it lives.
+const capture = read('supabase', 'functions', '_shared', 'settleEscrow.ts')
+  + '\n' + read('supabase', 'functions', 'stripe-capture-payment', 'index.ts');
 
 describe('the delivered value of a fee credit has one definition', () => {
   it('a migration defines public.fee_credit_delivered_cents', () => {

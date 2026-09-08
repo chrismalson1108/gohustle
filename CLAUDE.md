@@ -239,9 +239,88 @@ Read `RUNBOOK_SAFETY.md` before changing any of it.
 ## Location, tips & disputes
 - **Location/maps**: jobs carry `lat`/`lng` (from the LocationPicker geocoder; `onChange(label, coords)`). HomeScreen computes distance via `src/lib/geo.js`, offers a **Nearest** sort + per-card distance, and a **Map view** (`JobsMap` / react-native-maps — native, needs the dev build). ⚠️ **The map is iOS-only right now**: Android needs a `com.google.android.geo.API_KEY` in the manifest, and the only thing that puts one there is a `["react-native-maps", { "androidGoogleMapsApiKey" }]` entry in app.json's `plugins` — `android.config.googleMaps.apiKey` is dead config here, because the package ships its own plugin that beats the Expo fallback and strips the meta-data when given no props. `mapsAvailable()` (`src/lib/mapsConfig.js`) is the single gate the three render sites consult, so adding the key turns the map on with no code change; `__tests__/androidMapsKey.test.js` holds both halves together.
 - **Tips**: `CompletionModal` → `verifyAndRate(..., { tipCents })` → `stripe-tip` edge function (off-session charge → earner). `bookings.tip_amount`. ⚠️ **The earner gets 100% and the platform pays Stripe's 2.9%+30¢ — a DECISION, not an oversight** (KNOWN_RISKS T-1, decided 2026-08-17). `stripe-tip` sets `transfer_data.destination` with no `application_fee_amount` on purpose: every marketplace that has taken a cut of tips has turned it into a public scandal, and on a platform selling "keep what you earn" it is the most expensive dollar available. Do not "fix" the missing application fee.
-- **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `stripe-capture-payment` partial capture; a `disputes` row is recorded. `verifyAndRate(..., { pct, disputeReason })`.
+- **Disputes / partial refund**: `CompletionModal` "report a problem" sets a pay `pct` → `verifyAndRate(..., { pct, disputeReason, disputePhotos })` → `stripe-capture-payment`. ⚠️ **That is a PROPOSAL, not a capture — see the Disputes section below before touching any of it.**
   ⚠️ **A `disputes` row is a claim about the GIG payment, and `stripe-webhook`'s `recordReversal` must never file one for a reversal that touched no `payments` row.** A tip has no `payments` row at all, so from 2026-08-14 to 2026-09-06 a refunded or charged-back TIP wrote a row carrying the tip's charge id in the machine template on the gig's booking — and `ctl_external_reversal_not_ledgered` anchors on that template and joins `disputes` to `payments` on `booking_id`, so it reported the gig's captured, never-refunded payment as unledgered and told the operator to "Record chargeback", which writes `refunded_cents` onto a charge nobody refunded and makes `vest_bonuses` void the referral bonus. The tip branch now returns its own `booking_id` before the insert is reachable (`__tests__/tipCaps.test.js`); a reversed tip is ledgered in `tip_ledger.reversed_cents` and nowhere else.
 - **Scheduling**: slots carry machine-readable `starts_at` (job_slots + bookings); `SlotPicker` hides past slots.
+
+## Disputes — a reduction is a proposal both parties answer (2026-09-08)
+
+Reported by a tester, and he was exactly right: *"the worker needs to be able to defend
+their work… it should be a two party reporting once initiated so that both people are
+fairly represented."*
+
+**What it used to do, inside ONE request from the poster's phone**: upload photos →
+`stripe.paymentIntents.capture` at the reduced amount → flip `payments` to `captured` →
+credit the earner → settle the promo budget → *insert the `disputes` row, about eighty
+lines after the money moved* → set the booking `verified` → fire-and-forget push. So the
+record documented a decision already executed, Stripe had already released the remainder
+to the poster, and **nothing in this repo can pay an earner MORE afterwards** —
+`stripe.transfers.create` appears nowhere. The earner could not even read the accusation:
+`disputes_select_parties` granted them SELECT and no client ever issued the query. Filing
+it also removed their only self-service lever, because `earner-claim-payment` refuses a
+booking carrying an unresolved dispute.
+
+**Now**: `pct < 1` captures nothing. It leaves the authorization standing, writes a
+`disputes` row carrying `proposed_pct` (and **never** `pct_paid`), and returns
+`{ success: true, adjustment: 'proposed', settleAfter }`. The booking stays `completed`.
+
+- **`public.dispute_settlement_pct(disputes)` is the ONE definition of the outcome**, and
+  every consumer asks it — the settler, the controls, the probe. Four branches, in order:
+  an operator's `resolution_pct` · the earner accepted → `proposed_pct` · the earner said
+  nothing past `settle_after` → `proposed_pct` (**silence stands**) · contested and
+  unadjudicated with the hold running out (`payments.created_at + 5 days`) → **100**.
+  ⚠️ **That last branch is not a fairness heuristic, it is an asymmetry of the tooling**:
+  a partial capture cannot be topped up and a full one CAN be refunded
+  (`admin-payment-action`), so when the platform fails to adjudicate in time it must err
+  in the only direction it can walk back. Stripe cancels an uncaptured manual
+  PaymentIntent at about seven days and **a lapsed hold pays nobody**.
+- **`settle-disputes` is the only thing that pays a held gig**, on the hourly sweep. That
+  is a new single point of silence and this repo has the cautionary tale
+  (`expire_stale_pending_bookings` never once ran from cron for three weeks), so
+  `ctl_dispute_settlement_overdue` is **critical**, every failure lands in
+  `client_errors`, and the function never swallows an error into a success.
+- **48 hours**, stamped by `dispute_set_defaults()` at insert along with `respondent_id`.
+  `dispute_notify_respondent()` writes the inbox row **in the same transaction** — the old
+  notice was an unawaited fetch from the accuser's client that returned false on any
+  failure and was never retried.
+- **`guard_disputes_write` pins every settlement, adjudication and provenance column.**
+  The response columns are writable only inside `respond_to_dispute()`, whose GUC
+  exemption is keyed to **that row's own id** (`app.dispute_response = old.id::text`), so
+  it cannot be set once and used to rewrite a different dispute in the same transaction —
+  strictly better than the `app.support_reopen` pattern it copies.
+- **The earner reads through `my_dispute(booking_id)`, not the policy** — a whitelisted
+  column set, because `disputes_select_parties` scopes ROWS and nothing scoped COLUMNS, so
+  `assigned_to`/`resolved_by` (staff user ids, resolvable to real names through
+  `profiles_select_all`) were readable by both parties. ⚠️ **20260909010000's header claims
+  the RPC closes that. It does not — a screen is not a permission**, and
+  `GET /rest/v1/disputes?select=assigned_to` still answered. `20260909030000` is the actual
+  fix: table-wide SELECT revoked, 19 columns granted back by name, the two staff ones
+  withheld. `resolution_note` IS granted on purpose — both dispute screens render it and an
+  unexplained adjustment is the complaint this whole change set answers — so the console
+  says as much where the note is typed. ⚠️ **A column added to `disputes` after that is not
+  granted and PostgREST answers 403**, which passes every local check and fails only in
+  production; `disputeTwoParty.test.js` holds the three client selects to the grant list.
+- **`__tests__/disputeTwoParty.test.js`** holds the whole shape together.
+
+**⚠️ Status vocabulary is deliberately UNCHANGED.** `'open'` = awaiting a response,
+`'investigating'` = contested. Both were already in the CHECK, so `vest_bonuses` — which
+gates a third party's referral bonus on `status in ('open','investigating')` — keeps
+covering both new states without a rewrite, as do `ctl_dispute_resolution_desync` and
+every console pill. Widening the CHECK would have forced all of them.
+
+**⚠️ NO_ROOM_TO_HOLD.** The hold is minted when the poster ACCEPTS, not when the work is
+done, so a gig booked Monday and verified Saturday may have almost no runway.
+`stripe-capture-payment` captures in FULL when under 36 hours remain and says so.
+
+**Console — `/disputes` and `/disputes/[id]`.** The case page is the only place the two
+sides sit together: the poster's reason and photos, the earner's reply and photos, **and
+the completion photos uploaded when the work was finished**, which is the whole of the
+door-A/door-B scenario. `decideDispute` writes `resolution_pct` bounded to
+`[proposed_pct, 100]` — never lower, for the irreversibility reason above — and
+deliberately **does not stamp `resolved_at`**, because that column unblocks
+`earner-claim-payment`, which captures in FULL and would silently override the decision.
+For the same reason `setDisputeStatus` now **refuses to close a case while the payment is
+still `authorized`**. Two `OpenThreadForm`s, one per party: a dispute is not a group chat.
 
 **Tunnel troubleshooting** — If ngrok errors with `Cannot read properties of undefined (reading 'body')`, kill all node and ngrok processes first, then retry.
 
@@ -276,8 +355,8 @@ StripeProvider → SafeAreaProvider → ErrorBoundary → AuthProvider → RootN
               └── AppNavigator (NavigationContainer inside providers to access context for tab badge counts)
                     └── Tab.Navigator (5 tabs — display labels in parens, route names unchanged)
                           ├── HomeTab   ("Browse")   → HomeStack:  HomeMain (HomeScreen) → JobDetail → MarketInsights → UserProfile → Reviews → Chat
-                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnMain (EarnScreen) → JobDetail → UserProfile → Reviews → Chat → Payments
-                          ├── GigsTab   ("Hire")     → GigsStack:  GigsMain (GigsScreen) → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat → Payments
+                          ├── EarnTab   ("My Jobs")  → EarnStack:  EarnMain (EarnScreen) → JobDetail → UserProfile → Reviews → Chat → Payments → Dispute
+                          ├── GigsTab   ("Hire")     → GigsStack:  GigsMain (GigsScreen) → PostJob → JobDetail → EditJob → UserProfile → Reviews → Chat → Payments → Dispute
                           ├── MessagesTab ("Messages") → MessagesStack: MessagesMain (MessagesScreen) → Chat (ChatScreen) → UserProfile/JobDetail/FindPeople/Reviews/Support
                           └── ProfileTab ("You")     → ProfileStack: ProfileMain (ProfileScreen) → Settings/ProfileSettings/Availability/Notifications/
                                                                     NotificationSettings/PayoutSetup/Expenses/TrophyCase/Reviews/Legal/
@@ -343,6 +422,7 @@ Expo push. `registerPushToken(userId)` (called from `PushManager` in `App.js` on
 | `SupportScreen` (route `Support`) | In-app two-way support. **ONE implementation** registered in MessagesStack + ProfileStack — do not add a second. Thread switcher is the title; actions live in the ⋯ menu. |
 | `SecurityScreen` (route `Security`) | Two-factor: enroll (deep-link first), recovery codes, disable (requires a current code). Prompted from PayoutSetup once a bank is connected. |
 | `AssistantMemoryScreen` (route `AssistantMemory`, title **Hustlr AI memory**) | Everything the assistant's `remember` tool has stored about you, and a one-tap delete. `profiles.assistant_memory` is a jsonb array capped at the 25 most recent facts, **each replayed into the system prompt of every future conversation** — so before this screen the only way to remove one was to overflow the window. Reads through `my_profile()` (the column is deliberately outside the profiles SELECT grant); helpers in `src/lib/assistantMemory.js`. Reached from Settings. |
+| `DisputeScreen` (route `Dispute`, title **Payment adjustment**) | The screen the accused party never had. Shows the poster's reason and photos, what is at stake in DOLLARS, the hours left, and lets the earner **accept** or **contest once** with their own photos. Reads through `my_dispute()` (the RLS policy exposes `assigned_to`/`resolved_by`, which are staff ids). Registered in EarnStack **and** GigsStack — the poster reaches the same screen to watch their own report. |
 | `MfaChallengeScreen` | The sign-in code prompt. Rendered by `RootNavigator` BEFORE onboarding/terms — not a stack route. Carries the "I've lost my phone" recovery path. |
 | `LegalScreen` | Renders Terms / Privacy / Independent Contractor Agreement (route param `doc`) fetched from the `legal_documents` table. See **Legal docs** below. |
 | `PublicProfileScreen` | Anyone's profile (route param `userId`): combined rating + **worker/client breakdown**, bio, skills, their open gigs (→ JobDetail), recent completed work, and all reviews. Registered as `UserProfile` in every stack; reached by tapping a poster (JobDetail) or an earner (Hiring rows). |
@@ -636,7 +716,7 @@ rate limiting and staging.
   client's own Settings rows, and fails if the web block hands out an app-only screen.
   **When the website gains one of the app-only screens, move it out of the web block.**
 
-## Edge functions (`supabase/functions/`) — 33, each deployed by hand
+## Edge functions (`supabase/functions/`) — 34, each deployed by hand
 
 The pre-push hook tells you to "deploy each one by hand", and until 2026-08-14 this file
 named 13 of them — so the reminder pointed at an inventory that did not exist. Eight of
@@ -694,6 +774,7 @@ found on Monday. `ctl_edge_errors_burst` pages when one edge function writes 3+ 
 | `admin-payment-action` | "THE console's only path to moving money" — `release_hold` and `refund`. Gated `requireAdminCaller(req, 'admin', 300)` **inside the function**, independently of the console guard. |
 | `stripe-webhook` | Keeps the ledger in sync with Stripe. `verify_jwt = false`; authenticated by the `stripe-signature` header. |
 | `reconcile-stripe` | Reconciles the ledger against Stripe. Carries BOTH `external = true` controls (`stripe_reconciliation` and `stripe_webhook_config`), dispatched by the sweep. |
+| `settle-disputes` | **The only thing that pays a disputed gig.** A poster's reduction is a PROPOSAL now, so the capture happens here, on the hourly sweep, at whatever `dispute_settlement_pct()` decides. `verify_jwt = false`, shared secret. It does not decide the outcome — it asks the database. See **Disputes**. |
 
 **Payouts, identity & student verification**
 
@@ -838,6 +919,7 @@ it is the second half of a change that has not been done yet.
 | `ledger.test.js`, `mfa.test.js` | money wording/maths and the 2FA sign-in gate |
 | `edgeDepsPinned.test.js` | an edge function importing a floating dependency range — 32 hand-deploys on 32 days each resolved their own supabase-js, and the local type-check reads the developer's cache rather than production |
 | `adminDeployCommand.test.js` | a document printing an admin-console deploy command that cannot work as written — no `--scope go-hustlr` (flat "Not authorized"), or run from the repo root (deploys the website instead). The console only ships by hand, so the command in the doc IS the deploy mechanism |
+| `disputeTwoParty.test.js` | the accused party losing their answer. A reduction going back to a capture inside the poster's own request (`pct_paid` written at proposal time), the settlement percentage being re-decided in TypeScript instead of asked of `dispute_settlement_pct`, the console deciding BELOW what the poster asked for or stamping `resolved_at` before the money moved, or either client keeping the read and losing `respond_to_dispute` |
 | `ledgerEntryPoints.test.js` | a screen registered in a stack that nothing in that stack navigates to — a dead registration looks like a shipped feature from every angle except a user's (this is how the poster's ledger stayed unreachable from the Hire tab) |
 
 **Adding a user-facing feature? The parity suite will tell you what else it touches.**

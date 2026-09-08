@@ -35,7 +35,13 @@ const stripComments = (s) => s.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*
 const admin = read('admin-payment-action');
 const webhook = read('stripe-webhook');
 const claim = read('earner-claim-payment');
-const capture = read('stripe-capture-payment');
+// The capture path is TWO files since 2026-09-09: a poster's reduction became a
+// proposal, so the actual Stripe capture moved to _shared/settleEscrow.ts where
+// stripe-capture-payment and settle-disputes both call it. Reading only one of them
+// would leave every assertion below passing against a file the money no longer
+// flows through. Concatenated, so the guards keep their meaning wherever it lives.
+const capture = fs.readFileSync(path.join(FN, '_shared', 'settleEscrow.ts'), 'utf8')
+  + '\n' + read('stripe-capture-payment');
 
 // The settle op's body: from its guard to the next op.
 const settle = stripComments(

@@ -434,7 +434,7 @@ describe('partial capture never settles below Stripe cost', () => {
   const fs = require('fs');
   const path = require('path');
   const src = fs.readFileSync(
-    path.join(__dirname, '..', 'supabase/functions/stripe-capture-payment/index.ts'), 'utf8');
+    path.join(__dirname, '..', 'supabase/functions/_shared/settleEscrow.ts'), 'utf8');
   // Strip comments before matching. The explanation of the bug necessarily QUOTES the
   // floor formula, and a naive /0.029/ then fires on the fix that documents itself — a
   // guard that fails on correct code is a guard someone deletes.

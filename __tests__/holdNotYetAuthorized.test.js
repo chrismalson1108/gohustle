@@ -34,7 +34,13 @@ const read = (...p) => fs.readFileSync(path.join(...p), 'utf8');
 const create = read(FN, 'stripe-create-payment-intent', 'index.ts');
 const accept = read(FN, 'accept-booking', 'index.ts');
 const webhook = read(FN, 'stripe-webhook', 'index.ts');
-const capture = read(FN, 'stripe-capture-payment', 'index.ts');
+// The capture path is TWO files since 2026-09-09: a poster's reduction became a
+// proposal, so the actual Stripe capture moved to _shared/settleEscrow.ts where
+// stripe-capture-payment and settle-disputes both call it. Reading only one of them
+// would leave every assertion below passing against a file the money no longer
+// flows through. Concatenated, so the guards keep their meaning wherever it lives.
+const capture = read(FN, '_shared', 'settleEscrow.ts')
+  + '\n' + read(FN, 'stripe-capture-payment', 'index.ts');
 const claim = read(FN, 'earner-claim-payment', 'index.ts');
 // The ledger arithmetic and its wording moved to shared/ledger.js on 2026-09-05, when
 // the website gained a Transactions page and a second hand-written copy of money maths

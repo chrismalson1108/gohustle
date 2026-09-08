@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, ShieldCheck, Square, SquareCheckBig } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Camera, Check, ShieldCheck, Square, SquareCheckBig, X } from "lucide-react";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import RatingStars from "./ui/RatingStars";
@@ -9,6 +9,8 @@ import SignedPhotoStrip from "./SignedPhotoStrip";
 import Avatar from "./ui/Avatar";
 import { Textarea } from "./ui/Field";
 import { classNames, money, payLabel } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
+import { uploadPrivateImages } from "@/lib/uploadImage";
 import type { Booking } from "@/lib/types";
 import { earnerNetAfterCreditCents, effectiveFeeLabel, posterChargeCents } from "@gohustlr/shared";
 
@@ -19,6 +21,8 @@ export interface VerifyArgs {
   tipCents: number;
   pct: number;
   disputeReason: string | null;
+  /** Storage paths in the private completion-photos bucket, under the poster's own uid. */
+  disputePhotos?: string[];
 }
 
 const TIPS = [0, 300, 500, 1000];
@@ -65,6 +69,14 @@ export default function CompletionModal({
   const [pct, setPct] = useState(0.75);
   const [disputeReason, setDisputeReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Evidence for the reduction. The web half of mobile's picker — without it the poster
+  // on a phone browser could only make an unillustrated accusation, and the earner's new
+  // right of reply would be answering a claim with no photo in it.
+  const { user } = useAuth();
+  const [photos, setPhotos] = useState<File[]>([]);
+  const previews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
+  useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
 
   useEffect(() => {
     if (open) {
@@ -74,6 +86,8 @@ export default function CompletionModal({
       setDisputed(false);
       setPct(0.75);
       setDisputeReason("");
+      setPhotos([]);
+      setError(null);
     }
   }, [open]);
 
@@ -107,7 +121,15 @@ export default function CompletionModal({
   const confirm = async () => {
     if (reasonMissing) return; // guarded by the disabled button, belt-and-suspenders
     setBusy(true);
+    setError(null);
     try {
+      // Uploaded at confirm rather than at pick time, exactly as mobile does it: a
+      // poster who changes their mind and unticks "there was a problem" leaves nothing
+      // behind in storage.
+      let photoPaths: string[] = [];
+      if (disputed && photos.length && user?.id) {
+        photoPaths = await uploadPrivateImages(photos, "completion-photos", user.id);
+      }
       await onConfirm({
         rating,
         reviewText,
@@ -115,9 +137,14 @@ export default function CompletionModal({
         tipCents: tipCents || 0,
         pct: disputed ? pct : 1,
         disputeReason: disputed ? disputeReason || null : null,
+        disputePhotos: disputed ? photoPaths : undefined,
       });
       onClose();           // only close on success
     } catch (e) {
+      // Say so. A swallowed console.warn left the sheet open with no explanation —
+      // and the most likely throw here is image moderation refusing a photo, which the
+      // poster can act on the moment they are told.
+      setError((e as Error)?.message || "That didn't go through. Please try again.");
       console.warn("Completion confirm failed:", (e as Error)?.message);
     } finally {
       setBusy(false);      // never strand the spinner
@@ -231,9 +258,46 @@ export default function CompletionModal({
             placeholder="What went wrong? (shared with support)"
             className="mt-3 min-h-[64px]"
           />
-          <p className="mt-1.5 text-xs text-ink-muted">The rest of the hold is released back to you.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {previews.map((u, i) => (
+              <div key={u} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u} alt="" className="size-16 rounded-lg border border-line object-cover" />
+                <button
+                  type="button"
+                  aria-label="Remove photo"
+                  onClick={() => setPhotos((p) => p.filter((_, idx) => idx !== i))}
+                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-ink text-white"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+            {photos.length < 6 && (
+              <label className="flex size-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-ink-muted hover:border-primary hover:text-primary">
+                <Camera className="size-5" />
+                <span className="text-[10px] font-semibold">Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files ?? []);
+                    setPhotos((p) => [...p, ...picked].slice(0, 6));
+                    e.target.value = ""; // so re-picking the same file fires onChange
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-muted">
+            The rest of the hold stays on your card until this is settled. Your reason and any photos
+            are shown to {earnerName}, who has 48 hours to reply, and are what support reviews.
+          </p>
         </div>
       )}
+      {error && <p className="mt-3 text-sm font-medium text-urgent">{error}</p>}
     </Modal>
   );
 }
