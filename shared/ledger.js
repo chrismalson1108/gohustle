@@ -192,8 +192,13 @@ export function toEntry(row, side, jobsById, bookingsById) {
     tipCents: tip,
     refundedCents: refunded,
     refundShareCents: refundShare,
-    refundedAt: row.refunded_at,
-    refundReason: row.refund_reason,
+    // Both only when the reader actually bore some of it. `refund_reason` is the
+    // OPERATOR's note — "chargeback lost, case dp_123" — and both clients render it
+    // verbatim on the receipt. On an absorbed chargeback that put an internal case
+    // reference, and a refund date, in front of an earner who lost nothing and was owed
+    // no explanation.
+    refundedAt: refundShare > 0 ? row.refunded_at : null,
+    refundReason: refundShare > 0 ? row.refund_reason : null,
     discountCents: cents(row.poster_discount_cents),
     feeCreditCents: cents(row.fee_credit_cents),
     netCents: net,
@@ -262,11 +267,22 @@ export function rangeBounds(key, now = new Date()) {
 // Status groupings in the user's terms, not Stripe's. "Refunded" is not a status
 // on the row at all — it is a non-zero refunded_cents on an otherwise captured
 // payment — but it is absolutely a thing people filter for.
+//
+// ⚠️ GROUPED BY THE READER'S OWN SHARE, not by the refund on the payment.
+//
+// These two matchers were the last places reading `refundedCents` — the true reversal on
+// the row — where every other user-facing figure reads `refundShareCents`, what came off
+// THIS reader's money. On a lost chargeback the platform absorbs the reversal
+// (20260813160000: `p_debit_earner: false`), so the earner keeps every cent and their
+// share is 0 — yet their gig dropped out of "Completed" and turned up under "Refunded",
+// for money that is still in their bank. The distinction the rest of this file is built
+// on ("was this refunded at all" is a different question from "how much of it was mine")
+// simply had not reached the filters.
 export const STATUS_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'held', label: 'In escrow', match: (e) => e.pending },
-  { key: 'settled', label: 'Completed', match: (e) => e.settled && !e.refundedCents },
-  { key: 'refunded', label: 'Refunded', match: (e) => e.refundedCents > 0 },
+  { key: 'settled', label: 'Completed', match: (e) => e.settled && !e.refundShareCents },
+  { key: 'refunded', label: 'Refunded', match: (e) => e.refundShareCents > 0 },
   { key: 'failed', label: 'Declined', match: (e) => e.status === 'failed' },
   { key: 'cancelled', label: 'Cancelled', match: (e) => e.status === 'cancelled' },
 ];

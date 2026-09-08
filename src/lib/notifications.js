@@ -48,6 +48,12 @@ export function notificationRoute(n) {
   if (disputeBooking) {
     return { tab: 'EarnTab', screen: 'Dispute', params: { bookingId: disputeBooking } };
   }
+  // A SAFETY CHECK-IN NUDGE, same rule. Its body says tap "done" or use Get help, and
+  // both of those live on the STARTED booking in My Jobs — the public listing has
+  // neither. It carried only job_id, so the branch below sent the person asking "are you
+  // OK?" to a page with nothing to press, at the one moment that matters. This is the
+  // stage between a missed check-in and paging the on-call.
+  if (n?.type === 'safety_checkin') return { tab: 'EarnTab' };
   if (n.job_id) return { tab: 'HomeTab', screen: 'JobDetail', params: { jobId: n.job_id } };
   const tab = n?.data?.tab;
   if (tab && TABS[tab]) return { tab };

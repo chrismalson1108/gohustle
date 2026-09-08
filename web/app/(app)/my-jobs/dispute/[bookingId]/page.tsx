@@ -117,7 +117,7 @@ export default function DisputePage() {
       showToast(
         stance === "accept"
           ? { icon: "✅", title: "Accepted", message: "This will be paid at the adjusted amount shortly." }
-          : { icon: "📨", title: "Sent", message: "Nothing is paid until a person has read both sides." },
+          : { icon: "📨", title: "Sent", message: "Nothing is paid while we look at it — and if nobody has decided in about five days, you are paid in full." },
       );
       await load();
       await refreshBookings();

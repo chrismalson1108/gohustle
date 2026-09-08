@@ -64,6 +64,9 @@ export function notificationHref(n: NotificationRow): string | null {
   // and testing job_id first sent "you have 48 hours to reply" to the public listing.
   const disputeBooking = n.data?.dispute_id ? (n.data?.booking_id as string | undefined) : undefined;
   if (disputeBooking) return `/my-jobs/dispute/${disputeBooking}`;
+  // A SAFETY CHECK-IN NUDGE, same rule. Its body says tap "done" or use Get help, and
+  // both live on the STARTED booking in My Jobs — the public listing has neither.
+  if (n.type === "safety_checkin") return "/my-jobs";
   if (n.job_id) return `/jobs/${n.job_id}`;
   const tab = (n.data?.tab as string) || "";
   return TAB_ROUTE[tab] ?? null;

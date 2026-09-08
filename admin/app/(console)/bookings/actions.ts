@@ -369,7 +369,13 @@ export async function recordReversal(formData: FormData): Promise<ActionResult> 
     const cents = Number(body.refunded_cents ?? 0);
     return {
       reversed_cents: cents,
-      __message: `Recorded $${(cents / 100).toFixed(2)} as reversed. GMV, fees and the earner's earnings now reflect it. No Stripe call was made — the money already moved.`,
+      // WHAT IT ACTUALLY DOES. This said "GMV, fees and the earner's earnings now reflect
+      // it" — but the edge function passes `p_debit_earner: false` on purpose
+      // (20260813160000: the platform absorbs a destination-charge reversal), so the
+      // earner's earnings are deliberately untouched. Describing the opposite of what the
+      // button does, on the money action with the fewest undo paths, is how an operator
+      // reconciles the wrong side.
+      __message: `Recorded $${(cents / 100).toFixed(2)} as reversed. GMV and platform fees now reflect it. The earner's earnings are deliberately NOT reduced — the platform absorbs a destination-charge reversal — so if the money was genuinely recovered from them, reconcile that separately. No Stripe call was made; the money already moved.`,
     };
   });
 }

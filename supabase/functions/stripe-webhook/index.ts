@@ -747,6 +747,16 @@ Deno.serve(async (req: Request) => {
           ? new Date(payout.arrival_date * 1000).toISOString()
           : null;
 
+        // Was this payout ALREADY paid before this delivery? The row is ordering-guarded
+        // (guard_stripe_payout_ordering drops a stale write on last_event_at) but the
+        // notification beside it was not, so a Stripe REDELIVERY of payout.paid — which
+        // happens on any non-2xx, and this handler throws on several paths — told the
+        // earner a second time that the same money had landed. Read the state before the
+        // upsert changes it.
+        const { data: priorPayout } = await supabase
+          .from('stripe_payouts').select('status').eq('payout_id', payout.id).maybeSingle();
+        const alreadyAnnounced = (priorPayout as { status?: string } | null)?.status === payout.status;
+
         const { error: poErr } = await supabase.from('stripe_payouts').upsert({
           payout_id: payout.id,
           account_id: acct,
@@ -787,7 +797,8 @@ Deno.serve(async (req: Request) => {
         // Tell them when it actually lands, and when it does not. These are the two
         // moments an earner wants to hear from us; everything between is noise, so
         // pending/in_transit updates are recorded silently.
-        if (acctRow?.user_id && (event.type === 'payout.paid' || event.type === 'payout.failed')) {
+        if (acctRow?.user_id && !alreadyAnnounced
+            && (event.type === 'payout.paid' || event.type === 'payout.failed')) {
           const paid = event.type === 'payout.paid';
           try {
             await supabase.from('notifications').insert({

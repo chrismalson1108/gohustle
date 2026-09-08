@@ -1025,3 +1025,33 @@ describe('Hustlr AI does not guarantee a review the auto-capture overrides', () 
     });
   });
 });
+
+describe('a safety nudge routes to a screen that has the buttons it names', () => {
+  // The nudge body says: tap "done" on your gig, or use Get help if something is wrong.
+  // Both live on the STARTED booking in My Jobs. The notification carries only job_id,
+  // and both routers test job_id before anything else — so the message asking somebody
+  // "are you OK?" deep-linked to the public listing, which has neither control. It is the
+  // stage between a missed check-in and paging the on-call, so its one job is to get the
+  // person to a button.
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const mobile = fs.readFileSync(path.join(ROOT, 'src/lib/notifications.js'), 'utf8');
+  const web = fs.readFileSync(path.join(ROOT, 'web/lib/notifications.ts'), 'utf8');
+
+  it('mobile sends it to My Jobs, ahead of the job_id branch', () => {
+    const i = mobile.indexOf("n?.type === 'safety_checkin'");
+    const j = mobile.indexOf('if (n.job_id)');
+    expect(i).toBeGreaterThan(-1);
+    expect(i).toBeLessThan(j);
+    expect(mobile.slice(i, i + 120)).toContain('EarnTab');
+  });
+
+  it('web sends it to /my-jobs, ahead of the job_id branch', () => {
+    const i = web.indexOf('n.type === "safety_checkin"');
+    const j = web.indexOf('if (n.job_id)');
+    expect(i).toBeGreaterThan(-1);
+    expect(i).toBeLessThan(j);
+    expect(web.slice(i, i + 120)).toContain('/my-jobs');
+  });
+});

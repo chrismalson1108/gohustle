@@ -23,6 +23,10 @@ const entry = (o = {}) => ({
   feeLabel: o.feeLabel ?? '10%',
   tipCents: o.tipCents ?? 0,
   refundedCents: o.refundedCents ?? 0,
+  // What came off THIS reader's money. Defaults to the whole refund, which is the
+  // ordinary case; an ABSORBED chargeback is the one where they diverge, and the
+  // fixture below sets it explicitly.
+  refundShareCents: o.refundShareCents ?? o.refundedCents ?? 0,
   refundedAt: null,
   refundReason: null,
   discountCents: o.discountCents ?? 0,
@@ -206,6 +210,11 @@ describe('filterEntries', () => {
     entry({ id: 'c', at: '2026-01-05T00:00:00Z', status: 'captured', refundedCents: 500, title: 'Tutoring' }),
     entry({ id: 'd', at: '2025-06-01T00:00:00Z', status: 'captured', title: 'Errands' }),
     entry({ id: 'e', at: '2026-08-01T00:00:00Z', status: 'failed', title: 'Dog walking' }),
+    // A LOST CHARGEBACK the platform absorbed: the payment carries a reversal, the earner
+    // bore none of it (record_refund runs with p_debit_earner: false) and the money is
+    // still in their bank. Their statement must file this under Completed.
+    entry({ id: 'g', at: '2026-07-04T00:00:00Z', status: 'captured',
+            refundedCents: 6000, refundShareCents: 0, title: 'Fence repair' }),
     entry({ id: 'f', at: '2026-08-02T00:00:00Z', side: 'poster', title: 'Cleaning' }),
   ];
   const ids = (o) => filterEntries(rows, o).map((e) => e.id);
@@ -233,6 +242,15 @@ describe('filterEntries', () => {
 
   it('treats a refunded payment as not plainly completed', () => {
     expect(ids({ side: 'earner', range: 'all', status: 'settled' })).not.toContain('c');
+  });
+
+  // The earner kept every cent of an absorbed chargeback, so grouping it as "Refunded"
+  // told them something false about their own money and hid the gig from the filter they
+  // actually use. The rest of this module already distinguishes "was this refunded" from
+  // "how much of it was mine"; the filters were the last place still conflating them.
+  it('does not file an absorbed chargeback under Refunded for the earner', () => {
+    expect(ids({ side: 'earner', range: 'all', status: 'refunded' })).not.toContain('g');
+    expect(ids({ side: 'earner', range: 'all', status: 'settled' })).toContain('g');
   });
 
   it('searches titles case-insensitively', () => {
@@ -753,5 +771,44 @@ describe('a failed load never looks like an empty statement', () => {
     // whoever edits this next.
     expect(at).toBeLessThan(empty);
     expect(screen).toMatch(/Could not load your bank deposits/);
+  });
+});
+
+describe('an absorbed chargeback is not the earner’s refund, and not their business', () => {
+  const { toEntry } = require('../shared/ledger');
+
+  // The platform absorbs a destination-charge reversal (20260813160000: record_refund is
+  // called with p_debit_earner: false), so refunded_cents rises and earner_refunded_cents
+  // stays 0. Everything the earner is shown must follow the second number.
+  const row = {
+    id: 'p_cb', booking_id: 'b_cb', status: 'captured',
+    amount_cents: 10000, fee_cents: 700, earner_amount_cents: 9300,
+    refunded_cents: 10000, earner_refunded_cents: 0,
+    refunded_at: '2026-09-08T10:00:00Z',
+    refund_reason: 'chargeback lost, case dp_123 — do not re-refund',
+    captured_at: '2026-09-01T10:00:00Z', fee_bps: 700,
+  };
+  const jobs = { j1: { title: 'Fence repair' } };
+  const bookings = { b_cb: { job_id: 'j1' } };
+
+  it('the earner keeps the money, so their share is zero', () => {
+    expect(toEntry(row, 'earner', jobs, bookings).refundShareCents).toBe(0);
+  });
+
+  it('and is shown no refund date and no operator note', () => {
+    const e = toEntry(row, 'earner', jobs, bookings);
+    // `refund_reason` is written by an operator for operators — "chargeback lost, case
+    // dp_123" — and both clients render it verbatim on the receipt. Putting an internal
+    // case reference in front of somebody who lost nothing is a disclosure, not a
+    // courtesy.
+    expect(e.refundReason).toBeNull();
+    expect(e.refundedAt).toBeNull();
+  });
+
+  it('but the poster, who did get the money back, still sees both', () => {
+    const e = toEntry(row, 'poster', jobs, bookings);
+    expect(e.refundShareCents).toBe(10000);
+    expect(e.refundReason).toBe('chargeback lost, case dp_123 — do not re-refund');
+    expect(e.refundedAt).toBe('2026-09-08T10:00:00Z');
   });
 });
