@@ -1024,6 +1024,28 @@ about deployment rather than code:
 
 A fresh clone needs `git config core.hooksPath .githooks` once.
 
+### Money probes — `node scripts/probe-money.mjs`
+
+**`npm test` asserts what the CODE says; these assert what the DATABASE does.** Seven
+rolled-back probes stage real rows against production and report what actually happened:
+the promotion chain and its three ways of ending, the poster-discount split, referral
+accrual/vesting/clawback, tip caps and reversal idempotency, whether every critical money
+control discriminates, the rate card and the loyalty ladder, and the two dispute defects
+found on 2026-09-08.
+
+Run them after any money change, and after any `db push` that touches a guard, a control
+or a money RPC. `node scripts/probe-money.mjs 30 50` runs a subset by filename prefix.
+
+⚠️ **Every probe ends in `raise exception`, so its transaction is discarded** — they stage
+jobs, bookings, payments, disputes, promotions and ledger rows and none of it persists.
+The runner REFUSES a file with no rollback raise, because a probe that stops raising
+starts writing to production. NOTICE is invisible over the management API, so a probe
+reports by raising rather than by `raise notice`.
+
+They exist because three defects got past the whole suite: a booking accepting two live
+dispute proposals, an accepted reduction whose settlement clock never moved, and a loyalty
+ladder every rung of which is at or above the standing rate.
+
 ### What is deliberately NOT automated
 No agent rewrites code, prompts or migrations unattended. In a single day of supervised
 work this session dropped a `WHERE` clause from a control, shipped a screen missing an
