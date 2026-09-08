@@ -272,3 +272,50 @@ describe('support can settle a booking the app cannot', () => {
     expect(panel).toMatch(/settleHold/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A chargeback finding must carry its figure.
+//
+// ctl_external_reversal_not_ledgered pulls the reversed amount out of the dispute row's
+// machine template, and there are TWO templates:
+//
+//   refund      Stripe refund on charge ch_… (usd 40.00 refunded)
+//   chargeback  Stripe chargeback du_… (fraudulent, usd 100.00)
+//
+// The extraction anchored on ' refunded)', so it only ever matched the first. Every
+// CHARGEBACK finding therefore carried reversal_cents null and unledgered_cents null —
+// a critical money finding that did not say how much money. Verified against a REAL
+// Stripe chargeback on 2026-09-08: du_… for usd 100.00 reported NULL, and the amount was
+// in the reason string the whole time.
+//
+// The control still FIRED (the WHERE has an arm for a null reversal against a zero
+// refunded_cents), so nothing was ever missed. This is about the operator being told.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the external-reversal control reads both templates', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const MIG = path.join(__dirname, '..', 'supabase/migrations');
+  const body = fs.readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort()
+    .map((f) => fs.readFileSync(path.join(MIG, f), 'utf8'))
+    .filter((s) => /create or replace function public\.ctl_external_reversal_not_ledgered/i.test(s))
+    .pop();
+
+  it('the control is resolvable', () => expect(body).toBeTruthy());
+
+  it('extracts the amount from the refund template', () => {
+    expect(body).toMatch(/refunded\\\)'/);
+  });
+
+  it('falls back to the chargeback template rather than reporting NULL', () => {
+    // 'Stripe chargeback du_… (fraudulent, usd 100.00)' — the figure is last, after 'usd'.
+    expect(body).toMatch(/usd \(\[0-9\]\+\\\.\[0-9\]\{2\}\)\\\)\$/);
+    expect(body).toMatch(/coalesce\(\s*\n?\s*substring\(dd\.reason/);
+  });
+
+  it('both anchored template patterns are still what admit a row', () => {
+    // The anchors are the only thing separating stripe-webhook's template from a poster's
+    // typed note, which lands in the same column verbatim.
+    expect(body).toMatch(/\^Stripe refund on charge \(ch\|py\)_/);
+    expect(body).toMatch(/\^Stripe chargeback \(dp\|du\)_/);
+  });
+});

@@ -229,6 +229,15 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 >   $309.00; valued from the ledger it reports $234.60; what actually reached the bank was
 >   $234.60. A $74.40 overstatement removed on one disputed booking.
 >
+> * **The CHARGEBACK path, with a real one.** Charged `pm_card_createDispute` (…0259),
+>   captured, and Stripe raised `du_…` for $100 `fraudulent`. The webhook filed the
+>   reversal record with the `du_` template and `proposed_pct` null; `refunded_cents`
+>   stayed 0 and the earner kept the money, which is the documented decision
+>   (20260813160000 — the platform absorbs a destination-charge reversal);
+>   `earner-claim-payment` refused with `DISPUTE_OPEN`; and the earner could NOT clear
+>   their own blocker by "accepting" the record, because 20260909110000 shipped an hour
+>   earlier. That last one is the exploit closed and then re-proved against real Stripe data.
+>
 > Production was returned to its exact baseline afterwards, `client_errors` included.
 
 
@@ -254,10 +263,11 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 > by moving money. The earner's Connect onboarding was left `state: incomplete`. Treat
 > every row below as reproducing in code, not as reproduced against a live charge.
 
-## Closed (258)
+## Closed (259)
 
 | Sev | Area | Finding | Closed by |
 |---|---|---|---|
+| medium | controls | **A chargeback finding arrived with no figure in it.** `ctl_external_reversal_not_ledgered` pulls the reversed amount out of the dispute row's machine template, anchored on `' refunded)'` — which matches the REFUND template and not the chargeback one (`Stripe chargeback du_… (fraudulent, usd 100.00)`). Every chargeback finding therefore carried `reversal_cents: null` and `unledgered_cents: null`: a critical money finding that did not say how much money, on the one reversal class the platform absorbs itself. The control still FIRED (its WHERE has an arm for a null reversal against a zero `refunded_cents`), so nothing was ever missed — this is about what the operator is told. VERIFIED AGAINST A REAL STRIPE CHARGEBACK 2026-09-08: `du_…` for usd 100.00 reported NULL; after the fix the same row reports `reversal_cents=10000, unledgered_cents=10000`. _(audit-2026-09-08/live-money.)_ | `20260909130000` coalesces a second pattern for the chargeback shape. The anchored template patterns that admit a row are untouched, and the probe asserts a poster's free text is still ignored. `refundAttribution.test.js`, proved to discriminate. |
 | high | disputes | **An earner could "accept" a refund/chargeback RECORD and close the row that blocks their own claim.** `recordReversal` files a bare row — no `proposed_pct`, no clock — whose whole job is to sit open and stop `earner-claim-payment` while a reversal is unexplained. `dispute_set_defaults` gives it a `respondent_id` (deliberately, it names the counterparty on every row) and `respond_to_dispute` never checked whether the row was an ADJUSTMENT. Answer it `accept` and branch 2's `coalesce(d.proposed_pct, 100)` returns ONE HUNDRED; `settle-disputes` then stamps `pct_paid`/`resolved_at` and the gate opens on a booking whose money Stripe already took back. MEASURED LIVE 2026-09-08: filed the exact recordReversal shape, accepted it as the earner, `dispute_due_pct` went NULL -> 100. 20260909040000 guarded branch 3 against precisely this; branch 2 never got the guard. _(audit-2026-09-08/live-probe.)_ | `20260909110000` closes both halves: `respond_to_dispute` refuses a row with no `proposed_pct`, and `dispute_settlement_pct` returns null for one before any branch can coalesce a 100 out of it. `disputeTwoParty.test.js`, proved to discriminate. |
 | high | disputes | **"Silence stands" did not — a settlement already due could be retracted for up to an hour.** `settle-disputes` runs on the hourly sweep, so between `settle_after` passing and the sweep firing the row is ALREADY due at `proposed_pct` and nothing has captured it. `respond_to_dispute` had no `settle_after` check, so the earner could reply in that gap. MEASURED LIVE: window closed with `due_pct = 60`, the earner contested inside the gap, `due_pct` became NULL. That is a strategy rather than a tie — wait out the clock, then contest, and branch 4 pays 100% five days later if nobody adjudicates. The poster proposed a reduction, won it on the clock, and had it taken back after time was up. _(audit-2026-09-08/live-probe.)_ | `20260909110000` refuses a reply once the window has closed, naming when it closed and what will be paid. `20260909120000` fixes that message, which rendered "paid at %60" because `%%%` in a `raise` parses as literal-percent-then-placeholder. |
 | low | tests | **`liveBody()` in `disputeTwoParty.test.js` only recognised `$$`-delimited functions**, so a migration using the `$function$` delimiter — which is what `pg_get_functiondef` emits, and therefore what anyone copying a live body writes — was invisible and the helper silently asserted against an OLDER definition. A drift guard reading the wrong body is worse than none: it passes while checking history. Found when four new assertions failed against a function that had already been fixed. _(audit-2026-09-08.)_ | The regex accepts `$$` or `$function$`. |
