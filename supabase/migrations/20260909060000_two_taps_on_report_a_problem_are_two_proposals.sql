@@ -31,6 +31,12 @@
 -- Both stay allowed alongside a live proposal, which is why 20260909050000's own
 -- probe (a pre-settled row and a live proposal on one booking) still passes.
 --
+-- MEASURED AGAINST PRODUCTION, 2026-09-08, in a rolled-back transaction: staged a
+-- pre-settled row, a reversal record and a live proposal on ONE booking, then inserted a
+-- SECOND live proposal at a different percentage. It was accepted — four dispute rows on
+-- one booking, two of them live and contradicting each other. That is the BROKEN half of
+-- the discrimination proof; the probe at the bottom of this file is the fixed half.
+--
 -- ── 2. The poster is told a human will look, and branch 4 breaks that ───────
 --
 -- When the earner contests, respond_to_dispute writes the POSTER a durable inbox row

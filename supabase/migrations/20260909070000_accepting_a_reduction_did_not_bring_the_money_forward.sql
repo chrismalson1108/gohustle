@@ -21,6 +21,16 @@
 -- screen re-reads afterwards (responded_at, response_stance, status) did land. Only the
 -- clock did not move, and no screen shows it.
 --
+-- MEASURED AGAINST PRODUCTION, 2026-09-08, in a rolled-back transaction: staged a live
+-- proposal, called respond_to_dispute(accept) as the earner through the real RPC, and read
+-- the row back —
+--
+--     responded_at  2026-09-08 19:26:05+00
+--     settle_after  2026-09-10 19:26:05+00
+--
+-- exactly 48 hours apart. The acceptance moved nothing. That is the BROKEN half of the
+-- discrimination proof; the probe at the bottom of this file is the fixed half.
+--
 -- ── The fix is directional, not a hole ─────────────────────────────────────
 --
 -- settle_after cannot simply be added to the `if not responding` block. A respondent who
