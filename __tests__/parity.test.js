@@ -276,7 +276,11 @@ describe('Hustlr AI knows what the app actually looks like', () => {
     // pay you 50%" — and it is on a 48-hour clock. Before the flow existed there was
     // nothing to point at; now there is, and an assistant that answers "I'm not sure,
     // ask Support" costs the person the window.
-    ['answering a reported problem', /48 hours to accept/],
+    // NOT /48 hours to accept/. That pinned the prompt to a flat 48, and the window is
+    // derived — dispute_set_defaults takes least(now+48h, hold_dies-12h) and can floor at
+    // one hour on a hold with little runway, so the flat figure was wrong on exactly the
+    // bookings where the earner has least time. Assert the DESTINATION, not the number.
+    ['answering a reported problem', /accept the amount or say what actually happened/],
     ['reporting a problem with finished work', /There was a problem/],
   ];
 
@@ -965,5 +969,47 @@ describe('the share link can be revoked, because the legal text says it can', ()
       .filter(([, body]) => !codeOnly(body).includes('revoked_at'))
       .map(([rel]) => rel);
     expect(silent).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The assistant may not promise an outcome the settler does not deliver.
+//
+// dispute_settlement_pct branch 4 captures the FULL amount when the card hold nears
+// expiry and nobody has adjudicated — deliberately, because a partial capture cannot be
+// topped up and a full one can be refunded. Both dispute SCREENS were corrected to say
+// so. The assistant's prompt was not, and it is the surface a worried user actually
+// asks: it told BOTH clients "disputing it means nobody is paid until a person at
+// GoHustlr has read both sides", which is the one guarantee the platform knowingly
+// breaks — against the poster, whose card is then charged in full.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Hustlr AI does not guarantee a review the auto-capture overrides', () => {
+  const assistant = read('supabase/functions/assistant/index.ts');
+  const shared = assistant.slice(assistant.indexOf('You are **Hustlr AI**'));
+  const block = (name) => {
+    const m = assistant.match(new RegExp('const ' + name + ' = `([\\s\\S]*?)`;'));
+    if (!m) throw new Error(`${name} is missing from the assistant`);
+    return m[1];
+  };
+  const PROMPTS = {
+    mobile: shared.replace('${places}', () => block('PLACES_MOBILE')),
+    web: shared.replace('${places}', () => block('PLACES_WEB')),
+  };
+
+  Object.entries(PROMPTS).forEach(([c, prompt]) => {
+    it(`${c}: makes no unconditional "nobody is paid until a human reads it" promise`, () => {
+      const bad = [
+        /nobody is paid until a person/i,
+        /nothing is paid until a person/i,
+        /no(?:body|thing) is paid until (?:someone|a human)/i,
+      ].filter((re) => re.test(prompt)).map(String);
+      expect(`${c}: unconditional promises ${JSON.stringify(bad)}`)
+        .toBe(`${c}: unconditional promises []`);
+    });
+
+    it(`${c}: says what happens when the hold runs out before anyone decides`, () => {
+      expect(`${c}: names the auto-capture: ${/hold runs out|paid in FULL/i.test(prompt)}`)
+        .toBe(`${c}: names the auto-capture: true`);
+    });
   });
 });

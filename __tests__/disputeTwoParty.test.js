@@ -115,7 +115,38 @@ describe('the poster proposes — the poster does not settle', () => {
   });
 
   it('is idempotent per booking, and does not restart the earner’s clock', () => {
-    expect(partial).toMatch(/from\('disputes'\)\.select\('id, settle_after'\)\.eq\('booking_id'/);
+    // The SELECT is the fast path. It used to be the WHOLE guard — read-then-decide,
+    // which two taps on "report a problem" beat, giving the earner two clocks and two
+    // percentages for one gig and letting settle-disputes stamp the second row with
+    // whatever the first collected. A UNIQUE INDEX is the guard now; see below.
+    expect(partial).toMatch(/from\('disputes'\)\.select\('id, settle_after, proposed_pct'\)[\s\S]{0,140}\.eq\('booking_id', bookingId\)/);
+  });
+
+  it('scopes that read to a LIVE proposal, because a booking can hold other dispute rows', () => {
+    // NO_ROOM_TO_HOLD files a pre-settled row and recordReversal files a bare
+    // refund/chargeback row. Unscoped, `.maybeSingle()` returns {data:null, error} the
+    // moment there are two of anything — and only `data` was read, so the guard fell
+    // through and inserted another.
+    expect(partial).toMatch(/\.is\('pct_paid', null\)/);
+    expect(partial).toMatch(/\.not\('proposed_pct', 'is', null\)/);
+  });
+
+  it('treats the unique violation as "already proposed", not as "nothing was recorded"', () => {
+    // Losing the insert race means the proposal DID land and the earner IS on the
+    // clock. Reporting the 500 would make the poster report it a second time.
+    expect(partial).toMatch(/dErr\?\.code === '23505'/);
+  });
+
+  it('a migration actually creates that index, partial on exactly a live proposal', () => {
+    const idx = fs.readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql')).sort()
+      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+      .find((s) => /disputes_one_live_proposal_per_booking/.test(s));
+    expect(`an index migration exists: ${Boolean(idx)}`).toBe('an index migration exists: true');
+    expect(idx).toMatch(/create unique index[\s\S]*?on public\.disputes \(booking_id\)/i);
+    // Settled rows and reversal records must stay outside it or this breaks
+    // NO_ROOM_TO_HOLD and stripe-webhook.
+    expect(idx).toMatch(/where pct_paid is null and proposed_pct is not null/i);
   });
 
   it('accepts only photo paths under the caller’s own folder', () => {
@@ -353,5 +384,196 @@ describe('the case file shows both sides and can reach both people', () => {
   it('is gated at the tier whose queue this is', () => {
     expect(page).toMatch(/requireAdminPage\("trust"\)/);
     expect(page).toMatch(/roleSatisfies\(ctx\.role, "trust"\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Nothing else may touch a hold that a live adjustment owns.
+//
+// Both of these were written when the poster's Verify sheet still CAPTURED, so an
+// outstanding proposal could not coexist with an open authorization. Under the two-party
+// model it is the ordinary state — stripe-capture-payment leaves pct<1 at
+// payment='authorized' / booking='completed' — and it is exactly the state the console's
+// two hold buttons are offered on, on exactly the page an operator opens because of a
+// dispute.
+//
+//   settle       captures the FULL hold. On a $200 gig where the poster proposed 60% and
+//                the earner ACCEPTED, one click charges $200 instead of $120 and pays the
+//                earner $186 instead of $111.60 — into a Connect account, which the
+//                platform cannot claw back without a separate refund. settle-disputes
+//                then stamps pct_paid=100 and tells the poster their report "did not stand".
+//   release_hold voids the authorization settle-disputes needs. The dispute never reaches
+//                pct_paid, so it returns HOLD_EXPIRED on every sweep for ever, and nothing
+//                in this repo can pay that earner afterwards.
+//
+// Every sibling settlement path already refuses (earner-claim-payment: DISPUTE_OPEN;
+// stripe-capture-payment: ALREADY_SETTLED). This was the last one that did not.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the operator cannot settle or void a hold a live adjustment owns', () => {
+  const apa = codeOnly(read('supabase/functions/admin-payment-action/index.ts'));
+
+  it('checks the disputes table before either hold-touching op', () => {
+    expect(apa).toMatch(/if \(op === 'release_hold' \|\| op === 'settle'\)/);
+    expect(apa).toMatch(/from\('disputes'\)/);
+  });
+
+  it('scopes the check to a LIVE adjustment, not to any dispute row', () => {
+    // A settled row (pct_paid) and a reversal record (no proposed_pct) must not block an
+    // operator: the first is history and the second is the webhook's own bookkeeping.
+    const block = apa.slice(apa.indexOf("op === 'release_hold' || op === 'settle'"));
+    expect(block).toMatch(/\.is\('pct_paid', null\)/);
+    expect(block).toMatch(/\.not\('proposed_pct', 'is', null\)/);
+  });
+
+  it('fails CLOSED when the disputes read errors', () => {
+    // An unreadable table is not evidence that there is no dispute, and the action behind
+    // it is irreversible in the direction that matters.
+    expect(apa).toMatch(/dispute_check_unavailable/);
+  });
+
+  it('refuses with a distinct code that names where the decision lives', () => {
+    expect(apa).toMatch(/error: 'dispute_open'/);
+    expect(apa).toMatch(/\/disputes\/\$\{liveDispute\.id\}/);
+  });
+
+  it('the console does not offer a button the guard will refuse', () => {
+    const panel = codeOnly(read('admin/app/(console)/bookings/[id]/InterventionPanel.tsx'));
+    const page = codeOnly(read('admin/app/(console)/bookings/[id]/page.tsx'));
+    expect(page).toMatch(/openDispute=\{/);
+    expect(page).toMatch(/pct_paid === null && d\.proposed_pct !== null/);
+    // Both hold buttons, not just settle.
+    const gated = panel.match(/disabled=\{pending \|\| paymentStatus !== "authorized" \|\| Boolean\(openDispute\)\}/g) || [];
+    expect(`hold buttons gated on openDispute: ${gated.length}`).toBe('hold buttons gated on openDispute: 2');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One poisoned dispute must not starve every other settlement.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('settle-disputes isolates one dispute from the next', () => {
+  const sd = codeOnly(read('supabase/functions/settle-disputes/index.ts'));
+
+  it('wraps the per-dispute body in its own try/catch and continues', () => {
+    // settleEscrow returns {ok:false} for every failure it MODELS, but the two
+    // stripe.paymentIntents.capture calls throw. A throw used to unwind past the loop to
+    // the single outer catch, aborting the batch — deterministically, every hour, for
+    // ever, because the listing is oldest-first and the poisoned row sorts first.
+    const loop = sd.slice(sd.indexOf('for (const d of rows ?? [])'), sd.indexOf('return json({ ok: true, settled:'));
+    expect(loop).toMatch(/\btry\s*\{/);
+    expect(loop).toMatch(/\}\s*catch\s*\(e\)\s*\{/);
+    expect(loop).toMatch(/failed\.push\(d\.id\)/);
+    expect(loop).toMatch(/continue;/);
+  });
+
+  it('the per-dispute failure carries the ids the outer catch cannot', () => {
+    // The outer catch logs with an EMPTY context, so /errors named neither the dispute
+    // nor the booking that stopped the batch.
+    expect(sd).toMatch(/settlement threw for dispute[\s\S]{0,400}dispute_id: d\.id, booking_id: d\.booking_id[\s\S]{0,60}fatal: true/);
+  });
+
+  it('still reports failures rather than swallowing them into a success', () => {
+    expect(sd).toMatch(/failed: failed\.length/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A dispute row may not claim money moved until it has.
+//
+// NO_ROOM_TO_HOLD is entered only when the hold is inside its last 36 hours, which is
+// exactly when settleEscrow is most likely to refuse — HOLD_EXPIRED on a payment the
+// webhook already marked cancelled, EARNER_PAYOUTS_DISABLED on a Connect account Stripe
+// restricted in the meantime. The row used to be stamped `pct_paid: 100, settled_at,
+// resolved_at, status:'rejected'` BEFORE that call, so a refused capture left a record
+// permanently asserting the earner was paid in full while zero cents had moved — and it
+// BLINDED the critical control, because dispute_settlement_pct opens with
+// `if d.pct_paid is not null then return null` and ctl_dispute_settlement_overdue reads
+// through it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the no-runway record is evidence first and a settlement second', () => {
+  const capture = codeOnly(read('supabase/functions/stripe-capture-payment/index.ts'));
+  const noRunway = capture.slice(
+    capture.indexOf('if (runwayHours < MIN_RUNWAY_HOURS)'),
+    capture.indexOf('Idempotent per booking') === -1 ? capture.length : capture.indexOf('Idempotent per booking'),
+  );
+  const insertBlock = noRunway.slice(noRunway.indexOf("from('disputes').insert("), noRunway.indexOf('settleEscrow'));
+
+  it('inserts the poster’s evidence, so a refused capture still leaves a case file', () => {
+    expect(insertBlock).toMatch(/reason:/);
+    expect(insertBlock).toMatch(/photos: photosNow/);
+  });
+
+  it('does NOT pre-stamp the settlement columns', () => {
+    ['pct_paid', 'settled_at', 'resolved_at', 'resolution_note'].forEach((col) => {
+      expect(`insert writes ${col}: ${new RegExp(`${col}:`).test(insertBlock)}`)
+        .toBe(`insert writes ${col}: false`);
+    });
+  });
+
+  it('does NOT pre-set proposed_pct, which would arm a clock and notify the earner', () => {
+    // dispute_set_defaults derives settle_after from proposed_pct and
+    // dispute_notify_respondent fires AFTER INSERT — so setting it here tells the earner
+    // they have until X to answer a reduction this branch is about to abandon.
+    expect(`insert writes proposed_pct: ${/proposed_pct:/.test(insertBlock)}`)
+      .toBe('insert writes proposed_pct: false');
+  });
+
+  it('stamps the settlement only after settleEscrow reports ok', () => {
+    const afterSettle = noRunway.slice(noRunway.indexOf('const settled = await settleEscrow'));
+    expect(afterSettle).toMatch(/if \(!settled\.ok\)[\s\S]{0,400}return json\(/);
+    const stamp = afterSettle.slice(afterSettle.indexOf('if (noRoomRow)'));
+    expect(stamp).toMatch(/pct_paid: 100/);
+    expect(stamp).toMatch(/proposed_pct:/);
+    expect(stamp).toMatch(/resolution_note:/);
+    // Conditional on still being unsettled, so a racing settler cannot be overwritten.
+    expect(stamp).toMatch(/\.is\('pct_paid', null\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A retry is not a revision, and no client may narrate a percentage the row does not
+// hold.
+//
+// The short-circuit returned a bare success, so both clients printed the number the
+// POSTER HAD JUST TYPED while the stored row kept the first one and the earner had been
+// notified of THAT. Reopening the sheet is one tap on the website — /hiring re-offers
+// "Verify & rate" on any `completed` booking with no dispute lookup, and a proposal
+// deliberately leaves the booking `completed`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the proposed percentage the poster is told is the one on the record', () => {
+  const capture = codeOnly(read('supabase/functions/stripe-capture-payment/index.ts'));
+
+  it('the server returns the RECORDED figure on both the first proposal and a retry', () => {
+    const hits = [...capture.matchAll(/adjustment: 'proposed'/g)];
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    // Every "proposed" response carries proposedPct.
+    hits.forEach((h) => {
+      const near = capture.slice(h.index - 200, h.index + 300);
+      expect(`response at ${h.index} carries proposedPct: ${/proposedPct/.test(near)}`)
+        .toBe(`response at ${h.index} carries proposedPct: true`);
+    });
+  });
+
+  it('a DIFFERENT percentage is refused rather than silently ignored', () => {
+    expect(capture).toMatch(/ADJUSTMENT_ALREADY_PROPOSED/);
+    expect(capture).toMatch(/storedPct !== askedPct/);
+  });
+
+  it.each([
+    ['mobile', 'src/context/JobsContext.js'],
+    ['web', 'web/lib/jobs.tsx'],
+  ])('%s renders the server’s figure and its real deadline, not a flat 48 hours', (_who, file) => {
+    const src = codeOnly(read(file));
+    const toast = src.slice(src.indexOf("'Sent to the worker'") === -1
+      ? src.indexOf('"Sent to the worker"') - 900
+      : src.indexOf("'Sent to the worker'") - 900,
+      (src.indexOf("'Sent to the worker'") === -1
+        ? src.indexOf('"Sent to the worker"')
+        : src.indexOf("'Sent to the worker'")) + 700);
+    expect(toast).toMatch(/capture\??\.?\.?proposedPct|capture!\.proposedPct/);
+    expect(toast).toMatch(/settleAfter/);
+    // The window is derived (least(now+48h, hold_dies-12h), floored at an hour), so a
+    // hardcoded 48 is wrong on exactly the bookings with least runway.
+    expect(`${_who} hardcodes 48 hours: ${/48 hours to reply/.test(toast)}`)
+      .toBe(`${_who} hardcodes 48 hours: false`);
   });
 });

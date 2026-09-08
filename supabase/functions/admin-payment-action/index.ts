@@ -62,7 +62,13 @@ Deno.serve(async (req: Request) => {
     // AAL2 token of any age, so the console's step-up gating did not apply to the one
     // place money actually leaves. A 'stale_mfa' denial is recoverable: the console
     // prompts for a code and retries.
-    const auth = await requireAdminCaller(req, 'admin', 300);
+    // 'finance', matching the console half (requireFreshAdmin("finance") in
+    // admin/app/(console)/bookings/actions.ts:27). This asked for 'admin' until
+    // 2026-09-08, which made every money intervention unreachable for the tier created
+    // to perform them — the operator passed the console guard, got an admin_audit_log
+    // row, and was then refused here with a bare `forbidden`. `roleSatisfies` still
+    // admits 'admin'; it is the tier ABOVE finance, not an alternative to it.
+    const auth = await requireAdminCaller(req, 'finance', 300);
     if (!auth.ok) return json({ error: auth.denial.error }, auth.denial.status);
     const { service, user } = auth.caller;
     serviceRef = service;
@@ -121,6 +127,60 @@ Deno.serve(async (req: Request) => {
     if (!pay) return json({ error: 'no_payment', message: 'No payment record for this booking.' }, 404);
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2026-07-29.dahlia' });
+
+    // ── A live adjustment owns this hold. Neither op below may touch it ──────
+    //
+    // Both were written when the poster's Verify sheet still CAPTURED, so an outstanding
+    // proposal could not coexist with an open authorization. Under the two-party model it
+    // is the ordinary state: stripe-capture-payment leaves pct<1 at payment='authorized' /
+    // booking='completed' and files a disputes row carrying proposed_pct with pct_paid
+    // NULL. That is exactly the state these two are offered on — and exactly the booking
+    // an operator opens, since /bookings/[id] is in its own words "the one an operator
+    // opens BECAUSE of a dispute" and renders Intervene ABOVE the dispute file.
+    //
+    // settle captures the FULL hold. On a $200 gig where the poster proposed 60% and the
+    // earner ACCEPTED, one click charges $200 instead of $120 and pays the earner $186
+    // instead of $111.60, into a Connect account the platform cannot claw back without a
+    // separate refund. The sweep then reads pct_paid=100 and tells the poster, in their
+    // Alerts inbox, that the problem they reported did not stand.
+    //
+    // release_hold is the mirror: voiding the authorization makes settle-disputes return
+    // HOLD_EXPIRED on every subsequent sweep — for ever, since the dispute never reaches
+    // pct_paid — and nothing in this repo can pay that earner afterwards.
+    //
+    // Every sibling settlement path already refuses: earner-claim-payment returns
+    // DISPUTE_OPEN, stripe-capture-payment returns ALREADY_SETTLED. This was the last one
+    // that did not. Adjudicate at /disputes/[id]; settle-disputes moves the money.
+    if (op === 'release_hold' || op === 'settle') {
+      const { data: liveDispute, error: dispErr } = await service
+        .from('disputes')
+        .select('id, proposed_pct, response_stance')
+        .eq('booking_id', bookingId)
+        .is('pct_paid', null)
+        .not('proposed_pct', 'is', null)
+        .maybeSingle();
+      // FAIL CLOSED. An unreadable disputes table is not evidence that there is no
+      // dispute, and both actions behind it are irreversible in the direction that matters.
+      if (dispErr) {
+        return json({
+          error: 'dispute_check_unavailable',
+          message: 'Could not check whether this booking has an open dispute, so nothing was moved. Try again.',
+        }, 503);
+      }
+      if (liveDispute) {
+        return json({
+          error: 'dispute_open',
+          message:
+            `This booking has a live payment adjustment (${liveDispute.proposed_pct}% proposed`
+            + `${liveDispute.response_stance ? `, the worker ${liveDispute.response_stance}ed` : ', awaiting the worker'}). `
+            + `${op === 'settle'
+                ? 'Capturing the full hold here would override it'
+                : 'Voiding the hold here would leave the worker unpayable'}. `
+            + `Decide it at /disputes/${liveDispute.id} — the hourly sweep then settles it at the agreed amount.`,
+          dispute_id: liveDispute.id,
+        }, 409);
+      }
+    }
 
     // ── Release an uncaptured authorization ──────────────────────────────────
     if (op === 'release_hold') {

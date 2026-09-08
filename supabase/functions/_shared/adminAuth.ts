@@ -15,7 +15,36 @@
 // server) → AAL2/TOTP from the JWT claim → admin_users membership → role tier.
 import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2.112.3';
 
-export type AdminRole = 'admin' | 'support';
+// The console has had FOUR ranked tiers since `trust` was created (admin/lib/guard.ts:22)
+// and this file knew about two. That is not a cosmetic gap: the tier test below was a
+// single `minRole === 'admin'` comparison, so every role string outside this type fell
+// through to "any active membership passes" — and, in the other direction, a real
+// `finance` operator was refused by anything asking for 'admin'.
+//
+// The live consequence was admin-payment-action, the console's ONLY path to moving
+// money. Its console half runs requireFreshAdmin("finance") (bookings/actions.ts:27) and
+// its edge half asked for 'admin', so a finance-tier operator passed the console guard,
+// had `payment.refund` written to admin_audit_log, and was then refused by the edge
+// function with a bare `forbidden`. Release hold, settle, refund and record-reversal were
+// all unreachable for the one tier that exists to do them. Latent only because both rows
+// in admin_users are currently 'admin'.
+export type AdminRole = 'admin' | 'finance' | 'trust' | 'support';
+
+// Byte-for-byte the SATISFIES table in admin/lib/guard.ts:26-31. RANKED, not orthogonal:
+// admin ⊃ finance/trust ⊃ support, and finance/trust are peers — neither outranks the
+// other. __tests__/adminTierParity.test.js holds the two copies together.
+const SATISFIES: Record<AdminRole, ReadonlySet<AdminRole>> = {
+  admin: new Set<AdminRole>(['admin']),
+  finance: new Set<AdminRole>(['admin', 'finance']),
+  trust: new Set<AdminRole>(['admin', 'trust']),
+  support: new Set<AdminRole>(['admin', 'finance', 'trust', 'support']),
+};
+
+export function roleSatisfies(role: AdminRole, minRole: AdminRole): boolean {
+  // Unknown role or unknown minRole -> false. A membership row carrying a tier this
+  // build has never heard of must be a denial, never a pass.
+  return SATISFIES[minRole]?.has(role) ?? false;
+}
 
 export interface AdminCaller {
   user: User;
@@ -150,7 +179,7 @@ export async function requireAdminCaller(
   if (row.status !== 'active') return { ok: false, denial: { status: 403, error: 'forbidden' } };
 
   const role = row.role as AdminRole;
-  if (minRole === 'admin' && role !== 'admin') {
+  if (!roleSatisfies(role, minRole)) {
     return { ok: false, denial: { status: 403, error: 'forbidden' } };
   }
 

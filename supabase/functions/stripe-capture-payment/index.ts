@@ -135,38 +135,72 @@ Deno.serve(async (req: Request) => {
         // FILE THE RECORD FIRST. This branch used to return before the insert was
         // reachable, so the poster's reason and up to six uploaded photos were
         // discarded: nothing on /disputes, nothing for support, and no way to review a
-        // refund request against what was actually claimed. The row is written
-        // pre-settled — it documents a decision the clock made, not one anybody has to
-        // answer, which is why it carries pct_paid and a resolution note.
+        // refund request against what was actually claimed. The row documents a decision
+        // the CLOCK made rather than one anybody has to answer — so it ends up carrying
+        // pct_paid and a resolution note, but only once the capture has succeeded. See
+        // the block below for why the stamp cannot come first.
         const photosNow = Array.isArray(disputePhotos)
           ? disputePhotos
               .filter((p: unknown): p is string => typeof p === 'string')
               .filter((p) => p.startsWith(`${user.id}/`))
               .slice(0, 6)
           : [];
-        const { error: recErr } = await supabase.from('disputes').insert({
+        // ── EVIDENCE FIRST, SETTLEMENT ONLY AFTER THE MONEY MOVES ───────────
+        //
+        // The row goes in with the poster's reason and photos and NOTHING ELSE. It used
+        // to be pre-stamped `pct_paid: 100, settled_at, resolved_at, status:'rejected'`
+        // BEFORE the capture — and this branch is entered only when the hold is inside
+        // its last 36 hours, which is exactly when settleEscrow is most likely to
+        // refuse: HOLD_EXPIRED on a payment the webhook has already marked cancelled, or
+        // EARNER_PAYOUTS_DISABLED on a Connect account Stripe restricted in the meantime.
+        // On that path zero cents moved and the row permanently claimed the earner had
+        // been paid in full — and it BLINDED the one control that should have caught it,
+        // because dispute_settlement_pct opens with `if d.pct_paid is not null then
+        // return null`, so ctl_dispute_settlement_overdue (critical) could never see it.
+        //
+        // proposed_pct is withheld too, deliberately: setting it arms
+        // dispute_set_defaults' clock and fires dispute_notify_respondent, which would
+        // tell the earner they have until X to answer a reduction we are about to
+        // abandon. Both are stamped below, once the capture has actually succeeded.
+        const { data: noRoomRow, error: recErr } = await supabase.from('disputes').insert({
           booking_id: bookingId,
           raised_by: user.id,
           reason: String(disputeReason).trim().slice(0, 500),
-          proposed_pct: Math.round(capturePctFinal * 100),
           photos: photosNow,
-          pct_paid: 100,
-          settled_at: new Date().toISOString(),
-          resolved_at: new Date().toISOString(),
-          status: 'rejected',
-          resolution_note:
-            'Captured in full: the card authorization was too close to expiring to hold '
-            + 'this for a reply. The reduction was not applied. A refund can still be issued.',
-        });
-        if (recErr) {
+        }).select('id').single();
+        if (recErr || !noRoomRow) {
           await logServerError('stripe-capture-payment',
-            `could not record the no-runway adjustment for booking ${bookingId}: ${recErr.message}`,
+            `could not record the no-runway adjustment for booking ${bookingId}: ${recErr?.message ?? 'no row'}`,
             { booking_id: bookingId }, { fatal: true });
         }
         const settled = await settleEscrow(stripe, supabase, {
           bookingId, earnerId: booking.earner_id, capturePct: 1,
         });
-        if (!settled.ok) return json({ error: settled.error, message: settled.message }, settled.status);
+        if (!settled.ok) {
+          // The row stays UNSETTLED on purpose. The poster's evidence is kept, the case
+          // is open on /disputes, resolved_at is null so earner-claim-payment still
+          // refuses, and nothing anywhere claims money moved that did not.
+          return json({ error: settled.error, message: settled.message }, settled.status);
+        }
+        if (noRoomRow) {
+          const { error: stampErr } = await supabase.from('disputes').update({
+            proposed_pct: Math.round(capturePctFinal * 100),
+            pct_paid: 100,
+            settled_at: new Date().toISOString(),
+            resolved_at: new Date().toISOString(),
+            status: 'rejected',
+            resolution_note:
+              'Captured in full: the card authorization was too close to expiring to hold '
+              + 'this for a reply. The reduction was not applied. A refund can still be issued.',
+          }).eq('id', noRoomRow.id).is('pct_paid', null);
+          if (stampErr) {
+            // The money HAS moved; this is bookkeeping. Loud, because a settled capture
+            // whose dispute row still reads open pages ctl_dispute_settlement_overdue.
+            await logServerError('stripe-capture-payment',
+              `captured in full on ${bookingId} but could not stamp dispute ${noRoomRow.id}: ${stampErr.message}`,
+              { booking_id: bookingId }, { fatal: true });
+          }
+        }
         await logServerError('stripe-capture-payment',
           `no runway to hold booking ${bookingId} for a response (${Math.round(runwayHours)}h left) — captured in full`,
           { booking_id: bookingId }, { fatal: false });
@@ -180,10 +214,56 @@ Deno.serve(async (req: Request) => {
 
       // Idempotent per booking: a retry must not mint a second proposal, and must not
       // reset the clock the earner is already running against.
-      const { data: existing } = await supabase
-        .from('disputes').select('id, settle_after').eq('booking_id', bookingId).maybeSingle();
+      //
+      // Scoped to the LIVE proposal, not to "any dispute on this booking". A booking can
+      // legitimately carry others — NO_ROOM_TO_HOLD files a pre-settled row (pct_paid set)
+      // and stripe-webhook's recordReversal files a bare refund/chargeback row (no
+      // proposed_pct) — and the old unscoped `.maybeSingle()` returned {data: null, error}
+      // the moment there were two of anything. Only `data` was read, so the guard silently
+      // fell through and inserted another one.
+      const liveProposal = () =>
+        supabase.from('disputes').select('id, settle_after, proposed_pct')
+          .eq('booking_id', bookingId).is('pct_paid', null).not('proposed_pct', 'is', null)
+          .maybeSingle();
+
+      const { data: existing } = await liveProposal();
       if (existing) {
-        return json({ success: true, adjustment: 'proposed', settleAfter: existing.settle_after });
+        // ── A RETRY IS NOT A REVISION ──────────────────────────────────────
+        //
+        // This returned a bare success, so both clients printed the percentage the
+        // POSTER HAD JUST TYPED — `${Math.round(pct * 100)}% is paid automatically`
+        // (JobsContext.js:972, web/lib/jobs.tsx:1019) — while the stored row kept the
+        // FIRST one and the earner was notified of that. Reopening the sheet is easy on
+        // the website, where /hiring re-offers "Verify & rate" on any `completed`
+        // booking with no dispute lookup at all, and a proposal deliberately leaves the
+        // booking `completed`. So: propose 50% on Tuesday, soften to 90% on Wednesday,
+        // and the poster is told 90% while the earner is paid 50% — or the reverse, and
+        // the poster overpays believing they had reduced it.
+        //
+        // Same figure, same clock: an idempotent retry, answered as before. DIFFERENT
+        // figure: refused, naming what is actually on the record, because silently
+        // keeping one number while reporting another is the whole defect.
+        const storedPct = Number(existing.proposed_pct);
+        const askedPct = Math.round(capturePctFinal * 100);
+        if (Number.isFinite(storedPct) && storedPct !== askedPct) {
+          return json({
+            error: 'ADJUSTMENT_ALREADY_PROPOSED',
+            proposedPct: storedPct,
+            settleAfter: existing.settle_after,
+            message:
+              `You already asked to pay ${storedPct}% on this gig and the worker has been `
+              + `told. That is what will be paid unless they reply. To change it, contact `
+              + `support — a second report does not replace the first.`,
+          }, 409);
+        }
+        return json({
+          success: true,
+          adjustment: 'proposed',
+          // The RECORDED figure, so a client can never narrate a number the row does not
+          // hold. Both clients render this in preference to what the user typed.
+          proposedPct: Number.isFinite(storedPct) ? storedPct : askedPct,
+          settleAfter: existing.settle_after,
+        });
       }
 
       // Only the caller's OWN storage paths. A poster who could name any path would pull
@@ -207,6 +287,26 @@ Deno.serve(async (req: Request) => {
       }).select('id, settle_after').single();
       // CHECKED, unlike the old insert: a failed write used to leave a reduced payout
       // with no audit trail anywhere, invisible to /disputes and to every control.
+      //
+      // 23505 is the one failure that is not a failure. `disputes_one_live_proposal_per_booking`
+      // (20260909060000) is what actually makes this idempotent — the SELECT above is a
+      // fast path, not the guard — so a concurrent double-tap loses the insert race and
+      // must read back the winner rather than telling the poster nothing was recorded.
+      // Reporting a 500 there would be the worst answer available: the proposal DID land,
+      // the earner is already on the clock, and the poster would report it again.
+      if (dErr?.code === '23505') {
+        const { data: winner } = await liveProposal();
+        if (winner) {
+          // The winner's figure, not ours — same rule as the fast path above. Losing the
+          // insert race means somebody else's percentage is what the earner was told.
+          return json({
+            success: true,
+            adjustment: 'proposed',
+            proposedPct: Number(winner.proposed_pct),
+            settleAfter: winner.settle_after,
+          });
+        }
+      }
       if (dErr || !created) {
         await logServerError('stripe-capture-payment',
           `dispute proposal insert failed for booking ${bookingId}: ${dErr?.message ?? 'no row'}`,
@@ -214,7 +314,12 @@ Deno.serve(async (req: Request) => {
         return json({ error: 'Could not record the problem. Nothing has been paid — please try again.' }, 500);
       }
 
-      return json({ success: true, adjustment: 'proposed', settleAfter: created.settle_after });
+      return json({
+        success: true,
+        adjustment: 'proposed',
+        proposedPct: Math.round(capturePctFinal * 100),
+        settleAfter: created.settle_after,
+      });
     }
 
     // ── Full pay: unchanged, still synchronous ────────────────────────────────

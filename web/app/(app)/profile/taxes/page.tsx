@@ -34,6 +34,7 @@ import {
   localDateISO,
 } from "@gohustlr/shared";
 import { useAuth } from "@/lib/auth";
+import { fetchLedger, type LedgerEntry } from "@/lib/payments";
 import { useUser } from "@/lib/user";
 import { useJobs } from "@/lib/jobs";
 import {
@@ -132,6 +133,9 @@ export default function TaxesPage() {
   // Three states, not two. `loaded` is what separates "you have logged nothing" from
   // "we could not read what you logged" — see the load() comment below.
   const [error, setError] = useState<string | null>(null);
+  // Earner-side ledger entries, keyed by booking. What the platform ACTUALLY settled,
+  // as opposed to what was agreed — see platformIncomeForYear.
+  const [entryByBookingId, setEntryByBookingId] = useState<Map<string, LedgerEntry>>(new Map());
   const [loaded, setLoaded] = useState(false);
 
   // fetchExpenses/fetchIncome both THROW on a Supabase error, and this used to
@@ -148,13 +152,29 @@ export default function TaxesPage() {
     let ex: Expense[] = [];
     try {
       setError(null);
-      const [rows, inc] = await Promise.all([fetchExpenses(user.id), fetchIncome(user.id)]);
+      // The ledger is loaded in the SAME try as the books, and its failure is the same
+      // kind of failure: without it every settled-below-full and refunded gig silently
+      // reverts to its pinned price, over-stating income on exactly the bookings where
+      // money moved. An error card is the honest answer; a confident wrong total that
+      // Export writes into a CSV is not.
+      const [rows, inc, ledger] = await Promise.all([
+        fetchExpenses(user.id),
+        fetchIncome(user.id),
+        fetchLedger(user.id),
+      ]);
       ex = rows;
       setExpenses(rows);
       setIncome(inc);
+      setEntryByBookingId(
+        new Map(
+          (ledger ?? [])
+            .filter((e) => e.side === "earner")
+            .map((e) => [e.bookingId, e] as const),
+        ),
+      );
       setLoaded(true);
     } catch (e) {
-      setError((e as Error)?.message || "Could not load your expenses and income.");
+      setError((e as Error)?.message || "Could not load your expenses, income and platform earnings.");
       setLoading(false);
       return;
     }
@@ -199,8 +219,14 @@ export default function TaxesPage() {
         bookings,
         year,
         jobById: new Map((jobs || []).map((j) => [j.id, j])),
+        // ⚠️ VALUED FROM THE LEDGER, NOT FROM THE PIN — a gig settled at 50% after a
+        // dispute, and one captured then refunded, both stay `verified` carrying the
+        // full pin. Declaring that is how this screen told an earner they made $186 on
+        // a $200 gig where $93 reached their bank, while /profile/transactions showed
+        // $93.00 for the same booking. Same source now, so they cannot disagree.
+        entryByBookingId,
       }),
-    [bookings, jobs, year],
+    [bookings, jobs, year, entryByBookingId],
   );
 
   const summary = useMemo(

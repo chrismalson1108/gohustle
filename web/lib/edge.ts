@@ -64,6 +64,10 @@ export const stripeEdge = {
       success?: boolean;
       adjustment?: string;
       settleAfter?: string | null;
+      // The percentage actually ON THE RECORD, which is not always the one just sent: a
+      // retry on a booking that already carries a proposal is answered from the stored
+      // row. Narrate this, never the local `pct`.
+      proposedPct?: number;
       capturedInFull?: boolean;
       message?: string;
     }>("stripe-capture-payment", { bookingId, pct, disputeReason, disputePhotos }),

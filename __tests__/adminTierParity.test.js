@@ -143,3 +143,85 @@ describe('the three that were wrong are wired to their own tier', () => {
     expect(ctrl).not.toMatch(/· admin only/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The THIRD direction: a console action and the EDGE FUNCTION it calls.
+//
+// The two blocks above hold the console's UI to the console's own guard. Neither could
+// see the gap that actually shipped, because it straddles the two deploy targets:
+//
+//   admin/app/(console)/bookings/actions.ts   run() = requireFreshAdmin("finance")
+//   supabase/functions/admin-payment-action   requireAdminCaller(req, 'admin', 300)
+//
+// A finance operator passed the console guard, got `payment.refund` written to
+// admin_audit_log by run()'s audit-before-act, and was then refused by the edge half
+// with a bare `forbidden`. Release hold, settle, refund and record-reversal were all
+// unreachable for the one tier that exists to perform them.
+//
+// The root cause was that _shared/adminAuth.ts only knew two of the four tiers and
+// tested them with a single `minRole === 'admin'` comparison — which ALSO meant every
+// other minRole value degraded to "any active membership passes". Both halves are
+// asserted here: the ranking tables must agree, and no edge gate may be stricter than
+// the console gate in front of it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('console actions and the edge functions behind them agree on tier', () => {
+  const EDGE = path.join(__dirname, '..', 'supabase', 'functions');
+  const adminAuth = read(path.join(EDGE, '_shared', 'adminAuth.ts'));
+  const consoleGuard = read(path.join(__dirname, '..', 'admin', 'lib', 'guard.ts'));
+
+  // `admin: new Set<AdminRole>(["admin"]),` -> ['admin', ['admin']]
+  const parseSatisfies = (src, label) => {
+    const block = src.match(/SATISFIES[^=]*=\s*\{([\s\S]*?)\n\};/);
+    expect(`${label} has a SATISFIES table`).toBe(block ? `${label} has a SATISFIES table` : 'MISSING');
+    const out = {};
+    for (const m of block[1].matchAll(/(\w+):\s*new Set<AdminRole>\(\[([^\]]*)\]\)/g)) {
+      out[m[1]] = m[2].split(',').map((s) => s.trim().replace(/["']/g, '')).filter(Boolean).sort();
+    }
+    return out;
+  };
+
+  it('adminAuth.ts ranks the tiers exactly as admin/lib/guard.ts does', () => {
+    expect(parseSatisfies(adminAuth, 'adminAuth.ts')).toEqual(parseSatisfies(consoleGuard, 'guard.ts'));
+  });
+
+  it('both files know the same four tiers', () => {
+    const union = (src) =>
+      (src.match(/export type AdminRole\s*=\s*([^;]+);/) || [, ''])[1]
+        .split('|').map((s) => s.trim().replace(/["']/g, '')).filter(Boolean).sort();
+    expect(union(adminAuth)).toEqual(['admin', 'finance', 'support', 'trust']);
+    expect(union(adminAuth)).toEqual(union(consoleGuard));
+  });
+
+  it('the tier test is the ranking table, not an equality check on one tier', () => {
+    // `minRole === 'admin' && role !== 'admin'` silently admitted ANY active membership
+    // for every other value of minRole — including a support agent at a finance gate.
+    const code = codeOnly(adminAuth);
+    expect(code).toMatch(/if \(!roleSatisfies\(role, minRole\)\)/);
+    expect(code).not.toMatch(/minRole === 'admin' && role !== 'admin'/);
+  });
+
+  // Each console action file, the tier its guard demands, and the edge functions it calls.
+  const CALLERS = [
+    { file: path.join(CONSOLE, 'bookings', 'actions.ts'), fn: 'admin-payment-action' },
+  ];
+
+  it.each(CALLERS)('$fn is not stricter than the console guard in front of it', ({ file, fn }) => {
+    const caller = codeOnly(read(file));
+    expect(caller).toMatch(new RegExp(`functions/v1/${fn}`));
+
+    const consoleTier = (caller.match(/require(?:Fresh)?Admin\("(\w+)"\)/) || [])[1];
+    expect(`${fn} caller declares a tier`).toBe(
+      consoleTier ? `${fn} caller declares a tier` : 'NO TIER FOUND');
+
+    const edge = codeOnly(read(path.join(EDGE, fn, 'index.ts')));
+    const edgeTier = (edge.match(/requireAdminCaller\(\s*req,\s*'(\w+)'/) || [])[1];
+    expect(`${fn} edge declares a tier`).toBe(
+      edgeTier ? `${fn} edge declares a tier` : 'NO TIER FOUND');
+
+    // Whoever the console lets in must satisfy the edge gate, or the action is dead for
+    // that tier — after the audit row has already been written.
+    const rank = parseSatisfies(adminAuth, 'adminAuth.ts');
+    expect(`${fn}: console ${consoleTier} -> edge ${edgeTier}: ${rank[edgeTier].includes(consoleTier)}`)
+      .toBe(`${fn}: console ${consoleTier} -> edge ${edgeTier}: true`);
+  });
+});
