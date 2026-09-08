@@ -57,3 +57,14 @@ verify_jwt = false
 [functions.reconcile-stripe]
 verify_jwt = false
 
+
+# waitlist-submit — the public waitlist form on gohustlr.com posts here, and the
+#   confirm/unsubscribe links in the confirmation email are clicked straight from an
+#   inbox with no session in existence. There is nothing for the gateway to verify.
+#   The function's own auth is (a) its per-IP and global caps, (b) the fact that a
+#   caller can only add their own address, and (c) a 256-bit token for the two
+#   destructive ops. Without this line the next plain `supabase functions deploy`
+#   turns JWT verification back on and every confirm and unsubscribe link on the
+#   internet starts returning 401 — including the one legal obligation in the file.
+[functions.waitlist-submit]
+verify_jwt = false

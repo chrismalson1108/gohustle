@@ -406,6 +406,96 @@ same rule as `safeCertUrl`, which had covered `certifications.image_url` alone.
 - **`XPBar`** — XP progress bar toward next level, used in ProfileScreen.
 - **`BadgeGrid`** / **`ChallengeCard`** — achievement and challenge display in ProfileScreen.
 
+## Waitlist — `public.waitlist`, `waitlist-submit`, `/waitlist` (console), `#waitlist` (web)
+
+Pre-launch interest capture on gohustlr.com. **Email only.** The cuts are the design and
+each one has a reason that is still true:
+
+- **No phone, no SMS anywhere.** No provider is integrated, 10DLC registration needs a
+  registered entity, and TCPA carries a private right of action at $500/message trebled
+  to $1,500. Do not add a phone column "for later" — a column that cannot legally be
+  sent to is liability with no upside.
+- **No referral graph.** `public.referrals` FKs BOTH sides to `public.profiles`, so a
+  waitlist→waitlist edge cannot be stored at all, and `bonus_cash_payout_enabled` is
+  read by no code. `source` (a `?src=ulm-flyer` parameter, stripped to a slug by the
+  trigger) is the whole attribution story.
+- **No ZIP stored.** One launch market, so the answer is the same for every row the
+  marketing will produce. `LAUNCH_ZIPS` lives in `WaitlistForm.tsx`, the ZIP is checked
+  in the browser, and only `in_launch_area` is transmitted.
+- **No IP on the durable row.** The per-caller bound is `waitlist_attempts` (one row per
+  submission regardless of outcome, holding a salted hash, purged at 48h) — the
+  `promo_redeem_attempts` split.
+- **`handle_new_user()` is NOT modified, deliberately.** It has been copy-forward
+  rewritten twice and losing its `search_path`, its `signups_enabled` check, its
+  allowlist check or the exact profile insert breaks account creation for everyone.
+  "Did this person sign up?" is answered by joining `waitlist.email` against
+  `auth.users` at read time, which is what `ctl_waitlist_invite_broken` does.
+- **No guard trigger.** RLS is on with zero policies and every grant is revoked from
+  anon/authenticated, so nothing but service_role writes here. A guard would also force
+  `purge_waitlist_expired()` to claim service_role from cron — the exact shape that made
+  `expire_stale_pending_bookings` silently never run for three weeks.
+
+⚠️ **A waitlist is theatre while `beta_allowlist` holds the `*` row.** Signups are open
+today, so an "invite" allowlists an address that could already have signed up. The
+console says so in a banner, and `ctl_waitlist_invite_broken` is deliberately silent in
+that state — it arms itself the moment the row is deleted in `/access`. `inviteCohort`
+routes through the SAME `beta_allowlist` upsert `/access` uses, so there is one write
+path into the gate and re-closing the beta stays a one-row delete.
+
+⚠️ **`unsubscribe` refuses anything but POST**, and that is not pedantry: corporate mail
+filters and link scanners fetch every URL in a message before a human sees it, so a GET
+opt-out would empty the list one security appliance at a time. RFC 8058 one-click is
+unaffected — Gmail and Yahoo POST, and the `List-Unsubscribe` header points at the
+function while the footer link points at a page with a button. Unsubscribe is also NOT
+gated on `waitlist_enabled` and scrubs the row **inline**: honouring an opt-out must
+never depend on a feature flag or on pg_cron.
+
+⚠️ **AN OPT-OUT IS NOT REVERSIBLE FROM THE FORM.** The first cut let a `join` on an
+unsubscribed row clear `unsubscribed_at` ("they filled it in again, they want back") —
+which made the opt-out cancellable by anyone who knew the address, with one
+unauthenticated POST and no proof of mailbox ownership. `unsubscribed_at is null` is the
+ONLY suppression predicate anywhere downstream (invite, both export scopes, every
+console tab, the partial index), and `ctl_waitlist_emailed_after_optout` anchors on
+`unsubscribed_at is not null` — so the same write that un-suppressed the row also
+blinded the critical control watching it. A suppressed row is now untouched by a join
+and never mailed; somebody who unsubscribed by mistake asks, and the console has a
+Delete for it. Do not add a self-serve re-subscribe: to work it would have to be
+reachable by a stranger.
+
+⚠️ **The confirmation email is capped at 3 per address for the LIFE of the row**
+(`email_sent_count`, compare-and-set so two concurrent submissions cannot both send, and
+the CAS also stores the token being mailed — without that a re-send delivers a link whose
+hash was never stored). A cooldown instead of a cap still lets somebody who types a
+stranger's address into the form mail them 144 times a day. The send is NOT gated on
+"this request created the row": that stranded an address permanently the first time a
+send was dropped, since every later attempt skipped the email while showing the same
+cheerful success.
+
+⚠️ **Normalisation is `lower(btrim())` and nothing else — no +tag strip.** The stored
+address has to be the one GoTrue sees at signup, because `inviteCohort` writes it into
+`beta_allowlist` and `handle_new_user` compares `lower(email)` against that. Folding
+`jane+hustlr@ulm.edu` to `jane@ulm.edu` allowlisted an address the person never types,
+so their signup was refused server-side minutes after we told them they were in.
+
+- **The endpoint is not an existence oracle**: `join` answers an identical `{ok:true}`
+  for a new row, a duplicate, and an already-confirmed re-subscribe, and the form's
+  success copy is written to be true in all three.
+- **`purge_waitlist_expired()` runs from `controls_sweep_and_page`**, not its own cron job — `ctl_cron_not_scheduled` only watches `controls_sweep`/`controls_digest`, so a third job could stop silently.
+- **The subject-access export reaches it by EMAIL** (`/users/[id]/export`), because it cannot be in `TABLES` — every entry there filters on a uuid column and the waitlist has none. `exportCoverage.test.js` enumerates by FK and is structurally blind to it.
+- **Three controls**, all asserting against data: `waitlist_emailed_after_optout`
+  (critical), `waitlist_invite_broken` (high), `waitlist_signup_flood` (high).
+- Console `/waitlist` is **admin**-tier to read and `requireFreshAdmin("admin")` on every
+  action. The invite excludes opted-out addresses **server-side** and reports the count;
+  the CSV export's scope is a server-side predicate, never the tab that happens to be
+  open. Its cohort card is the earner:poster ratio — the number that decides whether
+  launch day is a marketplace or a lot of people opening an empty app once.
+
+⚠️ **The landing page is held to a PRE-LAUNCH RULE**: everything on it must be true of
+the product as it stands. The stat strip, the category meta lines and the testimonial
+section all carried invented figures and three invented people until 2026-09-08 — see
+the comments above `STATS`, `CATEGORIES` and `FAQ` in `web/app/page.tsx`. Put real
+numbers and real quotes back the day there are any; do not put back the shape.
+
 ## Support (in-app, two-way) — `shared/support.js`, `src/lib/support.js`, `web/lib/support.ts`
 
 Tickets live in **`support_tickets`** + **`support_ticket_messages`** (owner RLS, both
@@ -546,7 +636,7 @@ rate limiting and staging.
   client's own Settings rows, and fails if the web block hands out an app-only screen.
   **When the website gains one of the app-only screens, move it out of the web block.**
 
-## Edge functions (`supabase/functions/`) — 32, each deployed by hand
+## Edge functions (`supabase/functions/`) — 33, each deployed by hand
 
 The pre-push hook tells you to "deploy each one by hand", and until 2026-08-14 this file
 named 13 of them — so the reminder pointed at an inventory that did not exist. Eight of
@@ -634,6 +724,7 @@ found on Monday. `ctl_edge_errors_burst` pages when one edge function writes 3+ 
 | `moderate-image` | Claude vision on upload; deletes the object on violation. Every path through `src/lib/uploadImage.js` goes through it, so "all writes go through uploadImage.js" also means "all writes are moderated". It fails OPEN on system conditions (Claude down, download errored) and **CLOSED on the two a user can arrange for themselves** — an object too large to scan, and their own 20/min · 500/day rate limit. That second one used to answer HTTP 429, which supabase-js hands the wrappers as a transport error, i.e. their fail-open branch: 21 junk calls published any image unmoderated. It now answers 200 `{ allowed: false, reason: 'rate_limited' }` and both wrappers block on it (`__tests__/moderationRateLimitFailsClosed.test.js`). Images have no keyword backstop, so this layer is the whole layer. |
 | `log-moderation` | Records client-detected keyword blocks into the Moderation queue as `reports` with `source='auto'`, rate-limited so probing the filter cannot flood it. |
 | `log-client-error` | The client crash sink → `client_errors` → console `/errors`. |
+| `waitlist-submit` | **Public** waitlist intake for gohustlr.com — `join` / `confirm` / `unsubscribe`, `verify_jwt = false`. Sends its own confirmation through Resend (`WAITLIST_FROM`). `unsubscribe` refuses anything but POST, because link scanners fetch every URL in an email and a GET opt-out would empty the list one security appliance at a time. See **Waitlist**. |
 | `controls-alert` | The hourly sweep's pager and the daily triage digest. `verify_jwt = false`. |
 | `send-push` | Expo push fan-out; owns `KNOWN_TABS` (see the tab-route-name note). |
 | `delete-account` | Apple 5.1.1(v) / Play / GDPR deletion. **Step-up gated** — see Two-factor. Storage does **not** FK-cascade, so it clears buckets from a hardcoded list and **a new bucket obliges you to edit this file**. That list has drifted THREE times: `certificates` once left public credential scans fetchable after the account was gone, `support-photos` was missing here until 2026-08-14 — and until 2026-09-05 it was still missing from the console's two copies of the same list (`admin/lib/deleteUser.ts` and the GDPR export route), because the guard read this file only and the drift recurred one directory over. `__tests__/storagePolicies.test.js` now asserts every bucket the schema creates is cleared or excused **in all three lists**, and that the three agree. |
@@ -934,7 +1025,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **73 controls are registered**: 71 run in-database and 2 are `external`. Every
+- **76 controls are registered**: 74 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and
@@ -1147,15 +1238,15 @@ Profiles table has: `name`, `avatar_initial`, `username` (unique), `bio`, `role`
 
 Jobs have `poster_id` FK to profiles, `category` (display label) + `category_slug` (the indexed identity everything filters and groups on — both maintained by `trg_y_normalize_job_category`), `tags` (text[], free-form, max 6), and a `recurrence` column (`none`/`weekly`/`biweekly`/`monthly`) — set in PostJob/EditJob, shown as a badge on JobCard/JobDetail, and duplicated via the "Duplicate" button in GigsScreen (`navigation.navigate('PostJob', { prefill: job })`). Bookings have `earner_id`, `job_id`, `earner_done` (bool), `poster_done` (bool), `amendment_status`, `amendment_note`, `earner_rating`, `poster_rating`, `poster_review`. RLS ensures earners see their own bookings and posters see bookings on their jobs.
 
-### All 66 tables — where they live, and the ones nothing above names
+### All 68 tables — where they live, and the ones nothing above names
 
 ⚠️ **The base tables are NOT in `supabase/migrations/`** — this is the other half of the
 **SDK & Backend** note that `schema.sql` runs first. `jobs`, `bookings`, `profiles`,
 `payments`, `messages`, `reviews`, `job_slots` and about two dozen more are created only
-in `schema.sql` and the legacy `migration_*.sql` files. `migrations/` creates the other 35
+in `schema.sql` and the legacy `migration_*.sql` files. `migrations/` creates the other 37
 and carries every guard, policy, trigger and RPC layered on all of them — so it is the
 source of truth for the live schema's *behaviour*, and still not where half the CREATE
-TABLEs are. A session that greps only `migrations/` finds 35 of the 66 tables and
+TABLEs are. A session that greps only `migrations/` finds 37 of the 68 tables and
 concludes the other 31 do not exist. There is no generated `database.types.ts` here, so
 this list and those two directories are the whole inventory —
 `__tests__/claudeMdInventory.test.js` fails if a new table is not named here.
@@ -1207,5 +1298,9 @@ Everything the sections above do not already describe:
   read and rewritten by `JobsContext`), `category_groups` (the 19 groups; its icon column
   is spelled **`ion`** — an Ionicons name — on both it and `categories`, so `select icon`
   errors), `moderation_flags` (what image moderation rejected: bucket, path, categories).
+- **Pre-launch** — `waitlist` (one row per email address captured on gohustlr.com, see
+  **Waitlist** below) and `waitlist_attempts` (its rate-limit ledger: one row per
+  submission regardless of outcome, holding a HASH of the caller IP and never the
+  address, purged at 48 hours by `purge_waitlist_expired()`).
 - **Admin-only** — `admin_user_notes` (notes on a user, shown on the console user page)
   and `beta_allowlist` (the email gate, managed at `/access`).

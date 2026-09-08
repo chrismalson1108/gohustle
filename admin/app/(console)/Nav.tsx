@@ -64,6 +64,7 @@ const GROUPS: Group[] = [
     title: "People",
     items: [
       { href: "/users", label: "Users" },
+      { href: "/waitlist", label: "Waitlist", minRole: "admin" },
       { href: "/access", label: "Access" },
       { href: "/team", label: "Team", minRole: "admin" },
     ],

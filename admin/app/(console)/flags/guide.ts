@@ -89,6 +89,14 @@ export const FLAG_GUIDE: Record<string, FlagGuide> = {
       "Hustlr AI refuses every request. It can post gigs and book work on a user's behalf — the widest blast radius in the product — so this is the switch to reach for first.",
   },
 
+  // ── Waitlist (20260908010000) ─────────────────────────────────────────────
+  waitlist_enabled: {
+    kind: "kill_switch",
+    enforcedAt: "waitlist-submit's `join` branch only.",
+    offMeans:
+      "The form on gohustlr.com stops accepting new addresses and says so. CONFIRM AND UNSUBSCRIBE KEEP WORKING — an opt-out must never be blocked by a feature flag, so somebody holding a link in their inbox can still act on it while this is off. Nothing already on the list is affected.",
+  },
+
   // ── Feature kill switches (20260806070000) ────────────────────────────────
   promotions_enabled: {
     kind: "kill_switch",

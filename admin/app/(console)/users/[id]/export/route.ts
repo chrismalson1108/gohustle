@@ -110,6 +110,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   // Tables
   const tables: Record<string, unknown> = {};
+
+  // The waitlist, keyed on the EMAIL rather than a uuid.
+  //
+  // It is not in TABLES and cannot be: every entry there filters on a column holding
+  // this user's id, and public.waitlist has no such column — it is a list of people who
+  // are not users. exportCoverage.test.js enumerates tables by their FK to profiles, so
+  // it is structurally incapable of noticing the omission either. tombstone_profile
+  // DELETES this row on erasure (20260908010000), so the access side has to match it or
+  // the two halves of the same right disagree.
+  //
+  // token_hash is withheld deliberately: it is a live confirm/unsubscribe credential,
+  // the same class as an mfa_recovery_code, and a subject-access export is a file that
+  // gets emailed around.
+  if (authData?.user?.email) {
+    const wlEmail = authData.user.email.trim().toLowerCase();
+    for (const t of ["waitlist", "waitlist_attempts"] as const) {
+      const { data, error } = await ctx.service
+        .from(t)
+        .select(
+          t === "waitlist"
+            ? "id, email, role_intent, in_launch_area, source, confirmed_at, unsubscribed_at, email_sent_count, last_email_sent_at, invited_at, invite_wave, consent_doc_version, created_at, updated_at"
+            : "id, email, created_at",
+        )
+        .eq("email", wlEmail);
+      tables[t] = error ? { error: error.message } : data;
+    }
+  }
+
   for (const { t, cols } of TABLES) {
     try {
       const filter = cols.map((c) => `${c}.eq.${id}`).join(",");

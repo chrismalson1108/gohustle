@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { Akshar, JetBrains_Mono } from "next/font/google";
+import WaitlistForm from "@/components/waitlist/WaitlistForm";
+// These three were module-private consts here. They moved out when the waitlist form
+// became a separate client island: it cannot import a private const, and retyping the
+// literals is how a fourth copy of a design token drifts.
+import { display, overline, gutter } from "@/lib/landingTokens";
 import {
   HustlrMark,
   HustlrWordmark,
@@ -54,18 +59,6 @@ const mono = JetBrains_Mono({
 
 /* Brand Guidelines v1.0 — Cream #FEF4E5 · Ink #363636 · Signal Red #EA4637.
    Blue stays #5038FF, the value the rest of the site already ships. */
-/* globals.css sets `h1, h2 { font-family: Sora; letter-spacing: -.02em }` as an
-   unlayered rule, which outranks Tailwind's layered utilities — hence the `!` on
-   both. Without it every heading here silently falls back to Sora. */
-const display = "font-[family-name:var(--font-akshar)]!";
-/* Eyebrows keep the mono face — that is what separates them from body copy — but
-   they no longer shout. Uppercase plus 0.2em tracking on an 11px micro-label is
-   one of the treatments stripped from the product, so these read sentence case at
-   near-normal tracking and pick up a little size to stay legible. */
-const overline = "font-[family-name:var(--font-mono-brand)]! tracking-[0.02em]";
-/* Section gutter: the mock is a fixed 1520px desktop canvas at 56px; step it down
-   on narrow screens so the page is usable on a phone. */
-const gutter = "px-5 sm:px-8 lg:px-14";
 
 /* One source for the section anchors — the desktop bar and the mobile disclosure
    render the same four links, so neither can drift out of sync with the other. */
@@ -74,21 +67,39 @@ const NAV_LINKS = [
   { label: "Find work", href: "#work" },
   { label: "Post a job", href: "#post" },
   { label: "Safety", href: "#trust" },
+  { label: "Join the waitlist", href: "#waitlist" },
 ];
 
+/* PRE-LAUNCH RULE: everything on this page has to be true of the product as it
+   stands, not of the product as it will be.
+
+   These four were "$184 median weekly earnings", "48 hrs from finished job to
+   bank", "100% of earners ID verified" and "4.9 average job rating" — invented
+   figures on a live public site, against a database with no completed jobs in it.
+   They are replaced by properties that are true BY CONSTRUCTION: the fee comes
+   out of the earner's payout at the rate in platform_rates (700 bps today), tips
+   carry no application fee at all (stripe-tip sets transfer_data.destination with
+   no application_fee_amount), the hold is a manual-capture PaymentIntent minted
+   before the work starts, and both parties must mark done before anything moves.
+   Each is checkable in the code. Put real numbers back the moment there are
+   real numbers. */
 const STATS = [
-  { value: "$184", label: "median weekly earnings" },
-  { value: "48 hrs", label: "from finished job to bank" },
-  { value: "100%", label: "of earners ID verified" },
-  { value: "4.9", label: "average job rating", star: true },
+  { value: "0%", label: "taken from your tips" },
+  { value: "7%", label: "our fee, from the earner's payout" },
+  { value: "$0", label: "to join, post, or apply" },
+  { value: "100%", label: "of gigs paid through escrow" },
 ];
 
+/* The `meta` lines used to carry live-looking counts — "62 open", "18 urgent right
+   now" — for a marketplace with zero open gigs. They are typical pay ranges now,
+   which is what somebody deciding whether to join actually wants, and which does
+   not become a lie the moment nobody has posted this week. */
 const CATEGORIES = [
-  { icon: IconCampus, title: "Moving & lifting", meta: "62 open · $40–90", tone: "blue" },
-  { icon: IconHome, title: "Cleaning & yard", meta: "48 open · $30–110", tone: "plain" },
-  { icon: IconPerson, title: "Tutoring", meta: "37 open · $22–45/hr", tone: "plain" },
-  { icon: IconBriefcase, title: "Events & setup", meta: "29 open · $50–140", tone: "plain" },
-  { icon: IconParttime, title: "Same-day", meta: "18 urgent right now", tone: "red" },
+  { icon: IconCampus, title: "Moving & lifting", meta: "Typically $40–90", tone: "blue" },
+  { icon: IconHome, title: "Cleaning & yard", meta: "Typically $30–110", tone: "plain" },
+  { icon: IconPerson, title: "Tutoring", meta: "Typically $22–45/hr", tone: "plain" },
+  { icon: IconBriefcase, title: "Events & setup", meta: "Typically $50–140", tone: "plain" },
+  { icon: IconParttime, title: "Same-day help", meta: "Post it, get it done today", tone: "red" },
 ] as const;
 
 const STEPS = [
@@ -132,28 +143,48 @@ const TRUST = [
   },
 ];
 
-const REVIEWS = [
+/* This was three testimonials — "Maya R., Ohio State '27 · 27 jobs", "Dana K.,
+   Poster · Columbus, OH", "Jordan T., Ohio State '26 · 41 jobs" — invented people
+   describing work that never happened, attributed to a state Hustlr does not
+   operate in, on a live public site. The FTC's rule on fake reviews and
+   testimonials (16 CFR Part 465, in force since 2024) carries civil penalties per
+   violation, and separately it is the fastest way to lose a waitlist: somebody
+   joins expecting a busy marketplace and opens an empty one.
+
+   Replaced with answers to the questions the founder's own FAQ already poses.
+   Every line here is checkable against the code. Real quotes from real testers
+   belong in a testimonial section — this one — the day there are any. */
+const FAQ = [
   {
-    quote: "I made $240 in one weekend helping with move-in. It paid for my textbooks.",
-    initials: "MR",
-    name: "Maya R.",
-    meta: "Ohio State '27 · 27 jobs",
-    bg: "bg-[#5038FF]",
+    q: "Where is Hustlr live?",
+    a: "Nowhere yet. We're opening first in Monroe and West Monroe, then the corridor through Ruston and Grambling. The waitlist is how you find out the day it reaches your ZIP.",
   },
   {
-    quote: "Posted at 8 PM, had three applicants by 9, and my garage was cleared out Saturday.",
-    initials: "DK",
-    name: "Dana K.",
-    meta: "Poster · Columbus, OH",
-    bg: "bg-[#EA4637]",
+    q: "How does payment work?",
+    a: "When a poster accepts you, the money is authorised and held before you start — not promised. It is released when both of you mark the job done, and it lands in the bank account you connect through Stripe.",
   },
   {
-    quote:
-      "Better than a campus job because I choose the hours. I work around my labs, not the other way.",
-    initials: "JT",
-    name: "Jordan T.",
-    meta: "Ohio State '26 · 41 jobs",
-    bg: "bg-[#363636]",
+    q: "What does Hustlr take?",
+    a: "A 7% platform fee, out of the earner's payout — never added on top of what the poster agreed. Tips are yours in full: we pay the card processing on them rather than take a cut.",
+  },
+  {
+    q: "What if the job goes wrong?",
+    a: "Either side can report a problem before the money is released, and a person reviews it. Nothing is released while a report is open.",
+  },
+  {
+    // 18, not 16. The founder's FAQ draft said 16 — but the published Terms say "at
+    // least 18 years old", the Privacy Policy §14 says the same, and shared/age.js sets
+    // MIN_AGE = 18 with a server-side guard_min_age trigger (20260710040000) that
+    // REJECTS a younger signup. Marketing copy promising 16 would send people to a
+    // form that refuses them, against terms they had already been shown. Changing the
+    // floor to 16 is a Terms + Privacy + trigger change and a parental-consent
+    // question, not a copy edit.
+    q: "Who can sign up?",
+    a: "Anyone 18 or older. Earners verify their identity, and students can verify a .edu address for a student badge — both are checks other people can see before they hire you.",
+  },
+  {
+    q: "What do you do with my email?",
+    a: "Email you once, the day Hustlr opens near you. There is an unsubscribe link in that email and in this one, and using it removes you from the list.",
   },
 ];
 
@@ -220,12 +251,12 @@ export default function LandingPage() {
             >
               Log in
             </Link>
-            <Link
-              href="/login?mode=signup"
+            <a
+              href="#waitlist"
               className="inline-flex items-center gap-[9px] rounded-[14px] bg-[#5038FF] px-3.5 py-3 text-[14.5px] font-semibold whitespace-nowrap text-[#FEF4E5] transition hover:bg-[#2E1BC7] sm:px-[22px]"
             >
-              Get started <IconArrow className="hidden h-[11px] w-auto sm:block" />
-            </Link>
+              Join the list <IconArrow className="hidden h-[11px] w-auto sm:block" />
+            </a>
 
             {/* Mobile nav disclosure. The section anchors above are `lg:flex`, so
                 below 1024px — most of the traffic — How it works / Find work /
@@ -267,7 +298,7 @@ export default function LandingPage() {
       >
         <div className="min-w-0">
           <span className="mb-7 inline-flex items-center gap-2 rounded-full bg-[#EAE6FF] px-[15px] py-2 text-[13px] font-bold text-[#5038FF]">
-            <IconCampus className="h-[14px] w-auto" /> Now live on 12 campuses
+            <IconCampus className="h-[14px] w-auto" /> Launching first in Monroe &amp; West Monroe
           </span>
           <h1
             className={`${display} m-0 mb-[26px] text-[clamp(38px,9vw,104px)] leading-[0.94] font-bold tracking-[-0.025em]! text-balance text-[#5038FF]`}
@@ -275,22 +306,23 @@ export default function LandingPage() {
             Find jobs between classes.
           </h1>
           <p className="m-0 mb-[34px] max-w-[46ch] text-[19px] leading-[1.6] text-pretty text-[#6B6482]">
-            Real work, posted by real neighbors, paid through the app. Pick up a gig on Thursday,
-            get paid by Monday. No résumé, no interview, no shift you can&apos;t get out of.
+            Real work, posted by real neighbors, paid through the app — money held in escrow before
+            you start. No résumé, no interview, no shift you can&apos;t get out of. We&apos;re opening
+            soon; get on the list.
           </p>
           <div className="mb-[22px] flex flex-wrap gap-[14px]">
-            <Link
-              href="/login?mode=signup"
+            <a
+              href="#waitlist"
               className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#5038FF] px-[30px] py-[17px] text-[17px] font-semibold text-[#FEF4E5] transition hover:bg-[#2E1BC7]"
             >
-              Find jobs <IconArrow className="h-[13px] w-auto" />
-            </Link>
-            <Link
-              href="/login?mode=signup"
+              Join the waitlist <IconArrow className="h-[13px] w-auto" />
+            </a>
+            <a
+              href="#how"
               className="inline-flex items-center gap-[10px] rounded-[14px] border-2 border-[#5038FF] px-[30px] py-[15px] text-[17px] font-semibold text-[#5038FF] transition hover:bg-[#5038FF]/6"
             >
-              Post a job
-            </Link>
+              See how it works
+            </a>
           </div>
           <div className="flex flex-wrap items-center gap-x-[22px] gap-y-2 text-[13.5px] text-[#6B6482]">
             <span className="flex items-center gap-[7px]">
@@ -317,19 +349,15 @@ export default function LandingPage() {
               i < STATS.length - 1 ? "border-r border-[#FEF4E5]/14" : ""
             } ${i < 2 ? "border-b border-[#FEF4E5]/14 lg:border-b-0" : ""}`}
           >
-            {/* Two columns at 320px leaves ~110px of content per cell. A fixed 40px
-                numeral plus a 26px star measured wider than that, so both scale with
-                the viewport and min-w-0 lets the row shrink inside its grid cell
-                instead of pushing the strip past the page edge. */}
+            {/* Two columns at 320px leaves ~110px of content per cell, so the numeral
+                scales with the viewport and min-w-0 lets the row shrink inside its grid
+                cell instead of pushing the strip past the page edge. */}
             <div className="flex min-w-0 items-center gap-[9px]">
               <span
                 className={`${display} text-[clamp(28px,7vw,40px)] leading-none font-bold text-[#FEF4E5]`}
               >
                 {s.value}
               </span>
-              {s.star && (
-                <IconStar className="h-[clamp(20px,4.5vw,26px)] w-auto shrink-0 text-[#FEF4E5]" />
-              )}
             </div>
             <div className="mt-1.5 text-[12.5px] text-[#FEF4E5]/60">{s.label}</div>
           </div>
@@ -349,12 +377,12 @@ export default function LandingPage() {
               Every kind of hustle
             </h2>
           </div>
-          <Link
-            href="/login"
+          <a
+            href="#waitlist"
             className="inline-flex items-center gap-[9px] text-[15px] font-semibold text-[#5038FF] transition hover:opacity-70"
           >
-            Browse all 240 open gigs <IconArrow className="h-3 w-auto" />
-          </Link>
+            Get told when these open near you <IconArrow className="h-3 w-auto" />
+          </a>
         </div>
 
         {/* min(100%, …) on every auto-fit floor: without it a track wider than the
@@ -506,12 +534,12 @@ export default function LandingPage() {
               </li>
             ))}
           </ul>
-          <Link
-            href="/login?mode=signup"
+          <a
+            href="#waitlist"
             className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#5038FF] px-7 py-[15px] text-[16px] font-semibold text-[#FEF4E5] transition hover:bg-[#2E1BC7]"
           >
-            Start earning <IconArrow className="h-3 w-auto" />
-          </Link>
+            Get on the list to earn <IconArrow className="h-3 w-auto" />
+          </a>
         </div>
 
         <div className={`bg-[#363636] py-16 lg:py-[88px] ${gutter}`}>
@@ -521,13 +549,13 @@ export default function LandingPage() {
           <h3
             className={`${display} m-0 mb-[18px] text-[clamp(30px,3.4vw,46px)] leading-[1.05] font-semibold tracking-[-0.02em]! text-[#FEF4E5]`}
           >
-            Someone at your
+            Help, without
             <br />
-            door by Friday.
+            the group chat.
           </h3>
           <p className="m-0 mb-[26px] max-w-[42ch] text-[16.5px] leading-[1.6] text-[#FEF4E5]/72">
-            Post the job, name the price, pick the times that work. Verified students nearby apply
-            within the hour.
+            Post the job, name the price, pick the times that work. Verified students nearby see it
+            and apply — and you choose who shows up.
           </p>
           <ul className="mb-[30px] flex list-none flex-col gap-3 p-0">
             {[
@@ -540,75 +568,70 @@ export default function LandingPage() {
               </li>
             ))}
           </ul>
-          <Link
-            href="/login?mode=signup"
+          <a
+            href="#waitlist"
             className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#EA4637] px-7 py-[15px] text-[16px] font-semibold text-white transition hover:bg-[#B8291B]"
           >
-            Post a job <IconArrow className="h-3 w-auto" />
-          </Link>
+            Get on the list to hire <IconArrow className="h-3 w-auto" />
+          </a>
         </div>
       </section>
 
-      {/* ── Testimonials ────────────────────────────────────────────────── */}
-      <section className={`border-t border-[#363636]/8 bg-white py-16 lg:py-24 ${gutter}`}>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6">
-          {REVIEWS.map((r) => (
-            <figure
-              key={r.name}
-              className="m-0 rounded-[20px] border border-[#363636]/12 px-8 py-9"
+      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
+      {/* Native <details>, so this stays a server component — the same choice the
+          mobile nav above makes, and for the same reason: an accordion is not worth
+          shipping the page to the browser. It also means every answer is in the DOM
+          for search engines and for anyone reading with the keyboard. */}
+      <section id="faq" className={`scroll-mt-8 border-t border-[#363636]/8 bg-white py-16 lg:py-24 ${gutter}`}>
+        <div className="mb-11">
+          <div className={`${overline} mb-4 text-[12.5px] text-[#5038FF]`}>Before you join</div>
+          <h2
+            className={`${display} m-0 text-[clamp(32px,4.4vw,64px)] leading-none font-bold tracking-[-0.02em]! text-[#363636]`}
+          >
+            Straight answers
+          </h2>
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,380px),1fr))] gap-x-10">
+          {FAQ.map((item) => (
+            <details
+              key={item.q}
+              className="group border-b border-[#363636]/12 py-5"
             >
-              <div className="mb-5 flex gap-[3px]" aria-label="5 out of 5 stars">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <IconStar key={i} className="h-[15px] w-auto text-[#5038FF]" />
-                ))}
-              </div>
-              <blockquote
-                className={`${display} m-0 mb-6 text-[23px] leading-[1.3] font-medium text-[#363636]`}
-              >
-                &ldquo;{r.quote}&rdquo;
-              </blockquote>
-              <figcaption className="flex items-center gap-[11px]">
-                <span
-                  className={`flex size-9 items-center justify-center rounded-full text-[13px] font-bold text-[#FEF4E5] ${r.bg}`}
-                >
-                  {r.initials}
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-[17px] font-semibold text-[#363636] transition hover:text-[#5038FF] [&::-webkit-details-marker]:hidden">
+                {item.q}
+                <span className="shrink-0 text-[22px] leading-none text-[#5038FF] transition group-open:rotate-45">
+                  +
                 </span>
-                <span>
-                  <span className="block text-[14px] font-bold text-[#363636]">{r.name}</span>
-                  <span className="block text-[12.5px] text-[#9A93AD]">{r.meta}</span>
-                </span>
-              </figcaption>
-            </figure>
+              </summary>
+              <p className="m-0 mt-3 max-w-[62ch] text-[15.5px] leading-[1.65] text-[#6B6482]">{item.a}</p>
+            </details>
           ))}
         </div>
       </section>
 
-      {/* ── Closing CTA ─────────────────────────────────────────────────── */}
-      <section className={`pt-20 pb-24 ${gutter}`}>
-        <div className="overflow-hidden rounded-[28px] bg-[linear-gradient(140deg,#5038FF_0%,#7A5CF0_55%,#C94FA8_100%)] px-8 py-16 text-center lg:px-14 lg:py-20">
+      {/* ── Waitlist ────────────────────────────────────────────────────── */}
+      {/* This section used to be the closing CTA: a heading, a promise, and two
+          buttons — the second labelled "Download the app" and pointing at
+          /login?mode=signup, the same destination as the first. It was already
+          shaped like a waitlist block, and one of its two slots was a duplicate.
+
+          It is the waitlist now because signing up is the wrong ask today.
+          beta_allowlist holds a '*' row, so an account CAN be created — into a
+          marketplace with nothing in it. Somebody who does that once does not come
+          back. Existing testers still reach the app through "Log in" in the header. */}
+      <section id="waitlist" className={`scroll-mt-8 pt-20 pb-24 ${gutter}`}>
+        <div className="overflow-hidden rounded-[28px] bg-[linear-gradient(140deg,#5038FF_0%,#7A5CF0_55%,#C94FA8_100%)] px-6 py-14 text-center sm:px-8 lg:px-14 lg:py-20">
           <HustlrMark className="mx-auto mb-7 h-11 w-auto text-[#FEF4E5]" />
           <h2
             className={`${display} m-0 mb-[18px] text-[clamp(32px,4.8vw,72px)] leading-none font-bold tracking-[-0.02em]! text-[#FEF4E5]`}
           >
-            Make your next move.
+            Be first in Monroe.
           </h2>
-          <p className="mx-auto m-0 mb-[34px] max-w-[44ch] text-[18px] leading-[1.6] text-[#FEF4E5]/82">
-            Free to join. Verified in a day. First gig usually within the week.
+          <p className="mx-auto m-0 mb-[34px] max-w-[46ch] text-[18px] leading-[1.6] text-[#FEF4E5]/82">
+            We&rsquo;re opening in Monroe and West Monroe first, then Ruston and Grambling. Leave your
+            email and we&rsquo;ll tell you the day you can get in.
           </p>
-          <div className="flex flex-wrap justify-center gap-[14px]">
-            <Link
-              href="/login?mode=signup"
-              className="inline-flex items-center gap-[10px] rounded-[14px] bg-[#FEF4E5] px-8 py-[17px] text-[17px] font-semibold text-[#5038FF] transition hover:opacity-90"
-            >
-              Get started <IconArrow className="h-[13px] w-auto" />
-            </Link>
-            <Link
-              href="/login?mode=signup"
-              className="inline-flex items-center gap-[10px] rounded-[14px] border-2 border-[#FEF4E5]/50 px-8 py-[15px] text-[17px] font-semibold text-[#FEF4E5] transition hover:bg-[#FEF4E5]/10"
-            >
-              Download the app
-            </Link>
-          </div>
+          <WaitlistForm />
         </div>
       </section>
 

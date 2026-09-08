@@ -49,11 +49,19 @@ export function useStepUp() {
     return r;
   }, []);
 
-  const retry = useCallback(async () => {
+  // Returns the replayed result as well as storing it. Every caller before /waitlist
+  // only needed the message, so this was Promise<void> — and an action that produces
+  // something (the waitlist CSV) succeeded on the retry path while the download never
+  // happened, under a message saying it had. Additive: ReauthPrompt's
+  // `onVerified: () => void` still accepts this under TS void-return assignability, so
+  // no existing caller changes.
+  const retry = useCallback(async (): Promise<ActionResult | undefined> => {
     if (!pendingCall) return;
     const call = pendingCall;
     setPendingCall(null);
-    setResult(await call());
+    const r = await call();
+    setResult(r);
+    return r;
   }, [pendingCall]);
 
   const cancel = useCallback(() => {
