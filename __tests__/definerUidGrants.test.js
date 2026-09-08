@@ -37,6 +37,16 @@ const ALLOWED = {
   'public.create_gig_share(uuid, text, integer)':
     'the uuid is a BOOKING, not a person, and the body requires `b.earner_id = auth.uid()` '
     + 'on an accepted booking before it mints anything (20260806300000:43-70).',
+  'public.my_dispute(uuid)':
+    'the uuid is a BOOKING, and the body requires `private.is_booking_party(booking_id, '
+    + 'auth.uid())` — it exists precisely to give the ACCUSED earner a read path to the '
+    + 'evidence against them, while whitelisting columns so the staff ids in assigned_to '
+    + 'and resolved_by are NOT returned to either party (20260909010000).',
+  'public.respond_to_dispute(uuid, text, text, text[])':
+    'the uuid is a DISPUTE, and the body refuses unless `respondent_id = auth.uid()`, the '
+    + 'dispute is unanswered and unsettled; it also filters the photo paths to the '
+    + "caller's own storage prefix. It is the only client write path to a dispute, and "
+    + 'guard_disputes_write pins every other column against it (20260909010000).',
   'public.raise_gig_emergency(uuid, text)':
     'the uuid is a BOOKING; the body requires auth.uid() to be a party to it and the '
     + 'booking to be accepted, and a safety button must be callable by the person in '
