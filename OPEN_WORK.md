@@ -203,6 +203,15 @@ _Last reconciled: 2026-09-08 (a working payments audit: 11 fixes, none deployed 
 >   and debited once; the earner's share of a $50 refund on a $100/7% gig came out at
 >   4650c, which is the split that never touches the platform fee.
 >
+> * **The critical money controls DISCRIMINATE.** Each was given a staged violating row
+>   and then a repaired one, and every single one fired 1 then cleared to 0:
+>   `earner_credit_missing`, `payment_ledger_impossible`, `partial_capture_without_dispute`,
+>   `settled_without_captured_payment`, `dispute_settlement_overdue`,
+>   `escrow_hold_lapsed_uncancelled`. The monitoring layer is not decorative.
+> * **`payments_refunded_cents_check` prevents over-refunding at the SCHEMA level**
+>   (`refunded_cents <= amount_cents`), which is stronger than a control — the impossible
+>   row cannot be written at all.
+>
 > What was NOT exercised live: the Stripe capture leg itself. See the note above.
 
 > **2026-09-08 — a working payments audit added 71 rows here and closed 10.**
