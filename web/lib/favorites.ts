@@ -29,7 +29,13 @@ export async function isFavorite(userId: string, favoriteUserId: string): Promis
 export async function addFavorite(userId: string, favoriteUserId: string): Promise<void> {
   const { error } = await supabase
     .from("favorites")
-    .upsert({ user_id: userId, favorite_user_id: favoriteUserId }, { onConflict: "user_id,favorite_user_id" });
+  // ignoreDuplicates IS LOAD-BEARING. Without it supabase-js sends ON CONFLICT DO
+  // UPDATE, which needs an UPDATE grant `20260812040000_grant_rls_parity.sql` revoked
+  // from `authenticated` on this table — so the write was refused `42501 permission
+  // denied` on both clients. Re-blocking somebody must be a no-op, not a rewrite, so
+  // DO NOTHING is also the correct semantics. See src/lib/referrals.js for the long note.
+    .upsert({ user_id: userId, favorite_user_id: favoriteUserId },
+            { onConflict: "user_id,favorite_user_id", ignoreDuplicates: true });
   if (error) throw error;
 }
 

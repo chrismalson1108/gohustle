@@ -127,7 +127,10 @@ describe('the poster proposes — the poster does not settle', () => {
     // which two taps on "report a problem" beat, giving the earner two clocks and two
     // percentages for one gig and letting settle-disputes stamp the second row with
     // whatever the first collected. A UNIQUE INDEX is the guard now; see below.
-    expect(partial).toMatch(/from\('disputes'\)\.select\('id, settle_after, proposed_pct'\)[\s\S]{0,140}\.eq\('booking_id', bookingId\)/);
+    // `capture`, not `partial`: the declaration was HOISTED above `if (wantsPartial)` so
+    // the full-pay path could consult it too — without that, paying in full stepped
+    // straight over a live reduction. See the last describe in this file.
+    expect(capture).toMatch(/from\('disputes'\)\.select\('id, settle_after, proposed_pct'\)[\s\S]{0,140}\.eq\('booking_id', bookingId\)/);
   });
 
   it('scopes that read to a LIVE proposal, because a booking can hold other dispute rows', () => {
@@ -135,8 +138,8 @@ describe('the poster proposes — the poster does not settle', () => {
     // refund/chargeback row. Unscoped, `.maybeSingle()` returns {data:null, error} the
     // moment there are two of anything — and only `data` was read, so the guard fell
     // through and inserted another.
-    expect(partial).toMatch(/\.is\('pct_paid', null\)/);
-    expect(partial).toMatch(/\.not\('proposed_pct', 'is', null\)/);
+    expect(capture).toMatch(/\.is\('pct_paid', null\)/);
+    expect(capture).toMatch(/\.not\('proposed_pct', 'is', null\)/);
   });
 
   it('treats the unique violation as "already proposed", not as "nothing was recorded"', () => {
@@ -648,5 +651,76 @@ describe('a reply cannot retract a settlement the clock already decided', () => 
     const b2 = code.slice(code.indexOf("d.response_stance = 'accept'"), code.indexOf('responded_at is null'));
     expect(`branch 2 still coalesces to 100: ${/coalesce\(d\.proposed_pct, 100\)/.test(b2)}`)
       .toBe('branch 2 still coalesces to 100: false');
+  });
+});
+
+describe('a full capture cannot silently step over a live reduction', () => {
+  const capture = codeOnly(read('supabase/functions/stripe-capture-payment/index.ts'));
+
+  // `liveProposal()` used to be declared INSIDE `if (wantsPartial)` and BELOW the runway
+  // check. Both facts were defects, and each produced a full capture over a standing
+  // proposal by a different route:
+  //   - below the runway check: inside the hold's last 36 hours a second "report a
+  //     problem" hit NO_ROOM_TO_HOLD instead and captured 100%, turning the poster's own
+  //     60% reduction into the maximum. The evidence row it files carries no
+  //     proposed_pct, so `disputes_one_live_proposal_per_booking` did not collide either.
+  //   - inside the branch: the full-pay path could not see a proposal at all, and web
+  //     /hiring re-offers "Verify & rate" on every `completed` booking — which is exactly
+  //     the state a proposal deliberately leaves the booking in.
+  //
+  // Anchored on CODE, never on the comments around it: `codeOnly` strips those, and a
+  // guard that matches prose passes as soon as somebody rewords a heading.
+  const iDecl = capture.indexOf('const liveProposal =');
+  const iPartial = capture.indexOf('if (wantsPartial)');
+  const iRunway = capture.indexOf('if (runwayHours < MIN_RUNWAY_HOURS)');
+  const iExisting = capture.indexOf('const { data: existing } = await liveProposal()');
+  const iStanding = capture.indexOf('const { data: standingProposal } = await liveProposal()');
+
+  it('every anchor this describe relies on is actually present', () => {
+    // Without this, an indexOf that returns -1 makes every ordering assertion below pass
+    // vacuously — a guard reporting green about code it never found.
+    expect([iDecl, iPartial, iRunway, iExisting, iStanding].filter((i) => i < 0)).toEqual([]);
+  });
+
+  it('reads the live proposal before the runway branch, not after it', () => {
+    expect(iExisting).toBeLessThan(iRunway);
+  });
+
+  it('declares it outside the partial branch, so the full-pay path can consult it', () => {
+    expect(iDecl).toBeLessThan(iPartial);
+  });
+
+  // Paying in full over a proposal is ALLOWED — it cannot underpay, and sending a
+  // generous poster to Support would be the wrong answer. What it must not do is leave
+  // the row open: `pct_paid` null pages ctl_dispute_settlement_overdue (critical) for
+  // ever, and settle-disputes retries a capture against an already-captured
+  // PaymentIntent every hour, while the earner still holds a deadline to answer.
+  it('closes the proposal — and only after the money has actually moved', () => {
+    const iSettle = capture.indexOf('await settleEscrow(', iStanding);
+    const iGuard = capture.indexOf('if (!settled.ok)', iStanding);
+    const iClose = capture.indexOf('pct_paid: 100', iStanding);
+    expect([iSettle, iGuard, iClose].filter((i) => i < 0)).toEqual([]);
+    expect(iStanding).toBeLessThan(iSettle);  // know before
+    expect(iSettle).toBeLessThan(iGuard);
+    expect(iGuard).toBeLessThan(iClose);      // write only on success
+  });
+
+  const closeBlock = capture.slice(
+    capture.indexOf('if (standingProposal)'),
+    capture.indexOf('void settledPct'),
+  );
+
+  it('stamps a settlement that cannot be applied twice', () => {
+    expect(closeBlock).toMatch(/resolved_at:/);
+    expect(closeBlock).toMatch(/\.is\('pct_paid', null\)/);
+  });
+
+  it('tells the earner the deadline they were given no longer applies', () => {
+    expect(closeBlock).toMatch(/from\('notifications'\)\.insert\(/);
+    expect(closeBlock).toMatch(/user_id: booking\.earner_id/);
+  });
+
+  it('treats a failed close as fatal, because the money is already gone', () => {
+    expect(closeBlock).toMatch(/logServerError\([\s\S]*?fatal: true/);
   });
 });

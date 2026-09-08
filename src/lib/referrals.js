@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { captureError } from './analytics';
 
 // Random, non-reversible code. Deliberately NOT derived from the user id — a
 // UUID-prefix code leaked a fragment of the internal id and was trivially
@@ -26,10 +27,25 @@ export async function recordReferral(referredId, code) {
   if (!c) return;
   const { data: ref } = await supabase.from('profiles').select('id').eq('referral_code', c).maybeSingle();
   if (!ref || ref.id === referredId) return;
-  try {
-    await supabase.from('referrals').upsert(
-      { referred_id: referredId, referrer_id: ref.id }, { onConflict: 'referred_id' });
-  } catch (_) {}
+  // ── ignoreDuplicates IS LOAD-BEARING, not a tidy-up ────────────────────────
+  //
+  // Without it supabase-js sends `ON CONFLICT DO UPDATE`, which needs UPDATE as well as
+  // INSERT — and `20260812040000_grant_rls_parity.sql` revoked UPDATE on `referrals`
+  // from `authenticated`. So the write was refused `42501 permission denied` for every
+  // signup on both clients from 2026-08-12, and NOTHING SAW IT: supabase-js resolves on
+  // error rather than throwing, so the try/catch below caught nothing and the discarded
+  // result was never read. Referral attribution, and with it every `bonus_ledger` vest,
+  // was silently inert for a month while onboarding reported success.
+  //
+  // The revoke is RIGHT and stays. `DO UPDATE` would let somebody re-run onboarding with
+  // a different code and rewrite who referred them, which is a farming lever. DO NOTHING
+  // needs only INSERT, so first attribution wins permanently — measured against
+  // production 2026-09-08 as the `authenticated` role, rolled back.
+  const { error } = await supabase.from('referrals').upsert(
+    { referred_id: referredId, referrer_id: ref.id },
+    { onConflict: 'referred_id', ignoreDuplicates: true });
+  // CHECKED. An unread error here is the whole reason this was invisible.
+  if (error) captureError(error, { where: 'recordReferral', referredId });
 }
 
 export async function fetchReferralCount(userId) {

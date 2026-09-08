@@ -85,7 +85,7 @@ Deno.serve(async (req: Request) => {
     // work is done. Without this any signed-in user could settle others' bookings.
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, status, earner_id, job:jobs!bookings_job_id_fkey(poster_id)')
+      .select('id, status, earner_id, job_id, job:jobs!bookings_job_id_fkey(poster_id)')
       .eq('id', bookingId)
       .single();
     if (bErr || !booking) return json({ error: 'Booking not found' }, 404);
@@ -94,6 +94,23 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Booking is not ready to capture' }, 409);
     }
 
+
+    // A booking's ONE live adjustment proposal, if it has one.
+    //
+    // Scoped to the LIVE proposal, not to "any dispute on this booking". A booking can
+    // legitimately carry others — NO_ROOM_TO_HOLD files a pre-settled row (pct_paid set)
+    // and stripe-webhook's recordReversal files a bare refund/chargeback row (no
+    // proposed_pct) — and an unscoped `.maybeSingle()` returns {data: null, error} the
+    // moment there are two of anything.
+    //
+    // HOISTED OUT OF THE PARTIAL BRANCH, deliberately. It used to be declared after the
+    // runway check and inside `if (wantsPartial)`, so the two other ways into this
+    // function could not see a standing proposal at all — and both of them captured the
+    // full hold over one. See the two blocks that consult it below.
+    const liveProposal = () =>
+      supabase.from('disputes').select('id, settle_after, proposed_pct')
+        .eq('booking_id', bookingId).is('pct_paid', null).not('proposed_pct', 'is', null)
+        .maybeSingle();
 
     // ── A reduction becomes a PROPOSAL ─────────────────────────────────────────
     //
@@ -114,6 +131,61 @@ Deno.serve(async (req: Request) => {
           error: 'ALREADY_SETTLED',
           message: 'This booking has already been paid, so it can no longer be adjusted. Contact support for a refund.',
         }, 409);
+      }
+
+      // ── HAS THIS ALREADY BEEN PROPOSED? ASKED FIRST, BEFORE THE RUNWAY BRANCH ──
+      //
+      // This read used to sit BELOW the runway check, so inside the hold's last 36
+      // hours a second "report a problem" never learned a proposal was already
+      // standing: NO_ROOM_TO_HOLD fired instead and captured the FULL amount, quietly
+      // converting the poster's own 60% reduction into 100%. Its evidence row carries
+      // no proposed_pct, so `disputes_one_live_proposal_per_booking` did not collide
+      // either — a second row went in and the first was orphaned, still unsettled,
+      // still paging ctl_dispute_settlement_overdue. ADJUSTMENT_ALREADY_PROPOSED exists
+      // to say "a second report does not replace the first"; this ordering was the one
+      // path where a second report replaced the first with the maximum.
+      //
+      // Nothing is lost by answering here: `dispute_set_defaults` derives settle_after
+      // from the hold, so a standing proposal is ALWAYS due at least 12h before the
+      // authorization dies and the hourly settler was always going to reach it in time.
+      const { data: existing } = await liveProposal();
+      if (existing) {
+        // ── A RETRY IS NOT A REVISION ──────────────────────────────────────
+        //
+        // This returned a bare success, so both clients printed the percentage the
+        // POSTER HAD JUST TYPED — `${Math.round(pct * 100)}% is paid automatically`
+        // (JobsContext.js:972, web/lib/jobs.tsx:1019) — while the stored row kept the
+        // FIRST one and the earner was notified of that. Reopening the sheet is easy on
+        // the website, where /hiring re-offers "Verify & rate" on any `completed`
+        // booking with no dispute lookup at all, and a proposal deliberately leaves the
+        // booking `completed`. So: propose 50% on Tuesday, soften to 90% on Wednesday,
+        // and the poster is told 90% while the earner is paid 50% — or the reverse, and
+        // the poster overpays believing they had reduced it.
+        //
+        // Same figure, same clock: an idempotent retry, answered as before. DIFFERENT
+        // figure: refused, naming what is actually on the record, because silently
+        // keeping one number while reporting another is the whole defect.
+        const storedPct = Number(existing.proposed_pct);
+        const askedPct = Math.round(capturePctFinal * 100);
+        if (Number.isFinite(storedPct) && storedPct !== askedPct) {
+          return json({
+            error: 'ADJUSTMENT_ALREADY_PROPOSED',
+            proposedPct: storedPct,
+            settleAfter: existing.settle_after,
+            message:
+              `You already asked to pay ${storedPct}% on this gig and the worker has been `
+              + `told. That is what will be paid unless they reply. To change it, contact `
+              + `support — a second report does not replace the first.`,
+          }, 409);
+        }
+        return json({
+          success: true,
+          adjustment: 'proposed',
+          // The RECORDED figure, so a client can never narrate a number the row does not
+          // hold. Both clients render this in preference to what the user typed.
+          proposedPct: Number.isFinite(storedPct) ? storedPct : askedPct,
+          settleAfter: existing.settle_after,
+        });
       }
 
       // ── Runway ───────────────────────────────────────────────────────────────
@@ -212,60 +284,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Idempotent per booking: a retry must not mint a second proposal, and must not
-      // reset the clock the earner is already running against.
-      //
-      // Scoped to the LIVE proposal, not to "any dispute on this booking". A booking can
-      // legitimately carry others — NO_ROOM_TO_HOLD files a pre-settled row (pct_paid set)
-      // and stripe-webhook's recordReversal files a bare refund/chargeback row (no
-      // proposed_pct) — and the old unscoped `.maybeSingle()` returned {data: null, error}
-      // the moment there were two of anything. Only `data` was read, so the guard silently
-      // fell through and inserted another one.
-      const liveProposal = () =>
-        supabase.from('disputes').select('id, settle_after, proposed_pct')
-          .eq('booking_id', bookingId).is('pct_paid', null).not('proposed_pct', 'is', null)
-          .maybeSingle();
-
-      const { data: existing } = await liveProposal();
-      if (existing) {
-        // ── A RETRY IS NOT A REVISION ──────────────────────────────────────
-        //
-        // This returned a bare success, so both clients printed the percentage the
-        // POSTER HAD JUST TYPED — `${Math.round(pct * 100)}% is paid automatically`
-        // (JobsContext.js:972, web/lib/jobs.tsx:1019) — while the stored row kept the
-        // FIRST one and the earner was notified of that. Reopening the sheet is easy on
-        // the website, where /hiring re-offers "Verify & rate" on any `completed`
-        // booking with no dispute lookup at all, and a proposal deliberately leaves the
-        // booking `completed`. So: propose 50% on Tuesday, soften to 90% on Wednesday,
-        // and the poster is told 90% while the earner is paid 50% — or the reverse, and
-        // the poster overpays believing they had reduced it.
-        //
-        // Same figure, same clock: an idempotent retry, answered as before. DIFFERENT
-        // figure: refused, naming what is actually on the record, because silently
-        // keeping one number while reporting another is the whole defect.
-        const storedPct = Number(existing.proposed_pct);
-        const askedPct = Math.round(capturePctFinal * 100);
-        if (Number.isFinite(storedPct) && storedPct !== askedPct) {
-          return json({
-            error: 'ADJUSTMENT_ALREADY_PROPOSED',
-            proposedPct: storedPct,
-            settleAfter: existing.settle_after,
-            message:
-              `You already asked to pay ${storedPct}% on this gig and the worker has been `
-              + `told. That is what will be paid unless they reply. To change it, contact `
-              + `support — a second report does not replace the first.`,
-          }, 409);
-        }
-        return json({
-          success: true,
-          adjustment: 'proposed',
-          // The RECORDED figure, so a client can never narrate a number the row does not
-          // hold. Both clients render this in preference to what the user typed.
-          proposedPct: Number.isFinite(storedPct) ? storedPct : askedPct,
-          settleAfter: existing.settle_after,
-        });
-      }
-
       // Only the caller's OWN storage paths. A poster who could name any path would pull
       // another user's private photos into a record the earner and support both read.
       const photos = Array.isArray(disputePhotos)
@@ -322,12 +340,64 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ── Full pay: unchanged, still synchronous ────────────────────────────────
+    // ── Full pay ──────────────────────────────────────────────────────────────
+    //
+    // A STANDING PROPOSAL IS WITHDRAWN HERE, NOT IGNORED.
+    //
+    // This path did no dispute lookup at all: `wantsPartial` returns above, so everything
+    // reaching it went straight to a 100% capture. But a proposal deliberately leaves the
+    // booking `completed`, and web /hiring re-offers "Verify & rate" on every `completed`
+    // booking — so the poster could reopen the sheet and pay in full over their own live
+    // reduction in one tap, bypassing ADJUSTMENT_ALREADY_PROPOSED entirely.
+    //
+    // The earner is paid MORE, so this is not underpayment and REFUSING would be wrong:
+    // withdrawing a reduction and paying the worker everything is a generous act and
+    // should not need a support ticket. What was wrong is that the row was left behind —
+    // `pct_paid` null forever, ctl_dispute_settlement_overdue (critical) paging on it,
+    // settle-disputes retrying a capture against an already-captured PaymentIntent every
+    // hour, and the earner still holding a 48-hour deadline to answer a closed case.
+    //
+    // So: capture, then close the proposal and tell them.
+    const { data: standingProposal } = await liveProposal();
+
     const settled = await settleEscrow(stripe, supabase, {
       bookingId, earnerId: booking.earner_id, capturePct: 1,
     });
     if (!settled.ok) return json({ error: settled.error, message: settled.message }, settled.status);
     const { settledPct, capturedGigCents } = settled;
+
+    if (standingProposal) {
+      // Money first, record second — the ordering NO_ROOM_TO_HOLD was corrected to. A row
+      // must never claim a settlement that did not happen.
+      const { error: closeErr } = await supabase.from('disputes').update({
+        pct_paid: 100,
+        settled_at: new Date().toISOString(),
+        resolved_at: new Date().toISOString(),
+        status: 'resolved',
+        resolution_note:
+          `Paid in full. The person who reported the problem chose to release the whole `
+          + `amount instead of the ${standingProposal.proposed_pct}% they had proposed, so `
+          + `the adjustment was withdrawn and no reply was needed.`,
+      }).eq('id', standingProposal.id).is('pct_paid', null);
+      if (closeErr) {
+        // Loud: the capture HAPPENED, so a row still reading open is a critical control
+        // firing forever on a gig that is settled and correct.
+        await logServerError('stripe-capture-payment',
+          `captured in full on ${bookingId} but could not close proposal ${standingProposal.id}: ${closeErr.message}`,
+          { booking_id: bookingId }, { fatal: true });
+      } else {
+        // The earner was told they had until a deadline to answer. Close that loop —
+        // saying nothing leaves a countdown running against a case that is over.
+        await supabase.from('notifications').insert({
+          user_id: booking.earner_id,
+          type: 'dispute',
+          title: 'They withdrew the adjustment',
+          body: `You have been paid in full for this gig. There is nothing left to reply to.`,
+          job_id: booking.job_id,
+          data: { dispute_id: standingProposal.id, booking_id: bookingId },
+        });
+      }
+    }
 
 
     // A dispute row is no longer written here, and cannot be: `wantsPartial` returns

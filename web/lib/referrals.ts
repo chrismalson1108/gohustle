@@ -29,11 +29,15 @@ export async function recordReferral(referredId: string, code?: string | null): 
   if (!c) return;
   const { data: ref } = await supabase.from("profiles").select("id").eq("referral_code", c).maybeSingle();
   if (!ref || ref.id === referredId) return;
-  try {
-    await supabase.from("referrals").upsert({ referred_id: referredId, referrer_id: ref.id }, { onConflict: "referred_id" });
-  } catch {
-    /* ignore */
-  }
+  // ignoreDuplicates IS LOAD-BEARING — see the long note in src/lib/referrals.js.
+  // Without it this emits ON CONFLICT DO UPDATE, which needs an UPDATE grant that
+  // 20260812040000 revoked from `authenticated`; the write was refused 42501 on every
+  // signup since 2026-08-12 and supabase-js resolves on error, so the catch never fired.
+  // DO NOTHING needs only INSERT, and makes first attribution permanent.
+  const { error } = await supabase
+    .from("referrals")
+    .upsert({ referred_id: referredId, referrer_id: ref.id }, { onConflict: "referred_id", ignoreDuplicates: true });
+  if (error) console.error("recordReferral failed", error.message);
 }
 
 export async function fetchReferralCount(userId: string): Promise<number> {

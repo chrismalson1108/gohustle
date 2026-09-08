@@ -78,7 +78,13 @@ export async function submitReport({ reporterId, reportedUserId = null, jobId = 
 export async function blockUserDb(blockerId, blockedId) {
   const { error } = await supabase
     .from('blocks')
-    .upsert({ blocker_id: blockerId, blocked_id: blockedId }, { onConflict: 'blocker_id,blocked_id' });
+  // ignoreDuplicates IS LOAD-BEARING. Without it supabase-js sends ON CONFLICT DO
+  // UPDATE, which needs an UPDATE grant `20260812040000_grant_rls_parity.sql` revoked
+  // from `authenticated` on this table — so the write was refused `42501 permission
+  // denied` on both clients. Re-blocking somebody must be a no-op, not a rewrite, so
+  // DO NOTHING is also the correct semantics. See src/lib/referrals.js for the long note.
+    .upsert({ blocker_id: blockerId, blocked_id: blockedId },
+            { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true });
   if (error) throw error;
 }
 
