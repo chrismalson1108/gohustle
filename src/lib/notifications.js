@@ -39,6 +39,15 @@ export async function getUnreadCount() {
 // PUSH but was silently unroutable when tapped in the in-app inbox.
 const TABS = { EarnTab: 1, GigsTab: 1, MessagesTab: 1, HomeTab: 1, ProfileTab: 1 };
 export function notificationRoute(n) {
+  // A dispute alert carries BOTH a booking and the gig it is about, and job_id was
+  // tested first — so the one server-written notice telling somebody they have 48
+  // hours to answer, whose body says "open it to see why and respond", landed on the
+  // public gig listing, which has no dispute UI and no clock. The most specific
+  // destination wins.
+  const disputeBooking = n?.data?.dispute_id ? n?.data?.booking_id : null;
+  if (disputeBooking) {
+    return { tab: 'EarnTab', screen: 'Dispute', params: { bookingId: disputeBooking } };
+  }
   if (n.job_id) return { tab: 'HomeTab', screen: 'JobDetail', params: { jobId: n.job_id } };
   const tab = n?.data?.tab;
   if (tab && TABS[tab]) return { tab };

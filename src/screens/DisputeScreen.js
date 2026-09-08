@@ -230,7 +230,9 @@ export default function DisputeScreen({ route, navigation }) {
           )}
           {!settled && dispute.response_stance === 'contest' && (
             <Text style={styles.note}>
-              Nothing is paid until someone from GoHustlr has read both sides.
+              Nothing is paid while this is open. Someone from GoHustlr reads both sides —
+              and if we have not decided before the card hold runs out, you are paid in
+              FULL rather than the amount they asked for.
             </Text>
           )}
         </Section>
@@ -247,8 +249,9 @@ export default function DisputeScreen({ route, navigation }) {
           {mode !== 'contest' ? (
             <>
               <Text style={styles.note}>
-                If they are right, accepting pays you {proposed}% now. If they are not, say what
-                actually happened — a person reads it before any money moves.
+                If they are right, accepting pays you {proposed}% now. If they are not, say
+                what actually happened — nothing is paid while we look at it, and if we run
+                out of time you are paid in full.
               </Text>
               <View style={styles.row}>
                 <TouchableOpacity

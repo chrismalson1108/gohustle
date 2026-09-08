@@ -60,6 +60,10 @@ const TAB_ROUTE: Record<string, string> = {
   ProfileTab: "/profile",
 };
 export function notificationHref(n: NotificationRow): string | null {
+  // Same rule as src/lib/notifications.js: a dispute alert names a gig AND a booking,
+  // and testing job_id first sent "you have 48 hours to reply" to the public listing.
+  const disputeBooking = n.data?.dispute_id ? (n.data?.booking_id as string | undefined) : undefined;
+  if (disputeBooking) return `/my-jobs/dispute/${disputeBooking}`;
   if (n.job_id) return `/jobs/${n.job_id}`;
   const tab = (n.data?.tab as string) || "";
   return TAB_ROUTE[tab] ?? null;

@@ -105,7 +105,7 @@ Deno.serve(async (req: Request) => {
     if (wantsPartial) {
       const { data: payRow, error: payErr } = await supabase
         .from('payments')
-        .select('id, status, created_at, amount_cents')
+        .select('id, status, created_at, authorized_at, amount_cents')
         .eq('booking_id', bookingId)
         .single();
       if (payErr || !payRow) return json({ error: 'Payment not found' }, 404);
@@ -123,9 +123,46 @@ Deno.serve(async (req: Request) => {
       // lapsed authorization pays NOBODY — strictly worse for the earner than any
       // outcome the dispute could reach. So capture in FULL, which is the one direction
       // this codebase can walk back (admin-payment-action refund), and say so plainly.
-      const heldSince = payRow.created_at ? new Date(payRow.created_at).getTime() : Date.now();
+      // authorized_at, NOT created_at. created_at is the FIRST hold ever placed on this
+      // booking; stripe-create-payment-intent upserts on booking_id and deliberately
+      // leaves it alone on a recovery re-hold, writing authorized_at instead
+      // (20260806150000). Reading created_at judged a fresh hold by a dead clock and
+      // captured in full on a booking with six days of runway.
+      const heldSinceIso = payRow.authorized_at ?? payRow.created_at;
+      const heldSince = heldSinceIso ? new Date(heldSinceIso).getTime() : Date.now();
       const runwayHours = HOLD_LIFE_HOURS - (Date.now() - heldSince) / 3_600_000;
       if (runwayHours < MIN_RUNWAY_HOURS) {
+        // FILE THE RECORD FIRST. This branch used to return before the insert was
+        // reachable, so the poster's reason and up to six uploaded photos were
+        // discarded: nothing on /disputes, nothing for support, and no way to review a
+        // refund request against what was actually claimed. The row is written
+        // pre-settled — it documents a decision the clock made, not one anybody has to
+        // answer, which is why it carries pct_paid and a resolution note.
+        const photosNow = Array.isArray(disputePhotos)
+          ? disputePhotos
+              .filter((p: unknown): p is string => typeof p === 'string')
+              .filter((p) => p.startsWith(`${user.id}/`))
+              .slice(0, 6)
+          : [];
+        const { error: recErr } = await supabase.from('disputes').insert({
+          booking_id: bookingId,
+          raised_by: user.id,
+          reason: String(disputeReason).trim().slice(0, 500),
+          proposed_pct: Math.round(capturePctFinal * 100),
+          photos: photosNow,
+          pct_paid: 100,
+          settled_at: new Date().toISOString(),
+          resolved_at: new Date().toISOString(),
+          status: 'rejected',
+          resolution_note:
+            'Captured in full: the card authorization was too close to expiring to hold '
+            + 'this for a reply. The reduction was not applied. A refund can still be issued.',
+        });
+        if (recErr) {
+          await logServerError('stripe-capture-payment',
+            `could not record the no-runway adjustment for booking ${bookingId}: ${recErr.message}`,
+            { booking_id: bookingId }, { fatal: true });
+        }
         const settled = await settleEscrow(stripe, supabase, {
           bookingId, earnerId: booking.earner_id, capturePct: 1,
         });

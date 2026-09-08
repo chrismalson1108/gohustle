@@ -34,6 +34,16 @@
 const fs = require('fs');
 const path = require('path');
 
+// The no-runway escape captures in FULL because the authorization is hours from
+// dying, so it legitimately stamps pct_paid and files the evidence. Everything ELSE in
+// this function is the proposal path, where pct_paid must stay null.
+function proposalPathOnly(src) {
+  const start = src.indexOf('if (runwayHours < MIN_RUNWAY_HOURS)');
+  if (start === -1) return src;
+  const end = src.indexOf('Idempotent per booking', start);
+  return src.slice(0, start) + (end === -1 ? '' : src.slice(end));
+}
+
 const SRC = fs.readFileSync(
   path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'settleEscrow.ts'),
   'utf8',
@@ -128,7 +138,7 @@ describe('the dispute record now PRECEDES the money, and only the settler stamps
     expect(branch).toMatch(/from\('disputes'\)\.insert\(/);
     expect(branch).toMatch(/proposed_pct: Math\.round\(capturePctFinal \* 100\)/);
     // The one thing that must NOT be in this branch.
-    expect(branch).not.toMatch(/pct_paid:/);
+    expect(proposalPathOnly(branch)).not.toMatch(/pct_paid:/);
     expect(branch).not.toMatch(/paymentIntents\.capture/);
   });
 
@@ -143,7 +153,7 @@ describe('the dispute record now PRECEDES the money, and only the settler stamps
     expect(SETTLER).toMatch(/pct_paid: paidPct/);
     // Compare-and-set on the null, so two overlapping sweeps cannot both settle one row.
     expect(SETTLER).toMatch(/\.is\('pct_paid', null\)/);
-    expect(CAPTURE).not.toMatch(/pct_paid:/);
+    expect(proposalPathOnly(CAPTURE)).not.toMatch(/pct_paid:/);
   });
 
   test('the outcome is asked of the database, never decided in TypeScript', () => {

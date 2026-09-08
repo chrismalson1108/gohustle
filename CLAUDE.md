@@ -279,10 +279,33 @@ booking carrying an unresolved dispute.
   (`expire_stale_pending_bookings` never once ran from cron for three weeks), so
   `ctl_dispute_settlement_overdue` is **critical**, every failure lands in
   `client_errors`, and the function never swallows an error into a success.
-- **48 hours**, stamped by `dispute_set_defaults()` at insert along with `respondent_id`.
-  `dispute_notify_respondent()` writes the inbox row **in the same transaction** — the old
+- **48 hours — or 12 hours before the card hold dies, whichever comes first.**
+  `dispute_set_defaults()` derives the window from `coalesce(payments.authorized_at,
+  created_at) + 7 days` rather than stamping a flat constant, because
+  `stripe-capture-payment` admits a proposal with only 36 hours of runway left: a flat 48
+  closed AFTER Stripe had voided the authorization, so the earner answered into a void and
+  **nobody was paid at all**. ⚠️ **Every hold-age read in this repo uses
+  `coalesce(authorized_at, created_at)`** — `created_at` is the FIRST hold ever placed and
+  a recovery re-hold deliberately leaves it alone (20260806150000). Both of this feature's
+  time-critical reads got it wrong at first; `disputeTwoParty.test.js` now pins them.
+- ⚠️ **NOT EVERY `disputes` ROW IS AN ADJUSTMENT.** `stripe-webhook`'s `recordReversal`
+  files a bare row for a refund or chargeback — `booking_id`, `raised_by`, `reason`, no
+  `proposed_pct`. The first cut of the triggers gave that row a respondent, a 48-hour clock
+  and a server-authored *"They have asked to pay 100% … you have 48 hours to reply"* sent to
+  an earner nobody had accused, and branch 3 would then settle it and stamp `resolved_at`,
+  auto-closing the row whose whole job is to block `earner-claim-payment` while a reversal
+  is unexplained. **`proposed_pct is not null` is the predicate** for the clock and the
+  notice; `pct_paid is not null` additionally silences the notice on a pre-settled row (the
+  NO_ROOM_TO_HOLD record).
+- `dispute_notify_respondent()` writes the inbox row **in the same transaction** — the old
   notice was an unawaited fetch from the accuser's client that returned false on any
-  failure and was never retried.
+  failure and was never retried. ⚠️ **Both notification routers test `data.dispute_id`
+  BEFORE `job_id`**: a dispute alert names a gig as well as a booking, and job-first routing
+  sent *"open it to see why and respond"* to the public listing, which has no dispute UI.
+- **`completion_party_read` covers `disputes.photos` AND `disputes.response_photos`.**
+  `respond_to_dispute` stores the rebuttal under the RESPONDENT's own folder, so until
+  20260909040000 the accuser passed no branch and saw a grey rectangle where the answer
+  was — a case file that was silently one-sided for the person being answered.
 - **`guard_disputes_write` pins every settlement, adjudication and provenance column.**
   The response columns are writable only inside `respond_to_dispute()`, whose GUC
   exemption is keyed to **that row's own id** (`app.dispute_response = old.id::text`), so
@@ -310,7 +333,19 @@ every console pill. Widening the CHECK would have forced all of them.
 
 **⚠️ NO_ROOM_TO_HOLD.** The hold is minted when the poster ACCEPTS, not when the work is
 done, so a gig booked Monday and verified Saturday may have almost no runway.
-`stripe-capture-payment` captures in FULL when under 36 hours remain and says so.
+`stripe-capture-payment` captures in FULL when under 36 hours remain and says so — and it
+**files the `disputes` row first**, pre-settled at `pct_paid = 100` with a resolution note,
+because the first cut returned before the insert was reachable and threw the poster's
+reason and photos away on exactly the path where a refund is most likely to be asked for.
+Neither client may quote the poster's percentage at the earner on this path: `capturedInFull`
+suppresses the "paid N%" notification, which was a false number about their own money.
+
+**⚠️ Branch 4 is a promise the platform breaks in the earner's favour, not a lie.** Both
+clients used to say "nothing is paid until someone from GoHustlr has read both sides"; a
+contested case nobody adjudicates is captured in FULL when the hold nears expiry, with
+nobody having read it. The copy now says so, and `ctl_dispute_contested_unadjudicated`
+(high) fires from **two days before** the auto-capture so a human hears about the case
+before the receipt does.
 
 **Console — `/disputes` and `/disputes/[id]`.** The case page is the only place the two
 sides sit together: the poster's reason and photos, the earner's reply and photos, **and
@@ -1107,7 +1142,7 @@ only runs when a human opens a page.
 
 - `controls` (registry) · `ctl_*()` functions (the checks, defined in migrations) ·
   `control_findings` (one row per violating entity, open/resolved) · `run_all_controls()`.
-- **79 controls are registered**: 77 run in-database and 2 are `external`. Every
+- **80 controls are registered**: 78 run in-database and 2 are `external`. Every
   in-database row's `key` is its function minus the prefix — registry `payout_overdue`
   is `ctl_payout_overdue()` — so the roster is derivable and is deliberately NOT copied
   out here. The registry table is the roster, `/controls` renders it, and

@@ -61,10 +61,37 @@ describe('the poster proposes — the poster does not settle', () => {
     expect(partial).toMatch(/proposed_pct:/);
   });
 
-  it('never writes pct_paid — that column means "what was actually collected"', () => {
+  // The no-runway escape is a SETTLEMENT, not a proposal — it captures in full because
+  // the card hold is about to die — so it legitimately stamps pct_paid. Split it off
+  // rather than loosening the rule that matters.
+  const noRunway = partial.slice(
+    partial.indexOf('if (runwayHours < MIN_RUNWAY_HOURS)'),
+    partial.indexOf('Idempotent per booking') === -1 ? partial.length : partial.indexOf('Idempotent per booking'),
+  );
+  const proposalOnly = partial.replace(noRunway, '');
+
+  it('never writes pct_paid on the proposal path — that column means "what was actually collected"', () => {
     // The old row carried the reduced percentage in pct_paid, which is why the console
     // rendered a proposal as a settlement: the two were the same act.
-    expect(partial).not.toMatch(/pct_paid:/);
+    expect(proposalOnly).not.toMatch(/pct_paid:/);
+  });
+
+  it('the no-runway capture files the evidence instead of discarding it', () => {
+    // This branch returned before the insert was reachable, so a poster's reason and up
+    // to six photos vanished on exactly the path where a refund is most likely to be
+    // asked for and there was nothing to review it against.
+    expect(noRunway).toMatch(/from\('disputes'\)\.insert\(/);
+    expect(noRunway).toMatch(/reason:/);
+    expect(noRunway).toMatch(/photos: photosNow/);
+    expect(noRunway).toMatch(/pct_paid: 100/);
+    expect(noRunway).toMatch(/resolution_note:/);
+  });
+
+  it('the hold is aged from authorized_at, not from the first hold ever placed', () => {
+    // created_at is the first authorization on the booking and a recovery re-hold
+    // leaves it alone (20260806150000). Three sites in this repo have got this wrong.
+    expect(partial).toMatch(/payRow\.authorized_at \?\? payRow\.created_at/);
+    expect(partial).toMatch(/authorized_at, amount_cents|authorized_at/);
   });
 
   it('captures nothing on a reduction, and only ever in full on the no-runway path', () => {
@@ -187,8 +214,30 @@ describe('both clients can read the accusation and answer it', () => {
     expect(codeOnly(read('src/screens/EarnScreen.js'))).toMatch(/navigate\('Dispute'/);
   });
 
-  it('web reaches it from My Jobs', () => {
-    expect(codeOnly(read('web/app/(app)/my-jobs/page.tsx'))).toMatch(/\/my-jobs\/dispute\//);
+  it('web reaches it from the state a dispute is actually in', () => {
+    // A substring match is not enough and this is why: the banner shipped inside
+    // `confirmed && startedAt && !earnerDone`, a state a dispute can never reach —
+    // stripe-capture-payment refuses anything but completed/verified and the proposal
+    // branch leaves the booking `completed`. The link existed, the test passed, and the
+    // web earner had no door. Assert it renders in the `completed` branch.
+    const src = codeOnly(read('web/app/(app)/my-jobs/page.tsx'));
+    expect(src).toMatch(/\/my-jobs\/dispute\//);
+    const done = src.slice(src.indexOf('b.status === "completed"'));
+    expect(done.slice(0, 900)).toMatch(/disputeBanner\(/);
+  });
+
+  it('a dispute alert opens the dispute, not the public gig listing', () => {
+    // Both routers tested job_id first, and the dispute notice carries one — so the
+    // one server-written notice saying "open it to see why and respond" landed on a
+    // page with no dispute UI and no clock.
+    for (const f of ['src/lib/notifications.js', 'web/lib/notifications.ts']) {
+      const src = codeOnly(read(f));
+      const fn = src.slice(src.search(/export function notification(Route|Href)/));
+      const disputeAt = fn.indexOf('dispute_id');
+      const jobAt = fn.indexOf('job_id');
+      expect({ file: f, disputeBeforeJob: disputeAt !== -1 && disputeAt < jobAt })
+        .toEqual({ file: f, disputeBeforeJob: true });
+    }
   });
 });
 

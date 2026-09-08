@@ -340,6 +340,28 @@ export default function MyJobsPage() {
       );
     }
 
+    // The dispute banner, rendered from ONE place into every state a dispute can
+    // actually be in. It previously lived inside the in-progress branch only —
+    // `confirmed && startedAt && !earnerDone` — which a dispute can never reach: the
+    // proposal is written on a `completed` booking and stripe-capture-payment refuses
+    // any other status. So the web half of a two-party process had no reachable door,
+    // while the guard test passed on a substring match against dead code.
+    const disputeBanner = (bk: Booking) => {
+      const d = openDisputes[bk.id];
+      if (!d) return null;
+      return (
+        <Link
+          href={`/my-jobs/dispute/${bk.id}`}
+          className="mt-2 flex items-center gap-2 rounded-xl bg-urgent-light px-3 py-2.5 text-sm font-semibold text-urgent hover:opacity-90"
+        >
+          <AlertCircle className="size-4 shrink-0" />
+          {d.responded_at
+            ? "Your reply is with GoHustlr"
+            : `The poster asked to pay ${d.proposed_pct ?? 100}% — reply`}
+        </Link>
+      );
+    };
+
     if (b.status === "confirmed" && !b.startedAt && !b.earnerDone) {
       return (
         <div className="mt-3">
@@ -375,17 +397,7 @@ export default function MyJobsPage() {
               gig long before it could share it or raise an alarm, so an earner working
               from a phone browser had the server-side check-in timer and nothing they
               could reach for themselves. */}
-          {openDisputes[b.id] && (
-            <Link
-              href={`/my-jobs/dispute/${b.id}`}
-              className="mt-2 flex items-center gap-2 rounded-xl bg-urgent-light px-3 py-2.5 text-sm font-semibold text-urgent hover:opacity-90"
-            >
-              <AlertCircle className="size-4 shrink-0" />
-              {openDisputes[b.id].responded_at
-                ? "Your reply is with GoHustlr"
-                : `The poster asked to pay ${openDisputes[b.id].proposed_pct ?? 100}% — reply`}
-            </Link>
-          )}
+          {disputeBanner(b)}
           <SafetyBar bookingId={b.id} />
           {/* The sentence owns a full line whenever the row is narrow — beside
               the button it compressed to a 3-4 line sliver at 320-360px. Basis +
@@ -421,12 +433,20 @@ export default function MyJobsPage() {
       );
     }
     if (b.status === "completed") {
+      const disputed = !!openDisputes[b.id];
       return (
         <>
-          <ClaimCta b={b} />
+          {disputeBanner(b)}
+          {/* Claiming is refused server-side while a dispute is open
+              (earner-claim-payment), so offering the button would be offering a
+              refusal — and "waiting for the poster to verify" is simply false while a
+              48-hour forfeiture clock is running. */}
+          {!disputed && <ClaimCta b={b} />}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="min-w-0 shrink-0 grow basis-64 text-sm font-medium text-ink-muted">
-              Waiting for the poster to verify &amp; pay.
+              {disputed
+                ? "Nothing is paid while this is open — open the report above."
+                : "Waiting for the poster to verify & pay."}
             </span>
             <MessageBtn bookingId={b.id} />
           </div>

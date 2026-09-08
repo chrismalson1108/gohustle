@@ -195,7 +195,9 @@ export default function DisputePage() {
                 <SignedPhotoStrip values={dispute.response_photos} bucket="completion-photos" />
                 {!settled && dispute.response_stance === "contest" && (
                   <p className="m-0 mt-3 text-sm text-ink-soft">
-                    Nothing is paid until someone from GoHustlr has read both sides.
+                    Nothing is paid while this is open. Someone from GoHustlr reads both sides
+                    — and if we have not decided before the card hold runs out, you are paid in
+                    FULL rather than the amount they asked for.
                   </p>
                 )}
               </section>
@@ -214,8 +216,9 @@ export default function DisputePage() {
                 {!contesting ? (
                   <>
                     <p className="m-0 mb-4 text-sm leading-relaxed text-ink-soft">
-                      If they are right, accepting pays you {proposed}% now. If they are not, say what
-                      actually happened — a person reads it before any money moves.
+                      If they are right, accepting pays you {proposed}% now. If they are not, say
+                      what actually happened — nothing is paid while we look at it, and if we run
+                      out of time you are paid in full.
                     </p>
                     <div className="flex flex-wrap gap-3">
                       <Button variant="secondary" disabled={busy} onClick={() => void respond("accept")}>

@@ -27,6 +27,17 @@
 // money stop agreeing.
 // ─────────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
+
+// The no-runway escape captures in FULL because the authorization is hours from
+// dying, so it legitimately stamps pct_paid and files the evidence. Everything ELSE in
+// this function is the proposal path, where pct_paid must stay null.
+function proposalPathOnly(src) {
+  const start = src.indexOf('if (runwayHours < MIN_RUNWAY_HOURS)');
+  if (start === -1) return src;
+  const end = src.indexOf('Idempotent per booking', start);
+  return src.slice(0, start) + (end === -1 ? '' : src.slice(end));
+}
+
 const path = require('path');
 
 const FN = path.join(__dirname, '..', 'supabase', 'functions');
@@ -166,8 +177,8 @@ describe('the dispute row now PRECEDES the capture', () => {
     'utf8',
   );
 
-  it('nothing in the capture path writes pct_paid any more', () => {
-    expect(idx).not.toMatch(/pct_paid:/);
+  it('nothing on the PROPOSAL path writes pct_paid any more', () => {
+    expect(proposalPathOnly(idx)).not.toMatch(/pct_paid:/);
   });
 
   it('the proposal is recorded without a Stripe call', () => {

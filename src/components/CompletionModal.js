@@ -316,9 +316,9 @@ export default function CompletionModal({ visible, booking, onClose, onConfirm }
                   )}
                 </View>
                 <Text style={styles.tipNote}>
-                  The rest of the hold is released back to you. Your reason and any photos
-                  you add are kept as the record of what happened, are visible to
-                  {' '}{earnerName}, and are what support reviews if this is escalated.
+                  The rest of the hold stays on your card until this is settled — it is
+                  not released yet. Your reason and any photos go to {earnerName}, who has
+                  48 hours to accept or reply, and are what support reviews.
                 </Text>
               </>
             )}

@@ -1049,7 +1049,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     // reduced payout always leaves an audit trail and requires a reason) — no client insert.
 
     if (booking?.earner?.id) {
-      if (partial)
+      // See the mobile note: `partial` is the poster's ASK. A NO_ROOM_TO_HOLD capture
+      // pays in full, and quoting the reduced percentage at the earner is a false
+      // number about their own money.
+      if (partial && !capture?.capturedInFull)
         notify(booking.earner.id, "Job verified with an adjustment", `The poster reported an issue and paid ${Math.round((pct as number) * 100)}%. ${rating}★ rating.`, { tab: "EarnTab", type: "payment" });
       else notify(booking.earner.id, "Job verified — you got paid!", `${rating}★ rating · paid via ${paymentMethod}.`, { tab: "EarnTab", type: "payment" });
     }

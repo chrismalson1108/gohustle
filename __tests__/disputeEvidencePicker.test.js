@@ -83,6 +83,6 @@ describe('the photos the picker now collects are the ones the promise is about',
   it('the copy that made this a broken promise is still on screen', () => {
     // If this line is ever softened the test above is still correct, but the
     // reason this was filed as high rather than cosmetic lives here.
-    expect(modal).toMatch(/are what support reviews if this is escalated/);
+    expect(modal).toMatch(/are what support reviews/);
   });
 });

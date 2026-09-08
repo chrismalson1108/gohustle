@@ -1005,7 +1005,11 @@ export function JobsProvider({ children }) {
     // reduced payout always leaves an audit trail and requires a reason there).
 
     if (booking?.earner?.id) {
-      if (partial) {
+      // `partial` is what the POSTER asked for, not what happened. When the card hold
+      // was too close to expiring to pause for a reply, the server captures in full and
+      // says so — telling the earner they were "paid 75%" there is a false number about
+      // their own money, and the poster's own toast on the same screen says the opposite.
+      if (partial && !capture?.capturedInFull) {
         notify(booking.earner.id, 'Job verified with an adjustment', `The poster reported an issue and paid ${Math.round(pct * 100)}%. ${rating}★ rating.`, { tab: 'EarnTab', type: 'payment' });
       } else {
         notify(booking.earner.id, 'Job verified — you got paid!', `${rating}★ rating · paid via ${paymentMethod}.`, { tab: 'EarnTab', type: 'payment' });
