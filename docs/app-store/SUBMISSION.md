@@ -88,6 +88,12 @@ pre-complete Connect onboarding and identity verification on the demo earner.
 
 ## 2. Field-by-field — copy and paste
 
+> Paste from **`docs/app-store/listing/`** rather than out of the code blocks below —
+> one plain file per field, so a stray fence or a line of surrounding prose cannot ride
+> along. App Store Connect rejects an over-length field with an error that names the
+> limit but not the cause, which sends you auditing copy that was never the problem.
+> The blocks here are the same text, kept inline so this document reads on its own.
+
 ### App Information (set once, not per-version)
 
 | Field | Value |

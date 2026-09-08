@@ -1,0 +1,24 @@
+GoHustlr is a two-sided local services marketplace. One account can both post gigs and pick up work, so the demo credentials above are enough to see the whole product.
+
+WHAT TO TRY
+1. Browse — the home tab lists gigs near you with category filters, search and a map view.
+2. Open a gig — tap any listing to see the pay breakdown, the poster's rating and the available time slots.
+3. Book — pick a slot and tap "Book this gig". The booking appears under My Jobs.
+4. Message — open the booking and message the poster in-app.
+5. Hire — the Hire tab posts a gig from the other side.
+6. Transactions — You > Settings > Money shows the payment ledger, escrow state and receipts.
+
+PAYMENTS ARE NOT IN-APP PURCHASES
+GoHustlr facilitates payment for real-world, in-person services performed between two people (moving, cleaning, tutoring, yard work). Under Guideline 3.1.3(e) and 3.1.5(a) these are physical goods and services consumed outside the app, so they are processed by Stripe rather than in-app purchase. Nothing digital is unlocked by a payment.
+
+HOW PAYMENT WORKS
+The poster's card is authorized when they accept a booking and is only captured after they verify the work was completed. The earner is paid out to their own bank account through Stripe Connect. GoHustlr takes a percentage service fee, which is shown to the earner before they book.
+
+DEMO PAYMENT PATH
+[Describe here exactly what you seeded — e.g. "The demo account already has bookings in every state (pending, confirmed, completed, verified and refunded) so the full lifecycle can be observed without a charge. A $1 demo gig is available if you would like to complete a live booking end to end."]
+
+USER-GENERATED CONTENT
+Gig listings, profiles, messages, reviews and photos are user-generated. All text passes through an automated moderation filter before it is stored, all uploaded images are scanned, and every listing, profile and conversation carries report and block controls. Reports reach a staffed moderation queue. Users must be 18+ and accept the Terms and the Independent Contractor Agreement at sign-up.
+
+CONTACT
+mainmail@gohustlr.com
